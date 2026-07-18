@@ -56,7 +56,9 @@ export class CGameController {
     this.m_canvas = canvas;
     this.m_ctx = canvas.getContext('2d')!;
     
-    this.m_land = new CLand(canvas.width, canvas.height - 120); // Account for UI
+    // Terrain fills the full viewport so its body covers the bottom of the
+    // screen — the background's foreground never shows in the HUD strip.
+    this.m_land = new CLand(canvas.width, canvas.height);
     
     this.m_tanks = [];
     this.m_shots = [];
@@ -350,7 +352,6 @@ export class CGameController {
       // Check tank collisions
       for (const tank of this.m_tanks) {
         if (!tank.isAlive()) continue;
-        
         if (shot.checkTankCollision(tank)) {
           // Direct hit on a tank.
           this.handleShotImpact(shot);
@@ -399,7 +400,6 @@ export class CGameController {
 
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
-      
       if (tank.isInBlastRadius(pos.x, pos.y, shot.getRadius())) {
         // Damage falls off linearly from the blast centre to its edge.
         const dist = tank.distanceTo(pos.x, pos.y);
