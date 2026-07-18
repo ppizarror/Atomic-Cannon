@@ -25,7 +25,7 @@ pnpm install
 pnpm dev
 ```
 
-Then open <http://localhost:3000>.
+Then open <http://localhost:2141>.
 
 The dev server hot-reloads on source changes.
 
@@ -33,7 +33,7 @@ The dev server hot-reloads on source changes.
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Start the Vite dev server on port 3000 |
+| `pnpm dev` | Start the Vite dev server on port 2141 |
 | `pnpm build` | Produce a production build in `dist/` |
 | `pnpm preview` | Serve the production build locally |
 | `pnpm typecheck` | Type-check the project (`tsc --noEmit`) |

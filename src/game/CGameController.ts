@@ -11,7 +11,7 @@
 import { CLand } from '../core/CLand';
 import { CTank, TEAM_COLORS } from '../core/CTank';
 import { CShot } from '../core/CShot';
-import { getWeapon, WEAPON_DATABASE } from '../core/CWeapon';
+import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex } from '../core/CWeapon';
 import { CExplosion, ScreenShake } from '../core/CExplosion';
 import { CAssetManager } from '../core/rendering/CAssetManager';
 
@@ -62,7 +62,7 @@ export class CGameController {
     this.m_assets.loadImage('bg', BACKGROUND_PATH);
     
     // Initialize weapon list (index into WEAPON_DATABASE)
-    this.m_currentWeaponIndex = 0;
+    this.m_currentWeaponIndex = getDefaultWeaponIndex();
     
     // Wind: positive = right, negative = left
     this.m_windSpeed = 0;  // pixels/sec influence
@@ -553,9 +553,10 @@ export class CGameController {
       return;
     }
     
-    // Select random weapon for variety
-    const availableWeapons = WEAPON_DATABASE.slice(0, 6); // First 6 weapons are reasonable
-    this.m_currentWeaponIndex = Math.floor(Math.random() * availableWeapons.length);
+    // Pick a random straightforward ballistic weapon (bots can't use exotics yet).
+    const usable = WEAPON_DATABASE.filter(w => w.type === 'Shell' || w.type === 'Bomb' || w.type === 'Rocket');
+    const pick = usable[Math.floor(Math.random() * usable.length)];
+    this.m_currentWeaponIndex = pick ? pick.index : getDefaultWeaponIndex();
     
     // Calculate firing angle to hit target (simplified trajectory)
     const target = enemies[Math.floor(Math.random() * enemies.length)];

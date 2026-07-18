@@ -62,25 +62,113 @@ export class CLand {
     this.computeDirtyRegion();
   }
 
+  // --- RNG: classic MSVC LCG, so a level is reproducible from its seed --------
+  private m_rngState: number = 1;
+
+  private srand(seed: number): void {
+    this.m_rngState = seed >>> 0;
+  }
+
+  /** rand() in 0..32767 (MSVC: state = state*0x343FD + 0x269EC3; (state>>16)&0x7FFF). */
+  private rand(): number {
+    this.m_rngState = (Math.imul(this.m_rngState, 0x343FD) + 0x269EC3) >>> 0;
+    return (this.m_rngState >>> 16) & 0x7FFF;
+  }
+
+  /** Uniform [0,1). */
+  private rand01(): number {
+    return this.rand() / 32767;
+  }
+
+  /**
+   * Generate terrain the way the original does: pick a shape mode (0..5) then
+   * fill a seeded biased random walk. Mode 5 config = "random": 50% mode 5,
+   * else one of 0..4. All modes share one RNG stream seeded here.
+   */
   generateRandomTerrain(seed: number = Date.now()): void {
-    const random = (s: number) => {
-      s = Math.sin(s * 9999) * 10000;
-      return s - Math.floor(s);
-    };
-    
-    const targetHeight = this.m_nHeight * 0.65;
-    let y = this.m_nHeight * 0.7;
-    
-    for (let x = 0; x < this.m_nWidth; x++) {
-      const disp = (random(x + seed) - 0.5) * 25;
-      y += disp + (targetHeight - y) * 0.02;
-      
-      this.m_arrHeights[x] = Math.max(
-        this.m_nHeight * 0.4,
-        Math.min(this.m_nHeight * 0.9, Math.floor(y))
-      );
+    this.srand(seed >>> 0);
+    let mode: number;
+    if ((this.rand() & 1) === 0) {
+      mode = 5;                       // 50%: fully-random / mountainous
+    } else {
+      mode = this.rand() % 5;         // 50%: one of 0..4
     }
-    
+    this.generateProfile(mode);
+  }
+
+  /** Force a specific shape mode (0..5) with a given seed. */
+  generateTerrainMode(mode: number, seed: number = Date.now()): void {
+    this.srand(seed >>> 0);
+    this.generateProfile(mode);
+  }
+
+  // The 6 shape modes (FUN_004a4970). Screen-Y: smaller = higher on screen, so
+  // Ymin is the highest peaks can reach, Ymax the lowest valleys.
+  private generateProfile(mode: number): void {
+    const W = this.m_nWidth;
+    const A = 15;                                   // walk amplitude (obj +0x4c)
+    const Ymin = Math.floor(this.m_nHeight * 0.30); // top clamp
+    const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
+    const clamp = (v: number) => Math.min(Math.max(v, Ymin), Ymax);
+
+    if (mode === 0) {
+      // Flat + uncorrelated ±15 noise (jagged plateau).
+      this.rand();                                  // one throwaway draw
+      const base = Math.floor((Ymin + Ymax) / 2);
+      for (let x = 0; x < W; x++) {
+        let y = base + (this.rand() % 30) - 15;
+        if (y < Ymin) y = Ymin;
+        else if (y >= Ymax) y = Ymax - 1;
+        this.m_arrHeights[x] = y;
+      }
+      this.computeDirtyRegion();
+      return;
+    }
+
+    // Modes 1..5: biased random walk, four quarters each with a (lo,hi) drift.
+    let start: number;
+    const win: [number, number][] = [[-A, A], [-A, A], [-A, A], [-A, A]];
+
+    switch (mode) {
+      case 1:                                       // hill / mound
+        start = Ymax;
+        win[0] = [-7, 7]; win[1] = [-3, 1]; win[2] = [0, 4]; win[3] = [-7, 7];
+        break;
+      case 2:                                       // valley / basin
+        start = Ymin;
+        win[0] = [-7, 7]; win[1] = [-1, 6]; win[2] = [-5, 2]; win[3] = [-7, 7];
+        break;
+      case 3: {                                     // ramp / cliff
+        const coin = this.rand() & 1;
+        start = coin ? Ymax : Ymin;
+        const q3: [number, number] = start === Ymin ? [0, 10] : [-10, 0];
+        win[0] = [-7, 7]; win[1] = [-7, 7]; win[2] = q3; win[3] = [-7, 7];
+        break;
+      }
+      case 4: {                                     // planar linear slope + jitter
+        const coin = this.rand() & 1;
+        start = coin ? Ymax : Ymin;
+        const s = (coin ? -1 : 1) * (Ymax - Ymin) / W;
+        const j = 2;
+        for (let q = 0; q < 4; q++) win[q] = [s - j, s + j];
+        break;
+      }
+      case 5:                                       // rough / mountainous
+      default:
+        start = Ymin + (Ymax - Ymin) * this.rand01();
+        break;                                      // windows already ±A
+    }
+
+    const q1 = W >> 2, q2 = W >> 1, q3 = (3 * W) >> 2;
+    let prev = start;
+    this.m_arrHeights[0] = Math.round(clamp(start));
+    for (let x = 1; x < W; x++) {
+      const q = x < q1 ? 0 : x < q2 ? 1 : x < q3 ? 2 : 3;
+      const [lo, hi] = win[q];
+      prev = clamp(prev + this.rand01() * (hi - lo) + lo);
+      this.m_arrHeights[x] = Math.round(prev);
+    }
+
     this.computeDirtyRegion();
   }
 
@@ -94,17 +182,22 @@ export class CLand {
     const startX = Math.max(0, x - nRadius);
     const endX = Math.min(this.m_nWidth - 1, x + nRadius);
     
+    // Heightmap approximation of the original's destructible-bitmap crater:
+    // at each column the surface drops to the bottom edge of the blast circle
+    // when that is lower than the current ground (screen-Y larger = lower down).
     for (let dx = startX; dx <= endX; dx++) {
       const distFromCenter = Math.abs(dx - x);
-      
+
       if (distFromCenter > nRadius) continue;
-      
+
       const arcHeight = Math.sqrt(nRadius * nRadius - distFromCenter * distFromCenter);
-      const newHeight = Math.max(0, this.m_arrHeights[dx] - Math.floor(y - arcHeight));
-      
-      this.m_arrHeights[dx] = newHeight;
+      const craterBottom = y + arcHeight;
+
+      if (craterBottom > this.m_arrHeights[dx]) {
+        this.m_arrHeights[dx] = Math.min(this.m_nHeight, Math.floor(craterBottom));
+      }
     }
-    
+
     this.preBlast(x - nRadius, x + nRadius);
   }
 
