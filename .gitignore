@@ -1,0 +1,8 @@
+.DS_Store
+.git/
+*.log
+dist/
+node_modules
+
+# Public assets
+public/

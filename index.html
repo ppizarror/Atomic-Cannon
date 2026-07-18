@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atomic Cannon</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #game-container {
+      position: relative;
+      width: 800px;
+      height: 600px;
+      background: linear-gradient(to bottom, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      border: 3px solid #444;
+      box-shadow: 0 0 20px rgba(0,255,136,0.2);
+    }
+    canvas {
+      display: block;
+    }
+    #ui-layer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 120px;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+      padding: 15px;
+      display: flex;
+      gap: 20px;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+    .control-label {
+      font-size: 12px;
+      color: #888;
+      text-transform: uppercase;
+    }
+    input[type="range"] {
+      width: 150px;
+      height: 20px;
+      cursor: pointer;
+    }
+    .control-value {
+      font-size: 14px;
+      font-weight: bold;
+      color: #0f0;
+    }
+    #fire-btn {
+      background: linear-gradient(to bottom, #ff4444, #cc0000);
+      border: none;
+      color: white;
+      padding: 15px 40px;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 8px;
+      text-transform: uppercase;
+      box-shadow: 0 4px #900;
+      transition: all 0.1s;
+    }
+    #fire-btn:hover { background: linear-gradient(to bottom, #ff6666, #ee0000); }
+    #fire-btn:active { transform: translateY(2px); box-shadow: 0 2px #600; }
+    #fire-btn:disabled { background: #444; box-shadow: none; cursor: not-allowed; }
+    
+    #status-bar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+    .player-info {
+      background: rgba(0,0,0,0.6);
+      padding: 8px 15px;
+      border-radius: 5px;
+    }
+    #turn-indicator {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 32px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 0 20px rgba(255,200,0,0.8);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    #turn-indicator.visible { opacity: 1; }
+    
+    .tank-health {
+      display: flex;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .health-bar {
+      width: 80px;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .health-fill {
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .life-fill { background: linear-gradient(to right, #f00, #ff4444); }
+    .shield-fill { background: linear-gradient(to right, #00f, #44f); }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas" width="800" height="480"></canvas>
+    
+    <div id="status-bar">
+      <div class="player-info" id="current-player">Player 1 - Tank 1</div>
+      <div class="tank-health">
+        <span>Life:</span><div class="health-bar"><div class="health-fill life-fill" id="life-fill" style="width:100%"></div></div>
+        <span>Shield:</span><div class="health-bar"><div class="health-fill shield-fill" id="shield-fill" style="width:50%"></div></div>
+      </div>
+    </div>
+    
+    <div id="turn-indicator">Player 1's Turn</div>
+    
+    <div id="ui-layer">
+      <div class="control-group">
+        <span class="control-label">Angle</span>
+        <input type="range" id="angle-slider" min="0" max="180" value="45" />
+        <span class="control-value"><span id="angle-value">45</span>°</span>
+      </div>
+      
+      <div class="control-group">
+        <span class="control-label">Power</span>
+        <input type="range" id="power-slider" min="10" max="100" value="50" />
+        <span class="control-value"><span id="power-value">50</span>%</span>
+      </div>
+      
+      <div class="control-group">
+        <button id="fire-btn">FIRE!</button>
+      </div>
+      
+      <div class="control-group" style="margin-left: auto;">
+        <span class="control-label">Wind</span>
+        <span class="control-value" id="wind-value">→ 5</span>
+      </div>
+    </div>
+  </div>
+  
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

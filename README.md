@@ -1,2 +1,3 @@
 # Atomic-Cannon
-Atomic Cannon game implementation in TS
+
+Atomic Cannon game implementation in TS.
