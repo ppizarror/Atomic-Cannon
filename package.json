@@ -11,10 +11,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@preact/signals": "^2.9.4",
     "pixi-filters": "^6.1.5",
-    "pixi.js": "^8.19.0"
+    "pixi.js": "^8.19.0",
+    "preact": "^10.29.7"
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.10.5",
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   }

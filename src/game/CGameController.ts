@@ -475,32 +475,8 @@ export class CGameController {
   }
 
 
-  /**
-   * Check if battle has ended
-   */
   private checkBattleEnd(): void {
-    const aliveTanks = this.m_tanks.filter(t => t.isAlive());
-    
-    if (aliveTanks.length <= 1) {
-      // Battle over!
-      this.m_gameState = EGameState.BattleEnd;
-      
-      if (aliveTanks.length === 1) {
-        console.log(`Winner: ${aliveTanks[0].getName()}!`);
-        
-        // Show victory indicator
-        const winner = aliveTanks[0];
-        document.getElementById('turn-indicator')!.textContent = `${winner.getName()} WINS!`;
-        document.getElementById('turn-indicator')!.classList.add('visible');
-      }
-    } else {
-      // Continue to next player
-      this.advanceToNextPlayer();
-      
-      if (this.getCurrentTank().isBot()) {
-        setTimeout(() => this.executeBotTurn(), 500);
-      }
-    }
+    this.endTurn();
   }
   
   /**
@@ -532,30 +508,13 @@ export class CGameController {
     } while (!this.getCurrentTank().isAlive());
   }
 
-  /** Start the current player's turn: refresh the HUD, then let them act. */
+  /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
     const tank = this.getCurrentTank();
     this.m_gameState = EGameState.Battle;
 
-    const indicator = document.getElementById('turn-indicator')!;
-    indicator.textContent = `${tank.getName()}'s Turn`;
-    indicator.classList.add('visible');
-    setTimeout(() => indicator.classList.remove('visible'), 1500);
-
-    const teamColor = TEAM_COLORS[tank.getTeamId()] || '#ff4444';
-    document.getElementById('current-player')!.innerHTML =
-      `<span style="color:${teamColor}">${tank.getName()}</span> - Tank ${this.m_tanks.indexOf(tank) + 1}`;
-
-    const health = tank.getHealth();
-    document.getElementById('life-fill')!.style.width = `${Math.max(0, health.nLife) / 10}%`;
-    document.getElementById('shield-fill')!.style.width = `${Math.max(0, health.nShield) / 10}%`;
-
-    const fireBtn = document.getElementById('fire-btn') as HTMLButtonElement | null;
     if (tank.isBot()) {
-      if (fireBtn) fireBtn.disabled = true;
       setTimeout(() => this.executeBotTurn(), 700);
-    } else if (fireBtn) {
-      fireBtn.disabled = false;
     }
   }
 
@@ -564,11 +523,7 @@ export class CGameController {
     const alive = this.m_tanks.filter(t => t.isAlive());
     if (alive.length <= 1) {
       this.m_gameState = EGameState.BattleEnd;
-      if (alive.length === 1) {
-        const indicator = document.getElementById('turn-indicator')!;
-        indicator.textContent = `${alive[0].getName()} WINS!`;
-        indicator.classList.add('visible');
-      }
+      this.m_winnerName = alive.length === 1 ? alive[0].getName() : '';
       return;
     }
     this.advanceToNextPlayer();
@@ -622,11 +577,8 @@ export class CGameController {
       this.m_shots.push(pShot);
     }
 
-    // Transition to shot flying state
+    // Transition to shot flying state (HUD disables Fire while !isPlayerTurn).
     this.m_gameState = EGameState.ShotFlying;
-    
-    // Fire button disabled during animation
-    (document.getElementById('fire-btn') as HTMLButtonElement).disabled = true;
   }
 
 
@@ -678,13 +630,8 @@ export class CGameController {
     this.m_power = Math.min(100, Math.max(30, distance / 8 + Math.random() * 20));
     
     botTank.setTurretAngle(angle);
-    
-    // Update UI to show bot's choices
-    document.getElementById('angle-value')!.textContent = String(Math.floor(this.m_angle));
-    (document.getElementById('angle-slider') as HTMLInputElement).value = String(Math.floor(this.m_angle));
-    document.getElementById('power-value')!.textContent = String(Math.floor(this.m_power));
-    (document.getElementById('power-slider') as HTMLInputElement).value = String(Math.floor(this.m_power));
-    
+    // The HUD (Preact) shows the bot's angle/power via getAngle()/getPower().
+
     // Execute fire after a brief "thinking" delay. The turn ends automatically
     // once the shot resolves (updateShotInFlight → endTurn).
     setTimeout(() => this.fire(), 800);
@@ -704,7 +651,6 @@ export class CGameController {
       (Math.random() * 2 - 1) * CGameController.MAX_WIND * 0.3,
     );
     this.m_windTimer = 0;
-    this.refreshWindHud();
   }
 
   /**
@@ -724,14 +670,6 @@ export class CGameController {
         (Math.random() * 2 - 1) * 1,
       );
     }
-    this.refreshWindHud();
-  }
-
-  private refreshWindHud(): void {
-    const el = document.getElementById('wind-value');
-    if (!el) return;
-    const arrow = this.m_wind.x >= 0 ? '→' : '←';
-    el.textContent = `${arrow} ${Math.abs(this.m_wind.x).toFixed(1)}`;
   }
 
 
@@ -757,6 +695,17 @@ export class CGameController {
       this.m_currentWeaponIndex = index;
     }
   }
+
+  // --- HUD accessors ---------------------------------------------------------
+  getWeaponDefs() { return WEAPON_DATABASE; }
+  getCurrentWeaponIndex(): number { return this.m_currentWeaponIndex; }
+  getCurrentWeapon(): CWeapon { return getWeapon(this.m_currentWeaponIndex); }
+  getAngle(): number { return this.m_angle; }
+  getPower(): number { return this.m_power; }
+  getWindValue(): number { return this.m_wind.x; }
+  getCurrentPlayerName(): string { return this.getCurrentTank().getName(); }
+  getCurrentTeamColor(): string { return TEAM_COLORS[this.getCurrentTank().getTeamId()] || '#ff4444'; }
+  getWinnerName(): string { return this.m_winnerName; }
 
   /** Register a callback invoked at each shot impact (world x, y, strength). */
   setImpactListener(cb: (x: number, y: number, strength: number) => void): void {
@@ -804,4 +753,6 @@ export class CGameController {
   private m_wind: Vec2 = new Vec2(0, 0);
   private m_windAccel: Vec2 = new Vec2(0, 0);
   private m_windTimer: number = 0;
+
+  private m_winnerName: string = '';
 }

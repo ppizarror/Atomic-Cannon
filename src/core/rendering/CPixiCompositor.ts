@@ -36,13 +36,13 @@ export class CPixiCompositor {
    * own view canvas, exposed via `app.canvas` for the caller to mount. Forces
    * the WebGL backend so a single GLSL post-filter works everywhere.
    */
-  async init(sceneCanvas: HTMLCanvasElement): Promise<void> {
+  async init(sceneCanvas: HTMLCanvasElement, resizeTo: HTMLElement | Window = window): Promise<void> {
     this.m_worldW = sceneCanvas.width;
     this.m_worldH = sceneCanvas.height;
 
     await this.m_app.init({
       preference: 'webgl',
-      resizeTo: window,
+      resizeTo,
       antialias: false,
       background: 0x000000,
     });

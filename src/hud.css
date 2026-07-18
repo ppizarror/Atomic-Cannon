@@ -1,0 +1,158 @@
+/* Atomic Cannon HUD — skeuomorphic metal panel + green-LCD modules. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { background: #000; color: #cfe; font-family: 'Segoe UI', Arial, sans-serif; }
+
+#game-container { position: fixed; inset: 0; }
+#game-container canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+#status-bar, #turn-indicator, #hud { z-index: 10; }
+
+/* ---- top status bar ---- */
+#status-bar {
+  position: absolute; top: 8px; left: 12px; right: 12px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 10px; font-size: 13px; pointer-events: none;
+}
+.player-info {
+  background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 5px;
+  border: 1px solid rgba(140,160,140,0.3);
+}
+.tank-health { display: flex; gap: 10px; align-items: center; }
+.health-bar { width: 100px; height: 9px; background: #222; border-radius: 4px; overflow: hidden; border: 1px solid #000; }
+.health-fill { height: 100%; transition: width .3s; }
+.life-fill { background: linear-gradient(to right, #c00, #f55); }
+.shield-fill { background: linear-gradient(to right, #04c, #4af); }
+
+#turn-indicator {
+  position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
+  font-size: clamp(22px, 4vw, 40px); font-weight: bold; color: #fff;
+  text-shadow: 0 0 20px rgba(255,200,0,.85); opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+#turn-indicator.visible { opacity: 1; }
+
+/* ================= HUD panel ================= */
+#hud {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: stretch; gap: 8px;
+  padding: 8px 10px; min-height: 122px;
+  background:
+    linear-gradient(rgba(30,32,34,0.10), rgba(0,0,0,0.4)),
+    url('/assets/panels/steel.jpg');
+  background-size: cover; background-position: center;
+  border-top: 2px solid #767c84;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,0.18), inset 0 -4px 10px rgba(0,0,0,0.6);
+  font-size: 12px;
+}
+
+/* a beveled metal module */
+.mod {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 7px;
+  background: linear-gradient(#9aa0a8, #626870);
+  border: 1px solid #3a3f45; border-radius: 5px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -2px 5px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.5);
+}
+.mod-title, .mod-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: #14171a; font-weight: 700; text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+}
+.mod-label { margin-top: auto; }
+
+/* green LCD surface */
+.lcd-panel {
+  background: linear-gradient(#0c2a10, #061806);
+  border: 2px solid; border-color: #020 #060 #060 #020; border-radius: 3px;
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.85), inset 0 0 4px rgba(80,255,120,0.12);
+  color: #6f6; font-family: 'Consolas', 'Courier New', monospace;
+  text-shadow: 0 0 4px rgba(80,255,120,0.5); padding: 6px 8px;
+}
+
+/* weapon details */
+#weapon-details { min-width: 156px; align-items: stretch; }
+.wd-list { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.wd-list > div { display: flex; justify-content: space-between; gap: 12px; }
+.wd-list dt { color: #4a4; }
+.wd-list dd { color: #8f8; font-weight: bold; }
+
+/* weapon select */
+.wsel-body { display: flex; gap: 5px; flex: 1; }
+.wlist { width: 200px; height: 84px; overflow-y: auto; padding: 2px; }
+.wlist::-webkit-scrollbar { width: 8px; }
+.wlist::-webkit-scrollbar-thumb { background: #253; border-radius: 4px; }
+.wrow { display: flex; align-items: center; gap: 6px; padding: 2px 4px; cursor: pointer; border-radius: 2px; white-space: nowrap; }
+.wrow:hover { background: rgba(80,255,120,0.12); }
+.wrow.active { background: rgba(80,255,120,0.30); color: #cfc; }
+.wnum { color: #4a4; width: 26px; text-align: right; }
+.wicon { width: 22px; height: 22px; image-rendering: pixelated; flex: 0 0 auto; }
+.wname { overflow: hidden; text-overflow: ellipsis; }
+.wsel-arrows { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+
+/* metal buttons */
+.metal-btn {
+  background: linear-gradient(#eef2f6, #b4bac0); border: 1px solid #6a6f75; border-radius: 3px;
+  color: #14171a; font-weight: bold; cursor: pointer; padding: 2px 7px; line-height: 1.35;
+  box-shadow: inset 0 1px 0 #fff, 0 1px 1px rgba(0,0,0,0.4);
+}
+.metal-btn:hover { background: linear-gradient(#fff, #c8cdd3); }
+.metal-btn:active { background: linear-gradient(#a8adb3, #cad0d6); box-shadow: inset 0 1px 3px rgba(0,0,0,0.45); }
+
+/* LCD numeric readout */
+.lcd-num {
+  background: #061806; color: #6f6; font-family: 'Consolas', monospace; font-weight: bold;
+  border: 1px solid #020; border-radius: 2px; padding: 3px 6px; min-width: 46px; text-align: center;
+  text-shadow: 0 0 4px rgba(80,255,120,0.6);
+}
+
+/* power */
+.power-body { display: flex; gap: 6px; align-items: stretch; }
+.power-btns { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; }
+.power-meter { width: 24px; height: 80px; background: #111; border: 2px solid #333; border-radius: 3px; position: relative; overflow: hidden; }
+.power-fill { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, #300, #f30 60%, #fc0); transition: height .1s; }
+
+/* FIRE */
+#fire-mod { justify-content: center; }
+#fire-btn {
+  font-size: clamp(16px, 2.2vw, 22px); font-weight: 900; letter-spacing: .05em; color: #3a1500;
+  padding: 18px 26px; cursor: pointer; border-radius: 8px; text-transform: uppercase;
+  background: radial-gradient(circle at 50% 28%, #ffd85a, #ff8a00 55%, #cf5600);
+  border: 2px solid #7a3d00;
+  box-shadow: inset 0 2px 2px rgba(255,255,255,.6), inset 0 -3px 6px rgba(120,50,0,.6), 0 3px 4px rgba(0,0,0,.5);
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+}
+#fire-btn:hover { filter: brightness(1.1); }
+#fire-btn:active { transform: translateY(2px); }
+#fire-btn:disabled { filter: grayscale(0.8) brightness(0.65); cursor: not-allowed; }
+
+/* angle dial */
+.angle-body { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.dial svg { width: 66px; height: 66px; }
+.dial-face { fill: #061806; stroke: #0a0; stroke-width: 2; }
+.dial-tick { stroke: #383; stroke-width: 1; }
+.needle { stroke: #6f6; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px rgba(80,255,120,.7)); }
+.dial-hub { fill: #4a4; }
+.angle-row { display: flex; align-items: center; gap: 4px; }
+
+/* wind */
+#wind-mod .wind-box { min-width: 74px; text-align: center; font-size: 15px; font-weight: bold; padding: 10px 8px; }
+
+/* spacer pushes wind module to the right edge */
+.hud-spacer { flex: 1 1 auto; }
+
+/* responsive: shed the least-critical modules on narrow screens */
+@media (max-width: 900px) { #weapon-details { display: none; } }
+@media (max-width: 680px) { .wlist { width: 130px; } .mod-title { display: none; } }
+
+/* ---- full-screen overlays (menu / settings / depot) ---- */
+.screen-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.72);
+}
+.screen-card {
+  background: linear-gradient(#9aa0a8, #626870);
+  border: 2px solid #3a3f45; border-radius: 10px; padding: 30px 44px;
+  text-align: center; color: #14171a;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 20px rgba(0,0,0,0.6);
+}
+.screen-card h1 { margin-bottom: 8px; letter-spacing: .04em; }
+.screen-card p { margin-bottom: 18px; color: #2a2f34; }
