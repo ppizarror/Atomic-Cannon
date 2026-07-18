@@ -1,12 +1,26 @@
 /**
  * CTank - Tank Entity Class
  * 
- * Discovered from: nm output with C++ demangled symbols  
  * Handles tank state, movement on terrain, damage, rendering
  */
 
 import { Vec2, Vec2f } from '../math/Vec2';
 import { CLand } from './CLand';
+
+/** A drawable image plus its dimensions. */
+export interface Sprite {
+    bitmap: CanvasImageSource;
+    width: number;
+    height: number;
+}
+
+/** Anything that can resolve a logical sprite name to a drawable sprite. */
+export interface ISpriteSource {
+    getSprite(name: string): Sprite | null;
+}
+
+// Tank hull variants (real sprite sets under assets/tanks/), assigned per team.
+const TANK_TYPES = ['Standard', 'MA1', 'MSPO', 'Sentry', 'Green', 'Atomic Cannon'];
 
 export const TEAM_COLORS: Record<number, string> = {
   0: '#ff4444',
@@ -26,7 +40,7 @@ export interface STankHealth {
 }
 
 /**
- * Tank state flags/members from strings analysis:
+ * Tank state flags/members:
  * - Moving state ("Tank is moving")
  * - Underground detection ("underground")  
  * - Can move / Can't move messages
@@ -43,6 +57,7 @@ export class CTank {
         this.m_sName = sName;
         this.m_nTeamId = nTeamId;
         this.m_bIsHuman = false;
+        this.m_sTankType = TANK_TYPES[nTeamId % TANK_TYPES.length];
 
         // Position and physics
         this.m_vPos = new Vec2(0, 0);
@@ -50,12 +65,12 @@ export class CTank {
         this.m_fAngle = 0;         // Body rotation angle (radians)
         
         // Turret state
-        this.m_fTurretAngle = 0;   // Current turret aim direction
-        this.m_fLastTurretAngle = 0;
+        this.m_fTurretAngle = Math.PI / 4;   // Default aim: 45 deg up-right
+        this.m_fLastTurretAngle = this.m_fTurretAngle;
         
         // Health status
         this.m_health.nLife = 100;
-        this.m_health.nShield = 500;  // Shield: "Shield %d/1000" from strings
+        this.m_health.nShield = 500;  // Shield points absorbed before health
         this.m_health.nArmor = 50;    // Default armor ~50%
         this.m_health.fRadiation = 0;
         
@@ -69,7 +84,6 @@ export class CTank {
     
     /**
      * Initialize tank at position with given player data
-     * Original: CTank::init(Vec2<float>, CPlayerData*, int team)
      */
     init(x: number, pLand: CLand): void {
         this.m_vPos = new Vec2(x, 0);
@@ -83,7 +97,6 @@ export class CTank {
     
     /**
      * Compute tank's Y position based on terrain surface (called each frame)
-     * Original: CTank::computePosition(CLand&)
      */
     computePosition(pLand: CLand): void {
         if (!pLand) return;
@@ -101,7 +114,6 @@ export class CTank {
     
     /**
      * Compute turret base rotation to match terrain slope
-     * Original: CTank::computeTurretBase()
      */
     computeTurretBase(): void {
         // Terrain normal gives us the angle of the surface under tank
@@ -114,55 +126,41 @@ export class CTank {
     
     /**
      * Main update tick - called every frame during battle
-     * Original: CTank::update(CLand&, bool, float, Vec2<float>, float)
      */
-    update(
-        pLand: CLand,
-        bIsUnderground: boolean,
-        fGravity: number,
-        vWind: Vec2,
-        dt: number
-    ): void {
-        
-        // Update position based on velocity
-        if (this.m_bIsMoving) {
-            this.m_vPos.x += this.m_vVel.x * dt;
+    update(pLand: CLand, dt: number): void {
+        if (!pLand) return;
+
+        // Where the tank rests when sitting on the current terrain surface.
+        const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+
+        if (this.m_vPos.y < fRestY - 0.5) {
+            // Airborne: the ground beneath us was removed (e.g. a crater), so
+            // fall under gravity until we settle back onto the surface.
+            this.m_vVel.y += TANK_GRAVITY * dt;
             this.m_vPos.y += this.m_vVel.y * dt;
-            
-            // Apply gravity to vertical component
-            this.m_vVel.y += fGravity * dt;
-            
-            // Wind affects horizontal velocity slightly
-            this.m_vVel.x += vWind.x * dt * 0.01;  // Wind factor
+            this.m_bFalling = true;
+
+            if (this.m_vPos.y >= fRestY) {
+                this.m_vPos.y = fRestY;
+                this.m_vVel.y = 0;
+                this.m_bFalling = false;
+            }
+        } else {
+            // Resting on the surface: stay glued to it as the terrain deforms,
+            // and tilt the body to match the local slope.
+            this.m_vPos.y = fRestY;
+            this.m_vVel.y = 0;
+            this.m_bFalling = false;
+
+            const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
+            this.m_fAngle = Math.atan2(-vNormal.x, vNormal.y);
         }
-        
-        // Compute terrain height at current position
-        const nTerrainHeight = pLand.getHeightAt(Math.floor(this.m_vPos.x));
-        
-        // Check for ground collision / underground status  
-        this.m_bUnderground = (this.m_vPos.y >= nTerrainHeight);
-        
-        if (this.m_bUnderground && !bIsUnderground) {
-            // Tank went underground - apply damage or correction
-            this.m_vPos.y = nTerrainHeight - TANK_HEIGHT_PIXELS;
-            
-            // Stop vertical movement, bounce effect
-            this.m_vVel.y *= -0.3;  // Bounce damping
-        }
-        
-        // Check if tank can continue moving (collision with walls, etc.)
-        if (!this.canMove(pLand)) {
-            this.stopMoving();
-        }
-        
-        // Update turret angle toward target direction
-        const fAngleDiff = this.m_fTurretAngle - this.m_fLastTurretAngle;
+
         this.m_fLastTurretAngle = this.m_fTurretAngle;
     }
     
     /**
      * Check if tank can move to new position
-     * Original: CTank::canMove(CLand&)
      */
     canMove(pLand: CLand): boolean {
         const nX = Math.floor(this.m_vPos.x);
@@ -184,7 +182,6 @@ export class CTank {
     
     /**
      * Move tank along terrain surface
-     * Original: CTank::move(CLand&, Vec2<float>&, float)
      */
     move(pLand: CLand, vDirection: Vec2, fSpeed: number): void {
         if (!this.m_bIsAlive) return;
@@ -208,7 +205,6 @@ export class CTank {
     
     /**
      * Stop tank movement
-     * Original: CTank::stopMoving()
      */
     stopMoving(): void {
         this.m_bIsMoving = false;
@@ -217,7 +213,6 @@ export class CTank {
     
     /**
      * Apply knockback to tank (from explosions)
-     * Original: CTank::kick(Vec2<float>& dir, float force)
      */
     kick(dir: Vec2, fForce: number): void {
         // Apply impulse velocity from kick direction
@@ -230,11 +225,10 @@ export class CTank {
     
     /**
      * Set rotation for kick animation
-     * Original: CTank::kickRotation(float angle)
      */
     kickRotation(fAngle: number): void {
-        // Used when tank is thrown by explosion - rapid spinning
-        throw new Error('STUB');
+        // Applied when a blast throws the tank; accumulates into the body angle.
+        this.m_fAngle += fAngle;
     }
     
     // ========================================================================
@@ -243,10 +237,10 @@ export class CTank {
     
     /**
      * Apply damage to tank (called from hit detection)
-     * Original: CTank::hit(float, bool shieldOnly)
      */
-    hit(fDamage: number, bShieldOnly: boolean): void {
+    hit(fDamage: number, bShieldOnly: boolean = false): void {
         if (!this.m_bIsAlive) return;
+        this.m_nHitCount++;
         
         // Shield absorbs damage first
         if (this.m_health.nShield > 0) {
@@ -254,7 +248,7 @@ export class CTank {
             this.m_health.nShield -= nShieldDamage;
             fDamage -= nShieldDamage;
             
-            // "Shield %d/1000" format from strings
+            // Shield absorbs damage before health
         }
         
         if (!bShieldOnly && fDamage > 0) {
@@ -273,8 +267,31 @@ export class CTank {
     }
     
     /**
+     * True when the point (cx,cy) is within nRadius of the tank centre.
+     */
+    isInBlastRadius(cx: number, cy: number, nRadius: number): boolean {
+        return this.distanceTo(cx, cy) <= nRadius + TANK_RADIUS;
+    }
+
+    /**
+     * Apply radiation damage accumulated over dt seconds. Radiation bypasses
+     * shield/armor and burns health directly.
+     */
+    applyRadiationDamage(fAmount: number, dt: number): void {
+        if (!this.m_bIsAlive) return;
+
+        this.m_health.fRadiation += fAmount;
+        this.m_health.nLife -= fAmount;
+
+        if (this.m_health.nLife <= 0) {
+            this.m_health.nLife = 0;
+            this.m_bExploded = true;
+            this.m_bIsAlive = false;
+        }
+    }
+
+    /**
      * Get number of hits taken by tank in battle
-     * Original: CTank::getHitsInt()
      */
     getHitsInt(): number {
         return this.m_nHitCount;
@@ -282,7 +299,6 @@ export class CTank {
     
     /**
      * Hit test for click detection on tank sprite
-     * Original: CTank::hittest(Vec2<int> const& point)
      */
     hittest(point: Vec2): boolean {
         // Check if point is within tank's bounding box
@@ -299,101 +315,91 @@ export class CTank {
     // ========================================================================
     
     /**
-     * Draw tank to screen buffer
-     * Original: CTank::draw(CBitmap&, int, int, CLand&, bool, bool, bool)
+     * Render the tank to the canvas. Uses the loaded hull sprite when available
+     * and falls back to a vector silhouette while assets are still loading.
      */
-    draw(
-        pDestBmp: unknown,
-        nOffsetX: number,
-        nOffsetY: number,
-        pLand: CLand,
-        bTeamColorize: boolean,
-        bExploded: boolean,
-        bFalling: boolean
-    ): void {
-        
-        if (!this.m_bIsAlive && !bExploded) return;
-        
-        // Tank body sprite (32x32, colorizable per team)
-        // Original paths from strings:
-        // tanks/%s_body.bmp - main tank body
-        
-        const nDrawX = Math.floor(this.m_vPos.x + nOffsetX);
-        const nDrawY = Math.floor(this.m_vPos.y + nOffsetY);
-        
-        if (bExploded) {
-            // Draw wrecked sprite
-            this.drawWreckSprite(pDestBmp, nDrawX, nDrawY);
+    draw(ctx: CanvasRenderingContext2D, assets?: ISpriteSource): void {
+        if (!this.m_bIsAlive && !this.m_bExploded) return;
+
+        const cx = this.m_vPos.x;
+        const surfaceY = this.m_vPos.y + TANK_HEIGHT_PIXELS;   // ground contact line
+
+        const bodyKey = `tanks/${this.m_sTankType} ${this.m_bExploded ? 'wreck' : 'body'}`;
+        const sprite = assets?.getSprite(bodyKey) ?? null;
+
+        ctx.save();
+        ctx.translate(cx, surfaceY);
+        ctx.rotate(this.m_fAngle);   // tilt to terrain slope
+
+        if (sprite) {
+            const w = TANK_DRAW_WIDTH;
+            const h = (sprite.height / sprite.width) * w;
+            ctx.drawImage(sprite.bitmap, -w / 2, -h, w, h);
         } else {
-            // Draw tank body
-            this.drawBodySprite(pDestBmp, nDrawX, nDrawY, bTeamColorize);
-            
-            // Draw turret on top (rotated)
-            if (!this.m_bFalling) {
-                this.drawTurretSprite(pDestBmp, nDrawX, nDrawY);
-            }
+            this.drawVectorHull(ctx);
+        }
+        ctx.restore();
+
+        // Barrel + turret dome (aim is independent of body tilt)
+        if (!this.m_bExploded && this.m_bIsAlive) {
+            this.drawBarrel(ctx);
+            this.drawHealthBar(ctx, surfaceY);
         }
     }
-    
-    /**
-     * Draw tank body sprite with optional team colorization
-     */
-    private drawBodySprite(
-        pDestBmp: unknown,
-        x: number,
-        y: number,
-        bColorize: boolean
-    ): void {
-        // Original: uses tanks/%s_body.bmp pattern
-        // Team colors applied via colorize() function from strings
-        
-        if (bColorize) {
-            // Apply team color tint to sprite
-            // __ZN11CAtomicCannon8colorizemRff
-            this.applyTeamColor(pDestBmp, x, y);
+
+    /** Simple team-coloured silhouette used until the hull sprite loads. */
+    private drawVectorHull(ctx: CanvasRenderingContext2D): void {
+        const color = TEAM_COLORS[this.m_nTeamId] ?? '#cccccc';
+        const w = TANK_DRAW_WIDTH;
+
+        ctx.fillStyle = this.m_bExploded ? '#333333' : color;
+        ctx.beginPath();
+        ctx.moveTo(-w / 2, 0);
+        ctx.lineTo(w / 2, 0);
+        ctx.lineTo(w / 2 - 5, -10);
+        ctx.lineTo(-w / 2 + 5, -10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Rounded turret base
+        ctx.beginPath();
+        ctx.arc(0, -10, 7, Math.PI, 0);
+        ctx.fill();
+    }
+
+    /** Draw the gun barrel from the turret pivot along the aim direction. */
+    private drawBarrel(ctx: CanvasRenderingContext2D): void {
+        const pivotX = this.m_vPos.x;
+        const pivotY = this.m_vPos.y;
+        const muzzle = this.getMuzzlePosition();
+
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pivotX, pivotY);
+        ctx.lineTo(muzzle.x, muzzle.y);
+        ctx.stroke();
+    }
+
+    /** Small life/shield bar floating above the tank. */
+    private drawHealthBar(ctx: CanvasRenderingContext2D, surfaceY: number): void {
+        const w = TANK_DRAW_WIDTH;
+        const x = this.m_vPos.x - w / 2;
+        const y = surfaceY - TANK_HEIGHT_PIXELS - 22;
+
+        const life = Math.max(0, this.m_health.nLife) / 100;
+        const shield = Math.max(0, this.m_health.nShield) / 500;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(x, y, w, 5);
+        ctx.fillStyle = life > 0.5 ? '#41d95d' : life > 0.25 ? '#e0c040' : '#e04040';
+        ctx.fillRect(x, y, w * life, 5);
+
+        if (shield > 0) {
+            ctx.fillStyle = '#40b0ff';
+            ctx.fillRect(x, y - 3, w * shield, 2);
         }
-        
-        throw new Error('STUB');
-    }
-    
-    /**
-     * Draw turret with rotation toward aim angle  
-     */
-    private drawTurretSprite(
-        pDestBmp: unknown,
-        x: number,
-        y: number
-    ): void {
-        // Original: uses tanks/%s_turret.bmp pattern
-        
-        throw new Error('STUB');
-    }
-    
-    /**
-     * Draw destroyed tank wreck sprite
-     */
-    private drawWreckSprite(
-        pDestBmp: unknown,
-        x: number,
-        y: number
-    ): void {
-        // Original: tanks/%s_wreck.bmp  
-        
-        throw new Error('STUB');
-    }
-    
-    /**
-     * Apply team color to sprite (colorizeRmff from strings)
-     */
-    private applyTeamColor(
-        pDestBmp: unknown,
-        x: number,
-        y: number
-    ): void {
-        // Team colors identified from binary:
-        // Red, Blue, Green, eWhiteSmall, eLightOrange, eRed, etc.
-        
-        throw new Error('STUB');
     }
     
     // ========================================================================
@@ -405,6 +411,42 @@ export class CTank {
      */
     getTurretAngle(): number {
         return this.m_fTurretAngle;
+    }
+
+    /**
+     * Aim the turret from a UI angle in degrees, where 0 = horizontal-right,
+     * 90 = straight up, 180 = horizontal-left. Stored internally as a signed
+     * elevation: sign selects side (+right / -left), magnitude is elevation
+     * above the horizon (0..90 deg).
+     */
+    setTurretAngle(fDegrees: number): void {
+        this.m_fLastTurretAngle = this.m_fTurretAngle;
+
+        const clamped = Math.max(0, Math.min(180, fDegrees));
+        const signedElevationDeg = clamped <= 90 ? clamped : -(180 - clamped);
+        this.m_fTurretAngle = (signedElevationDeg * Math.PI) / 180;
+    }
+
+    /**
+     * Unit vector the barrel points along, matching the projectile launch
+     * direction: up is negative-Y.
+     */
+    aimUnit(): Vec2 {
+        const r = this.m_fTurretAngle;
+        return r >= 0
+            ? new Vec2(Math.cos(r), -Math.sin(r))     // right side
+            : new Vec2(-Math.cos(r), Math.sin(r));    // left side
+    }
+
+    /**
+     * World position of the barrel tip, where a shot should spawn.
+     */
+    getMuzzlePosition(): Vec2 {
+        const aim = this.aimUnit();
+        return new Vec2(
+            this.m_vPos.x + aim.x * TANK_TURRET_LENGTH,
+            this.m_vPos.y + aim.y * TANK_TURRET_LENGTH
+        );
     }
     
     /**
@@ -458,6 +500,17 @@ export class CTank {
     
     getHealth(): STankHealth { return { ...this.m_health }; }
     getTeamId(): number { return this.m_nTeamId; }
+
+    /**
+     * Sprites this tank needs, as {logical name, file path} pairs. The logical
+     * names match what draw() looks up, so the loader and renderer stay in sync.
+     */
+    getRequiredSprites(): { name: string; file: string }[] {
+        return ['body', 'wreck'].map(part => ({
+            name: `tanks/${this.m_sTankType} ${part}`,
+            file: `/assets/tanks/${this.m_sTankType} ${part}.bmp`,
+        }));
+    }
     
     /**
      * Distance from terrain surface
@@ -485,6 +538,7 @@ export class CTank {
     private m_nTeamId: number = 0;      // Team assignment (for color)
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
     private m_bIsHuman: boolean = false; // True for the human-controlled tank
+    private m_sTankType: string = 'Standard'; // Hull sprite variant
     
     // Position and movement
     public m_vPos: Vec2;                // Tank center position
@@ -518,6 +572,8 @@ export class CTank {
 // CONSTANTS
 // ============================================================================
 
-const TANK_RADIUS = 16;                 // Half-width of tank sprite (32x32)
+const TANK_RADIUS = 16;                 // Half-width of tank collision box
 const TANK_HEIGHT_PIXELS = 24;          // Approximate height in pixels
 const TANK_TURRET_LENGTH = 20;          // Turret barrel length for muzzle calc
+const TANK_DRAW_WIDTH = 46;             // On-screen hull width in pixels
+const TANK_GRAVITY = 400;               // Fall acceleration when unsupported (px/s^2)

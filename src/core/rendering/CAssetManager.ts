@@ -1,219 +1,89 @@
 /**
- * CAssetManager - Sprite/Texture Loading System
- * 
- * Loads game assets from extracted data.pak files
- * Maps logical asset names to actual file paths based on asset manifest
+ * CAssetManager - sprite/texture loading.
+ *
+ * Loads images from the served asset tree and resolves logical names to
+ * drawable sprites. Paletted hull sprites use a magenta (255,0,255) colorkey
+ * for transparency, which is knocked out to alpha at load time.
  */
 
-export interface SpriteSheet {
-  image: HTMLImageElement;
-  width: number;
-  height: number;
-  ready: boolean;
-}
+import type { Sprite, ISpriteSource } from '../CTank';
 
-interface AssetPathMap {
-  [key: string]: string;  // e.g., "tank_body_red" -> "/assets/bmp_0042.dat"
-}
+type RGB = [number, number, number];
 
-// Static asset path mappings based on EXE string analysis
-// These paths are relative to the public/assets/ folder after extraction
-const ASSET_PATHS: AssetPathMap = {
-  // Tank sprites (color variants)
-  'tanks/red_body': '/assets/tank_red_body.bmp',
-  'tanks/red_turret': '/assets/tank_red_turret.bmp', 
-  'tanks/red_wreck': '/assets/tank_red_wreck.bmp',
-  
-  'tanks/blue_body': '/assets/tank_blue_body.bmp',
-  'tanks/blue_turret': '/assets/tank_blue_turret.bmp',
-  'tanks/blue_wreck': '/assets/tank_blue_wreck.bmp',
-  
-  'tanks/green_body': '/assets/tank_green_body.bmp', 
-  'tanks/green_turret': '/assets/tank_green_turret.bmp',
-  'tanks/green_wreck': '/assets/tank_green_wreck.bmp',
-  
-  'tanks/yellow_body': '/assets/tank_yellow_body.bmp',
-  'tanks/yellow_turret': '/assets/tank_yellow_turret.bmp', 
-  'tanks/yellow_wreck': '/assets/tank_yellow_wreck.bmp',
+const MAGENTA: RGB = [255, 0, 255];
+const KEY_TOLERANCE = 24;
 
-  // GUI elements
-  'gui/button': '/assets/guiButton.bmp',
-  'gui/fire_button': '/assets/guiFireBig.bmp',
-  'gui/shield': '/assets/shield.bmp',
-  
-  // Terrain tiles
-  'land/lgrass': '/assets/terrain_grass.bmp',
-  'land/ldirt': '/assets/terrain_dirt.bmp', 
-  'land/lsnow': '/assets/terrain_snow.bmp',
+export class CAssetManager implements ISpriteSource {
 
-  // Effects
-  'effects/explosion1': '/assets/explosion1.bmp',
-};
+  private m_sprites: Map<string, Sprite> = new Map();
+  private m_pending: number = 0;
 
-export class CAssetManager {
-  
-  private m_sprites: Map<string, SpriteSheet> = new Map();
-  private m_loadedCount: number = 0;
-  private m_totalCount: number = 0;
+  /** Resolve a logical sprite name (null if not loaded yet). */
+  getSprite(name: string): Sprite | null {
+    return this.m_sprites.get(name) ?? null;
+  }
 
-  constructor() {}
+  /** True once every requested asset has finished loading (or failed). */
+  isReady(): boolean {
+    return this.m_pending === 0;
+  }
 
   /**
-   * Load a sprite from an asset path
+   * Load a plain image as-is (no transparency processing). Suitable for
+   * backgrounds and terrain textures.
    */
-  async loadSprite(name: string): Promise<SpriteSheet | null> {
-    
-    // Check if already loaded
-    const cached = this.m_sprites.get(name);
-    if (cached) return cached;
-    
-    // Get file path from manifest or use default pattern
-    let src = ASSET_PATHS[name];
-    if (!src) {
-      // Try to construct path from name - convert slashes to match extracted files
-      const normalizedName = name.replace('/', '_').replace('\\', '_');
-      src = `/assets/${normalizedName}.bmp`;
+  async loadImage(name: string, path: string): Promise<void> {
+    this.m_pending++;
+    const img = await this.fetchImage(path);
+    if (img) {
+      this.m_sprites.set(name, { bitmap: img, width: img.width, height: img.height });
     }
-    
+    this.m_pending--;
+  }
+
+  /**
+   * Load a sprite and knock out a colorkey (magenta by default) to
+   * transparency, producing a canvas-backed sprite with real alpha.
+   */
+  async loadSprite(name: string, path: string, colorKey: RGB = MAGENTA): Promise<void> {
+    this.m_pending++;
+    const img = await this.fetchImage(path);
+    if (img) {
+      const canvas = this.applyColorKey(img, colorKey);
+      this.m_sprites.set(name, { bitmap: canvas, width: canvas.width, height: canvas.height });
+    }
+    this.m_pending--;
+  }
+
+  private fetchImage(path: string): Promise<HTMLImageElement | null> {
     return new Promise((resolve) => {
       const img = new Image();
-      
-      img.onload = () => {
-        const sprite: SpriteSheet = {
-          image: img,
-          width: img.width,
-          height: img.height,
-          ready: true
-        };
-        
-        this.m_sprites.set(name, sprite);
-        this.m_loadedCount++;
-        resolve(sprite);
-      };
-      
-      img.onerror = () => {
-        console.warn(`Failed to load sprite: ${src}`);
-        resolve(null);
-      };
-      
-      img.src = src;
-      this.m_totalCount++;
+      img.onload = () => resolve(img);
+      img.onerror = () => { console.warn(`asset load failed: ${path}`); resolve(null); };
+      // Filenames contain spaces — encode for a valid URL.
+      img.src = encodeURI(path);
     });
   }
 
-  /**
-   * Load multiple sprites in parallel
-   */
-  async preloadSprites(names: string[]): Promise<void> {
-    const promises = names.map(name => this.loadSprite(name));
-    await Promise.all(promises);
-  }
+  /** Draw the image to an offscreen canvas and zero the alpha of key pixels. */
+  private applyColorKey(img: HTMLImageElement, [kr, kg, kb]: RGB): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
 
-  /**
-   * Get a loaded sprite by name
-   */
-  getSprite(name: string): SpriteSheet | null {
-    return this.m_sprites.get(name) || null;
-  }
+    const g = canvas.getContext('2d')!;
+    g.drawImage(img, 0, 0);
 
-  /**
-   * Draw a sprite to canvas at position
-   */
-  drawSprite(
-    ctx: CanvasRenderingContext2D,
-    name: string,
-    x: number,
-    y: number,
-    options?: {
-      width?: number;
-      height?: number;
-      rotation?: number;  // radians
-      flipX?: boolean;
-      opacity?: number;
+    const image = g.getImageData(0, 0, canvas.width, canvas.height);
+    const px = image.data;
+    for (let i = 0; i < px.length; i += 4) {
+      if (Math.abs(px[i] - kr) <= KEY_TOLERANCE &&
+          Math.abs(px[i + 1] - kg) <= KEY_TOLERANCE &&
+          Math.abs(px[i + 2] - kb) <= KEY_TOLERANCE) {
+        px[i + 3] = 0;
+      }
     }
-  ): void {
-    const sprite = this.m_sprites.get(name);
-    if (!sprite || !sprite.ready) return;
-
-    ctx.save();
-    
-    // Apply transformations
-    let drawX = x;
-    let drawY = y;
-    
-    if (options?.rotation) {
-      ctx.translate(x + sprite.width / 2, y + sprite.height / 2);
-      ctx.rotate(options.rotation);
-      ctx.translate(-sprite.width / 2, -sprite.height / 2);
-      // After rotation translation adjustment
-      drawX = 0;
-      drawY = 0;
-    }
-    
-    if (options?.flipX) {
-      ctx.scale(-1, 1);
-      drawX = -drawX - sprite.width; // flip anchor point
-    }
-    
-    if (options?.opacity !== undefined && options.opacity < 1) {
-      ctx.globalAlpha = options.opacity;
-    }
-
-    const w = options?.width || sprite.width;
-    const h = options?.height || sprite.height;
-
-    ctx.drawImage(
-      sprite.image,
-      drawX, drawY,
-      w, h
-    );
-    
-    ctx.restore();
+    g.putImageData(image, 0, 0);
+    return canvas;
   }
-
-  /**
-   * Get loading progress percentage
-   */
-  getProgress(): number {
-    if (this.m_totalCount === 0) return 100;
-    return Math.floor((this.m_loadedCount / this.m_totalCount) * 100);
-  }
-  
-  /**
-   * Check if all sprites are loaded
-   */
-  isReady(): boolean {
-    return this.m_loadedCount >= this.m_totalCount && this.m_totalCount > 0;
-  }
-
-  // ========================================================================
-  // SPRITE BATCH DEFINITIONS (for common loading groups)
-  // ========================================================================
-
-  /**
-   * Minimal sprites needed for core gameplay
-   */
-  static CORE_SPRITES = [
-    'tanks/red_body',
-    'tanks/blue_body', 
-    'effects/explosion1'
-  ];
-
-  /**
-   * All tank sprite variants (body + turret + wreck)
-   */
-  static TANK_SPRITES = [
-    'tanks/red_body', 'tanks/red_turret', 'tanks/red_wreck',
-    'tanks/blue_body', 'tanks/blue_turret', 'tanks/blue_wreck',
-    'tanks/green_body', 'tanks/green_turret', 'tanks/green_wreck',
-    'tanks/yellow_body', 'tanks/yellow_turret', 'tanks/yellow_wreck'
-  ];
-
-  /**
-   * GUI elements for HUD
-   */
-  static GUI_SPRITES = [
-    'gui/button',
-    'gui/shield' 
-  ];
 }

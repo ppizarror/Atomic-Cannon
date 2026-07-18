@@ -1,0 +1,4 @@
+# Allow esbuild (a Vite dependency) to run its install script so its native
+# binary is built. pnpm blocks package build scripts by default.
+allowBuilds:
+  esbuild: true

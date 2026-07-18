@@ -1,138 +1,93 @@
 /**
- * Atomic Cannon - Web Port Main Entry Point
- * 
- * Initializes canvas, UI controls, and starts game loop.
+ * Atomic Cannon - entry point.
+ *
+ * The game renders to an offscreen 2D canvas; PixiJS presents that buffer
+ * full-screen and runs post-effects (the impact shockwave). HUD controls are
+ * plain HTML layered over the Pixi canvas.
  */
 
 import { CGameController } from './game/CGameController';
+import { CPixiCompositor } from './core/rendering/CPixiCompositor';
 
-console.log('Atomic Cannon initializing...');
+async function main(): Promise<void> {
+  const container = document.getElementById('game-container');
+  if (!container) { console.error('Missing #game-container'); return; }
 
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
+  // Offscreen buffer the game draws into, sized to the viewport.
+  const scene = document.createElement('canvas');
+  scene.width = window.innerWidth;
+  scene.height = window.innerHeight;
 
-const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+  // Presentation layer (Pixi owns the visible canvas).
+  const compositor = new CPixiCompositor();
+  await compositor.init(scene);
+  container.appendChild(compositor.app.canvas);
 
-if (!canvas) {
-  console.error('Could not find game canvas');
-} else {
-  
-  // Create main game controller
-  const gameController = new CGameController(canvas);
-  
-  // Start a new game with 2 players (1 human, 1 bot)
+  const gameController = new CGameController(scene);
+  gameController.setImpactListener((x, y, strength) => compositor.shockwave(x, y, strength));
   gameController.startGame(2);
 
-  // ============================================================================
-  // UI CONTROL HANDLERS
-  // ============================================================================
-
-  // Angle slider control
+  // --- HUD controls -------------------------------------------------------
   const angleSlider = document.getElementById('angle-slider') as HTMLInputElement;
   const angleValue = document.getElementById('angle-value');
+  angleSlider?.addEventListener('input', () => {
+    if (angleValue) angleValue.textContent = angleSlider.value;
+    gameController.setAngle(parseInt(angleSlider.value));
+  });
 
-  if (angleSlider && angleValue) {
-    angleSlider.addEventListener('input', () => {
-      const angle = parseInt(angleSlider.value);
-      
-      // Clamp to valid range for left/right aiming
-      let displayAngle = angle;
-      const tank = gameController.getCurrentTank();
-      const pos = tank?.getPosition() ?? { x: 400 };
-      
-      // If angle > 90, it's pointing right. Adjust visual if needed.
-      angleValue.textContent = String(Math.floor(displayAngle));
-      
-      gameController.setAngle(angle);
-    });
-  }
-
-  // Power slider control
   const powerSlider = document.getElementById('power-slider') as HTMLInputElement;
   const powerValue = document.getElementById('power-value');
+  powerSlider?.addEventListener('input', () => {
+    if (powerValue) powerValue.textContent = powerSlider.value;
+    gameController.setPower(parseInt(powerSlider.value));
+  });
 
-  if (powerSlider && powerValue) {
-    powerSlider.addEventListener('input', () => {
-      const power = parseInt(powerSlider.value);
-      powerValue.textContent = String(power);
-      
-      gameController.setPower(power);
-    });
-  }
+  document.getElementById('fire-btn')?.addEventListener('click', () => {
+    if (gameController.isPlayerTurn()) gameController.fire();
+  });
 
-  // Fire button
-  const fireBtn = document.getElementById('fire-btn');
-
-  if (fireBtn) {
-    fireBtn.addEventListener('click', () => {
-      if (gameController.isPlayerTurn()) {
-        gameController.fire();
-        
-        // Re-enable controls after shot completes via animation loop check
-      }
-    });
-  }
-
-  // Keyboard shortcuts for firing
   document.addEventListener('keydown', (e) => {
     if (!gameController.isPlayerTurn()) return;
-    
     switch (e.code) {
       case 'Space':
         e.preventDefault();
-        if (gameController.isPlayerTurn()) {
-          gameController.fire();
-        }
+        gameController.fire();
         break;
-        
       case 'ArrowLeft':
-        angleSlider.value = String(Math.max(0, parseInt(angleSlider.value) - 2));
+      case 'ArrowRight': {
+        const step = e.code === 'ArrowLeft' ? -2 : 2;
+        angleSlider.value = String(Math.min(180, Math.max(0, parseInt(angleSlider.value) + step)));
         if (angleValue) angleValue.textContent = angleSlider.value;
         gameController.setAngle(parseInt(angleSlider.value));
         break;
-        
-      case 'ArrowRight':
-        angleSlider.value = String(Math.min(180, parseInt(angleSlider.value) + 2));
-        if (angleValue) angleValue.textContent = angleSlider.value;
-        gameController.setAngle(parseInt(angleSlider.value));
-        break;
-        
+      }
       case 'ArrowUp':
-        powerSlider.value = String(Math.min(100, parseInt(powerSlider.value) + 5));
+      case 'ArrowDown': {
+        const step = e.code === 'ArrowUp' ? 5 : -5;
+        powerSlider.value = String(Math.min(100, Math.max(10, parseInt(powerSlider.value) + step)));
         if (powerValue) powerValue.textContent = powerSlider.value;
         gameController.setPower(parseInt(powerSlider.value));
         break;
-        
-      case 'ArrowDown':
-        powerSlider.value = String(Math.max(10, parseInt(powerSlider.value) - 5));
-        if (powerValue) powerValue.textContent = powerSlider.value;
-        gameController.setPower(parseInt(powerSlider.value));
-        break;
+      }
     }
   });
 
-  // ============================================================================
-  // GAME LOOP
-  // ============================================================================
+  window.addEventListener('resize', () => compositor.resize());
 
-  let lastTime = performance.now();
-
-  function gameLoop(currentTime: number): void {
-    // Calculate delta time in seconds
-    const dt = Math.min((currentTime - lastTime) / 1000, 0.1); // Cap at 100ms to prevent spiral of death
-    lastTime = currentTime;
-
-    // Update and render
-    gameController.update(dt);
-    gameController.draw();
-
-    // Continue loop
-    requestAnimationFrame(gameLoop);
+  // Dev-only handle for debugging in the console (stripped from production).
+  if (import.meta.env.DEV) {
+    (window as unknown as { atomic: unknown }).atomic = { gameController, compositor };
   }
 
-  // Start the game loop
-  console.log('Game started! Use arrow keys to aim, Space or click FIRE to shoot.');
-  requestAnimationFrame(gameLoop);
+  // --- Game loop (driven by Pixi's ticker) --------------------------------
+  compositor.app.ticker.add((ticker) => {
+    const dt = Math.min(ticker.deltaMS / 1000, 0.1);
+    gameController.update(dt);
+    gameController.draw();
+    compositor.update(dt);
+  });
 
+  console.log('Atomic Cannon ready — aim with the sliders/arrows, Space or FIRE to shoot.');
 }
+
+main();

@@ -1,5 +1,5 @@
 /**
- * CGameController - Main Game Controller (CAtomicCannon port)
+ * CGameController - Main Game Controller
  * 
  * Central coordinator for:
  * - Turn-based battle flow state machine  
@@ -13,6 +13,7 @@ import { CTank, TEAM_COLORS } from '../core/CTank';
 import { CShot } from '../core/CShot';
 import { getWeapon, WEAPON_DATABASE } from '../core/CWeapon';
 import { CExplosion, ScreenShake } from '../core/CExplosion';
+import { CAssetManager } from '../core/rendering/CAssetManager';
 
 /**
  * Game state machine states
@@ -26,14 +27,17 @@ export enum EGameState {
   BattleEnd = 'battle_end'
 }
 
-// Bot names from binary strings
+// Bot names
 const BOT_NAMES = [
   'Whopper', 'BrainBot', 'RandBot', 'AlphaBot', 'MechaBot',
   'FlashBot', 'GammaBot', 'ShazBot', 'BetaBot', 'DeltaBot'
 ];
 
+// Battlefield backdrop drawn behind the terrain.
+const BACKGROUND_PATH = '/assets/bg/03.jpg';
+
 /**
- * CGameController - Main game controller (CAtomicCannon equivalent)
+ * CGameController - Main game controller
  */
 export class CGameController {
   
@@ -51,6 +55,11 @@ export class CGameController {
     this.m_shots = [];
     this.m_explosionSystem = new CExplosion();
     this.m_screenShake = new ScreenShake();
+    this.m_assets = new CAssetManager();
+
+    // Background loads immediately; the render loop falls back to a gradient
+    // until it is ready.
+    this.m_assets.loadImage('bg', BACKGROUND_PATH);
     
     // Initialize weapon list (index into WEAPON_DATABASE)
     this.m_currentWeaponIndex = 0;
@@ -97,7 +106,15 @@ export class CGameController {
       
       this.m_tanks.push(pTank);
     }
-    
+
+    // Preload hull sprites for the tanks in play (fire-and-forget; the renderer
+    // falls back to vector hulls until they are ready).
+    for (const tank of this.m_tanks) {
+      for (const s of tank.getRequiredSprites()) {
+        this.m_assets.loadSprite(s.name, s.file);
+      }
+    }
+
     // Randomize wind
     this.updateWind();
     
@@ -150,17 +167,22 @@ export class CGameController {
     ctx.save();
     ctx.translate(shakeOffset.x, shakeOffset.y);
     
-    // Clear and redraw background gradient (sky)
-    const skyGradient = ctx.createLinearGradient(0, 0, 0, this.m_canvas.height - 120);
-    skyGradient.addColorStop(0, '#1a1a2e');     // Dark night
-    skyGradient.addColorStop(0.6, '#16213e');   // Mid blue
-    skyGradient.addColorStop(1, '#0f3460');     // Horizon
-    
-    ctx.fillStyle = skyGradient;
-    ctx.fillRect(0, 0, this.m_canvas.width, this.m_canvas.height);
-    
-    // Draw stars (subtle background)
-    this.drawStars(ctx);
+    // Backdrop: real background image once loaded, else a night-sky gradient.
+    const bg = this.m_assets.getSprite('bg');
+    if (bg) {
+      ctx.drawImage(bg.bitmap, 0, 0, this.m_canvas.width, this.m_canvas.height);
+    } else {
+      const skyGradient = ctx.createLinearGradient(0, 0, 0, this.m_canvas.height - 120);
+      skyGradient.addColorStop(0, '#1a1a2e');     // Dark night
+      skyGradient.addColorStop(0.6, '#16213e');   // Mid blue
+      skyGradient.addColorStop(1, '#0f3460');     // Horizon
+
+      ctx.fillStyle = skyGradient;
+      ctx.fillRect(0, 0, this.m_canvas.width, this.m_canvas.height);
+
+      // Draw stars (subtle background)
+      this.drawStars(ctx);
+    }
     
     // Draw terrain
     this.m_land.draw(ctx);
@@ -168,7 +190,7 @@ export class CGameController {
     // Draw tanks
     for (const tank of this.m_tanks) {
       if (tank.isAlive()) {
-        tank.draw(ctx);
+        tank.draw(ctx, this.m_assets);
         
         // Highlight current player's tank with indicator
         if (this.getCurrentTank() === tank && 
@@ -180,7 +202,7 @@ export class CGameController {
         // Skip dead tanks that are already exploded
       } else {
         // Draw wreckage for exploded but not yet cleaned up tanks
-        tank.draw(ctx);
+        tank.draw(ctx, this.m_assets);
       }
     }
     
@@ -302,8 +324,7 @@ export class CGameController {
         if (!tank.isAlive()) continue;
         
         if (shot.checkTankCollision(tank)) {
-          // Direct hit!
-          shot.hit;  // Mark as hit
+          // Direct hit on a tank.
           this.handleShotImpact(shot);
           break;
         }
@@ -349,20 +370,22 @@ export class CGameController {
     
     // Apply damage to tanks in blast radius
     const weapon = getWeapon(this.m_currentWeaponIndex);
-    
+
+    // Ripple the whole scene — bigger for nukes / large blasts.
+    const waveStrength = (weapon.isNuclear() ? 2.6 : 1.0) + shot.getRadius() / 120;
+    this.m_onImpact?.(pos.x, pos.y, waveStrength);
+
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
       
       if (tank.isInBlastRadius(pos.x, pos.y, shot.getRadius())) {
-        // Direct hit on this tank
-        const damage = shot.getDamage();
-        
-        // Armor reduction
-        const health = tank.getHealth();
-        const actualDamage = damage * (1 - health.armor / 100);
-        
-        tank.hit(actualDamage);
-        
+        // Damage falls off linearly from the blast centre to its edge.
+        const dist = tank.distanceTo(pos.x, pos.y);
+        const falloff = Math.max(0, 1 - dist / (shot.getRadius() + 1));
+
+        // Pass raw damage; the tank applies its own shield/armor model.
+        tank.hit(shot.getDamage() * falloff);
+
         if (!tank.isAlive()) {
           this.handleTankDestroyed(tank);
         }
@@ -459,8 +482,8 @@ export class CGameController {
     
     // Update health bars
     const health = tank.getHealth();
-    document.getElementById('life-fill')!.style.width = `${health.life}%`;
-    document.getElementById('shield-fill')!.style.width = `${(health.shield / 500) * 100}%`;
+    document.getElementById('life-fill')!.style.width = `${Math.max(0, health.nLife)}%`;
+    document.getElementById('shield-fill')!.style.width = `${(Math.max(0, health.nShield) / 500) * 100}%`;
   }
   
   /**
@@ -619,6 +642,11 @@ export class CGameController {
     }
   }
 
+  /** Register a callback invoked at each shot impact (world x, y, strength). */
+  setImpactListener(cb: (x: number, y: number, strength: number) => void): void {
+    this.m_onImpact = cb;
+  }
+
 
   // ========================================================================
   // ACCESSORS
@@ -644,6 +672,8 @@ export class CGameController {
   
   private m_explosionSystem: CExplosion;
   private m_screenShake: ScreenShake;
+  private m_assets: CAssetManager;
+  private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
   
   // Game state machine
   private m_gameState: EGameState = EGameState.Battle;
