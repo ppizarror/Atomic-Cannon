@@ -89,6 +89,25 @@ export class CShot {
     this.addTrailPoint();
   }
 
+  /** Spawn with an explicit velocity — used for cluster submunitions. */
+  initFromVelocity(
+    pos: Vec2,
+    vx: number,
+    vy: number,
+    damage: number,
+    radius: number,
+    owner: CTank | null
+  ): void {
+    this.m_pos = pos.clone();
+    this.m_vel = new Vec2(vx, vy);
+    this.m_owner = owner || null;
+    this.m_damage = damage;
+    this.m_radius = radius;
+    this.m_bIsDead = false;
+    this.m_trailPoints = [];
+    this.addTrailPoint();
+  }
+
   update(dt: number, windX: number = 0): void {
     if (this.m_bIsDead) return;
 
@@ -203,6 +222,13 @@ export class CShot {
   getDamage(): number { return this.m_damage; }
   getRadius(): number { return this.m_radius; }
   getOwner(): CTank | null { return this.m_owner; }
+
+  // Which weapon fired this shot, and how deep in the cluster chain it is
+  // (0 = the shot the player fired, 1 = its submunitions, ...).
+  setWeaponIndex(i: number): void { this.m_weaponIndex = i; }
+  getWeaponIndex(): number { return this.m_weaponIndex; }
+  setGeneration(g: number): void { this.m_generation = g; }
+  getGeneration(): number { return this.m_generation; }
   
   m_bIsDead: boolean;
 
@@ -216,4 +242,6 @@ export class CShot {
   private m_trailPoints: TrailPoint[];
   private m_maxTrailAge: number;
   private m_maxTrailPoints: number;
+  private m_weaponIndex: number = -1;
+  private m_generation: number = 0;
 }

@@ -11,7 +11,8 @@
 import { CLand } from '../core/CLand';
 import { CTank, TEAM_COLORS } from '../core/CTank';
 import { CShot } from '../core/CShot';
-import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex } from '../core/CWeapon';
+import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex, CWeapon } from '../core/CWeapon';
+import { Vec2 } from '../math/Vec2';
 import { CExplosion, ScreenShake } from '../core/CExplosion';
 import { CAssetManager } from '../core/rendering/CAssetManager';
 
@@ -124,9 +125,9 @@ export class CGameController {
     this.updateWind();
     
     // Set initial state
+    // Player 0 (the human) takes the first turn.
     this.m_currentPlayerIndex = 0;
-    this.m_gameState = EGameState.Battle;
-    this.advanceToNextPlayer();
+    this.beginTurn();
   }
 
   /**
@@ -358,19 +359,17 @@ export class CGameController {
       }
     }
     
-    // Check if all shots are done
-    const stillFlying = activeShots.some(s => !s.isDead());
-    if (!stillFlying) {
+    // Include submunitions spawned this frame, so a cluster keeps the round in
+    // flight until every child has landed.
+    const stillFlying = this.m_shots.some(s => !s.isDead());
+    if (stillFlying) {
+      this.m_gameState = EGameState.ShotFlying;
+    } else {
+      // The shot (and any submunitions) have resolved — end the turn after a
+      // short beat so the explosion is visible.
+      this.m_shots = [];
       this.m_gameState = EGameState.Battle;
-      
-      // If current player is human, re-enable controls
-      // Otherwise AI takes their turn immediately
-      setTimeout(() => {
-        if (this.getCurrentTank().isBot()) {
-          this.advanceToNextPlayer();
-          this.executeBotTurn();
-        }
-      }, 500);
+      setTimeout(() => this.endTurn(), 600);
     }
   }
   
@@ -379,28 +378,24 @@ export class CGameController {
    */
   private handleShotImpact(shot: CShot): void {
     const pos = shot.getPosition();
-    
-    // Mark shot as dead
-    shot.m_bIsDead = true;
-    
-    // Create explosion effect
-    this.m_explosionSystem.createExplosion(pos.x, pos.y, 1.5);
-    
-    // Screen shake on impact
-    this.m_screenShake.trigger(8, 0.3);
-    
-    // Apply terrain deformation (blast crater)
-    this.m_land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), shot.getRadius());
-    
-    // Add dirt shower particles
-    this.m_land.addShowerParticles(Math.floor(pos.x), Math.floor(this.m_land.getHeightAt(Math.floor(pos.x))), 10);
-    
-    // Apply damage to tanks in blast radius
-    const weapon = getWeapon(this.m_currentWeaponIndex);
+    const isPrimary = shot.getGeneration() === 0;   // player's shot vs a submunition
 
-    // Ripple the whole scene — bigger for nukes / large blasts.
-    const waveStrength = (weapon.isNuclear() ? 2.6 : 1.0) + shot.getRadius() / 120;
-    this.m_onImpact?.(pos.x, pos.y, waveStrength);
+    shot.m_bIsDead = true;
+
+    // The weapon that fired this shot (submunitions inherit it).
+    const weapon = getWeapon(shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex);
+
+    this.m_explosionSystem.createExplosion(pos.x, pos.y, isPrimary ? 1.5 : 0.9);
+    this.m_screenShake.trigger(isPrimary ? 8 : 3, 0.3);
+    this.m_land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), shot.getRadius());
+    this.m_land.addShowerParticles(Math.floor(pos.x), Math.floor(this.m_land.getHeightAt(Math.floor(pos.x))), 10);
+
+    // Ripple the whole scene — only for the primary impact, to avoid warp spam
+    // when a cluster of submunitions all land at once.
+    if (isPrimary) {
+      const waveStrength = (weapon.isNuclear() ? 2.6 : 1.0) + shot.getRadius() / 120;
+      this.m_onImpact?.(pos.x, pos.y, waveStrength);
+    }
 
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
@@ -429,9 +424,46 @@ export class CGameController {
         15      // Duration seconds
       );
     }
-    
+
+    // Cluster weapons scatter submunitions on impact.
+    this.spawnCluster(shot, weapon, pos);
+
     // Transition to explosion state (wait for effects)
     this.m_gameState = EGameState.Explosion;
+  }
+
+  /**
+   * Scatter cluster submunitions from an impact. Each child fans upward within
+   * the weapon's spread arc and falls to explode on its own. cluRecurse lets one
+   * more generation cluster again; depth is hard-capped to avoid runaway counts.
+   */
+  private spawnCluster(parent: CShot, weapon: CWeapon, pos: Vec2): void {
+    const cluNum = weapon.getClusterCount();
+    if (cluNum <= 0) return;
+
+    const gen = parent.getGeneration();
+    const maxGen = weapon.getClusterRecurse() ? 2 : 1;
+    if (gen >= maxGen) return;
+
+    const [startDeg, endDeg] = weapon.getClusterSpread();
+    const spreadDeg = Math.min(160, Math.abs(endDeg - startDeg) || 120);
+    const halfRad = (spreadDeg / 2) * Math.PI / 180;
+
+    const childRadius = Math.max(12, Math.floor(weapon.getRadius() * 0.7));
+
+    for (let i = 0; i < cluNum; i++) {
+      const t = cluNum > 1 ? i / (cluNum - 1) : 0.5;
+      const theta = -halfRad + t * (2 * halfRad);   // fan around straight up
+      const speed = 200 + Math.random() * 80;
+      const vx = Math.sin(theta) * speed;
+      const vy = -Math.cos(theta) * speed;
+
+      const child = new CShot();
+      child.initFromVelocity(pos, vx, vy, weapon.getDamage(), childRadius, parent.getOwner());
+      child.setWeaponIndex(weapon.getIndex());
+      child.setGeneration(gen + 1);
+      this.m_shots.push(child);
+    }
   }
 
 
@@ -480,37 +512,59 @@ export class CGameController {
    */
   private advanceToNextPlayer(): void {
     const nPlayers = this.m_tanks.length;
-    
-    // Find next alive player in rotation
+
     let attempts = 0;
     do {
       this.m_currentPlayerIndex = (this.m_currentPlayerIndex + 1) % nPlayers;
       attempts++;
-      
       if (attempts > nPlayers * 2) {
         console.warn('All players dead or stuck');
         break;
       }
     } while (!this.getCurrentTank().isAlive());
-    
-    // Update UI
+  }
+
+  /** Start the current player's turn: refresh the HUD, then let them act. */
+  private beginTurn(): void {
     const tank = this.getCurrentTank();
-    document.getElementById('turn-indicator')!.textContent = `${tank.getName()}'s Turn`;
-    document.getElementById('turn-indicator')!.classList.add('visible');
-    
-    setTimeout(() => {
-      document.getElementById('turn-indicator')!.classList.remove('visible');
-    }, 1500);
-    
-    // Update current player display
+    this.m_gameState = EGameState.Battle;
+
+    const indicator = document.getElementById('turn-indicator')!;
+    indicator.textContent = `${tank.getName()}'s Turn`;
+    indicator.classList.add('visible');
+    setTimeout(() => indicator.classList.remove('visible'), 1500);
+
     const teamColor = TEAM_COLORS[tank.getTeamId()] || '#ff4444';
-    document.getElementById('current-player')!.innerHTML = 
+    document.getElementById('current-player')!.innerHTML =
       `<span style="color:${teamColor}">${tank.getName()}</span> - Tank ${this.m_tanks.indexOf(tank) + 1}`;
-    
-    // Update health bars
+
     const health = tank.getHealth();
     document.getElementById('life-fill')!.style.width = `${Math.max(0, health.nLife)}%`;
     document.getElementById('shield-fill')!.style.width = `${(Math.max(0, health.nShield) / 500) * 100}%`;
+
+    const fireBtn = document.getElementById('fire-btn') as HTMLButtonElement | null;
+    if (tank.isBot()) {
+      if (fireBtn) fireBtn.disabled = true;
+      setTimeout(() => this.executeBotTurn(), 700);
+    } else if (fireBtn) {
+      fireBtn.disabled = false;
+    }
+  }
+
+  /** End the current turn: declare a winner, or hand off to the next player. */
+  private endTurn(): void {
+    const alive = this.m_tanks.filter(t => t.isAlive());
+    if (alive.length <= 1) {
+      this.m_gameState = EGameState.BattleEnd;
+      if (alive.length === 1) {
+        const indicator = document.getElementById('turn-indicator')!;
+        indicator.textContent = `${alive[0].getName()} WINS!`;
+        indicator.classList.add('visible');
+      }
+      return;
+    }
+    this.advanceToNextPlayer();
+    this.beginTurn();
   }
   
   /**
@@ -534,23 +588,28 @@ export class CGameController {
     if (!tank.isAlive()) return;
     
     const weapon = getWeapon(this.m_currentWeaponIndex);
-    
-    // Get muzzle position and firing parameters
     const muzzlePos = tank.getMuzzlePosition();
-    
-    // Create new shot
-    const pShot = new CShot();
-    pShot.initFromTank(
-      muzzlePos,
-      tank.getTurretAngle(),
-      this.m_power,           // Power from UI control
-      weapon.getDamage(),
-      weapon.getRadius(),
-      tank
-    );
-    
-    this.m_shots.push(pShot);
-    
+    const baseAngle = tank.getTurretAngle();
+
+    // Some weapons fire several projectiles at once (spawn), fanned slightly.
+    const shots = Math.max(1, weapon.getSpawnCount());
+    const spreadRad = 6 * Math.PI / 180;   // total fan for multi-shot weapons
+
+    for (let i = 0; i < shots; i++) {
+      const offset = shots > 1 ? (i / (shots - 1) - 0.5) * spreadRad : 0;
+      const pShot = new CShot();
+      pShot.initFromTank(
+        muzzlePos,
+        baseAngle + offset,
+        this.m_power,
+        weapon.getDamage(),
+        weapon.getRadius(),
+        tank
+      );
+      pShot.setWeaponIndex(this.m_currentWeaponIndex);
+      this.m_shots.push(pShot);
+    }
+
     // Transition to shot flying state
     this.m_gameState = EGameState.ShotFlying;
     
@@ -576,7 +635,7 @@ export class CGameController {
     // Simple AI: pick a target (random enemy)
     const enemies = this.m_tanks.filter(t => t !== botTank && t.isAlive());
     if (enemies.length === 0) {
-      this.advanceToNextPlayer();
+      this.endTurn();
       return;
     }
     
@@ -614,19 +673,9 @@ export class CGameController {
     document.getElementById('power-value')!.textContent = String(Math.floor(this.m_power));
     (document.getElementById('power-slider') as HTMLInputElement).value = String(Math.floor(this.m_power));
     
-    // Execute fire after brief "thinking" delay
-    setTimeout(() => {
-      this.fire();
-      
-      // Re-enable controls when shot completes
-      const checkComplete = () => {
-        if (this.m_gameState === EGameState.Battle) {
-          (document.getElementById('fire-btn') as HTMLButtonElement).disabled = false;
-        } else {
-          setTimeout(checkComplete, 100);
-        }
-      };
-    }, 800); // Bot "aiming" delay
+    // Execute fire after a brief "thinking" delay. The turn ends automatically
+    // once the shot resolves (updateShotInFlight → endTurn).
+    setTimeout(() => this.fire(), 800);
   }
 
 

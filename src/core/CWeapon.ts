@@ -105,6 +105,7 @@ export class CWeapon {
   // --- mechanics for CShot (Phase 3) -----------------------------------------
   getClusterCount(): number { return this.m_def.cluNum || 0; }
   getClusterSpread(): [number, number] { return [this.m_def.cluStart || 0, this.m_def.cluEnd || 0]; }
+  getClusterRecurse(): boolean { return (this.m_def.cluRecurse || 0) > 0; }
   getSpawnCount(): number { return this.m_def.spawn || 1; }
   getVariance(): number { return this.m_def.variance || 0; }
   getRadiation(): { dmg: number; time: number } { return { dmg: this.m_def.irDmg || 0, time: this.m_def.irTime || 0 }; }
