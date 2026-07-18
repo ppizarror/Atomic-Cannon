@@ -14,7 +14,10 @@ interface TrailPoint {
 
 export class CShot {
 
+  // Calibrated to our pixel/second space; the original's ratios (gravity vs
+  // launch speed) are preserved so trajectories match.
   private static GRAVITY = 500;
+  private static WIND_ACCEL = 15;   // wind display units -> px/s^2 of drift
 
   constructor() {
     this.m_pos = new Vec2(0, 0);
@@ -46,7 +49,7 @@ export class CShot {
 
     const fRadAngle = -((angleDegrees / 180) * Math.PI);
 
-    const SPEED_SCALE = 8;
+    const SPEED_SCALE = 9;
     const speed = power * SPEED_SCALE;
 
     this.m_vel.x = Math.cos(fRadAngle) * speed;
@@ -71,7 +74,7 @@ export class CShot {
     this.m_radius = radius;
     this.m_power = power;
 
-    const SPEED_SCALE = 8;
+    const SPEED_SCALE = 9;
     const speed = power * SPEED_SCALE;
 
     if (turretAngleRad >= 0) {
@@ -108,18 +111,23 @@ export class CShot {
     this.addTrailPoint();
   }
 
-  update(dt: number, windX: number = 0): void {
+  /**
+   * Semi-implicit Euler step (matches the original): gravity + wind added as
+   * acceleration, then position advances. Beam-type shots skip gravity so they
+   * fly straight.
+   */
+  update(dt: number, wind: Vec2): void {
     if (this.m_bIsDead) return;
 
-    this.m_vel.y += CShot.GRAVITY * dt;
-    this.m_vel.x += windX * dt * 0.5;
+    if (!this.m_skipGravity) {
+      this.m_vel.y += CShot.GRAVITY * dt;
+    }
+    this.m_vel.x += wind.x * CShot.WIND_ACCEL * dt;
+    this.m_vel.y += wind.y * CShot.WIND_ACCEL * dt;
 
-    const dxdt = this.m_vel.x * dt;
-    const dydt = this.m_vel.y * dt;
-    
     this.m_pos = new Vec2(
-      this.m_pos.x + (this.m_vel.x * dt),
-      this.m_pos.y + (this.m_vel.y * dt)
+      this.m_pos.x + this.m_vel.x * dt,
+      this.m_pos.y + this.m_vel.y * dt
     );
 
     if (this.m_bTrailActive) {
@@ -127,6 +135,8 @@ export class CShot {
       this.pruneTrailPoints(dt);
     }
   }
+
+  setSkipGravity(skip: boolean): void { this.m_skipGravity = skip; }
 
   private addTrailPoint(): void {
     const pt: TrailPoint = { x: this.m_pos.x, y: this.m_pos.y, age: 0 };
@@ -244,4 +254,5 @@ export class CShot {
   private m_maxTrailPoints: number;
   private m_weaponIndex: number = -1;
   private m_generation: number = 0;
+  private m_skipGravity: boolean = false;
 }

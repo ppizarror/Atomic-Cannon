@@ -70,7 +70,7 @@ export class CGameController {
     this.m_currentWeaponIndex = getDefaultWeaponIndex();
     
     // Wind: positive = right, negative = left
-    this.m_windSpeed = 0;  // pixels/sec influence
+    this.m_wind = new Vec2(0, 0);
     
     // UI control values
     this.m_angle = 45;
@@ -181,8 +181,9 @@ export class CGameController {
         break;
     }
     
-    // Always update terrain and visual effects
+    // Always update terrain, wind and visual effects
     this.m_land.update(dt);
+    this.updateWindDrift(dt);
     this.m_explosionSystem.update(dt);
   }
   
@@ -341,7 +342,7 @@ export class CGameController {
     }
     
     for (const shot of activeShots) {
-      shot.update(dt, this.m_windSpeed);
+      shot.update(dt, this.m_wind);
       
       // Check terrain collision
       if (shot.checkTerrainCollision(this.m_land)) {
@@ -404,9 +405,16 @@ export class CGameController {
         // Damage falls off linearly from the blast centre to its edge.
         const dist = tank.distanceTo(pos.x, pos.y);
         const falloff = Math.max(0, 1 - dist / (shot.getRadius() + 1));
+        const dmg = shot.getDamage() * falloff;
 
         // Pass raw damage; the tank applies its own shield/armor model.
-        tank.hit(shot.getDamage() * falloff);
+        tank.hit(dmg);
+
+        // Kick: throw the tank up and away from the blast, scaled by damage.
+        const dx = tank.getPosition().x - pos.x;
+        const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
+        const kickMag = Math.min(1, dmg / 400) * 320;
+        tank.kick(kickDir, kickMag);
 
         if (!tank.isAlive()) {
           this.handleTankDestroyed(tank);
@@ -539,8 +547,8 @@ export class CGameController {
       `<span style="color:${teamColor}">${tank.getName()}</span> - Tank ${this.m_tanks.indexOf(tank) + 1}`;
 
     const health = tank.getHealth();
-    document.getElementById('life-fill')!.style.width = `${Math.max(0, health.nLife)}%`;
-    document.getElementById('shield-fill')!.style.width = `${(Math.max(0, health.nShield) / 500) * 100}%`;
+    document.getElementById('life-fill')!.style.width = `${Math.max(0, health.nLife) / 10}%`;
+    document.getElementById('shield-fill')!.style.width = `${Math.max(0, health.nShield) / 10}%`;
 
     const fireBtn = document.getElementById('fire-btn') as HTMLButtonElement | null;
     if (tank.isBot()) {
@@ -593,20 +601,24 @@ export class CGameController {
 
     // Some weapons fire several projectiles at once (spawn), fanned slightly.
     const shots = Math.max(1, weapon.getSpawnCount());
-    const spreadRad = 6 * Math.PI / 180;   // total fan for multi-shot weapons
+    const spreadRad = 6 * Math.PI / 180;                    // fan for multi-shot
+    const varianceRad = weapon.getVariance() * Math.PI / 180; // per-shot inaccuracy
+    const isBeam = weapon.getType() === 'Beam';               // beams fly straight
 
     for (let i = 0; i < shots; i++) {
-      const offset = shots > 1 ? (i / (shots - 1) - 0.5) * spreadRad : 0;
+      const fan = shots > 1 ? (i / (shots - 1) - 0.5) * spreadRad : 0;
+      const jitter = varianceRad > 0 ? (Math.random() * 2 - 1) * varianceRad : 0;
       const pShot = new CShot();
       pShot.initFromTank(
         muzzlePos,
-        baseAngle + offset,
+        baseAngle + fan + jitter,
         this.m_power,
         weapon.getDamage(),
         weapon.getRadius(),
         tank
       );
       pShot.setWeaponIndex(this.m_currentWeaponIndex);
+      pShot.setSkipGravity(isBeam);
       this.m_shots.push(pShot);
     }
 
@@ -683,16 +695,43 @@ export class CGameController {
   // WIND & PHYSICS
   // ========================================================================
   
-  /**
-   * Randomize wind for new round
-   */
+  private static readonly MAX_WIND = 5;
+
+  /** Seed a fresh random wind at the start of a game. */
   private updateWind(): void {
-    this.m_windSpeed = (Math.random() - 0.5) * 10; // -5 to +5 range
-    
-    const absWind = Math.abs(this.m_windSpeed);
-    const arrow = this.m_windSpeed >= 0 ? '→' : '←';
-    
-    document.getElementById('wind-value')!.textContent = `${arrow} ${absWind.toFixed(1)}`;
+    this.m_wind = new Vec2(
+      (Math.random() * 2 - 1) * CGameController.MAX_WIND,
+      (Math.random() * 2 - 1) * CGameController.MAX_WIND * 0.3,
+    );
+    this.m_windTimer = 0;
+    this.refreshWindHud();
+  }
+
+  /**
+   * Drift the wind vector slowly and re-randomise its acceleration on a timer
+   * (mirrors the original's wind model). Called every frame.
+   */
+  private updateWindDrift(dt: number): void {
+    const MAX = CGameController.MAX_WIND;
+    this.m_wind.x = Math.max(-MAX, Math.min(MAX, this.m_wind.x + this.m_windAccel.x * dt));
+    this.m_wind.y = Math.max(-MAX * 0.3, Math.min(MAX * 0.3, this.m_wind.y + this.m_windAccel.y * dt));
+
+    this.m_windTimer -= dt;
+    if (this.m_windTimer <= 0) {
+      this.m_windTimer = Math.random() * 8 + 4;   // 4..12 s until next drift target
+      this.m_windAccel = new Vec2(
+        (Math.random() * 2 - 1) * 2,
+        (Math.random() * 2 - 1) * 1,
+      );
+    }
+    this.refreshWindHud();
+  }
+
+  private refreshWindHud(): void {
+    const el = document.getElementById('wind-value');
+    if (!el) return;
+    const arrow = this.m_wind.x >= 0 ? '→' : '←';
+    el.textContent = `${arrow} ${Math.abs(this.m_wind.x).toFixed(1)}`;
   }
 
 
@@ -761,6 +800,8 @@ export class CGameController {
   private m_power: number;
   private m_currentWeaponIndex: number;   // Index into WEAPON_DATABASE
   
-  // Physics
-  private m_windSpeed: number;            // Horizontal wind influence
+  // Physics — wind is a slowly-drifting 2-D vector (display units, ~±5).
+  private m_wind: Vec2 = new Vec2(0, 0);
+  private m_windAccel: Vec2 = new Vec2(0, 0);
+  private m_windTimer: number = 0;
 }

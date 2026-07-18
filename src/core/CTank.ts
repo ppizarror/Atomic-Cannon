@@ -68,10 +68,10 @@ export class CTank {
         this.m_fTurretAngle = Math.PI / 4;   // Default aim: 45 deg up-right
         this.m_fLastTurretAngle = this.m_fTurretAngle;
         
-        // Health status
-        this.m_health.nLife = 100;
-        this.m_health.nShield = 500;  // Shield points absorbed before health
-        this.m_health.nArmor = 50;    // Default armor ~50%
+        // Health status (life 0..1000, shield 0..1000, armor 0..100%)
+        this.m_health.nLife = 1000;
+        this.m_health.nShield = 0;
+        this.m_health.nArmor = 0;
         this.m_health.fRadiation = 0;
         
         // State flags
@@ -91,8 +91,7 @@ export class CTank {
         this.computePosition(pLand);
 
         // Reset to full health on spawn
-        this.m_health.nLife = 100;
-        this.m_health.nShield = 500;
+        this.m_health.nLife = 1000;
     }
     
     /**
@@ -133,23 +132,30 @@ export class CTank {
         // Where the tank rests when sitting on the current terrain surface.
         const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
 
-        if (this.m_vPos.y < fRestY - 0.5) {
-            // Airborne: the ground beneath us was removed (e.g. a crater), so
-            // fall under gravity until we settle back onto the surface.
+        // Airborne when above the surface (crater under us) or moving from a kick.
+        const bKicked = Math.abs(this.m_vVel.x) > 1 || this.m_vVel.y < -1;
+
+        if (this.m_vPos.y < fRestY - 0.5 || bKicked) {
+            // Fly under gravity, carrying any kick velocity, until we land.
             this.m_vVel.y += TANK_GRAVITY * dt;
+            this.m_vPos.x += this.m_vVel.x * dt;
             this.m_vPos.y += this.m_vVel.y * dt;
             this.m_bFalling = true;
 
-            if (this.m_vPos.y >= fRestY) {
-                this.m_vPos.y = fRestY;
-                this.m_vVel.y = 0;
+            // Keep within the battlefield.
+            this.m_vPos.x = Math.max(TANK_RADIUS, Math.min(pLand.width - TANK_RADIUS, this.m_vPos.x));
+
+            const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+            if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
+                this.m_vPos.y = fLandY;
+                this.m_vVel = new Vec2(0, 0);
                 this.m_bFalling = false;
             }
         } else {
             // Resting on the surface: stay glued to it as the terrain deforms,
             // and tilt the body to match the local slope.
             this.m_vPos.y = fRestY;
-            this.m_vVel.y = 0;
+            this.m_vVel = new Vec2(0, 0);
             this.m_bFalling = false;
 
             const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
@@ -241,26 +247,26 @@ export class CTank {
     hit(fDamage: number, bShieldOnly: boolean = false): void {
         if (!this.m_bIsAlive) return;
         this.m_nHitCount++;
-        
-        // Shield absorbs damage first
-        if (this.m_health.nShield > 0) {
-            const nShieldDamage = Math.min(this.m_health.nShield, fDamage);
-            this.m_health.nShield -= nShieldDamage;
-            fDamage -= nShieldDamage;
-            
-            // Shield absorbs damage before health
+
+        let dmg = fDamage;
+
+        // Shield fully absorbs the hit only if it exceeds the damage; otherwise
+        // the shield is destroyed and the FULL damage still passes through
+        // (a quirk of the original — the shield does not partially subtract).
+        if (this.m_health.nShield > dmg) {
+            this.m_health.nShield -= dmg;
+            dmg = 0;
+        } else if (this.m_health.nShield > 0) {
+            this.m_health.nShield = 0;
         }
-        
-        if (!bShieldOnly && fDamage > 0) {
-            // Apply remaining damage to health (reduced by armor)
-            const fArmorReduction = this.m_health.nArmor / 100.0;
-            const fActualDamage = fDamage * (1.0 - fArmorReduction);
-            
-            this.m_health.nLife -= Math.floor(fActualDamage);
+
+        if (!bShieldOnly && dmg > 0) {
+            // Armor is a 0..100% reduction of the through-damage.
+            this.m_health.nLife -= dmg * (1 - this.m_health.nArmor / 100);
         }
-        
-        // Check for death
+
         if (this.m_health.nLife <= 0) {
+            this.m_health.nLife = 0;
             this.m_bExploded = true;
             this.m_bIsAlive = false;
         }
@@ -388,8 +394,8 @@ export class CTank {
         const x = this.m_vPos.x - w / 2;
         const y = surfaceY - TANK_HEIGHT_PIXELS - 22;
 
-        const life = Math.max(0, this.m_health.nLife) / 100;
-        const shield = Math.max(0, this.m_health.nShield) / 500;
+        const life = Math.max(0, this.m_health.nLife) / 1000;
+        const shield = Math.max(0, this.m_health.nShield) / 1000;
 
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fillRect(x, y, w, 5);
@@ -551,9 +557,9 @@ export class CTank {
     
     // Health status
     private m_health: STankHealth = {
-        nLife: 100,
-        nShield: 500, 
-        nArmor: 50,
+        nLife: 1000,
+        nShield: 0,
+        nArmor: 0,
         fRadiation: 0
     };
     
