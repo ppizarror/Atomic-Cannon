@@ -33,8 +33,14 @@ const BOT_NAMES = [
   'FlashBot', 'GammaBot', 'ShazBot', 'BetaBot', 'DeltaBot'
 ];
 
-// Battlefield backdrop drawn behind the terrain.
-const BACKGROUND_PATH = '/assets/bg/03.jpg';
+import landData from '../data/land.json';
+
+interface LandConfig {
+  bg: string;
+  weather: { type: string; intensity: number }[];
+  layers: { tile: string; depth: number }[];
+}
+const LAND_DATA = landData as LandConfig[];
 
 /**
  * CGameController - Main game controller
@@ -56,10 +62,6 @@ export class CGameController {
     this.m_explosionSystem = new CExplosion();
     this.m_screenShake = new ScreenShake();
     this.m_assets = new CAssetManager();
-
-    // Background loads immediately; the render loop falls back to a gradient
-    // until it is ready.
-    this.m_assets.loadImage('bg', BACKGROUND_PATH);
     
     // Initialize weapon list (index into WEAPON_DATABASE)
     this.m_currentWeaponIndex = getDefaultWeaponIndex();
@@ -115,6 +117,9 @@ export class CGameController {
       }
     }
 
+    // Pick a landscape (background + depth-layered terrain textures + weather).
+    this.loadLandscape();
+
     // Randomize wind
     this.updateWind();
     
@@ -122,6 +127,28 @@ export class CGameController {
     this.m_currentPlayerIndex = 0;
     this.m_gameState = EGameState.Battle;
     this.advanceToNextPlayer();
+  }
+
+  /**
+   * Pick a random landscape from land.json and load its background + depth-sorted
+   * terrain textures. Fire-and-forget: the terrain shows a gradient until ready.
+   */
+  private async loadLandscape(): Promise<void> {
+    const cfg = LAND_DATA[Math.floor(Math.random() * LAND_DATA.length)];
+
+    this.m_assets.loadImage('bg', '/assets/' + cfg.bg);
+
+    await Promise.all(cfg.layers.map(l =>
+      this.m_assets.loadImage('tile:' + l.tile, '/assets/' + l.tile)));
+
+    const layers = cfg.layers
+      .map(l => {
+        const sprite = this.m_assets.getSprite('tile:' + l.tile);
+        return sprite ? { image: sprite.bitmap, depth: l.depth } : null;
+      })
+      .filter((x): x is { image: CanvasImageSource; depth: number } => x !== null);
+
+    this.m_land.setLayers(layers);
   }
 
 

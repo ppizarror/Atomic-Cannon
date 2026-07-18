@@ -102,7 +102,7 @@ export class CLand {
     this.generateProfile(mode);
   }
 
-  // The 6 shape modes (FUN_004a4970). Screen-Y: smaller = higher on screen, so
+  // The 6 shape modes. Screen-Y: smaller = higher on screen, so
   // Ymin is the highest peaks can reach, Ymax the lowest valleys.
   private generateProfile(mode: number): void {
     const W = this.m_nWidth;
@@ -121,6 +121,8 @@ export class CLand {
         else if (y >= Ymax) y = Ymax - 1;
         this.m_arrHeights[x] = y;
       }
+      // Box-blur the profile into soft rolling curves.
+      this.smoothProfile(Math.max(6, Math.round(W / 180)), 2);
       this.computeDirtyRegion();
       return;
     }
@@ -169,7 +171,25 @@ export class CLand {
       this.m_arrHeights[x] = Math.round(prev);
     }
 
+    // Box-blur the profile into soft rolling curves.
+    this.smoothProfile(Math.max(6, Math.round(W / 180)), 2);
     this.computeDirtyRegion();
+  }
+
+  /** Windowed box blur of the height profile — turns the jagged walk into soft curves. */
+  private smoothProfile(radius: number, passes: number): void {
+    if (!this.m_arrHeights) return;
+    const W = this.m_nWidth;
+    for (let p = 0; p < passes; p++) {
+      const src = Int16Array.from(this.m_arrHeights);
+      for (let x = 0; x < W; x++) {
+        const lo = Math.max(0, x - radius);
+        const hi = Math.min(W - 1, x + radius);
+        let sum = 0;
+        for (let xi = lo; xi <= hi; xi++) sum += src[xi];
+        this.m_arrHeights[x] = Math.round(sum / (hi - lo + 1));
+      }
+    }
   }
 
   // ========================================================================
@@ -204,6 +224,7 @@ export class CLand {
   private preBlast(nX1: number, nX2: number): void {
     this.m_dirtyMin = Math.max(0, nX1);
     this.m_dirtyMax = Math.min(this.m_nWidth - 1, nX2);
+    this.m_terrainDirty = true;
   }
   
   getDirtyRegion(): { min: number; max: number } {
@@ -213,6 +234,7 @@ export class CLand {
   private computeDirtyRegion(): void {
     this.m_dirtyMin = 0;
     this.m_dirtyMax = this.m_nWidth - 1;
+    this.m_terrainDirty = true;
   }
 
   blastEllipse(x: number, y: number, nRadiusX: number, nRadiusY: number): void {
@@ -363,58 +385,125 @@ export class CLand {
   // RENDERING
   // =====================================================================
   
+  /**
+   * Set the depth-sorted texture layers (from land.txt): the smallest depth is
+   * the surface cap, larger depths are deeper strata. Rebuilds the cached bitmap.
+   */
+  setLayers(layers: { image: CanvasImageSource; depth: number }[]): void {
+    // land.txt depths are authored for the original ~480px play area; scale them
+    // to our (taller) terrain so the strata bands stay proportional.
+    const scale = this.m_nHeight / 480;
+    this.m_layers = layers
+      .map(l => ({ image: l.image, depth: Math.round(l.depth * scale) }))
+      .sort((a, b) => a.depth - b.depth);
+    this.m_patterns = [];
+    this.m_terrainDirty = true;
+  }
+
+  private ensureTerrainCtx(): CanvasRenderingContext2D {
+    if (!this.m_terrainCanvas) this.m_terrainCanvas = document.createElement('canvas');
+    if (this.m_terrainCanvas.width !== this.m_nWidth || this.m_terrainCanvas.height !== this.m_nHeight) {
+      this.m_terrainCanvas.width = this.m_nWidth;
+      this.m_terrainCanvas.height = this.m_nHeight;
+      this.m_patterns = [];
+      this.m_terrainDirty = true;
+    }
+    return this.m_terrainCanvas.getContext('2d')!;
+  }
+
+  /** Trace the top-surface polyline (left → right), shifted down by `offset`. */
+  private traceSurface(g: CanvasRenderingContext2D, offset = 0): void {
+    g.moveTo(0, this.m_arrHeights![0] + offset);
+    for (let x = 1; x < this.m_nWidth; x++) g.lineTo(x, this.m_arrHeights![x] + offset);
+  }
+
+  /** Re-render the destructible terrain into the cached bitmap (on change only). */
+  private renderTerrainBitmap(): void {
+    const g = this.ensureTerrainCtx();
+    const W = this.m_nWidth, H = this.m_nHeight;
+    const heights = this.m_arrHeights!;
+    g.clearRect(0, 0, W, H);
+
+    if (this.m_patterns.length !== this.m_layers.length) {
+      this.m_patterns = this.m_layers.map(l => g.createPattern(l.image, 'repeat'));
+    }
+
+    // Fill each layer's region directly (no clip → no anti-aliased white halo).
+    // Paths run from x=-2..W+2 so the left/right edges sit off-canvas, no seam.
+    // Deepest first = whole silhouette; shallower layers overwrite the top band.
+    const EXT = 2;
+
+    const deepest = this.m_patterns[this.m_layers.length - 1];
+    if (deepest) {
+      g.beginPath();
+      g.moveTo(-EXT, heights[0]);
+      for (let x = 0; x < W; x++) g.lineTo(x, heights[x]);
+      g.lineTo(W + EXT, heights[W - 1]);
+      g.lineTo(W + EXT, H);
+      g.lineTo(-EXT, H);
+      g.closePath();
+      g.fillStyle = deepest;
+      g.fill();
+    }
+
+    for (let i = this.m_layers.length - 2; i >= 0; i--) {
+      const pat = this.m_patterns[i];
+      if (!pat) continue;
+      const d = this.m_layers[i].depth;
+      g.beginPath();
+      g.moveTo(-EXT, heights[0]);
+      for (let x = 0; x < W; x++) g.lineTo(x, heights[x]);
+      g.lineTo(W + EXT, heights[W - 1]);
+      g.lineTo(W + EXT, heights[W - 1] + d);
+      for (let x = W - 1; x >= 0; x--) g.lineTo(x, heights[x] + d);
+      g.lineTo(-EXT, heights[0] + d);
+      g.closePath();
+      g.fillStyle = pat;
+      g.fill();
+    }
+
+    // Thin dark edge along the surface — hides any seam, matches the original.
+    g.beginPath();
+    this.traceSurface(g, 0);
+    g.strokeStyle = 'rgba(22, 38, 12, 0.5)';
+    g.lineWidth = 1.5;
+    g.lineJoin = 'round';
+    g.stroke();
+
+    this.m_terrainDirty = false;
+  }
+
   draw(ctx: CanvasRenderingContext2D): void {
     if (!this.m_arrHeights) return;
-    
-    const WIDTH = this.m_nWidth;
-    const HEIGHT = this.m_nHeight;
-    
-    for (let x = 0; x < WIDTH - 1; x++) {
-      const yTop = this.m_arrHeights[x];
-      
-      if (yTop >= HEIGHT) continue;
-      
-      const gradient = ctx.createLinearGradient(0, yTop, 0, HEIGHT);
-      gradient.addColorStop(0, '#4a7c23');
-      gradient.addColorStop(0.1, '#3d6b1e');
-      gradient.addColorStop(0.15, '#8B4513');
-      gradient.addColorStop(1, '#654321');
-      
-      ctx.fillStyle = gradient;
-      ctx.fillRect(x, yTop, 1, HEIGHT - yTop);
-    }
-    
-    ctx.strokeStyle = '#2d5016';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    
-    let started = false;
-    for (let x = 0; x < WIDTH; x++) {
-      const y = this.m_arrHeights[x];
-      
-      if (!started) {
-        ctx.moveTo(x, y);
-        started = true;
-      } else {
-        ctx.lineTo(x, y);
+    const W = this.m_nWidth, H = this.m_nHeight;
+
+    if (this.m_layers.length > 0) {
+      if (this.m_terrainDirty) this.renderTerrainBitmap();
+      if (this.m_terrainCanvas) ctx.drawImage(this.m_terrainCanvas, 0, 0);
+    } else {
+      // Gradient fallback until the land tiles finish loading.
+      for (let x = 0; x < W - 1; x++) {
+        const yTop = this.m_arrHeights[x];
+        if (yTop >= H) continue;
+        const grad = ctx.createLinearGradient(0, yTop, 0, H);
+        grad.addColorStop(0, '#4a7c23');
+        grad.addColorStop(0.15, '#8B4513');
+        grad.addColorStop(1, '#654321');
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, yTop, 1, H - yTop);
       }
     }
-    
-    ctx.stroke();
-    
+
+    // Dynamic overlays (drawn each frame on top of the terrain bitmap).
     for (const r of this.m_radParticles) {
       const alpha = Math.min(0.4, r.timeRemaining / 5);
-      
       ctx.fillStyle = `rgba(${r.r}, ${r.g}, ${r.b}, ${alpha})`;
       ctx.beginPath();
-      ctx.arc(r.x, r.y - r.radius/2, r.radius, Math.PI, 0);
+      ctx.arc(r.x, r.y - r.radius / 2, r.radius, Math.PI, 0);
       ctx.fill();
     }
-    
     for (const p of this.m_particles) {
-      const terrainY = this.getHeightAt(Math.floor(p.x));
-      
-      if (p.y < terrainY) {
+      if (p.y < this.getHeightAt(Math.floor(p.x))) {
         ctx.fillStyle = '#8B4513';
         ctx.beginPath();
         ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
@@ -436,6 +525,12 @@ export class CLand {
   
   private m_particles: LandParticle[] = [];
   private m_radParticles: RadParticle[] = [];
+
+  // Layered textures + cached destructible-terrain bitmap.
+  private m_layers: { image: CanvasImageSource; depth: number }[] = [];
+  private m_patterns: (CanvasPattern | null)[] = [];
+  private m_terrainCanvas: HTMLCanvasElement | null = null;
+  private m_terrainDirty: boolean = true;
 
   get width(): number { return this.m_nWidth; }
   get height(): number { return this.m_nHeight; }

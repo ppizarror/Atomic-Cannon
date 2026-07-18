@@ -1,0 +1,708 @@
+[
+  {
+    "bg": "bg/00.jpg",
+    "weather": [
+      {
+        "type": "snow",
+        "intensity": 60
+      },
+      {
+        "type": "hail",
+        "intensity": 70
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lrock1.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 40
+      },
+      {
+        "tile": "land/lrock2.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/01.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 50
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 5
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lmarb5.bmp",
+        "depth": 40
+      },
+      {
+        "tile": "land/lmarb1.bmp",
+        "depth": 40
+      }
+    ]
+  },
+  {
+    "bg": "bg/02.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 50
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lrock2.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/lrock1.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/lmarb5.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/03.jpg",
+    "weather": [],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lrock1.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 40
+      },
+      {
+        "tile": "land/lrock2.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/04.jpg",
+    "weather": [
+      {
+        "type": "snow",
+        "intensity": 80
+      },
+      {
+        "type": "hail",
+        "intensity": 70
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsnow.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/lmarb4.bmp",
+        "depth": 60
+      },
+      {
+        "tile": "land/lmarb4d.bmp",
+        "depth": 70
+      }
+    ]
+  },
+  {
+    "bg": "bg/05.jpg",
+    "weather": [],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lrock1.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 40
+      },
+      {
+        "tile": "land/lrock2.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/06.jpg",
+    "weather": [],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/07.jpg",
+    "weather": [
+      {
+        "type": "dust",
+        "intensity": 100
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 5
+      },
+      {
+        "tile": "land/lredrock.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/lredrock2.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/lstone.bmp",
+        "depth": 70
+      }
+    ]
+  },
+  {
+    "bg": "bg/08.jpg",
+    "weather": [
+      {
+        "type": "snow",
+        "intensity": 90
+      },
+      {
+        "type": "hail",
+        "intensity": 30
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsnow.bmp",
+        "depth": 5
+      },
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/09.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 30
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 35
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/10.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 50
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsnow.bmp",
+        "depth": 5
+      },
+      {
+        "tile": "land/lsnowd.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/lmarb4.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/lmarb4d.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/11.jpg",
+    "weather": [
+      {
+        "type": "snow",
+        "intensity": 30
+      },
+      {
+        "type": "hail",
+        "intensity": 70
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lmarb4.bmp",
+        "depth": 5
+      },
+      {
+        "tile": "land/lsnow.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lsnowd.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lmarb4d.bmp",
+        "depth": 70
+      }
+    ]
+  },
+  {
+    "bg": "bg/12.jpg",
+    "weather": [
+      {
+        "type": "snow",
+        "intensity": 70
+      },
+      {
+        "type": "hail",
+        "intensity": 20
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsnow.bmp",
+        "depth": 3
+      },
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/13.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 80
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 3
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lmarb2.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lcanyon2.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/lcanyon1.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/14.jpg",
+    "weather": [],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/15.jpg",
+    "weather": [
+      {
+        "type": "snow",
+        "intensity": 100
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lice.bmp",
+        "depth": 3
+      },
+      {
+        "tile": "land/lsnow.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lsnowd.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lrock2.bmp",
+        "depth": 40
+      },
+      {
+        "tile": "land/lrock1.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/16.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 50
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/17.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 30
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 20
+      },
+      {
+        "tile": "land/lmarb4.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/lmarb4d.bmp",
+        "depth": 70
+      }
+    ]
+  },
+  {
+    "bg": "bg/18.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 100
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/19.jpg",
+    "weather": [
+      {
+        "type": "dust",
+        "intensity": 100
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 3
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lmarb2.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lcanyon2.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/lcanyon1.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/20.jpg",
+    "weather": [
+      {
+        "type": "rain",
+        "intensity": 30
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/lmarb4.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/lmarb4d.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/21.jpg",
+    "weather": [
+      {
+        "type": "dust",
+        "intensity": 70
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsand1.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lrock2.bmp",
+        "depth": 40
+      },
+      {
+        "tile": "land/lrock1.bmp",
+        "depth": 50
+      }
+    ]
+  },
+  {
+    "bg": "bg/22.jpg",
+    "weather": [
+      {
+        "type": "dust",
+        "intensity": 70
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsand1.bmp",
+        "depth": 10
+      },
+      {
+        "tile": "land/lmarb4.bmp",
+        "depth": 30
+      },
+      {
+        "tile": "land/lmarb4d.bmp",
+        "depth": 60
+      }
+    ]
+  },
+  {
+    "bg": "bg/23.jpg",
+    "weather": [
+      {
+        "type": "dust",
+        "intensity": 80
+      }
+    ],
+    "layers": [
+      {
+        "tile": "land/lsand1.bmp",
+        "depth": 3
+      },
+      {
+        "tile": "land/lsand2.bmp",
+        "depth": 8
+      }
+    ]
+  },
+  {
+    "bg": "bg/24.jpg",
+    "weather": [],
+    "layers": [
+      {
+        "tile": "land/lgrass1.bmp",
+        "depth": 15
+      },
+      {
+        "tile": "land/lgrass2.bmp",
+        "depth": 25
+      },
+      {
+        "tile": "land/ldirt1.bmp",
+        "depth": 50
+      },
+      {
+        "tile": "land/ldirt3.bmp",
+        "depth": 60
+      }
+    ]
+  }
+]
