@@ -11,8 +11,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { JSX, ComponentChildren } from 'preact';
 import { BmpText } from './BmpText';
 import {
-  power, angle, wind, weaponIndex, playerName, teamColor, life, shield, canFire,
-  winner, weapons, game, loadWeaponIcon, uiClick,
+  power, angle, wind, weaponIndex, playerName, teamColor, life, shield,
+  blocked, winner, weapons, game, loadWeaponIcon, uiClick, showSettings, battleStatus,
   POWER_MIN, POWER_MAX, wrapAngle,
 } from './store';
 
@@ -59,7 +59,9 @@ const pos = (r: readonly number[]): JSX.CSSProperties =>
   ({ position: 'absolute', left: `${r[0]}%`, top: `${r[1]}%`, width: `${r[2]}%`, height: `${r[3]}%` });
 
 function Hotspot({ r, onClick, title }: { r: readonly number[]; onClick: () => void; title?: string }) {
-  return <button class="ov-hotspot" style={pos(r)} title={title} onClick={onClick} />;
+  // Held (paused / not your turn): grey the button face and drop its pointer events.
+  const off = blocked.value;
+  return <button class={`ov-hotspot${off ? ' blocked' : ''}`} style={pos(r)} title={title} onClick={onClick} disabled={off} />;
 }
 
 // ---- leaf readouts (each subscribes to exactly one live signal) -------------
@@ -106,16 +108,16 @@ function MeterOverlay() {
     <>
       <div class="ov meter-empty" style={{ position: 'absolute', left: `${R.meter[0]}%`, top: `${R.meter[1]}%`, width: `${R.meter[2]}%`, height: `${emptyH}%` }} />
       <ReadoutBox r={R.pnum}><BmpText font="Trebuchet MS 18" text={String(p)} tint={INK} /></ReadoutBox>
-      <div ref={barRef} class="ov meter-drag" style={pos(R.meter)}
+      <div ref={barRef} class={`ov meter-drag${blocked.value ? ' blocked' : ''}`} style={pos(R.meter)}
         title="Drag to set power (top 1000 · bottom 10)"
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
     </>
   );
 }
 function FireButton() {
-  const on = canFire.value;
+  const off = blocked.value;   // held when paused or when it's not the human's turn
   return (
-    <button class={`ov fire-btn${on ? '' : ' disabled'}`} style={pos(R.fire)} onClick={() => { if (game().isPlayerTurn()) game().fire(); }}>
+    <button class={`ov fire-btn${off ? ' disabled' : ''}`} style={pos(R.fire)} disabled={off} onClick={() => { if (game().isPlayerTurn()) game().fire(); }}>
       <BmpText font="fire" text="FIRE" height={38} />
     </button>
   );
@@ -150,7 +152,7 @@ function DialGrab() {
     drag.current = null;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
   };
-  return <div class="ov dial-drag" style={pos(DIAL_GRAB)}
+  return <div class={`ov dial-drag${blocked.value ? ' blocked' : ''}`} style={pos(DIAL_GRAB)}
     title="Drag left/right to aim"
     onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />;
 }
@@ -181,7 +183,7 @@ function WeaponList() {
     (listRef.current?.querySelector('.wrow.active') as HTMLElement | null)?.scrollIntoView({ block: 'nearest' });
   }, [idx]);
   return (
-    <div class="ov wlist" style={pos(R.list)} ref={listRef}>
+    <div class={`ov wlist${blocked.value ? ' blocked' : ''}`} style={pos(R.list)} ref={listRef}>
       {weapons.value.map((wp, i) => {
         const active = wp.index === idx;
         return (
@@ -230,11 +232,31 @@ function ControlPanel() {
       <Hotspot r={R.aleft} title="Aim left (+)" onClick={() => dA(2)} />
       <Hotspot r={R.aright} title="Aim right (-)" onClick={() => dA(-2)} />
       <WindReadout />
-      <Hotspot r={R.close} title="Menu" onClick={() => {}} />
+      <Hotspot r={R.close} title="Audio settings" onClick={() => { uiClick(); showSettings.value = true; }} />
       <PanelLabel r={R.lblWeapon} text="Select Weapon" left />
       <PanelLabel r={R.lblPower} text="Power" />
       <PanelLabel r={R.lblAngle} text="Angle" />
       <PanelLabel r={R.lblWind} text="Wind" />
+    </div>
+  );
+}
+
+// Top-left status overlay: each tank's "NAME: N% life" (team colour) then
+// "Battle X of Y - Shot Z" (white) — matches the original (FUN_0048c480).
+function BattleStatus() {
+  const s = battleStatus.value;
+  // The original's status font: BeijingSSK 16 outlined (white fill + baked black
+  // outline). Rendered at NATIVE size (no tint) so it stays crisp. Only the
+  // ACTIVE tank's line is boxed in its team colour.
+  return (
+    <div id="battle-status">
+      {s.lines.map(l => (
+        <div key={l.text} class={`bstat-line${l.active ? ' active' : ''}${l.dead ? ' dead' : ''}`}
+          style={l.active ? { background: l.color + '66', borderColor: l.color } : undefined}>
+          <BmpText font="BeijingSSK 16 outlined" text={l.text} height={18} spacing={-1} />
+        </div>
+      ))}
+      <div class="bstat-line"><BmpText font="BeijingSSK 16 outlined" text={s.battle} height={18} spacing={-1} /></div>
     </div>
   );
 }
@@ -287,6 +309,7 @@ function PlayerStats() {
 export function Hud() {
   return (
     <>
+      <BattleStatus />
       <TurnBanner />
       <div id="hud">
         <WeaponDetails />

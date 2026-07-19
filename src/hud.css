@@ -15,18 +15,17 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
 #game-container { position: fixed; top: 0; left: 0; right: 0; height: calc(100vh - var(--hud-h)); }
 #game-container canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
-/* ---- top status bar (over the world) ---- */
-#status-bar {
-  position: absolute; top: 8px; left: 12px; right: 12px; z-index: 10;
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
-  font-size: 13px; pointer-events: none;
+/* ---- top-left status text (life per tank, battle + shot) ---- */
+#battle-status {
+  position: absolute; top: 6px; left: 8px; z-index: 10;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  pointer-events: none;
 }
-.player-info { background: rgba(0,0,0,0.55); padding: 8px 14px; border-radius: 5px; border: 1px solid rgba(140,160,140,0.3); }
-.tank-health { display: flex; gap: 10px; align-items: center; }
-.health-bar { width: 100px; height: 9px; background: #222; border-radius: 4px; overflow: hidden; border: 1px solid #000; }
-.health-fill { height: 100%; transition: width .3s; }
-.life-fill { background: linear-gradient(to right, #c00, #f55); }
-.shield-fill { background: linear-gradient(to right, #04c, #4af); }
+/* BeijingSSK 16 outlined bitmap font carries its own outline. */
+#battle-status canvas { display: block; }
+.bstat-line { border: 1px solid transparent; padding: 0 4px; }   /* square box, no radius */
+/* only the active line is boxed — team border + semi-transparent team fill (inline) */
+.bstat-line.dead { opacity: 0.55; }
 
 #turn-indicator {
   position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%); z-index: 10;
@@ -48,6 +47,25 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
 
 /* the gui.bmp panel; its height fills the bar, width follows the image aspect */
 #hud-panel { position: relative; height: calc(var(--hud-h) - 14px); flex: 0 0 auto; }
+
+/* "Held" controls (paused / not the player's turn): each button greys out on its
+   own — a translucent grey face over its rect — and stops taking pointer input,
+   so nothing hovers or clicks. Per-control (not one panel-wide veil), matching
+   the original's individually-disabled buttons. */
+.ov-hotspot.blocked {
+  background: rgba(70, 74, 70, 0.5);
+  border-radius: 3px;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* Weapon list greys as a block (it's one scrolling control, not a button grid). */
+.wlist.blocked { pointer-events: none; }
+.wlist.blocked::after {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(70, 74, 70, 0.5);
+}
+/* Invisible drag layers just stop responding — their readouts stay visible. */
+.meter-drag.blocked, .dial-drag.blocked { pointer-events: none; }
 .panel-bg { height: 100%; width: auto; display: block; image-rendering: pixelated; }
 
 /* generic overlay + transparent click hotspot */
@@ -104,6 +122,27 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
 .screen-overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.72); }
 .screen-card { background: linear-gradient(#9aa0a8, #626870); border: 2px solid #3a3f45; border-radius: 10px; padding: 30px 44px; text-align: center; color: #14171a; box-shadow: 0 6px 20px rgba(0,0,0,0.6); }
 .screen-card h1 { margin-bottom: 8px; } .screen-card p { margin-bottom: 18px; color: #2a2f34; }
+
+/* Audio settings overlay */
+.set-card { min-width: 340px; text-align: left; }
+.set-card h1 { text-align: center; margin-bottom: 18px; }
+.set-row { display: grid; grid-template-columns: 130px 1fr 34px; align-items: center; gap: 12px; margin-bottom: 14px; }
+.set-label { display: flex; align-items: center; gap: 7px; font-weight: 600; cursor: pointer; user-select: none; }
+.set-label input { cursor: pointer; }
+.set-slider { width: 100%; accent-color: #2f6d34; cursor: pointer; }
+.set-slider:disabled { opacity: 0.45; cursor: default; }
+.set-val { text-align: right; font-variant-numeric: tabular-nums; color: #1c2124; }
+.set-close { display: block; margin: 20px auto 0; padding: 6px 22px; border: 1px solid #2a2f34; border-radius: 6px; background: linear-gradient(#c3c8cf, #8b9198); color: #14171a; font-weight: 700; cursor: pointer; }
+.set-close:hover { background: linear-gradient(#d0d5db, #979da4); }
+
+/* Jet-flight indicator (top-centre while airborne) */
+.flight-hud {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 15;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+}
+.flight-fuel { font-size: 22px; font-weight: 800; color: #ffd23f; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+.flight-hint { font-size: 13px; color: #dfe8ef; opacity: 0.9; }
 
 /* Full-viewport white-out for big blasts (nuke phase 1) — above everything. */
 .screen-flash {

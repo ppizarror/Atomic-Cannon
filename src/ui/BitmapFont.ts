@@ -74,7 +74,9 @@ export class BitmapFont {
   measure(text: string, spacing = 1): number {
     let w = 0;
     for (const c of text) w += (c === ' ' ? this.spaceW() : (this.glyph(c.charCodeAt(0))?.w ?? this.spaceW())) + spacing;
-    return Math.max(1, w);
+    // `spacing` sits BETWEEN glyphs, not after the last — otherwise a negative
+    // spacing under-sizes the canvas and clips the final glyph.
+    return Math.max(1, w - spacing);
   }
 
   /** The (cached) glyph atlas, optionally recoloured to `tint` (keeps alpha). */
