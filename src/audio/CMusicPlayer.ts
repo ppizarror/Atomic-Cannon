@@ -25,104 +25,116 @@ const LOOP_FOREVER = -1;
 const PLAY_ONCE = 0;
 
 export class CMusicPlayer {
-  private m_ctx: AudioContext;
-  private m_gain: GainNode;                 // master music volume node
-  private m_node: AudioWorkletNode | null = null;
-  private m_ready: Promise<void>;
-  private m_enabled = true;
-  private m_volume = 100;                   // 0..100 (options slider `+0x9f8`)
-  private m_current: string | null = null;  // filename currently requested
-  private m_onEnded: (() => void) | null = null;
-  private m_buffers = new Map<string, ArrayBuffer>();
+    private m_ctx: AudioContext;
+    private m_gain: GainNode;                 // master music volume node
+    private m_node: AudioWorkletNode | null = null;
+    private m_ready: Promise<void>;
+    private m_enabled = true;
+    private m_volume = 100;                   // 0..100 (options slider `+0x9f8`)
+    private m_current: string | null = null;  // filename currently requested
+    private m_onEnded: (() => void) | null = null;
+    private m_buffers = new Map<string, ArrayBuffer>();
 
-  constructor(ctx: AudioContext, destination: AudioNode) {
-    this.m_ctx = ctx;
-    this.m_gain = ctx.createGain();
-    this.m_gain.gain.value = this.m_volume / 100;
-    this.m_gain.connect(destination);
-    this.m_ready = this.initNode();
-  }
-
-  private async initNode(): Promise<void> {
-    try {
-      await this.m_ctx.audioWorklet.addModule(WORKLET_URL);
-      const node = new AudioWorkletNode(this.m_ctx, 'libopenmpt-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-      });
-      node.port.onmessage = (e: MessageEvent) => this.onWorkletMessage(e.data);
-      node.port.postMessage({ cmd: 'config', val: {
-        repeatCount: LOOP_FOREVER,
-        stereoSeparation: 100,
-        interpolationFilter: 0,
-      } });
-      node.connect(this.m_gain);
-      this.m_node = node;
-    } catch (e) {
-      console.warn('music worklet init failed — music disabled', e);
+    constructor(ctx: AudioContext, destination: AudioNode) {
+        this.m_ctx = ctx;
+        this.m_gain = ctx.createGain();
+        this.m_gain.gain.value = this.m_volume / 100;
+        this.m_gain.connect(destination);
+        this.m_ready = this.initNode();
     }
-  }
 
-  private onWorkletMessage(msg: { cmd: string; val?: unknown }): void {
-    if (msg.cmd === 'end') this.m_onEnded?.();
-    else if (msg.cmd === 'err') console.warn('libopenmpt error:', msg.val);
-  }
-
-  setEnabled(on: boolean): void {
-    this.m_enabled = on;
-    if (!on) this.stop();
-  }
-  isEnabled(): boolean { return this.m_enabled; }
-
-  setVolume(v: number): void {
-    this.m_volume = Math.max(0, Math.min(100, v));
-    this.m_gain.gain.value = this.m_volume / 100;
-  }
-  getVolume(): number { return this.m_volume; }
-
-  /** Fires when a non-looping track finishes (win/lose jingles). */
-  onEnded(cb: () => void): void { this.m_onEnded = cb; }
-
-  currentTrack(): string | null { return this.m_current; }
-
-  /**
-   * Play a module by filename. `loop` true = battle/menu bed; false = one-shot
-   * jingle. No-op (but remembered) if the same looping track is already playing.
-   */
-  async play(file: string, loop: boolean): Promise<void> {
-    if (!this.m_enabled || !file) return;
-    if (loop && this.m_current === file) return;   // already looping this bed
-    this.m_current = file;
-
-    await this.m_ready;
-    if (!this.m_node) return;
-
-    const data = await this.fetchModule(file);
-    if (!data || this.m_current !== file) return;   // superseded while loading
-
-    this.m_node.port.postMessage({ cmd: 'repeatCount', val: loop ? LOOP_FOREVER : PLAY_ONCE });
-    // The worklet takes ownership of the buffer; hand it a copy so our cache stays intact.
-    this.m_node.port.postMessage({ cmd: 'play', val: data.slice(0) });
-  }
-
-  stop(): void {
-    this.m_current = null;
-    this.m_node?.port.postMessage({ cmd: 'stop' });
-  }
-
-  private async fetchModule(file: string): Promise<ArrayBuffer | null> {
-    const cached = this.m_buffers.get(file);
-    if (cached) return cached;
-    try {
-      const res = await fetch(encodeURI(MUSIC_BASE + file));
-      if (!res.ok) throw new Error(`${res.status}`);
-      const buf = await res.arrayBuffer();
-      this.m_buffers.set(file, buf);
-      return buf;
-    } catch (e) {
-      console.warn(`music load failed: ${file}`, e);
-      return null;
+    private async initNode(): Promise<void> {
+        try {
+            await this.m_ctx.audioWorklet.addModule(WORKLET_URL);
+            const node = new AudioWorkletNode(this.m_ctx, 'libopenmpt-processor', {
+                numberOfInputs: 0,
+                numberOfOutputs: 1,
+                outputChannelCount: [2],
+            });
+            node.port.onmessage = (e: MessageEvent) => this.onWorkletMessage(e.data);
+            node.port.postMessage({
+                cmd: 'config', val: {
+                    repeatCount: LOOP_FOREVER,
+                    stereoSeparation: 100,
+                    interpolationFilter: 0,
+                }
+            });
+            node.connect(this.m_gain);
+            this.m_node = node;
+        } catch (e) {
+            console.warn('music worklet init failed — music disabled', e);
+        }
     }
-  }
+
+    private onWorkletMessage(msg: { cmd: string; val?: unknown }): void {
+        if (msg.cmd === 'end') this.m_onEnded?.();
+        else if (msg.cmd === 'err') console.warn('libopenmpt error:', msg.val);
+    }
+
+    setEnabled(on: boolean): void {
+        this.m_enabled = on;
+        if (!on) this.stop();
+    }
+
+    isEnabled(): boolean {
+        return this.m_enabled;
+    }
+
+    setVolume(v: number): void {
+        this.m_volume = Math.max(0, Math.min(100, v));
+        this.m_gain.gain.value = this.m_volume / 100;
+    }
+
+    getVolume(): number {
+        return this.m_volume;
+    }
+
+    /** Fires when a non-looping track finishes (win/lose jingles). */
+    onEnded(cb: () => void): void {
+        this.m_onEnded = cb;
+    }
+
+    currentTrack(): string | null {
+        return this.m_current;
+    }
+
+    /**
+     * Play a module by filename. `loop` true = battle/menu bed; false = one-shot
+     * jingle. No-op (but remembered) if the same looping track is already playing.
+     */
+    async play(file: string, loop: boolean): Promise<void> {
+        if (!this.m_enabled || !file) return;
+        if (loop && this.m_current === file) return;   // already looping this bed
+        this.m_current = file;
+
+        await this.m_ready;
+        if (!this.m_node) return;
+
+        const data = await this.fetchModule(file);
+        if (!data || this.m_current !== file) return;   // superseded while loading
+
+        this.m_node.port.postMessage({cmd: 'repeatCount', val: loop ? LOOP_FOREVER : PLAY_ONCE});
+        // The worklet takes ownership of the buffer; hand it a copy so our cache stays intact.
+        this.m_node.port.postMessage({cmd: 'play', val: data.slice(0)});
+    }
+
+    stop(): void {
+        this.m_current = null;
+        this.m_node?.port.postMessage({cmd: 'stop'});
+    }
+
+    private async fetchModule(file: string): Promise<ArrayBuffer | null> {
+        const cached = this.m_buffers.get(file);
+        if (cached) return cached;
+        try {
+            const res = await fetch(encodeURI(MUSIC_BASE + file));
+            if (!res.ok) throw new Error(`${res.status}`);
+            const buf = await res.arrayBuffer();
+            this.m_buffers.set(file, buf);
+            return buf;
+        } catch (e) {
+            console.warn(`music load failed: ${file}`, e);
+            return null;
+        }
+    }
 }

@@ -3,7 +3,8 @@
  * clobbers the human's, and the control-weapon lock only restricts the human.
  * Run: pnpm tsx tests/weapon-selection.test.ts   (or `pnpm test`)
  */
-import { installDomMocks, makeCanvas } from './_dom';
+import {installDomMocks, makeCanvas} from './_dom';
+
 installDomMocks();
 
 // Freeze the turn scheduler so nothing auto-cascades; we drive turns by hand.
@@ -11,23 +12,29 @@ const realSetTimeout = globalThis.setTimeout;
 (globalThis as unknown as { setTimeout: unknown }).setTimeout = () => 0;
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-import { CGameController } from '../src/game/CGameController';
-import { getWeapon, WEAPON_DATABASE } from '../src/core/CWeapon';
+import {CGameController} from '../src/game/CGameController';
+import {getWeapon, WEAPON_DATABASE} from '../src/core/CWeapon';
 
 let pass = 0, fail = 0;
+
 function ok(name: string, cond: boolean, extra = ''): void {
-  if (cond) { pass++; console.log(`  ✓ ${name}`); }
-  else { fail++; console.log(`  ✗ ${name}  ${extra}`); }
+    if (cond) {
+        pass++;
+        console.log(`  ✓ ${name}`);
+    } else {
+        fail++;
+        console.log(`  ✗ ${name}  ${extra}`);
+    }
 }
 
 const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
 const SHELL = WEAPON_DATABASE.findIndex(w => w.name === 'Shell');
 
 type GC = CGameController & {
-  m_tanks: { getWeaponIndex(): number; isHuman(): boolean; isBot(): boolean }[];
-  m_currentPlayerIndex: number;
-  beginTurn(): void;
-  executeBotTurn(): void;
+    m_tanks: { getWeaponIndex(): number; isHuman(): boolean; isBot(): boolean }[];
+    m_currentPlayerIndex: number;
+    beginTurn(): void;
+    executeBotTurn(): void;
 };
 
 const gc = new CGameController(makeCanvas()) as GC;

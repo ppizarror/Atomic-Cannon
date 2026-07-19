@@ -1,12 +1,12 @@
 /**
  * CTank - Tank Entity Class
- * 
+ *
  * Handles tank state, movement on terrain, damage, rendering
  */
 
-import { Vec2, Vec2f } from '../math/Vec2';
-import { CLand } from './CLand';
-import { getFont, type FontId } from '../ui/BitmapFont';
+import {Vec2, Vec2f} from '../math/Vec2';
+import {CLand} from './CLand';
+import {getFont, type FontId} from '../ui/BitmapFont';
 
 // Tank-badge text font — small pixel font rendered at NATIVE size (10px) so it
 // stays crisp and matches the original's compact label size.
@@ -15,15 +15,16 @@ const BADGE_FONT: FontId = 'silkscreen-8-white';
 // Render text with one of the game's bitmap fonts (cached). Returns null until the
 // font has loaded, so callers can fall back to a canvas font that first frame.
 const labelCache = new Map<string, HTMLCanvasElement>();
+
 function bmpLabel(font: FontId, text: string, tint: string): HTMLCanvasElement | null {
-  const key = `${font}|${tint}|${text}`;
-  const c = labelCache.get(key);
-  if (c) return c;
-  const f = getFont(font);
-  if (!f.ready) return null;
-  const cv = f.render(text, { tint });
-  labelCache.set(key, cv);
-  return cv;
+    const key = `${font}|${tint}|${text}`;
+    const c = labelCache.get(key);
+    if (c) return c;
+    const f = getFont(font);
+    if (!f.ready) return null;
+    const cv = f.render(text, {tint});
+    labelCache.set(key, cv);
+    return cv;
 }
 
 /** A drawable image plus its dimensions. */
@@ -43,64 +44,76 @@ const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
 
 // The original's 16-team palette (FUN_00447e40 switch, 0xRRGGBB). Team 0 = blue.
 export const TEAM_COLORS: Record<number, string> = {
-  0: '#0000ff', 1: '#ff0000', 2: '#00ff00', 3: '#0080ff',
-  4: '#f000f0', 5: '#8000ff', 6: '#00ffff', 7: '#800080',
-  8: '#000080', 9: '#008000', 10: '#800000', 11: '#ffff00',
-  12: '#ff8000', 13: '#ff0080', 14: '#00ff80', 15: '#80ff00',
+    0: '#0000ff', 1: '#ff0000', 2: '#00ff00', 3: '#0080ff',
+    4: '#f000f0', 5: '#8000ff', 6: '#00ffff', 7: '#800080',
+    8: '#000080', 9: '#008000', 10: '#800000', 11: '#ffff00',
+    12: '#ff8000', 13: '#ff0080', 14: '#00ff80', 15: '#80ff00',
 };
 
 // --- team-colour body tint (HSL hue-swap: keep each pixel's luminance, force the
 // team hue at sat 0.5 — port of FUN_004074c0). Cached per sprite+team. ----------
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  r /= 255; g /= 255; b /= 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
-  if (mx === mn) return [0, 0, l];
-  const d = mx - mn;
-  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-  let h = 0;
-  if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
-  else if (mx === g) h = (b - r) / d + 2;
-  else h = (r - g) / d + 4;
-  return [h / 6, s, l];
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn) return [0, 0, l];
+    const d = mx - mn;
+    const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    let h = 0;
+    if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return [h / 6, s, l];
 }
+
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const hk = (t: number) => {
-    if (t < 0) t += 1; if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  return [Math.round(hk(h + 1 / 3) * 255), Math.round(hk(h) * 255), Math.round(hk(h - 1 / 3) * 255)];
+    if (s === 0) {
+        const v = Math.round(l * 255);
+        return [v, v, v];
+    }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const hk = (t: number) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    };
+    return [Math.round(hk(h + 1 / 3) * 255), Math.round(hk(h) * 255), Math.round(hk(h - 1 / 3) * 255)];
 }
+
 function hueOf(hexColor: string): number {
-  const n = parseInt(hexColor.slice(1), 16);
-  return rgbToHsl((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff)[0];
+    const n = parseInt(hexColor.slice(1), 16);
+    return rgbToHsl((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff)[0];
 }
 
 const tintCache = new Map<string, HTMLCanvasElement>();
+
 function tintToHue(sprite: Sprite, hue: number, key: string): HTMLCanvasElement {
-  const cached = tintCache.get(key);
-  if (cached) return cached;
-  const cv = document.createElement('canvas');
-  cv.width = sprite.width; cv.height = sprite.height;
-  const g = cv.getContext('2d', { willReadFrequently: true })!;
-  g.imageSmoothingEnabled = false;
-  g.drawImage(sprite.bitmap, 0, 0);
-  const im = g.getImageData(0, 0, cv.width, cv.height);
-  const px = im.data;
-  for (let i = 0; i < px.length; i += 4) {
-    if (px[i + 3] === 0) continue;                       // keep transparency
-    const l = rgbToHsl(px[i], px[i + 1], px[i + 2])[2];   // keep luminance
-    const [r, gg, b] = hslToRgb(hue, 0.5, l);            // team hue, sat 0.5
-    px[i] = r; px[i + 1] = gg; px[i + 2] = b;
-  }
-  g.putImageData(im, 0, 0);
-  tintCache.set(key, cv);
-  return cv;
+    const cached = tintCache.get(key);
+    if (cached) return cached;
+    const cv = document.createElement('canvas');
+    cv.width = sprite.width;
+    cv.height = sprite.height;
+    const g = cv.getContext('2d', {willReadFrequently: true})!;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(sprite.bitmap, 0, 0);
+    const im = g.getImageData(0, 0, cv.width, cv.height);
+    const px = im.data;
+    for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] === 0) continue;                       // keep transparency
+        const l = rgbToHsl(px[i], px[i + 1], px[i + 2])[2];   // keep luminance
+        const [r, gg, b] = hslToRgb(hue, 0.5, l);            // team hue, sat 0.5
+        px[i] = r;
+        px[i + 1] = gg;
+        px[i + 2] = b;
+    }
+    g.putImageData(im, 0, 0);
+    tintCache.set(key, cv);
+    return cv;
 }
 
 /**
@@ -116,15 +129,15 @@ export interface STankHealth {
 /**
  * Tank state flags/members:
  * - Moving state ("Tank is moving")
- * - Underground detection ("underground")  
+ * - Underground detection ("underground")
  * - Can move / Can't move messages
  */
 export class CTank {
-    
+
     // ========================================================================
     // CONSTRUCTION & INITIALIZATION
     // ========================================================================
-    
+
     constructor(sName: string = '', nTeamId: number = 0) {
         this.m_nId = 0;
         this.m_pPlayerData = null;
@@ -138,17 +151,17 @@ export class CTank {
         this.m_vPos = new Vec2(0, 0);
         this.m_vVel = new Vec2(0, 0);
         this.m_fAngle = 0;         // Body rotation angle (radians)
-        
+
         // Turret state
         this.m_fTurretAngle = Math.PI / 4;   // Default aim: 45 deg up-right
         this.m_fLastTurretAngle = this.m_fTurretAngle;
-        
+
         // Health status (life 0..1000, shield 0..1000, armor 0..100%)
         this.m_health.nLife = 1000;
         this.m_health.nShield = 0;
         this.m_health.nArmor = 0;
         this.m_health.fRadiation = 0;
-        
+
         // State flags
         this.m_bIsAlive = true;
         this.m_bIsMoving = false;
@@ -156,7 +169,7 @@ export class CTank {
         this.m_bExploded = false;
         this.m_bUnderground = false;
     }
-    
+
     /**
      * Initialize tank at position with given player data
      */
@@ -168,24 +181,24 @@ export class CTank {
         // Reset to full health on spawn
         this.m_health.nLife = 1000;
     }
-    
+
     /**
      * Compute tank's Y position based on terrain surface (called each frame)
      */
     computePosition(pLand: CLand): void {
         if (!pLand) return;
-        
+
         const nTerrainHeight = pLand.getHeightAt(Math.floor(this.m_vPos.x));
-        
+
         // Tank sits on top of terrain
         this.m_vPos.y = nTerrainHeight - TANK_HEIGHT_PIXELS;
-        
+
         // Check if tank has fallen underground somehow
         if (this.m_vPos.y > nTerrainHeight) {
             this.m_bFalling = true;
         }
     }
-    
+
     /**
      * Compute turret base rotation to match terrain slope
      */
@@ -193,11 +206,11 @@ export class CTank {
         // Terrain normal gives us the angle of the surface under tank
         // We use this to keep turret roughly horizontal
     }
-    
+
     // ========================================================================
     // PHYSICS & MOVEMENT
     // ========================================================================
-    
+
     /**
      * Main update tick - called every frame during battle
      */
@@ -213,14 +226,14 @@ export class CTank {
         // At empty this branch is skipped and the tank simply falls & lands below.
         if (this.m_fJetFuel > 0) {
             this.m_fJetFuel = Math.max(0, this.m_fJetFuel - dt);
-            const { up, left, right } = this.m_jetInput;
+            const {up, left, right} = this.m_jetInput;
             const airborne = this.m_vPos.y < fRestY - 0.5;
 
             if (airborne || up) {
                 // Semi-implicit Euler: gravity, then thrust, then integrate.
                 this.m_vVel.y += TANK_GRAVITY * dt;
-                if (up)    this.m_vVel.y += JET_UP_ACCEL * dt;     // -1.2g
-                if (left)  this.m_vVel.x += JET_SIDE_ACCEL * dt;  // -0.1g
+                if (up) this.m_vVel.y += JET_UP_ACCEL * dt;     // -1.2g
+                if (left) this.m_vVel.x += JET_SIDE_ACCEL * dt;  // -0.1g
                 if (right) this.m_vVel.x -= JET_SIDE_ACCEL * dt;  // +0.1g
                 this.m_vPos.x += this.m_vVel.x * dt;
                 this.m_vPos.y += this.m_vVel.y * dt;
@@ -228,7 +241,10 @@ export class CTank {
                 this.m_bIsMoving = true;
 
                 // Ceiling clamp at the top of the map (RE: y→8 when above it).
-                if (this.m_vPos.y < JET_CEILING) { this.m_vPos.y = JET_CEILING; if (this.m_vVel.y < 0) this.m_vVel.y = 0; }
+                if (this.m_vPos.y < JET_CEILING) {
+                    this.m_vPos.y = JET_CEILING;
+                    if (this.m_vVel.y < 0) this.m_vVel.y = 0;
+                }
                 this.m_vPos.x = Math.max(TANK_RADIUS, Math.min(pLand.width - TANK_RADIUS, this.m_vPos.x));
 
                 // Land when descending onto the surface (keeps fuel for re-lift).
@@ -287,51 +303,51 @@ export class CTank {
 
         this.m_fLastTurretAngle = this.m_fTurretAngle;
     }
-    
+
     /**
      * Check if tank can move to new position
      */
     canMove(pLand: CLand): boolean {
         const nX = Math.floor(this.m_vPos.x);
-        
+
         // Check bounds
         if (nX < TANK_RADIUS || nX > 800 - TANK_RADIUS) {
             return false;
         }
-        
+
         // Get terrain height at new position
         const nTerrainHeight = pLand.getHeightAt(nX);
-        
+
         // Calculate tank bottom Y
         const nTankBottom = Math.floor(this.m_vPos.y + TANK_HEIGHT_PIXELS);
-        
+
         // Can't move if would be too far underground
-        return (nTankBottom <= nTerrainHeight + 10);  
+        return (nTankBottom <= nTerrainHeight + 10);
     }
-    
+
     /**
      * Move tank along terrain surface
      */
     move(pLand: CLand, vDirection: Vec2, fSpeed: number): void {
         if (!this.m_bIsAlive) return;
-        
+
         // Calculate new position
         const nNewX = this.m_vPos.x + vDirection.x * fSpeed;
-        
+
         // Get terrain height at new x position  
         const nTerrainHeight = pLand.getHeightAt(Math.floor(nNewX));
-        
+
         // Tank should be on terrain surface
         this.m_vPos.x = nNewX;
         this.m_vPos.y = nTerrainHeight - TANK_HEIGHT_PIXELS;
-        
+
         this.m_bIsMoving = true;
-        
+
         // Set body angle to slope of terrain at position
         const normal = pLand.getNormal(Math.floor(nNewX));
         this.m_fAngle = Math.atan2(normal.x, -normal.y);
     }
-    
+
     /**
      * Stop tank movement
      */
@@ -343,29 +359,50 @@ export class CTank {
     // ── Jet flight (extType 17) ──────────────────────────────────────────────
 
     /** Light the jet with `fuelSeconds` of fuel (the weapon's damage field). */
-    igniteJet(fuelSeconds: number): void { this.m_fJetFuel = Math.max(0, fuelSeconds); }
+    igniteJet(fuelSeconds: number): void {
+        this.m_fJetFuel = Math.max(0, fuelSeconds);
+    }
+
     /** Cut the engine — drops remaining fuel (turn-end / early-out; RE: tank+0x88=0). */
-    cutJet(): void { this.m_fJetFuel = 0; this.m_jetInput = { up: false, left: false, right: false }; }
-    hasJetFuel(): boolean { return this.m_fJetFuel > 0; }
-    getJetFuel(): number { return this.m_fJetFuel; }
+    cutJet(): void {
+        this.m_fJetFuel = 0;
+        this.m_jetInput = {up: false, left: false, right: false};
+    }
+
+    hasJetFuel(): boolean {
+        return this.m_fJetFuel > 0;
+    }
+
+    getJetFuel(): number {
+        return this.m_fJetFuel;
+    }
+
     /** Held thrust input for this frame (up/left/right). */
-    setJetInput(up: boolean, left: boolean, right: boolean): void { this.m_jetInput = { up, left, right }; }
+    setJetInput(up: boolean, left: boolean, right: boolean): void {
+        this.m_jetInput = {up, left, right};
+    }
+
     /** True while the up-thrust is firing with fuel — drives the jet.wav loop. */
-    isThrustingUp(): boolean { return this.m_fJetFuel > 0 && this.m_jetInput.up; }
-    isFalling(): boolean { return this.m_bFalling; }
-    
+    isThrustingUp(): boolean {
+        return this.m_fJetFuel > 0 && this.m_jetInput.up;
+    }
+
+    isFalling(): boolean {
+        return this.m_bFalling;
+    }
+
     /**
      * Apply knockback to tank (from explosions)
      */
     kick(dir: Vec2, fForce: number): void {
         // Apply impulse velocity from kick direction
         this.m_vVel.x += dir.x * fForce;
-        this.m_vVel.y += dir.y * fForce;  
-        
+        this.m_vVel.y += dir.y * fForce;
+
         this.m_bFalling = true;
         this.m_bIsMoving = false;
     }
-    
+
     /**
      * Set rotation for kick animation
      */
@@ -373,11 +410,11 @@ export class CTank {
         // Applied when a blast throws the tank; accumulates into the body angle.
         this.m_fAngle += fAngle;
     }
-    
+
     // ========================================================================
     // COMBAT & DAMAGE
     // ========================================================================
-    
+
     /**
      * Apply damage to tank (called from hit detection)
      */
@@ -408,7 +445,7 @@ export class CTank {
             this.m_bIsAlive = false;
         }
     }
-    
+
     /**
      * True when the point (cx,cy) is within nRadius of the tank centre.
      */
@@ -439,24 +476,24 @@ export class CTank {
     getHitsInt(): number {
         return this.m_nHitCount;
     }
-    
+
     /**
      * Hit test for click detection on tank sprite
      */
     hittest(point: Vec2): boolean {
         // Check if point is within tank's bounding box
         // Uses current position and scale
-        
+
         const dx = Math.abs(point.x - this.m_vPos.x);
-        const dy = Math.abs(point.y - (this.m_vPos.y + TANK_HEIGHT_PIXELS/2));
-        
+        const dy = Math.abs(point.y - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2));
+
         return (dx < TANK_RADIUS && dy < TANK_HEIGHT_PIXELS);
     }
-    
+
     // ========================================================================
     // RENDERING
     // ========================================================================
-    
+
     /**
      * Render the tank to the canvas. Uses the loaded hull sprite when available
      * and falls back to a vector silhouette while assets are still loading.
@@ -566,9 +603,12 @@ export class CTank {
         // Bar: coloured fill over a black border + a "depleted" remainder.
         const bar = (y: number, frac: number, fill: string, empty: string): number => {
             const x = cx - w / 2;
-            ctx.fillStyle = '#000'; ctx.fillRect(x - 1, y - 1, w + 2, BH + 2);
-            ctx.fillStyle = empty; ctx.fillRect(x, y, w, BH);
-            ctx.fillStyle = fill; ctx.fillRect(x, y, w * frac, BH);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(x - 1, y - 1, w + 2, BH + 2);
+            ctx.fillStyle = empty;
+            ctx.fillRect(x, y, w, BH);
+            ctx.fillStyle = fill;
+            ctx.fillRect(x, y, w * frac, BH);
             return y + BH + 2;
         };
 
@@ -584,7 +624,10 @@ export class CTank {
                 ctx.drawImage(lab, lx, ly);
                 return y + lab.height + 1;
             }
-            ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillStyle = '#fff';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
             ctx.fillText(text, cx, y);
             return y + 12;
         };
@@ -595,8 +638,10 @@ export class CTank {
         y = bar(y, life, '#00ff00', '#ff0000');                 // life (green / red)
         if (shield > 0) y = bar(y, shield, '#0000ff', '#808080'); // shield (blue / grey)
         if (armor > 0) {                                        // armour (yellow strip)
-            ctx.fillStyle = '#000'; ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 3);
-            ctx.fillStyle = '#ffff00'; ctx.fillRect(cx - w / 2, y, w * Math.min(1, armor / 100), 1);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 3);
+            ctx.fillStyle = '#ffff00';
+            ctx.fillRect(cx - w / 2, y, w * Math.min(1, armor / 100), 1);
             y += 3;
         }
 
@@ -614,8 +659,13 @@ export class CTank {
         const bh = nameH + 4;
         const bx = Math.round(cx - bw / 2), by = Math.round(y + 2);
 
-        ctx.globalAlpha = 0.5; ctx.fillStyle = team; ctx.fillRect(bx, by, bw, bh); ctx.globalAlpha = 1;
-        ctx.strokeStyle = team; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = team;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = team;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
 
         let contentX = bx + pad;
         ctx.imageSmoothingEnabled = false;
@@ -626,7 +676,10 @@ export class CTank {
         if (lab) {
             ctx.drawImage(lab, Math.round(contentX), Math.round(by + (bh - nameH) / 2));   // native 1:1
         } else {
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
             ctx.fillText(name, contentX, by + bh / 2);
         }
         y = by + bh + 1;
@@ -639,13 +692,14 @@ export class CTank {
             if (this.m_health.nShield > 0) y = line(`Shield ${Math.round(this.m_health.nShield)}`, y);
             y = line(`Credits ${this.m_credits}`, y);
         }
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
     }
-    
+
     // ========================================================================
     // TURRET CONTROL  
     // ========================================================================
-    
+
     /**
      * Get current turret rotation angle
      */
@@ -694,82 +748,147 @@ export class CTank {
         const aim = this.aimUnit();
         return new Vec2(pivot.x + aim.x * TANK_TURRET_LENGTH, pivot.y + aim.y * TANK_TURRET_LENGTH);
     }
-    
+
     /**
      * Set turret aim direction (called from player input or AI)
      */
     setRelativeTurret(fDelta: number): void {
         this.m_fLastTurretAngle = this.m_fTurretAngle;
         this.m_fTurretAngle += fDelta;
-        
+
         // Clamp to valid range
-        this.m_fTurretAngle = Math.max(-Math.PI/2, 
-                                Math.min(Math.PI/2, this.m_fTurretAngle));
+        this.m_fTurretAngle = Math.max(-Math.PI / 2,
+            Math.min(Math.PI / 2, this.m_fTurretAngle));
     }
-    
+
     /**
      * Get turret end point (for muzzle position calculation)
      */
     turretEnd(): Vec2 {
         // Returns position of barrel tip for shot spawn
-        
+
         const fLength = TANK_TURRET_LENGTH;
-        
+
         return new Vec2(
             this.m_vPos.x + Math.sin(this.m_fTurretAngle) * fLength,
             this.m_vPos.y - Math.cos(this.m_fTurretAngle) * fLength
         );
     }
-    
+
     /**
      * Get turret blit angle for sprite rendering (converts aim to display)
      */
     getTurretBlitAngle(): number {
         // Transform physics angle to sprite rotation angle
-        return this.m_fTurretAngle;  
+        return this.m_fTurretAngle;
     }
-    
+
     // ========================================================================
     // ACCESSORS & STATE QUERIES
     // ========================================================================
-    
-    isAlive(): boolean { return this.m_bIsAlive; }
-    isMoving(): boolean { return this.m_bIsMoving; }
-    isBot(): boolean { return !this.isHuman(); }
-    isHuman(): boolean { return this.m_bIsHuman; }
-    setHuman(bHuman: boolean): void { this.m_bIsHuman = bHuman; }
 
-    getName(): string { return this.m_sName; }
+    isAlive(): boolean {
+        return this.m_bIsAlive;
+    }
+
+    isMoving(): boolean {
+        return this.m_bIsMoving;
+    }
+
+    isBot(): boolean {
+        return !this.isHuman();
+    }
+
+    isHuman(): boolean {
+        return this.m_bIsHuman;
+    }
+
+    setHuman(bHuman: boolean): void {
+        this.m_bIsHuman = bHuman;
+    }
+
+    getName(): string {
+        return this.m_sName;
+    }
+
     // Each tank keeps its OWN selected weapon so one player's choice never leaks
     // into another's turn.
-    getWeaponIndex(): number { return this.m_weaponIndex; }
-    setWeaponIndex(i: number): void { this.m_weaponIndex = i; }
+    getWeaponIndex(): number {
+        return this.m_weaponIndex;
+    }
+
+    setWeaponIndex(i: number): void {
+        this.m_weaponIndex = i;
+    }
+
     // Likewise, each tank keeps its OWN aim (UI angle in degrees, 0..180) and
     // power (10..1000) so they persist across turns and never leak between players.
-    getAimAngle(): number { return this.m_aimAngle; }
-    setAimAngle(deg: number): void { this.m_aimAngle = deg; }
-    getPower(): number { return this.m_power; }
-    setPower(p: number): void { this.m_power = p; }
-    getCredits(): number { return this.m_credits; }
-    setCredits(n: number): void { this.m_credits = n; }
-    getTeamColor(): string { return TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'; }
+    getAimAngle(): number {
+        return this.m_aimAngle;
+    }
+
+    setAimAngle(deg: number): void {
+        this.m_aimAngle = deg;
+    }
+
+    getPower(): number {
+        return this.m_power;
+    }
+
+    setPower(p: number): void {
+        this.m_power = p;
+    }
+
+    getCredits(): number {
+        return this.m_credits;
+    }
+
+    setCredits(n: number): void {
+        this.m_credits = n;
+    }
+
+    getTeamColor(): string {
+        return TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
+    }
+
     /** Screen/world hit-test for hover (badge detail) — matches FUN_00403520. */
     isPointInside(px: number, py: number): boolean {
         const dx = px - this.m_vPos.x, dy = py - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2);
         return dx * dx + dy * dy < (TANK_RADIUS + 8) * (TANK_RADIUS + 8);
     }
-    isLocalPlayer(): boolean { return false; }   // TODO
-    
-    getPosition(): Vec2 { return this.m_vPos.clone(); }
-    getVelocity(): Vec2 { return this.m_vVel.clone(); }
-    
-    getHealth(): STankHealth { return { ...this.m_health }; }
+
+    isLocalPlayer(): boolean {
+        return false;
+    }   // TODO
+
+    getPosition(): Vec2 {
+        return this.m_vPos.clone();
+    }
+
+    getVelocity(): Vec2 {
+        return this.m_vVel.clone();
+    }
+
+    getHealth(): STankHealth {
+        return {...this.m_health};
+    }
 
     // Utility-weapon effects (extType 7/10/11): boost shield, repair, set armor.
-    addShield(n: number): void { this.m_health.nShield = Math.max(0, Math.min(1000, this.m_health.nShield + n)); }
-    addLife(n: number): void { this.m_health.nLife = Math.max(0, Math.min(1000, this.m_health.nLife + n)); }
-    setArmor(pct: number): void { this.m_health.nArmor = Math.max(0, Math.min(100, pct)); }
-    getTeamId(): number { return this.m_nTeamId; }
+    addShield(n: number): void {
+        this.m_health.nShield = Math.max(0, Math.min(1000, this.m_health.nShield + n));
+    }
+
+    addLife(n: number): void {
+        this.m_health.nLife = Math.max(0, Math.min(1000, this.m_health.nLife + n));
+    }
+
+    setArmor(pct: number): void {
+        this.m_health.nArmor = Math.max(0, Math.min(100, pct));
+    }
+
+    getTeamId(): number {
+        return this.m_nTeamId;
+    }
 
     /**
      * Sprites this tank needs, as {logical name, file path} pairs. The logical
@@ -781,7 +900,7 @@ export class CTank {
             file: `/assets/tanks/${this.m_sTankType} ${part}.bmp`,
         }));
     }
-    
+
     /**
      * Distance from terrain surface
      */
@@ -795,16 +914,16 @@ export class CTank {
         const dy = y - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2);
         return Math.sqrt(dx * dx + dy * dy);
     }
-    
+
     // ========================================================================
     // MEMBER VARIABLES
     // ========================================================================
-    
+
     private m_nId: number;              // Unique tank identifier
-    
+
     // Player data reference  
     private m_pPlayerData: unknown;     // CPlayerData*
-    
+
     private m_nTeamId: number = 0;      // Team assignment (for color)
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
     private m_credits: number = 0;      // Economy credits (shown in the detail badge)
@@ -813,16 +932,16 @@ export class CTank {
     private m_power: number = 500;      // This tank's own firing power (10..1000)
     private m_bIsHuman: boolean = false; // True for the human-controlled tank
     private m_sTankType: string = 'Standard'; // Hull sprite variant
-    
+
     // Position and movement
     public m_vPos: Vec2;                // Tank center position
     private m_vVel: Vec2;               // Velocity vector
     private m_fAngle: number;           // Body rotation angle
-    
+
     // Turret state  
     private m_fTurretAngle: number;     // Current aim direction (radians)
     public m_fLastTurretAngle: number;
-    
+
     // Health status
     private m_health: STankHealth = {
         nLife: 1000,
@@ -830,11 +949,11 @@ export class CTank {
         nArmor: 0,
         fRadiation: 0
     };
-    
+
     // Jet flight (extType 17): fuel in seconds remaining, and the current held
     // thrust input. Flying == fuel > 0 (there is no separate flag; RE: tank+0x88).
     private m_fJetFuel: number = 0;
-    private m_jetInput = { up: false, left: false, right: false };
+    private m_jetInput = {up: false, left: false, right: false};
 
     // State flags
     public m_bIsAlive: boolean = true;
@@ -842,7 +961,7 @@ export class CTank {
     private m_bFalling: boolean = false;
     public m_bExploded: boolean = false;
     private m_bUnderground: boolean = false;
-    
+
     // Statistics tracking
     private m_nHitCount: number = 0;
 }

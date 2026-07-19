@@ -1,283 +1,804 @@
 /* Atomic Cannon HUD — real gui.bmp control panel with live overlays. */
 
-:root { --hud-h: 152px; }
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; overflow: hidden; }
-body {
-  background: #000; color: #cfe; font-family: 'Segoe UI', Arial, sans-serif;
-  /* No text/element selection or image dragging anywhere in the game UI. */
-  user-select: none; -webkit-user-select: none;
+:root {
+    --hud-h: 152px;
 }
-img, canvas { -webkit-user-drag: none; user-select: none; }
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    background: #000;
+    color: #cfe;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    /* No text/element selection or image dragging anywhere in the game UI. */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+img, canvas {
+    -webkit-user-drag: none;
+    user-select: none;
+}
 
 /* World renders here, ABOVE the HUD (not behind it). */
-#game-container { position: fixed; top: 0; left: 0; right: 0; height: calc(100vh - var(--hud-h)); }
-#game-container canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#game-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: calc(100vh - var(--hud-h));
+}
+
+#game-container canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
 
 /* ---- top-left status text (life per tank, battle + shot) ---- */
 #battle-status {
-  position: absolute; top: 6px; left: 8px; z-index: 10;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  pointer-events: none;
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    pointer-events: none;
 }
+
 /* BeijingSSK 16 outlined bitmap font carries its own outline. */
-#battle-status canvas { display: block; }
-.bstat-line { border: 1px solid transparent; padding: 0 4px; }   /* square box, no radius */
+#battle-status canvas {
+    display: block;
+}
+
+.bstat-line {
+    border: 1px solid transparent;
+    padding: 0 4px;
+}
+
+/* square box, no radius */
 /* only the active line is boxed — team border + semi-transparent team fill (inline) */
-.bstat-line.dead { opacity: 0.55; }
+.bstat-line.dead {
+    opacity: 0.55;
+}
 
 #turn-indicator {
-  position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%); z-index: 10;
-  font-size: clamp(22px, 4vw, 40px); font-weight: bold; color: #fff;
-  text-shadow: 0 0 20px rgba(255,200,0,.85); opacity: 0; transition: opacity .3s; pointer-events: none;
+    position: absolute;
+    top: 34%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    font-size: clamp(22px, 4vw, 40px);
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(255, 200, 0, .85);
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
 }
-#turn-indicator.visible { opacity: 1; }
+
+#turn-indicator.visible {
+    opacity: 1;
+}
 
 /* ============ HUD bar ============ */
 #hud {
-  position: fixed; left: 0; right: 0; bottom: 0; height: var(--hud-h); z-index: 10;
-  display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 10px;
-  /* the real HUD filler metal */
-  background: url('/assets/gui/gui empty.bmp'); background-repeat: repeat-x; background-size: auto 100%;
-  image-rendering: pixelated;
-  border-top: 2px solid #4a4f55; box-shadow: inset 0 2px 0 rgba(255,255,255,0.12);
-  font-size: 12px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--hud-h);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 6px 10px;
+    /* the real HUD filler metal */
+    background: url('/assets/gui/gui empty.bmp') repeat-x;
+    background-size: auto 100%;
+    image-rendering: pixelated;
+    border-top: 2px solid #4a4f55;
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12);
+    font-size: 12px;
 }
 
 /* the gui.bmp panel; its height fills the bar, width follows the image aspect */
-#hud-panel { position: relative; height: calc(var(--hud-h) - 14px); flex: 0 0 auto; }
+#hud-panel {
+    position: relative;
+    height: calc(var(--hud-h) - 14px);
+    flex: 0 0 auto;
+}
 
 /* "Held" controls (paused / not the player's turn): each button greys out on its
    own — a translucent grey face over its rect — and stops taking pointer input,
    so nothing hovers or clicks. Per-control (not one panel-wide veil), matching
    the original's individually-disabled buttons. */
 .ov-hotspot.blocked {
-  background: rgba(70, 74, 70, 0.5);
-  border-radius: 3px;
-  cursor: not-allowed;
-  pointer-events: none;
+    background: rgba(70, 74, 70, 0.5);
+    border-radius: 3px;
+    cursor: not-allowed;
+    pointer-events: none;
 }
+
 /* Weapon list greys as a block (it's one scrolling control, not a button grid). */
-.wlist.blocked { pointer-events: none; }
-.wlist.blocked::after {
-  content: ''; position: absolute; inset: 0;
-  background: rgba(70, 74, 70, 0.5);
+.wlist.blocked {
+    pointer-events: none;
 }
+
+.wlist.blocked::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(70, 74, 70, 0.5);
+}
+
 /* Invisible drag layers just stop responding — their readouts stay visible. */
-.meter-drag.blocked, .dial-drag.blocked { pointer-events: none; }
-.panel-bg { height: 100%; width: auto; display: block; image-rendering: pixelated; }
+.meter-drag.blocked, .dial-drag.blocked {
+    pointer-events: none;
+}
+
+.panel-bg {
+    height: 100%;
+    width: auto;
+    display: block;
+    image-rendering: pixelated;
+}
 
 /* generic overlay + transparent click hotspot */
-.ov { position: absolute; }
-.ov-hotspot { position: absolute; background: transparent; border: 0; cursor: pointer; padding: 0; }
-.ov-hotspot:hover { background: rgba(255,255,255,0.12); border-radius: 3px; }
-.ov-hotspot:active { background: rgba(0,0,0,0.2); }
+.ov {
+    position: absolute;
+}
+
+.ov-hotspot {
+    position: absolute;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+}
+
+.ov-hotspot:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
+.ov-hotspot:active {
+    background: rgba(0, 0, 0, 0.2);
+}
 
 /* weapon list (over the panel's black box) — rows flush, like the original */
-.wlist { overflow: hidden; padding: 0; }
-.wrow { display: flex; align-items: center; gap: 4px; padding: 0 2px; height: 19.5px; overflow: hidden; cursor: pointer; white-space: nowrap; }
-.wrow:hover { background: rgba(120,220,120,0.12); }
-.wrow.active { background: rgba(60,170,70,0.16); outline: 1px solid #46cc46; outline-offset: -1px; }
-.wicon { width: 18px; height: 18px; display: block; image-rendering: pixelated; flex: 0 0 auto; }
-.wtext { flex: 0 1 auto; min-width: 0; }
+.wlist {
+    overflow: hidden;
+    padding: 0;
+}
+
+.wrow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 2px;
+    height: 19.5px;
+    overflow: hidden;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.wrow:hover {
+    background: rgba(120, 220, 120, 0.12);
+}
+
+.wrow.active {
+    background: rgba(60, 170, 70, 0.16);
+    outline: 1px solid #46cc46;
+    outline-offset: -1px;
+}
+
+.wicon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    image-rendering: pixelated;
+    flex: 0 0 auto;
+}
+
+.wtext {
+    flex: 0 1 auto;
+    min-width: 0;
+}
 
 /* 32x32 preview of the current weapon (box between the ▲/▼ arrows) */
-.weapon-preview { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
-.wbig { width: 32px; height: 32px; image-rendering: pixelated; }
+.weapon-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.wbig {
+    width: 32px;
+    height: 32px;
+    image-rendering: pixelated;
+}
 
 /* live readouts (bitmap-font text, centred in their box) */
-.readout-box { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
-.meter-empty { background: #090b09; }
+.readout-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.meter-empty {
+    background: #090b09;
+}
+
 /* invisible grab layer over the power column — drag vertically to set power */
-.meter-drag { cursor: ns-resize; touch-action: none; }
+.meter-drag {
+    cursor: ns-resize;
+    touch-action: none;
+}
 
 /* FIRE (bitmap "fire" font over the silver panel box) */
-.fire-btn { display: flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; padding: 0; }
-.fire-btn:hover { filter: brightness(1.12); }
-.fire-btn.disabled { filter: grayscale(1) brightness(0.65); cursor: not-allowed; }
+.fire-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+}
+
+.fire-btn:hover {
+    filter: brightness(1.12);
+}
+
+.fire-btn.disabled {
+    filter: grayscale(1) brightness(0.65);
+    cursor: not-allowed;
+}
 
 /* angle needle drawn over the panel's dial */
-.dial-overlay { pointer-events: none; }
+.dial-overlay {
+    pointer-events: none;
+}
+
 /* invisible grab layer over the dial — drag horizontally to aim */
-.dial-drag { cursor: ew-resize; touch-action: none; }
-.needle { stroke: #e01e1e; stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(255,40,40,.7)); }
+.dial-drag {
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+.needle {
+    stroke: #e01e1e;
+    stroke-width: 2;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 1px rgba(255, 40, 40, .7));
+}
 
 /* side LCD boxes (weapon details / player stats) — black panels with a double
    border, like the original. They HUG their content (the legacy boxes are
    compact, not the full bar height) and top-align to where the weapon-list
    ("Select Weapon") box starts inside the panel — 11.7% down the 138px panel. */
 .side-lcd {
-  position: relative;
-  align-self: flex-start; margin-top: 7px; min-width: 150px; flex: 0 0 auto;
-  background: #050705;
-  border: 2px solid; border-color: #1a1d1a #000 #000 #1a1d1a; border-radius: 2px;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.9);
-  padding: 6px 8px;
-  display: flex; flex-direction: column; gap: 1px; overflow: hidden;
+    position: relative;
+    align-self: flex-start;
+    margin-top: 7px;
+    min-width: 150px;
+    flex: 0 0 auto;
+    background: #050705;
+    border: 2px solid;
+    border-color: #1a1d1a #000 #000 #1a1d1a;
+    border-radius: 2px;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow: hidden;
 }
+
 /* Engraved inner frame — the original's inset double-border LCD look. */
 .side-lcd::before {
-  content: ''; position: absolute; inset: 1px;
-  border: 1px solid rgba(150,168,150,0.34); border-radius: 1px;
-  pointer-events: none;
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border: 1px solid rgba(150, 168, 150, 0.34);
+    border-radius: 1px;
+    pointer-events: none;
 }
-.lcd-line { flex: 0 0 auto; }
-.lcd-line:first-child { margin-bottom: 2px; }
 
-@media (max-width: 1100px) { #player-stats { display: none; } }
-@media (max-width: 860px) { #weapon-details { display: none; } }
+.lcd-line {
+    flex: 0 0 auto;
+}
+
+.lcd-line:first-child {
+    margin-bottom: 2px;
+}
+
+@media (max-width: 1100px) {
+    #player-stats {
+        display: none;
+    }
+}
+
+@media (max-width: 860px) {
+    #weapon-details {
+        display: none;
+    }
+}
 
 /* ---- full-screen overlays (menu / settings / depot) ---- */
-.screen-overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.72); }
-.screen-card { background: linear-gradient(#9aa0a8, #626870); border: 2px solid #3a3f45; border-radius: 10px; padding: 30px 44px; text-align: center; color: #14171a; box-shadow: 0 6px 20px rgba(0,0,0,0.6); }
-.screen-card h1 { margin-bottom: 8px; } .screen-card p { margin-bottom: 18px; color: #2a2f34; }
+.screen-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.screen-card {
+    background: linear-gradient(#9aa0a8, #626870);
+    border: 2px solid #3a3f45;
+    border-radius: 10px;
+    padding: 30px 44px;
+    text-align: center;
+    color: #14171a;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+
+.screen-card h1 {
+    margin-bottom: 8px;
+}
+
+.screen-card p {
+    margin-bottom: 18px;
+    color: #2a2f34;
+}
 
 /* Audio settings overlay */
-.set-card { min-width: 340px; text-align: left; }
-.set-card h1 { text-align: center; margin-bottom: 18px; }
-.set-row { display: grid; grid-template-columns: 130px 1fr 34px; align-items: center; gap: 12px; margin-bottom: 14px; }
-.set-label { display: flex; align-items: center; gap: 7px; font-weight: 600; cursor: pointer; user-select: none; }
-.set-label input { cursor: pointer; }
-.set-slider { width: 100%; accent-color: #2f6d34; cursor: pointer; }
-.set-slider:disabled { opacity: 0.45; cursor: default; }
-.set-val { text-align: right; font-variant-numeric: tabular-nums; color: #1c2124; }
-.set-close { display: block; margin: 20px auto 0; padding: 6px 22px; border: 1px solid #2a2f34; border-radius: 6px; background: linear-gradient(#c3c8cf, #8b9198); color: #14171a; font-weight: 700; cursor: pointer; }
-.set-close:hover { background: linear-gradient(#d0d5db, #979da4); }
+.set-card {
+    min-width: 340px;
+    text-align: left;
+}
+
+.set-card h1 {
+    text-align: center;
+    margin-bottom: 18px;
+}
+
+.set-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 34px;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.set-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.set-label input {
+    cursor: pointer;
+}
+
+.set-slider {
+    width: 100%;
+    accent-color: #2f6d34;
+    cursor: pointer;
+}
+
+.set-slider:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.set-val {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #1c2124;
+}
+
+.set-close {
+    display: block;
+    margin: 20px auto 0;
+    padding: 6px 22px;
+    border: 1px solid #2a2f34;
+    border-radius: 6px;
+    background: linear-gradient(#c3c8cf, #8b9198);
+    color: #14171a;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.set-close:hover {
+    background: linear-gradient(#d0d5db, #979da4);
+}
 
 /* Jet-flight indicator (top-centre while airborne) */
 .flight-hud {
-  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 15;
-  display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
-.flight-fuel { font-size: 22px; font-weight: 800; color: #ffd23f; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
-.flight-hint { font-size: 13px; color: #dfe8ef; opacity: 0.9; }
+
+.flight-fuel {
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffd23f;
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+}
+
+.flight-hint {
+    font-size: 13px;
+    color: #dfe8ef;
+    opacity: 0.9;
+}
 
 /* Full-viewport white-out for big blasts (nuke phase 1) — above everything. */
 .screen-flash {
-  position: fixed;
-  inset: 0;
-  background: #fff;
-  pointer-events: none;
-  z-index: 9999;
-  will-change: opacity;
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    pointer-events: none;
+    z-index: 9999;
+    will-change: opacity;
 }
 
 /* ============================ WEAPONS DEPOT ============================ */
 .dep-overlay {
-  position: fixed; inset: 0; z-index: 21;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.72);
+    position: fixed;
+    inset: 0;
+    z-index: 21;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.72);
 }
+
 /* Brushed-metal panel (real depot texture) with a bevelled frame. */
 .dep-card {
-  position: relative;
-  width: min(700px, 94vw); height: min(680px, 90vh);
-  display: flex; flex-direction: column;
-  background: #4a4d55 url('/assets/gui/weapons depot.jpg') center/cover;
-  border: 2px solid #24262b; border-radius: 6px;
-  box-shadow: 0 8px 26px rgba(0,0,0,0.7), inset 0 0 0 2px rgba(255,255,255,0.12), inset 0 0 60px rgba(0,0,0,0.5);
-  padding: 14px 16px 12px;
-  color: #eef2f6; font-variant-numeric: tabular-nums;
+    position: relative;
+    width: min(700px, 94vw);
+    height: min(680px, 90vh);
+    display: flex;
+    flex-direction: column;
+    background: #4a4d55 url('/assets/gui/weapons depot.jpg') center/cover;
+    border: 2px solid #24262b;
+    border-radius: 6px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7), inset 0 0 0 2px rgba(255, 255, 255, 0.12), inset 0 0 60px rgba(0, 0, 0, 0.5);
+    padding: 14px 16px 12px;
+    color: #eef2f6;
+    font-variant-numeric: tabular-nums;
 }
+
 /* All depot text is drawn with the game's bitmap fonts (BmpText → <canvas>). */
-.dep-head { text-align: left; margin-bottom: 6px; }
-.dep-head > canvas { display: block; }
-.dep-sub { margin-top: 1px; }
+.dep-head {
+    text-align: left;
+    margin-bottom: 6px;
+}
+
+.dep-head > canvas {
+    display: block;
+}
+
+.dep-sub {
+    margin-top: 1px;
+}
 
 /* Column header + rows share one grid so cells line up. */
 .dep-cols, .dep-row {
-  display: grid; grid-template-columns: 46px 1fr 92px 62px 74px;
-  align-items: center; column-gap: 6px;
+    display: grid;
+    grid-template-columns: 46px 1fr 92px 62px 74px;
+    align-items: center;
+    column-gap: 6px;
 }
+
 .dep-cols {
-  padding: 0 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.25); margin-bottom: 3px;
+    padding: 0 8px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+    margin-bottom: 3px;
 }
+
 .dep-th {
-  display: flex; align-items: center; gap: 4px;
-  background: none; border: 0; padding: 2px 0; cursor: pointer; opacity: 0.9;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: 0;
+    padding: 2px 0;
+    cursor: pointer;
+    opacity: 0.9;
 }
-.dep-th.c-num { justify-content: flex-end; }
-.dep-th:hover { opacity: 1; }
-.dep-sort { width: 10px; height: 8px; image-rendering: pixelated; }
+
+.dep-th.c-num {
+    justify-content: flex-end;
+}
+
+.dep-th:hover {
+    opacity: 1;
+}
+
+.dep-sort {
+    width: 10px;
+    height: 8px;
+    image-rendering: pixelated;
+}
 
 .dep-list {
-  flex: 1; overflow-y: auto; overflow-x: hidden;
-  border: 1px solid rgba(0,0,0,0.4); border-radius: 3px;
-  background: rgba(0,0,0,0.28);
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.28);
 }
+
 .dep-row {
-  padding: 3px 8px; cursor: pointer;
+    padding: 3px 8px;
+    cursor: pointer;
 }
-.dep-row.afford { background: rgba(34,104,40,0.5); }        /* green = affordable */
-.dep-row.broke  { background: rgba(122,38,38,0.5); }        /* red = too costly */
-.dep-row:hover  { filter: brightness(1.22); }
-.dep-row.sel    { background: #d8dde2; box-shadow: inset 0 0 0 1px #fff; }
+
+.dep-row.afford {
+    background: rgba(34, 104, 40, 0.5);
+}
+
+/* green = affordable */
+.dep-row.broke {
+    background: rgba(122, 38, 38, 0.5);
+}
+
+/* red = too costly */
+.dep-row:hover {
+    filter: brightness(1.22);
+}
+
+.dep-row.sel {
+    background: #d8dde2;
+    box-shadow: inset 0 0 0 1px #fff;
+}
 
 /* Cells align the BmpText canvases (which are display:block). */
-.dep-row > span, .dep-th { min-width: 0; }
-.dep-row canvas, .dep-th canvas { display: block; }
-.c-qty  { display: flex; align-items: center; justify-content: center; }
-.c-name { display: flex; align-items: center; gap: 7px; overflow: hidden; }
-.c-name canvas { overflow: hidden; }
-.c-type { display: flex; align-items: center; }
-.c-num  { display: flex; align-items: center; justify-content: flex-end; }
-.dep-icon { width: 16px; height: 16px; image-rendering: pixelated; flex: 0 0 16px; }
-.dep-inf { font: 700 15px 'Segoe UI', sans-serif; line-height: 1; }
-.dep-row.afford .dep-inf { color: #eafff0; }
-.dep-row.broke  .dep-inf { color: #f0d2d2; }
-.dep-row.sel    .dep-inf { color: #14171a; }
+.dep-row > span, .dep-th {
+    min-width: 0;
+}
+
+.dep-row canvas, .dep-th canvas {
+    display: block;
+}
+
+.c-qty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.c-name {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+}
+
+.c-name canvas {
+    overflow: hidden;
+}
+
+.c-type {
+    display: flex;
+    align-items: center;
+}
+
+.c-num {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.dep-icon {
+    width: 16px;
+    height: 16px;
+    image-rendering: pixelated;
+    flex: 0 0 16px;
+}
+
+.dep-inf {
+    font: 700 15px 'Segoe UI', sans-serif;
+    line-height: 1;
+}
+
+.dep-row.afford .dep-inf {
+    color: #eafff0;
+}
+
+.dep-row.broke .dep-inf {
+    color: #f0d2d2;
+}
+
+.dep-row.sel .dep-inf {
+    color: #14171a;
+}
 
 /* Green tooltip — the real `zeon` dialog.bmp frame (9-slice via border-image, its
  * grey corners keyed transparent) with a tt-arrow-down pointer. Sits ABOVE the
  * cursor (translated up by its own height) so the arrow points down at the row. */
 .dep-tooltip {
-  position: fixed; z-index: 22; max-width: 320px; pointer-events: none;
-  transform: translateY(-100%);            /* anchor the BOTTOM at `top` → renders upward */
-  padding: 7px 10px 9px;
-  border-style: solid; border-width: 9px;  /* border-image (dialog.bmp) fills these */
-  border-image-repeat: stretch;
-  image-rendering: pixelated;
+    position: fixed;
+    z-index: 22;
+    max-width: 320px;
+    pointer-events: none;
+    transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
+    padding: 7px 10px 9px;
+    border-style: solid;
+    border-width: 9px; /* border-image (dialog.bmp) fills these */
+    border-image-repeat: stretch;
+    image-rendering: pixelated;
 }
-.dep-tooltip > canvas { display: block; }
+
+.dep-tooltip > canvas {
+    display: block;
+}
+
 .dep-tt-arrow {
-  position: absolute; bottom: -13px; left: 16px;
-  width: 11px; height: 22px; image-rendering: pixelated;
+    position: absolute;
+    bottom: -13px;
+    left: 16px;
+    width: 11px;
+    height: 22px;
+    image-rendering: pixelated;
 }
-.dep-tt-desc { display: flex; flex-direction: column; gap: 1px; margin-top: 3px; }
-.dep-tt-desc canvas { display: block; }
+
+.dep-tt-desc {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 3px;
+}
+
+.dep-tt-desc canvas {
+    display: block;
+}
 
 /* Selected-weapon stats popup (the "Stats" button). */
 .dep-stats {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 23;
-  min-width: 240px; padding: 14px 18px; cursor: pointer;
-  background: linear-gradient(#c3c8cf, #8b9198);
-  border: 2px solid #2a2f34; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 23;
+    min-width: 240px;
+    padding: 14px 18px;
+    cursor: pointer;
+    background: linear-gradient(#c3c8cf, #8b9198);
+    border: 2px solid #2a2f34;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
 }
-.dep-stats > canvas { display: block; margin: 0 auto; }
-.dep-stat-grid { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
-.dep-stat-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.dep-stat-row canvas { display: block; }
-.dep-hint { display: flex; justify-content: center; margin-top: 10px; }
+
+.dep-stats > canvas {
+    display: block;
+    margin: 0 auto;
+}
+
+.dep-stat-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 10px;
+}
+
+.dep-stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.dep-stat-row canvas {
+    display: block;
+}
+
+.dep-hint {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+}
 
 /* Footer: credits/map on the left, action buttons on the right. */
-.dep-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
-.dep-money > div { display: flex; }
+.dep-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.dep-money > div {
+    display: flex;
+}
+
 /* Action buttons in two clusters: Buy|Sell over a full-width Auto Buy (left),
    Stats over Close (right). */
-.dep-btns { display: flex; align-items: start; gap: 12px; }
-.dep-btn-col { display: grid; gap: 6px; }
-.dep-btn-col.left { grid-template-columns: 1fr 1fr; }
-.dep-btn-col.right { grid-template-columns: 1fr; }
-.dep-btn.span { grid-column: 1 / -1; }   /* Auto Buy spans the Buy|Sell width */
+.dep-btns {
+    display: flex;
+    align-items: start;
+    gap: 12px;
+}
+
+.dep-btn-col {
+    display: grid;
+    gap: 6px;
+}
+
+.dep-btn-col.left {
+    grid-template-columns: 1fr 1fr;
+}
+
+.dep-btn-col.right {
+    grid-template-columns: 1fr;
+}
+
+.dep-btn.span {
+    grid-column: 1 / -1;
+}
+
+/* Auto Buy spans the Buy|Sell width */
 /* Metal action buttons — the game's `buy button.bmp` art with a bitmap label. */
 .dep-btn {
-  min-width: 62px; height: 34px; padding: 0 12px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  background: url('/assets/gui/buy button.bmp') center / 100% 100% no-repeat;
-  border: 0;
+    min-width: 62px;
+    height: 34px;
+    padding: 0 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: url('/assets/gui/buy button.bmp') center / 100% 100% no-repeat;
+    border: 0;
 }
-.dep-btn:hover:not(:disabled) { filter: brightness(1.09); }
-.dep-btn:active:not(:disabled) { filter: brightness(0.9); }
-.dep-btn:disabled { filter: grayscale(0.35) brightness(0.86); cursor: default; }
+
+.dep-btn:hover:not(:disabled) {
+    filter: brightness(1.09);
+}
+
+.dep-btn:active:not(:disabled) {
+    filter: brightness(0.9);
+}
+
+.dep-btn:disabled {
+    filter: grayscale(0.35) brightness(0.86);
+    cursor: default;
+}
