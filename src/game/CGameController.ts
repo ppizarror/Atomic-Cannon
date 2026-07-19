@@ -14,6 +14,7 @@ import { CShot } from '../core/CShot';
 import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex, CWeapon } from '../core/CWeapon';
 import { Vec2 } from '../math/Vec2';
 import { CParticleSystem, ScreenShake } from '../core/CParticleSystem';
+import { CWeather } from '../core/CWeather';
 import { CAssetManager } from '../core/rendering/CAssetManager';
 import { weaponFlyStep, weaponDetonate, EXT, type ShotWorld } from '../core/weapons/WeaponBehavior';
 import { CAudio } from '../audio/CAudio';
@@ -74,6 +75,7 @@ export class CGameController implements ShotWorld {
     this.m_shots = [];
     this.m_particles = new CParticleSystem();
     this.m_particles.setBounds(canvas.width, canvas.height);
+    this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_screenShake = new ScreenShake();
     this.m_assets = new CAssetManager();
     
@@ -183,7 +185,10 @@ export class CGameController implements ShotWorld {
    * terrain textures. Fire-and-forget: the terrain shows a gradient until ready.
    */
   private async loadLandscape(): Promise<void> {
-    const cfg = LAND_DATA[Math.floor(Math.random() * LAND_DATA.length)];
+    const cfg = LAND_DATA[this.pickLandscapeIndex()];
+
+    // Precipitation / blowing sand declared by this map (snow, rain, hail, dust).
+    this.m_weather.configure(cfg.weather);
 
     this.m_assets.loadImage('bg', '/assets/' + cfg.bg);
 
@@ -197,13 +202,33 @@ export class CGameController implements ShotWorld {
       })
       .filter((x): x is { image: CanvasImageSource; depth: number } => x !== null);
 
-    // Bare-earth texture for de-grassed crater columns: the first stratum whose
-    // tile is NOT grass (fallback: the deepest layer). Prevents craters from being
-    // repainted with grass on landscapes whose second layer is itself a grass tile.
-    const bareTile = cfg.layers.find(l => !/grass/i.test(l.tile)) ?? cfg.layers[cfg.layers.length - 1];
-    const bareImage = bareTile ? this.m_assets.getSprite('tile:' + bareTile.tile)?.bitmap : undefined;
+    // Bare-earth texture for de-grassed craters + the raised radiation deposit: the
+    // legacy uses a single dirt bitmap (`ldirt1.bmp`), so load it explicitly and use
+    // it everywhere craters expose / fallout deposits earth — a consistent brown
+    // dirt regardless of the landscape (which may be mossy rock, marble, …).
+    await this.m_assets.loadImage('tile:land/ldirt1.bmp', '/assets/land/ldirt1.bmp');
+    const bareTile =
+      cfg.layers.find(l => /dirt|sand|mud|clay/i.test(l.tile)) ??
+      cfg.layers.find(l => !/grass/i.test(l.tile)) ??
+      cfg.layers[cfg.layers.length - 1];
+    const bareImage =
+      this.m_assets.getSprite('tile:land/ldirt1.bmp')?.bitmap ??
+      (bareTile ? this.m_assets.getSprite('tile:' + bareTile.tile)?.bitmap : undefined);
 
     this.m_land.setLayers(layers, bareImage);
+  }
+
+  /** Pick which landscape to load. Honours a `?land=N` override (for reviewing a
+   * specific map / its weather), otherwise random. */
+  private pickLandscapeIndex(): number {
+    if (typeof location !== 'undefined') {
+      const p = new URLSearchParams(location.search).get('land');
+      if (p !== null) {
+        const i = parseInt(p, 10);
+        if (Number.isInteger(i) && i >= 0 && i < LAND_DATA.length) return i;
+      }
+    }
+    return Math.floor(Math.random() * LAND_DATA.length);
   }
 
 
@@ -242,6 +267,7 @@ export class CGameController implements ShotWorld {
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
+    this.m_weather.update(dt, this.m_wind);
     if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.6);
     this.updateMoveSound();
 
@@ -416,7 +442,10 @@ export class CGameController implements ShotWorld {
       // Draw stars (subtle background)
       this.drawStars(ctx);
     }
-    
+
+    // Blowing-sand haze sits between the backdrop and the terrain (occluded by hills).
+    this.m_weather.drawBackground(ctx);
+
     // Draw terrain
     this.m_land.draw(ctx);
     
@@ -457,7 +486,10 @@ export class CGameController implements ShotWorld {
 
     // Draw explosions on top
     this.m_particles.draw(ctx);
-    
+
+    // Precipitation (snow / rain / hail) falls in front of the whole scene.
+    this.m_weather.drawForeground(ctx);
+
     ctx.restore();
   }
 
@@ -1211,6 +1243,7 @@ export class CGameController implements ShotWorld {
   private m_shots: CShot[];
   
   private m_particles: CParticleSystem;
+  private m_weather: CWeather;
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;

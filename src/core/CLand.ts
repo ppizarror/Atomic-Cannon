@@ -248,6 +248,9 @@ export class CLand {
       // Strip the grass cap here — the blast tears through it, exposing bare
       // dirt (the original's destructible bitmap loses the green pixels).
       if (this.m_degrass) this.m_degrass[dx] = 1;
+      // A blast destroys any irradiated-earth deposit here (a normal bomb or a
+      // terrain-clear removes the fallout terrain + its red glow, like the original).
+      if (this.m_radDeposit) this.m_radDeposit[dx] = 0;
     }
 
     this.preBlast(x - nRadius, x + nRadius);
@@ -353,19 +356,26 @@ export class CLand {
       r, g, b,
     });
 
-    // Build the accumulated fallout PILE profile — a grounded deposit thickest over
-    // the bowl centre, thinning up the walls to the rim. This gives the radiation
-    // real HEIGHT (the original's fallout piles INTO the crater), not a thin surface
-    // skin. The specks fill this pile; the solid dirt band renders to its height.
-    if (this.m_radDeposit) {
-      const pileMax = Math.min(nRadius * 0.45, 85);
+    // Fallout is irradiated EARTH: it REFILLS most of the crater, raising the
+    // heightmap back up — so the deposit is real, collidable, destructible TERRAIN
+    // (not an overlay over the sky). It fills a fixed fraction of the crater at each
+    // column, so it follows the bowl: thick over the deep centre, thin up the walls.
+    // The earth glows red densest at the centre, fading to brown up the walls and
+    // over irTime; when the glow dies the raised earth stays (never turns to air).
+    if (this.m_radDeposit && this.m_arrHeights && this.m_baseHeights) {
+      const FILL = 0.2;                                  // fraction of the crater refilled by fallout
       const px0 = Math.max(0, Math.floor(x - nRadius)), px1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
       for (let col = px0; col <= px1; col++) {
-        const edge = 1 - Math.abs(col - x) / nRadius;    // 1 centre → 0 rim
-        if (edge <= 0) continue;
-        const target = pileMax * Math.pow(edge, 0.55);   // gentle falloff → walls stay thick
-        if (target > this.m_radDeposit[col]) this.m_radDeposit[col] = target;
+        const craterDepth = this.m_arrHeights[col] - this.m_baseHeights[col];   // >0 inside the crater
+        if (craterDepth <= 2) continue;                  // only where the ground was actually cratered
+        const target = craterDepth * FILL;
+        const add = target - this.m_radDeposit[col];     // only the new contribution
+        if (add > 0) {
+          this.m_radDeposit[col] = target;
+          this.m_arrHeights[col] = Math.max(this.m_baseHeights[col], this.m_arrHeights[col] - add);   // raise
+        }
       }
+      this.preBlast(px0, px1);
     }
 
     // Visual: a cloud of glowing specks thrown out of the crater. They fall, settle,
@@ -471,7 +481,7 @@ export class CLand {
    * survives terrain re-renders; painted `source-atop` so only ground is darkened.
    */
   scorch(x: number, y: number, radius: number): void {
-    this.m_scorches.push({ x, y, r: Math.max(8, radius * 1.7) });
+    this.m_scorches.push({ x, y, r: Math.max(8, radius * 1.05) });
     if (this.m_scorches.length > 80) this.m_scorches.shift();   // cap for perf
     this.m_terrainDirty = true;
   }
@@ -544,11 +554,12 @@ export class CLand {
           // Scatter the grain THROUGH the fallout pile at this column: from a few px
           // in the soil (grounded base) up to the pile top, biased low so the crown
           // thins out. rise = height ABOVE the surface (the grain's pile position).
-          const pile = this.m_radDeposit ? this.m_radDeposit[col] : 0;
+          const dep = this.m_radDeposit ? this.m_radDeposit[col] : 0;
           const u = this.rand01();
-          // Keep grains WITHIN the solid band (max 0.92·pile) so none poke above it
-          // into the sky as isolated floaters; bias low so the crown thins out.
-          s.rise = pile * (u * u * 0.92) - this.rand01() * 2;   // -2..0.92·pile, denser near the base
+          // Scatter the grain DOWN INTO the raised earth (below the surface), denser
+          // near the top — it is a grain of the terrain that glows while radioactive,
+          // never a mote floating in the sky above.
+          s.rise = -(u * u * dep) - this.rand01() * 2;    // 0..-dep: below the surface
           s.y = this.getHeightAt(col) - s.rise;
         }
       } else {
@@ -688,6 +699,9 @@ export class CLand {
       g.fill();
     }
 
+    // (The excavated hollow ABOVE the surface is background sky and is left
+    // untouched — the fallout instead RAISES the ground as real terrain, below.)
+
     // Thin dark edge along the surface — hides any seam, matches the original.
     g.beginPath();
     this.traceSurface(g, 0);
@@ -701,29 +715,44 @@ export class CLand {
     // Uses a guaranteed non-grass texture (m_barePattern), so it never repaints
     // grass on landscapes whose second layer is itself a grass tile.
     if (this.m_degrass && this.m_layers.length > 1) {
-      const grassDepth = (this.m_layers[0]?.depth ?? 10) + 6;
+      const grassDepth = (this.m_layers[0]?.depth ?? 10) + 10;
       if (!this.m_barePattern && this.m_bareImage) {
         this.m_barePattern = g.createPattern(this.m_bareImage, 'repeat');
       }
       const dirtPat = this.m_barePattern ?? this.m_patterns[this.m_patterns.length - 1];
+      const dep = this.m_radDeposit;
+      // The de-grass band extends down through the raised fallout deposit (dep[x])
+      // so the whole irradiated mound is baked EARTH — this is the terrain that
+      // remains once the red emissive glow fades. dep[x]=0 off the crater.
+      const bandDepth = (x: number) => grassDepth + (dep ? Math.round(dep[x]) : 0);
       if (dirtPat) {
         g.fillStyle = dirtPat;
         for (let x = 0; x < W; x++) {
-          if (this.m_degrass[x]) g.fillRect(x, heights[x] - 2, 1, grassDepth);
+          if (this.m_degrass[x]) g.fillRect(x, heights[x] - 2, 1, bandDepth(x));
         }
+        // No darkening — the crater exposes the BRIGHT ldirt1 wall texture like the
+        // original's wall-pattern craters (not the black path). A subtle warm ADDITIVE
+        // lift nudges it toward the legacy's rust-brown instead of a muddy dark.
+        const prevLift = g.globalCompositeOperation;
+        g.globalCompositeOperation = 'lighter';
+        g.fillStyle = 'rgba(48,26,9,0.18)';
+        for (let x = 0; x < W; x++) {
+          if (this.m_degrass[x]) g.fillRect(x, heights[x] - 2, 1, bandDepth(x));
+        }
+        g.globalCompositeOperation = prevLift;
       }
     }
 
-    // Permanent scorch marks — `source-atop` darkens only existing terrain pixels
-    // so the blackening hugs the ground surface and never bleeds into the sky.
+    // Permanent scorch — `source-atop` darkens only existing terrain pixels so it
+    // hugs the surface. Kept SUBTLE + warm (a hint of burn at the very centre) so the
+    // crater stays the bright rust dirt of the legacy, not a dark muddy hole.
     if (this.m_scorches.length) {
       g.save();
       g.globalCompositeOperation = 'source-atop';
       for (const s of this.m_scorches) {
         const grad = g.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
-        grad.addColorStop(0, 'rgba(0,0,0,0.92)');
-        grad.addColorStop(0.45, 'rgba(0,0,0,0.7)');
-        grad.addColorStop(0.75, 'rgba(0,0,0,0.35)');
+        grad.addColorStop(0, 'rgba(26,13,5,0.4)');
+        grad.addColorStop(0.5, 'rgba(34,18,8,0.18)');
         grad.addColorStop(1, 'rgba(0,0,0,0)');
         g.fillStyle = grad;
         g.beginPath();
@@ -757,63 +786,63 @@ export class CLand {
       }
     }
 
-    // Radiation: a SOLID glowing band painted along the whole surface of the zone
-    // (port of the original's `0xff0000` rim line) — this hugs the crater bowl so
-    // the fallout carpets the entire ground, not just a few specks on top. It
-    // lingers for most of irTime, fading only near the end.
-    if (this.m_radParticles.length && this.m_arrHeights) {
-      // Pass A — SOLID irradiated DIRT: paint the crater ground a strong reddish-
-      // BROWN (normal blend) so the earth itself reads as radiated dirt, covering
-      // any remaining grass — not just a faint glow over green.
+    // Radiation glow — a TEMPORARY emissive tint over the raised fallout deposit.
+    // The deposit is real, collidable, destructible EARTH (the heightmap was raised
+    // and the bitmap baked earthy-brown above); this glow only reddens that earth
+    // while the zone is live and fades over irTime, leaving the bare earth behind —
+    // it never paints the sky above the surface, so nothing turns to air.
+    if (this.m_radParticles.length && this.m_arrHeights && this.m_radDeposit) {
+      const dep = this.m_radDeposit;
+      // Pass A — red emissive body (normal blend) painted DOWN INTO the raised earth.
       for (const z of this.m_radParticles) {
         const fade = Math.min(1, z.timeRemaining / 3);
         if (fade <= 0) continue;
         const rr = z.radius;
-        // Brown earth base biased toward the fallout hue (red for a nuke).
-        const dr = 78 + Math.round(z.r * 0.32), dg = 40 + Math.round(z.g * 0.2), db = 20 + Math.round(z.b * 0.12);
         const x0 = Math.max(0, Math.floor(z.x - rr)), x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
         for (let col = x0; col <= x1; col++) {
+          const d = Math.round(dep[col]);
+          if (d <= 0) continue;                              // only where earth was deposited
           const edge = 1 - Math.abs(col - z.x) / rr;
           if (edge <= 0) continue;
           const sy = this.getHeightAt(col);
-          const pile = this.m_radDeposit ? Math.round(this.m_radDeposit[col]) : 0;   // pile height above surface
-          ctx.fillStyle = `rgba(${dr},${dg},${db},${fade * (0.55 + edge * 0.4)})`;   // opaque enough to hide grass
-          ctx.fillRect(col, sy - pile, 1, pile + 5);   // from the pile top down into the ground
+          ctx.fillStyle = `rgba(${z.r},${Math.round(z.g * 0.55)},${Math.round(z.b * 0.45)},${fade * (0.34 + edge * 0.34)})`;
+          ctx.fillRect(col, sy - 1, 1, d + 3);              // into the raised terrain, not the sky
         }
       }
-      // Pass B — additive GLOW over the whole pile.
+      // Pass B — additive GLOW, strongest over the dense centre.
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
       for (const z of this.m_radParticles) {
         const life = z.timeRemaining / Math.max(0.5, z.duration);
-        const fade = Math.min(1, z.timeRemaining / 3);   // hold, fade over the last 3 s
+        const fade = Math.min(1, z.timeRemaining / 3);
         if (fade <= 0) continue;
         const rr = z.radius;
         const x0 = Math.max(0, Math.floor(z.x - rr)), x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
         for (let col = x0; col <= x1; col++) {
-          const edge = 1 - Math.abs(col - z.x) / rr;       // 1 at centre → 0 at the rim
+          const d = Math.round(dep[col]);
+          if (d <= 0) continue;
+          const edge = 1 - Math.abs(col - z.x) / rr;
           if (edge <= 0) continue;
           const sy = this.getHeightAt(col);
-          const pile = this.m_radDeposit ? Math.round(this.m_radDeposit[col]) : 0;
-          const a = fade * (0.13 + edge * 0.3) * (0.5 + 0.5 * life);
+          const a = fade * (0.12 + edge * 0.3) * (0.5 + 0.5 * life);
           ctx.fillStyle = `rgba(${z.r},${z.g},${z.b},${a})`;
-          ctx.fillRect(col, sy - pile, 1, pile + 4);
+          ctx.fillRect(col, sy - 1, 1, d + 3);
         }
       }
       ctx.globalCompositeOperation = prevOp;
     }
 
-    // Radiation specks = irradiated DIRT grains sitting on the ground, each a dark
-    // dirt body (grounds it — not a floating glow) with a soft red EMISSIVE glow.
+    // Radiation specks = grains of the irradiated EARTH, each an earthy body with a
+    // soft red EMISSIVE glow. They sit within the raised deposit and fade over life.
     if (this.m_radSpecks.length) {
       const prevOp = ctx.globalCompositeOperation;
       const TWO_PI = Math.PI * 2;
-      // Pass 1 — dark dirt bodies (normal blend) so the specks read as grounded earth.
+      // Pass 1 — earthy grain bodies (normal blend), subtle texture over the deposit.
       for (const s of this.m_radSpecks) {
         const t = s.age / s.life;
         const fade = t < 0.7 ? 1 : (1 - t) / 0.3;
         if (fade <= 0) continue;
-        ctx.fillStyle = `rgba(28,14,8,${fade * 0.6})`;
+        ctx.fillStyle = `rgba(42,24,13,${fade * 0.4})`;
         ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
       }
       // Pass 2 — the soft red emissive glow on top (additive circles).
