@@ -1,6 +1,6 @@
 [
   {
-    "bg": "bg/00.jpg",
+    "bg": "bg/00.webp",
     "weather": [
       {
         "type": "snow",
@@ -35,7 +35,7 @@
     ]
   },
   {
-    "bg": "bg/01.jpg",
+    "bg": "bg/01.webp",
     "weather": [
       {
         "type": "rain",
@@ -62,7 +62,7 @@
     ]
   },
   {
-    "bg": "bg/02.jpg",
+    "bg": "bg/02.webp",
     "weather": [
       {
         "type": "rain",
@@ -93,7 +93,7 @@
     ]
   },
   {
-    "bg": "bg/03.jpg",
+    "bg": "bg/03.webp",
     "weather": [],
     "layers": [
       {
@@ -119,7 +119,7 @@
     ]
   },
   {
-    "bg": "bg/04.jpg",
+    "bg": "bg/04.webp",
     "weather": [
       {
         "type": "snow",
@@ -150,7 +150,7 @@
     ]
   },
   {
-    "bg": "bg/05.jpg",
+    "bg": "bg/05.webp",
     "weather": [],
     "layers": [
       {
@@ -176,7 +176,7 @@
     ]
   },
   {
-    "bg": "bg/06.jpg",
+    "bg": "bg/06.webp",
     "weather": [],
     "layers": [
       {
@@ -198,7 +198,7 @@
     ]
   },
   {
-    "bg": "bg/07.jpg",
+    "bg": "bg/07.webp",
     "weather": [
       {
         "type": "dust",
@@ -225,7 +225,7 @@
     ]
   },
   {
-    "bg": "bg/08.jpg",
+    "bg": "bg/08.webp",
     "weather": [
       {
         "type": "snow",
@@ -260,7 +260,7 @@
     ]
   },
   {
-    "bg": "bg/09.jpg",
+    "bg": "bg/09.webp",
     "weather": [
       {
         "type": "rain",
@@ -287,7 +287,7 @@
     ]
   },
   {
-    "bg": "bg/10.jpg",
+    "bg": "bg/10.webp",
     "weather": [
       {
         "type": "rain",
@@ -314,7 +314,7 @@
     ]
   },
   {
-    "bg": "bg/11.jpg",
+    "bg": "bg/11.webp",
     "weather": [
       {
         "type": "snow",
@@ -349,7 +349,7 @@
     ]
   },
   {
-    "bg": "bg/12.jpg",
+    "bg": "bg/12.webp",
     "weather": [
       {
         "type": "snow",
@@ -384,7 +384,7 @@
     ]
   },
   {
-    "bg": "bg/13.jpg",
+    "bg": "bg/13.webp",
     "weather": [
       {
         "type": "rain",
@@ -419,7 +419,7 @@
     ]
   },
   {
-    "bg": "bg/14.jpg",
+    "bg": "bg/14.webp",
     "weather": [],
     "layers": [
       {
@@ -441,7 +441,7 @@
     ]
   },
   {
-    "bg": "bg/15.jpg",
+    "bg": "bg/15.webp",
     "weather": [
       {
         "type": "snow",
@@ -476,7 +476,7 @@
     ]
   },
   {
-    "bg": "bg/16.jpg",
+    "bg": "bg/16.webp",
     "weather": [
       {
         "type": "rain",
@@ -503,7 +503,7 @@
     ]
   },
   {
-    "bg": "bg/17.jpg",
+    "bg": "bg/17.webp",
     "weather": [
       {
         "type": "rain",
@@ -530,7 +530,7 @@
     ]
   },
   {
-    "bg": "bg/18.jpg",
+    "bg": "bg/18.webp",
     "weather": [
       {
         "type": "rain",
@@ -557,7 +557,7 @@
     ]
   },
   {
-    "bg": "bg/19.jpg",
+    "bg": "bg/19.webp",
     "weather": [
       {
         "type": "dust",
@@ -592,7 +592,7 @@
     ]
   },
   {
-    "bg": "bg/20.jpg",
+    "bg": "bg/20.webp",
     "weather": [
       {
         "type": "rain",
@@ -619,7 +619,7 @@
     ]
   },
   {
-    "bg": "bg/21.jpg",
+    "bg": "bg/21.webp",
     "weather": [
       {
         "type": "dust",
@@ -642,7 +642,7 @@
     ]
   },
   {
-    "bg": "bg/22.jpg",
+    "bg": "bg/22.webp",
     "weather": [
       {
         "type": "dust",
@@ -665,7 +665,7 @@
     ]
   },
   {
-    "bg": "bg/23.jpg",
+    "bg": "bg/23.webp",
     "weather": [
       {
         "type": "dust",
@@ -684,7 +684,7 @@
     ]
   },
   {
-    "bg": "bg/24.jpg",
+    "bg": "bg/24.webp",
     "weather": [],
     "layers": [
       {

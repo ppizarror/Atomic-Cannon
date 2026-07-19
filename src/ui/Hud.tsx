@@ -1,5 +1,14 @@
-/** The in-battle HUD: status bar, turn banner, and the skeuomorphic control panel. */
+/**
+ * In-battle HUD. The control panel is the original `gui.bmp` sprite; live content
+ * (weapon list, power fill, FIRE, angle needle, wind) and click hotspots are
+ * positioned over it as a percentage of the 640x120 panel.
+ *
+ * Each frequently-changing readout is its own leaf component that reads a single
+ * signal, so the 104-row weapon list only re-renders when the weapon changes
+ * (not every frame) — keeps it cheap and lets async icons stick.
+ */
 import { useEffect, useRef, useState } from 'preact/hooks';
+import type { JSX } from 'preact';
 import {
   power, angle, wind, weaponIndex, playerName, teamColor, life, shield, canFire,
   winner, weapons, game, loadWeaponIcon,
@@ -8,7 +17,110 @@ import {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-// --- top status bar ---------------------------------------------------------
+// Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
+const R = {
+  list:   [1.0, 5, 25.5, 88],
+  up:     [27, 6, 5, 30],  down:  [27, 64, 5, 30],
+  plus:   [32.5, 6, 6, 30], minus: [32.5, 64, 6, 30],
+  meter:  [38.8, 7, 4.0, 85],
+  fire:   [44.5, 14, 23, 30],
+  buy:    [45.5, 62, 5, 27], reset: [52, 62, 5, 27], help: [58.5, 62, 5, 27],
+  aleft:  [70.4, 77, 4.5, 18], aright: [79, 77, 4.5, 18],
+  anglen: [72, 63, 9, 15],
+  close:  [93.7, 5, 5, 27],
+  wind:   [92, 48, 7, 42],
+} as const;
+const DIAL_BOX = [70.9, 7, 11.25, 60] as const;
+
+const pos = (r: readonly number[]): JSX.CSSProperties =>
+  ({ position: 'absolute', left: `${r[0]}%`, top: `${r[1]}%`, width: `${r[2]}%`, height: `${r[3]}%` });
+
+function Hotspot({ r, onClick, title }: { r: readonly number[]; onClick: () => void; title?: string }) {
+  return <button class="ov-hotspot" style={pos(r)} title={title} onClick={onClick} />;
+}
+
+// ---- leaf readouts (each subscribes to exactly one live signal) -------------
+function MeterOverlay() {
+  const p = power.value;
+  const emptyH = R.meter[3] * (1 - p / POWER_MAX);
+  return (
+    <>
+      <div class="ov meter-empty" style={{ position: 'absolute', left: `${R.meter[0]}%`, top: `${R.meter[1]}%`, width: `${R.meter[2]}%`, height: `${emptyH}%` }} />
+      <div class="ov readout meter-num" style={pos(R.meter)}>{p}</div>
+    </>
+  );
+}
+function FireButton() {
+  const on = canFire.value;
+  return <button class={`ov fire-btn${on ? '' : ' disabled'}`} style={pos(R.fire)} onClick={() => { if (game().isPlayerTurn()) game().fire(); }}>FIRE</button>;
+}
+function Needle() {
+  const a = angle.value;
+  return (
+    <svg class="ov dial-overlay" style={pos(DIAL_BOX)} viewBox="0 0 100 100" preserveAspectRatio="none">
+      <line class="needle" x1="50" y1="50" x2="90" y2="50" transform={`rotate(${-a} 50 50)`} />
+    </svg>
+  );
+}
+function AngleReadout() { return <div class="ov readout angle-num" style={pos(R.anglen)}>{angle.value}°</div>; }
+function WindReadout() { const w = wind.value; return <div class="ov readout wind-num" style={pos(R.wind)}>{w >= 0 ? '→' : '←'}{Math.abs(w).toFixed(1)}</div>; }
+
+// ---- weapon list (re-renders only when the weapon changes) ------------------
+function WeaponIcon({ name }: { name: string }) {
+  const [src, setSrc] = useState('');
+  useEffect(() => { let ok = true; loadWeaponIcon(name).then(u => { if (ok && u) setSrc(u); }); return () => { ok = false; }; }, [name]);
+  return src ? <img class="wicon" src={src} alt="" /> : <span class="wicon" />;
+}
+function WeaponList() {
+  const listRef = useRef<HTMLDivElement>(null);
+  const idx = weaponIndex.value;
+  useEffect(() => {
+    (listRef.current?.querySelector('.wrow.active') as HTMLElement | null)?.scrollIntoView({ block: 'nearest' });
+  }, [idx]);
+  return (
+    <div class="ov wlist" style={pos(R.list)} ref={listRef}>
+      {weapons.value.map((wp, i) => (
+        <div key={wp.name} class={`wrow${i === idx ? ' active' : ''}`} onClick={() => game().selectWeapon(i)}>
+          <span class="wnum">{i + 1}.</span>
+          <WeaponIcon name={wp.name} />
+          <span class="wname">{wp.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- static structure (renders once) ---------------------------------------
+function ControlPanel() {
+  const g = () => game();
+  const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
+  const dA = (d: number) => g().setAngle(clamp(g().getAngle() + d, ANGLE_MIN, ANGLE_MAX));
+  const dW = (d: number) => g().selectWeapon(clamp(g().getCurrentWeaponIndex() + d, 0, weapons.value.length - 1));
+
+  return (
+    <div id="hud-panel">
+      <img class="panel-bg" src="/assets/gui/gui.bmp" alt="" />
+      <WeaponList />
+      <Hotspot r={R.up} title="Previous weapon" onClick={() => dW(-1)} />
+      <Hotspot r={R.down} title="Next weapon" onClick={() => dW(1)} />
+      <Hotspot r={R.plus} title="Power up" onClick={() => dP(5)} />
+      <Hotspot r={R.minus} title="Power down" onClick={() => dP(-5)} />
+      <MeterOverlay />
+      <FireButton />
+      <Hotspot r={R.buy} title="Weapons depot" onClick={() => {}} />
+      <Hotspot r={R.reset} title="Reset" onClick={() => {}} />
+      <Hotspot r={R.help} title="Help" onClick={() => {}} />
+      <Needle />
+      <AngleReadout />
+      <Hotspot r={R.aleft} title="Angle -" onClick={() => dA(-2)} />
+      <Hotspot r={R.aright} title="Angle +" onClick={() => dA(2)} />
+      <WindReadout />
+      <Hotspot r={R.close} title="Menu" onClick={() => {}} />
+    </div>
+  );
+}
+
+// ---- status bar / banner / side LCDs ---------------------------------------
 function StatusBar() {
   return (
     <div id="status-bar">
@@ -22,148 +134,47 @@ function StatusBar() {
     </div>
   );
 }
-
-// --- centre turn / winner banner -------------------------------------------
 function TurnBanner() {
   const [show, setShow] = useState(false);
   const name = playerName.value;
   const win = winner.value;
-
   useEffect(() => {
-    if (win) return;                       // winner banner stays until reset
+    if (win) return;
     setShow(true);
     const t = setTimeout(() => setShow(false), 1500);
     return () => clearTimeout(t);
   }, [name]);
-
   if (win) return <div id="turn-indicator" class="visible">{win} WINS!</div>;
   return <div id="turn-indicator" class={show ? 'visible' : ''}>{name}'s Turn</div>;
 }
-
-// --- weapon icon (async colorkey load) --------------------------------------
-function WeaponIcon({ name }: { name: string }) {
-  const [src, setSrc] = useState('');
-  useEffect(() => { let ok = true; loadWeaponIcon(name).then(u => { if (ok && u) setSrc(u); }); return () => { ok = false; }; }, [name]);
-  return src ? <img class="wicon" src={src} alt="" /> : <span class="wicon" />;
-}
-
-// --- weapon details LCD -----------------------------------------------------
+function LcdRow({ k, v }: { k: string; v: string }) { return <div><dt>{k}</dt><dd>{v}</dd></div>; }
 function WeaponDetails() {
   const w = weapons.value[weaponIndex.value];
-  if (!w) return <section class="mod lcd-panel" id="weapon-details" />;
-  const rows: [string, string][] = [
-    ['Type', String(w.type)],
-    ['Damage', String(w.damage)],
-    ['Radius', String(w.radius)],
-    ['Variance', (w.variance ?? 0).toFixed(1)],
-    ['Cluster', w.cluNum > 0 ? String(w.cluNum) : '—'],
-    ['Cost', String(w.cost)],
-  ];
   return (
-    <section class="mod lcd-panel" id="weapon-details">
-      <div class="mod-title">Weapon Details</div>
+    <div class="side-lcd" id="weapon-details">
+      <div class="side-title">Weapon Details</div>
+      {w && (
+        <dl class="wd-list">
+          <LcdRow k="Type" v={String(w.type)} />
+          <LcdRow k="Damage" v={String(w.damage)} />
+          <LcdRow k="Radius" v={String(w.radius)} />
+          <LcdRow k="Variance" v={(w.variance ?? 0).toFixed(1)} />
+          <LcdRow k="Cluster" v={w.cluNum > 0 ? String(w.cluNum) : '—'} />
+          <LcdRow k="Cost" v={String(w.cost)} />
+        </dl>
+      )}
+    </div>
+  );
+}
+function PlayerStats() {
+  return (
+    <div class="side-lcd" id="player-stats">
+      <div class="side-title" style={{ color: teamColor.value }}>{playerName.value}</div>
       <dl class="wd-list">
-        {rows.map(([k, v]) => <div><dt>{k}</dt><dd>{v}</dd></div>)}
+        <LcdRow k="Life" v={`${life.value}/1000`} />
+        <LcdRow k="Shield" v={`${shield.value}/1000`} />
       </dl>
-    </section>
-  );
-}
-
-// --- weapon select list -----------------------------------------------------
-function WeaponSelect() {
-  const listRef = useRef<HTMLDivElement>(null);
-  const idx = weaponIndex.value;
-
-  useEffect(() => {
-    const row = listRef.current?.querySelector('.wrow.active') as HTMLElement | null;
-    row?.scrollIntoView({ block: 'nearest' });
-  }, [idx]);
-
-  const step = (d: number) => game().selectWeapon(clamp(idx + d, 0, weapons.value.length - 1));
-
-  return (
-    <section class="mod" id="weapon-select">
-      <div class="wsel-body">
-        <div class="lcd-panel wlist" ref={listRef}>
-          {weapons.value.map((w, i) => (
-            <div class={`wrow${i === idx ? ' active' : ''}`} onClick={() => game().selectWeapon(i)}>
-              <span class="wnum">{i + 1}.</span>
-              <WeaponIcon name={w.name} />
-              <span class="wname">{w.name}</span>
-            </div>
-          ))}
-        </div>
-        <div class="wsel-arrows">
-          <button class="metal-btn" onClick={() => step(-1)}>▲</button>
-          <button class="metal-btn" onClick={() => step(1)}>▼</button>
-        </div>
-      </div>
-      <div class="mod-label">Select Weapon</div>
-    </section>
-  );
-}
-
-// --- power ------------------------------------------------------------------
-function PowerMod() {
-  const p = power.value;
-  const set = (v: number) => game().setPower(clamp(v, POWER_MIN, POWER_MAX));
-  return (
-    <section class="mod" id="power-mod">
-      <div class="power-body">
-        <div class="power-btns">
-          <button class="metal-btn" onClick={() => set(p + 5)}>+</button>
-          <div class="lcd-num">{p}</div>
-          <button class="metal-btn" onClick={() => set(p - 5)}>−</button>
-        </div>
-        <div class="power-meter"><div class="power-fill" style={{ height: `${(p / POWER_MAX) * 100}%` }} /></div>
-      </div>
-      <div class="mod-label">Power</div>
-    </section>
-  );
-}
-
-// --- fire -------------------------------------------------------------------
-function FireMod() {
-  return (
-    <section class="mod" id="fire-mod">
-      <button id="fire-btn" disabled={!canFire.value} onClick={() => { if (canFire.value) game().fire(); }}>Fire</button>
-    </section>
-  );
-}
-
-// --- angle ------------------------------------------------------------------
-function AngleMod() {
-  const a = angle.value;
-  const set = (v: number) => game().setAngle(clamp(v, ANGLE_MIN, ANGLE_MAX));
-  return (
-    <section class="mod" id="angle-mod">
-      <div class="angle-body">
-        <div class="dial">
-          <svg viewBox="0 0 100 100">
-            <circle class="dial-face" cx="50" cy="50" r="46" />
-            <line class="needle" x1="50" y1="50" x2="92" y2="50" transform={`rotate(${-a} 50 50)`} />
-            <circle class="dial-hub" cx="50" cy="50" r="5" />
-          </svg>
-        </div>
-        <div class="angle-row">
-          <button class="metal-btn" onClick={() => set(a - 2)}>◄</button>
-          <span class="lcd-num">{a}°</span>
-          <button class="metal-btn" onClick={() => set(a + 2)}>►</button>
-        </div>
-      </div>
-      <div class="mod-label">Angle</div>
-    </section>
-  );
-}
-
-// --- wind -------------------------------------------------------------------
-function WindMod() {
-  const w = wind.value;
-  return (
-    <section class="mod" id="wind-mod">
-      <div class="lcd-panel wind-box">{w >= 0 ? '→' : '←'} {Math.abs(w).toFixed(1)}</div>
-      <div class="mod-label">Wind</div>
-    </section>
+    </div>
   );
 }
 
@@ -174,12 +185,8 @@ export function Hud() {
       <TurnBanner />
       <div id="hud">
         <WeaponDetails />
-        <WeaponSelect />
-        <PowerMod />
-        <FireMod />
-        <AngleMod />
-        <div class="hud-spacer" />
-        <WindMod />
+        <ControlPanel />
+        <PlayerStats />
       </div>
     </>
   );

@@ -75,14 +75,17 @@ export function loadWeaponIcon(name: string): Promise<string | null> {
       g.drawImage(img, 0, 0);
       const im = g.getImageData(0, 0, cv.width, cv.height);
       const px = im.data;
+      // Knock out whatever the top-left corner colour is (the sprite's key).
+      const [kr, kg, kb] = [px[0], px[1], px[2]];
       for (let i = 0; i < px.length; i += 4) {
-        if (px[i] > 180 && px[i + 1] < 80 && px[i + 2] > 180) px[i + 3] = 0; // magenta
+        if (Math.abs(px[i] - kr) < 24 && Math.abs(px[i + 1] - kg) < 24 && Math.abs(px[i + 2] - kb) < 24) px[i + 3] = 0;
       }
       g.putImageData(im, 0, 0);
       resolve(cv.toDataURL());
     };
     img.onerror = () => resolve(null);
-    img.src = encodeURI(`/assets/icons/32x32/${name}.bmp`);
+    // Icon files are lowercase; Vite serves public assets case-sensitively.
+    img.src = encodeURI(`/assets/icons/32x32/${name.toLowerCase()}.bmp`);
   });
   iconCache.set(name, p);
   return p;
