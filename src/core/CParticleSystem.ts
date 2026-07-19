@@ -100,6 +100,79 @@ export class CParticleSystem {
   private m_assets: SpriteSrc | null = null;
   setAssets(a: SpriteSrc): void { this.m_assets = a; }
 
+  // Pre-baked soft radial glow. The old draw path allocated a fresh
+  // createRadialGradient (+3 addColorStop) for EVERY flare/flash/plume/smoke
+  // fallback, every frame — hundreds of allocations per blast frame. Instead we
+  // bake one white glow sprite once, tint it per colour into a small cache, and
+  // blit it with drawImage — the hot path then allocates nothing.
+  private m_glow: HTMLCanvasElement | null = null;
+  private m_glowNA = false;                                       // no DOM (unit tests) → callers fall back to a gradient
+  private m_tints = new Map<number, HTMLCanvasElement>();         // quantised colour → tinted glow
+  private static readonly GLOW_SRC = 32;                          // master glow radius (px); scaled up per particle
+
+  /**
+   * The white master glow (built once). Its falloff mirrors the old flare/flash
+   * gradient exactly — solid core, half-alpha midpoint, transparent rim — so
+   * blitting it under 'lighter' reproduces the previous look. Returns null where
+   * there is no canvas (the Node test runner), signalling a gradient fallback.
+   */
+  private glowMaster(): HTMLCanvasElement | null {
+    if (this.m_glow || this.m_glowNA) return this.m_glow;
+    if (typeof document === 'undefined') { this.m_glowNA = true; return null; }
+    const R = CParticleSystem.GLOW_SRC;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = R * 2;
+    const g = cv.getContext('2d');
+    if (!g) { this.m_glowNA = true; return null; }
+    const grad = g.createRadialGradient(R, R, 0, R, R, R);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, R * 2, R * 2);
+    this.m_glow = cv;
+    return cv;
+  }
+
+  /**
+   * The master glow tinted to (r,g,b), cached by colour quantised to 5 bits per
+   * channel so a blast's jittered tints collapse to a handful of cache entries.
+   * `source-in` keeps the glow's alpha shape and swaps in the solid colour.
+   */
+  private tintedGlow(r: number, g: number, b: number): HTMLCanvasElement | null {
+    const master = this.glowMaster();
+    if (!master) return null;
+    const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+    const hit = this.m_tints.get(key);
+    if (hit) return hit;
+    const R = CParticleSystem.GLOW_SRC;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = R * 2;
+    const c = cv.getContext('2d')!;
+    c.drawImage(master, 0, 0);
+    c.globalCompositeOperation = 'source-in';
+    c.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
+    c.fillRect(0, 0, R * 2, R * 2);
+    if (this.m_tints.size > 256) this.m_tints.clear();   // bound memory on pathological colour spread
+    this.m_tints.set(key, cv);
+    return cv;
+  }
+
+  /**
+   * Blit the tinted glow centred at (x,y) with the given radius and alpha, under
+   * whatever composite op the caller has set. Returns false when no canvas is
+   * available so the caller can fall back to a gradient (keeps unit tests working).
+   */
+  private blitGlow(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, r: number, g: number, b: number, alpha: number): boolean {
+    const t = this.tintedGlow(r, g, b);
+    if (!t) return false;
+    const d = radius * 2;
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(t, x - radius, y - radius, d, d);
+    ctx.globalAlpha = 1;
+    return true;
+  }
+
   // Downward acceleration (px/s^2). Sparks and debris arc and fall; flares and
   // the flash are short-lived enough that gravity barely moves them.
   private m_gravity = 240;
@@ -469,7 +542,7 @@ export class CParticleSystem {
           ctx.globalAlpha = alpha;
           ctx.drawImage(smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
           ctx.globalAlpha = 1;
-        } else {
+        } else if (!this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, alpha)) {
           const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, d / 2);
           g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha})`);
           g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -497,7 +570,7 @@ export class CParticleSystem {
         ctx.globalAlpha = a;
         ctx.drawImage(spr.bitmap, e.x - d / 2, e.y - d / 2, d, d);
         ctx.globalAlpha = 1;
-      } else {
+      } else if (!this.blitGlow(ctx, e.x, e.y, d / 2, 255, 220, 150, a)) {
         const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, d / 2);
         g.addColorStop(0, `rgba(255,220,150,${a})`);
         g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -519,7 +592,7 @@ export class CParticleSystem {
         ctx.globalAlpha = a;
         ctx.drawImage(pspr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
         ctx.globalAlpha = 1;
-      } else {
+      } else if (!this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, a)) {
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, d / 2);
         g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${a})`);
         g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -541,14 +614,18 @@ export class CParticleSystem {
         : (1 - t) * 0.5;                  // softer, so overlapping flares keep their hue
       if (glow <= 0 || alpha <= 0) continue;
 
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
-      g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha})`);
-      g.addColorStop(0.5, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha * 0.4})`);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
-      ctx.fill();
+      // Blit the pre-baked glow (its baked 0.4 midpoint matches the old 3-stop
+      // gradient); fall back to the gradient only where no canvas exists (tests).
+      if (!this.blitGlow(ctx, p.x, p.y, glow, p.r, p.g, p.b, alpha)) {
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
+        g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha})`);
+        g.addColorStop(0.5, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha * 0.4})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // Beam flashes — a soft coloured halo line under a thin white-hot core.
