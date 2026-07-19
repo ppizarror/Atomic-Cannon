@@ -13,7 +13,7 @@ export type Screen = 'menu' | 'battle' | 'settings' | 'depot';
 export const screen = signal<Screen>('battle');
 
 // Live HUD values (updated every frame from the controller).
-export const power = signal(50);
+export const power = signal(500);
 export const angle = signal(45);
 export const wind = signal(0);
 export const weaponIndex = signal(0);
@@ -27,7 +27,7 @@ export const winner = signal('');
 export const weapons = signal<WeaponDef[]>([]);
 
 // Power/angle ranges (UI units).
-export const POWER_MIN = 10, POWER_MAX = 100;
+export const POWER_MIN = 10, POWER_MAX = 1000;
 export const ANGLE_MIN = 0, ANGLE_MAX = 180;
 
 let controller: CGameController | null = null;

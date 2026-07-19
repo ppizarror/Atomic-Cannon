@@ -37,17 +37,51 @@ async function main(): Promise<void> {
   setController(gameController);
   render(<App />, uiRoot);
 
+  // Pause: 'P' freezes the sim so a clean screenshot can be taken; 'P' resumes.
+  // The frame keeps rendering while paused (only the simulation clock stops).
+  let paused = false;
+
   // Keyboard shortcuts (the on-screen controls live in the Preact HUD).
   document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyP') { e.preventDefault(); paused = !paused; return; }
     if (!canFire.value) return;
     switch (e.code) {
       case 'Space': e.preventDefault(); gameController.fire(); break;
       case 'ArrowLeft': gameController.setAngle(Math.max(ANGLE_MIN, gameController.getAngle() - 2)); break;
       case 'ArrowRight': gameController.setAngle(Math.min(ANGLE_MAX, gameController.getAngle() + 2)); break;
-      case 'ArrowUp': gameController.setPower(Math.min(POWER_MAX, gameController.getPower() + 5)); break;
-      case 'ArrowDown': gameController.setPower(Math.max(POWER_MIN, gameController.getPower() - 5)); break;
+      case 'ArrowUp': gameController.setPower(Math.min(POWER_MAX, gameController.getPower() + 50)); break;
+      case 'ArrowDown': gameController.setPower(Math.max(POWER_MIN, gameController.getPower() - 50)); break;
     }
   });
+
+  // Drag-to-aim: click in the world and drag to set angle + power; release fires.
+  // Map client coords to the scene's pixel space (it may be CSS-stretched).
+  const toWorld = (e: PointerEvent): [number, number] => {
+    const r = container.getBoundingClientRect();
+    return [
+      (e.clientX - r.left) * (scene.width / r.width),
+      (e.clientY - r.top) * (scene.height / r.height),
+    ];
+  };
+  let aiming = false;
+  container.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const [wx, wy] = toWorld(e);
+    if (gameController.beginAim(wx, wy)) aiming = true;
+  });
+  // Move/up on the window in the CAPTURE phase so they fire even though the Pixi
+  // canvas captures the pointer (its handlers run after ours).
+  window.addEventListener('pointermove', (e) => {
+    if (aiming) { const [wx, wy] = toWorld(e); gameController.dragAim(wx, wy); }
+  }, true);
+  // Release only commits the aim (angle/power) — it does NOT fire. Fire is the
+  // FIRE button / Space.
+  window.addEventListener('pointerup', () => {
+    if (aiming) { aiming = false; gameController.endAim(false); }
+  }, true);
+  window.addEventListener('pointercancel', () => {
+    if (aiming) { aiming = false; gameController.endAim(false); }
+  }, true);
 
   window.addEventListener('resize', () => compositor.resize());
 
@@ -55,12 +89,14 @@ async function main(): Promise<void> {
     (window as unknown as { atomic: unknown }).atomic = { gameController, compositor };
   }
 
-  // Game loop — drive the sim, present, and pump UI signals.
+  // Game loop — drive the sim, present, and pump UI signals. While paused we
+  // skip the simulation step entirely (so nothing advances or emits) but keep
+  // drawing/presenting so the frozen frame stays live for a screenshot.
   compositor.app.ticker.add((ticker) => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
-    gameController.update(dt);
+    if (!paused) gameController.update(dt);
     gameController.draw();
-    compositor.update(dt);
+    compositor.update(paused ? 0 : dt);
     syncHud();
   });
 

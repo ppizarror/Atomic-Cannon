@@ -21,7 +21,7 @@ export const EXT = {
 } as const;
 
 // Shot speed per unit power — same scaling the launch path uses.
-const SPEED_SCALE = 9;
+const SPEED_SCALE = 0.9;
 // Submunition launch power = 0.5 x firing power (_DAT_004ef3cc).
 const CLUSTER_POWER = 0.5;
 // Roller surface speed (px/s in our space; the original uses a fixed ±10 units).
@@ -35,7 +35,8 @@ export interface ShotWorld {
   readonly land: CLand;
   readonly tanks: CTank[];
   spawnShot(shot: CShot): void;
-  explode(x: number, y: number, scale: number): void;
+  /** Detonation FX. `color`/`radiusPx`/`nuclear` tint & scale the burst; `blastPreset` names its particles.json effect. */
+  explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear?: boolean, blastPreset?: string): void;
   shake(mag: number, dur: number): void;
   ripple(x: number, y: number, strength: number): void;
   /** Falloff blast damage + kick + shield/armor (FUN_00404670). `full` skips falloff (beams). */
@@ -194,7 +195,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   const radiusPx = shot.getRadius();
   const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
-  world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9);
+  world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9, weapon.getColor(), radiusPx, weapon.isNuclear(), weapon.getBlastParticle());
   world.shake(isPrimary ? 8 : 3, 0.3);
 
   // Terrain effect.
@@ -204,9 +205,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     land.raiseTerrain(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (!isBeam) {
     land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
+    land.scorch(Math.floor(pos.x), Math.floor(surfaceY), radiusPx);   // blackened blast rim
     // Throw a dirt spray scaled by the crater size (more debris for bigger blasts).
-    const chunks = Math.min(70, 10 + Math.round(radiusPx * 1.2));
-    land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks);
+    const chunks = Math.min(90, 14 + Math.round(radiusPx * 1.6));
+    land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks, radiusPx);
   }
 
   if (isPrimary) {

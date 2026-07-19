@@ -149,8 +149,8 @@ function ControlPanel() {
       <WeaponPreview />
       <Hotspot r={R.up} title="Previous weapon" onClick={() => dW(-1)} />
       <Hotspot r={R.down} title="Next weapon" onClick={() => dW(1)} />
-      <Hotspot r={R.plus} title="Power up" onClick={() => dP(5)} />
-      <Hotspot r={R.minus} title="Power down" onClick={() => dP(-5)} />
+      <Hotspot r={R.plus} title="Power up" onClick={() => dP(50)} />
+      <Hotspot r={R.minus} title="Power down" onClick={() => dP(-50)} />
       <MeterOverlay />
       <FireButton />
       <Hotspot r={R.buy} title="Weapons depot" onClick={() => {}} />

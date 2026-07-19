@@ -49,7 +49,7 @@ export class CShot {
 
     const fRadAngle = -((angleDegrees / 180) * Math.PI);
 
-    const SPEED_SCALE = 9;
+    const SPEED_SCALE = 0.9;
     const speed = power * SPEED_SCALE;
 
     this.m_vel.x = Math.cos(fRadAngle) * speed;
@@ -74,7 +74,7 @@ export class CShot {
     this.m_radius = radius;
     this.m_power = power;
 
-    const SPEED_SCALE = 9;
+    const SPEED_SCALE = 0.9;
     const speed = power * SPEED_SCALE;
 
     if (turretAngleRad >= 0) {
