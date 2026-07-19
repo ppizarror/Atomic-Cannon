@@ -53,10 +53,10 @@ body { background: #000; color: #cfe; font-family: 'Segoe UI', Arial, sans-serif
 
 /* weapon list (over the panel's black box) — rows flush, like the original */
 .wlist { overflow: hidden; padding: 0; }
-.wrow { display: flex; align-items: center; gap: 3px; padding: 0 2px; height: 16px; cursor: pointer; white-space: nowrap; }
+.wrow { display: flex; align-items: center; gap: 4px; padding: 0 2px; height: 19.5px; overflow: hidden; cursor: pointer; white-space: nowrap; }
 .wrow:hover { background: rgba(120,220,120,0.12); }
 .wrow.active { background: rgba(60,170,70,0.16); outline: 1px solid #46cc46; outline-offset: -1px; }
-.wicon { width: 16px; height: 16px; display: block; image-rendering: pixelated; flex: 0 0 auto; }
+.wicon { width: 18px; height: 18px; display: block; image-rendering: pixelated; flex: 0 0 auto; }
 .wtext { flex: 0 1 auto; min-width: 0; }
 
 /* 32x32 preview of the current weapon (box between the ▲/▼ arrows) */
@@ -74,7 +74,7 @@ body { background: #000; color: #cfe; font-family: 'Segoe UI', Arial, sans-serif
 
 /* angle needle drawn over the panel's dial */
 .dial-overlay { pointer-events: none; }
-.needle { stroke: #7fff7f; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(120,255,120,.8)); }
+.needle { stroke: #e01e1e; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(255,40,40,.8)); }
 
 /* side LCD boxes (weapon details / player stats) — black panels with a border */
 .side-lcd {

@@ -23,30 +23,32 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const R = {
   // Extents measured directly from the gui.bmp pixels (button faces + black boxes).
   list:   [0.9, 11.7, 29.1, 70.8],
-  up:     [30.8, 12, 5.0, 21],   down:  [30.8, 62, 5.0, 21],
-  plus:   [38.3, 13, 5.0, 24],   minus: [38.3, 60, 5.0, 22],
-  pnum:   [38.3, 40, 5.0, 19.2],       // black readout box between +/−
+  up:     [30.8, 12, 3.7, 18],   down:  [30.8, 63, 3.7, 18],
+  plus:   [38.3, 16, 5, 20],   minus: [38.3, 62, 5.0, 20],
+  pnum:   [38.3, 41, 5.0, 19.2],       // black readout box between +/−
   wicon:  [30.8, 34.2, 5.0, 26.7],     // 32x32 preview of the selected weapon
   meter:  [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
   fire:   [54.8, 16.5, 15, 29.5],
-  buy:    [54.7, 62, 3.9, 20], reset: [60.7, 62, 3.9, 20], help: [66.5, 62, 3.9, 20],
+  buy:    [54.7, 63, 3.5, 20], reset: [60.7, 63, 3.5, 20], help: [66.5, 63, 3.5, 20],
   aleft:  [75.9, 63, 3.4, 19], aright: [84.0, 63, 3.5, 19],
-  anglen: [77.5, 45, 11, 13],
+  anglen: [75.6, 48, 11, 11],          // lower-centre of the dial
   close:  [94.4, 15, 3.0, 20],
   wind:   [90.6, 42.5, 7.5, 40],
+
   // group captions printed on the metal below each cluster (black text)
   lblWeapon: [1.5, 82, 28.5, 16],
   lblPower:  [33, 82, 17, 16],
   lblAngle:  [73, 82, 17, 16],
   lblWind:   [87.5, 82, 11, 16],
 } as const;
+
 // Square (px) box over the round dial so the needle stays circular.
 const DIAL_BOX = [76.3, 4.4, 11.5, 61.3] as const;
 
 // Readout ink — the panel readouts are white, like the original.
 const INK = '#f4f8f4';
-const LIST_FONT = 'Microsoft Sans Serif 14';   // rendered 1:1 (native ~17px)
+const LIST_FONT = 'Microsoft Sans Serif 14';   // small/thin text; row height sets the count
 
 const pos = (r: readonly number[]): JSX.CSSProperties =>
   ({ position: 'absolute', left: `${r[0]}%`, top: `${r[1]}%`, width: `${r[2]}%`, height: `${r[3]}%` });
