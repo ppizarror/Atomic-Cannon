@@ -18,33 +18,41 @@ import type { Vec2 } from '../math/Vec2';
 export type WeatherType = 'snow' | 'rain' | 'hail' | 'dust';
 export interface WeatherSpec { type: string; intensity: number }
 
-/** Per-band tuning. Densities are particle counts at intensity 100 over the
- * reference area below; the actual count scales with intensity and canvas area. */
-const REF_AREA = 1280 * 720;
-
 // Weather draws as small crisp dots (like the original), NOT soft gradient blobs.
 // `size` is the dot radius in px — kept tiny so the field reads as flecks, not smudges.
 const TUNING = {
   // Small slow flakes that sway side to side and drift on the wind.
-  snow: { density: 240, fall: 45, fallVar: 28, sway: 16, swayFreq: 1.6, wind: 15, sizeMin: 0.9, sizeMax: 2.0, alphaMin: 0.6, alphaMax: 1.0, hover: false, cap: 900 },
+  snow: { mult: 1.5, fall: 45, fallVar: 28, sway: 16, swayFreq: 1.6, wind: 15, sizeMin: 0.9, sizeMax: 2.0, alphaMin: 0.6, alphaMax: 1.0, hover: false, cap: 1200 },
   // Fast near-vertical streaks that slant hard with the wind.
-  rain: { density: 300, fall: 780, fallVar: 240, sway: 0, swayFreq: 0, wind: 34, sizeMin: 0.7, sizeMax: 1.3, alphaMin: 0.2, alphaMax: 0.45, hover: false, cap: 1100 },
+  rain: { mult: 1.0, fall: 780, fallVar: 240, sway: 0, swayFreq: 0, wind: 34, sizeMin: 0.7, sizeMax: 1.3, alphaMin: 0.2, alphaMax: 0.45, hover: false, cap: 900 },
   // Heavy pellets: fast, mostly vertical, only lightly pushed by wind, with a tiny flutter.
-  hail: { density: 150, fall: 560, fallVar: 170, sway: 6, swayFreq: 8, wind: 12, sizeMin: 0.9, sizeMax: 1.7, alphaMin: 0.8, alphaMax: 1.0, hover: false, cap: 700 },
+  hail: { mult: 1.0, fall: 560, fallVar: 170, sway: 6, swayFreq: 8, wind: 12, sizeMin: 0.9, sizeMax: 1.7, alphaMin: 0.8, alphaMax: 1.0, hover: false, cap: 900 },
   // Blowing sand: tiny specks that barely fall, bob gently, and are carried mostly
-  // horizontally by the wind across the distance.
-  dust: { density: 260, fall: 0, fallVar: 0, sway: 10, swayFreq: 0.55, wind: 36, sizeMin: 0.7, sizeMax: 1.6, alphaMin: 0.22, alphaMax: 0.5, hover: true, cap: 900 },
+  // horizontally by the wind across the distance. The thickest field of the four.
+  dust: { mult: 3.0, fall: 0, fallVar: 0, sway: 10, swayFreq: 0.55, wind: 36, sizeMin: 0.7, sizeMax: 1.6, alphaMin: 0.22, alphaMax: 0.5, hover: true, cap: 1800 },
 } as const;
 
 type Tuning = typeof TUNING[WeatherType];
+
+// The 5 sand tints the original cycles for dust specks (alpha-blended tan, not glow).
+const DUST_TANS = ['#a37d3b', '#937137', '#896a33', '#7f642f', '#785f2d'];
+
+/** The original's fixed field size: sqrt(screenArea) · K · 300 · typeMult, where
+ * K = 1/900 above 800px wide, else 1/600. Independent of intensity. */
+function computeCount(w: number, h: number, mult: number): number {
+  if (w <= 0 || h <= 0) return 0;
+  const K = w > 800 ? 1 / 900 : 1 / 600;
+  return Math.floor(Math.sqrt(w * h) * K * 300 * mult);
+}
 
 interface WParticle {
   x: number; y: number;
   size: number;
   seed: number;     // phase offset for the sway / bob oscillator
   speedMul: number; // per-particle fall-speed variation
-  drift: number;    // ambient horizontal drift (keeps dust alive at zero wind)
+  drift: number;    // ambient horizontal drift (dust: a leftward "blowing" bias)
   alpha: number;    // depth cue — nearer particles brighter
+  ci: number;       // dust tint index into DUST_TANS (ignored by other types)
 }
 
 interface Layer {
@@ -83,8 +91,14 @@ export class CWeather {
   }
 
   /**
-   * Set the active weather from a map's declared bands. Rebuilds the particle
-   * fields; unknown types are ignored, intensity 0 is dropped.
+   * Set the active weather from a map's declared bands. Following the original,
+   * `intensity` is a one-time probability GATE (not a density scale): each band
+   * rolls `rand(0..99) <= intensity` at map load and, if it passes, appears at a
+   * FIXED per-type density. Unknown types and intensity ≤ 0 are dropped.
+   *
+   * Deviation from the original: it also has a parse-order quirk that suppresses
+   * hail whenever snow is declared first — and every hail map declares snow first,
+   * so hail would never show. We honour the data's intent and let both appear.
    */
   configure(specs: readonly WeatherSpec[] | undefined): void {
     this.m_layers = [];
@@ -92,24 +106,18 @@ export class CWeather {
     for (const s of specs) {
       const type = s.type as WeatherType;
       if (!(type in TUNING) || s.intensity <= 0) continue;
+      if (Math.floor(rnd() * 100) > s.intensity) continue;   // probability gate
       const layer: Layer = { type, t: TUNING[type], particles: [] };
-      this.resize(layer, s.intensity);
+      this.resize(layer);
       this.m_layers.push(layer);
     }
   }
 
-  /** (Re)allocate a layer's particle field for the current bounds + intensity. */
-  private resize(layer: Layer, intensity?: number): void {
-    // Remember the intensity across pure-bounds resizes.
-    if (intensity !== undefined) (layer as { intensity?: number }).intensity = intensity;
-    const it = (layer as { intensity?: number }).intensity ?? 0;
+  /** (Re)allocate a layer's particle field for the current bounds. Count is a
+   * fixed function of the screen size and the band's density multiplier. */
+  private resize(layer: Layer): void {
     if (this.m_w <= 0 || this.m_h <= 0) { layer.particles.length = 0; return; }
-
-    const area = this.m_w * this.m_h;
-    const want = Math.min(
-      layer.t.cap,
-      Math.round(layer.t.density * (it / 100) * (area / REF_AREA)),
-    );
+    const want = Math.min(layer.t.cap, computeCount(this.m_w, this.m_h, layer.t.mult));
     const ps = layer.particles;
     while (ps.length < want) ps.push(this.spawn(layer.t, true));
     if (ps.length > want) ps.length = want;
@@ -124,8 +132,11 @@ export class CWeather {
       size: between(t.sizeMin, t.sizeMax),
       seed: rnd() * TWO_PI,
       speedMul: between(0.75, 1.25),
-      drift: between(-18, 18),
+      // Dust seeds a leftward "blowing" bias (like the original) so it drifts even
+      // in calm air; falling types get a small symmetric jitter (unused by them).
+      drift: t.hover ? between(-55, -20) : between(-18, 18),
       alpha: between(t.alphaMin, t.alphaMax),
+      ci: Math.floor(rnd() * DUST_TANS.length),
     };
   }
 
@@ -206,11 +217,20 @@ export class CWeather {
   }
 
   private drawHail(ctx: CanvasRenderingContext2D, layer: Layer): void {
-    this.drawDots(ctx, layer, '#eef4ff');
+    this.drawDots(ctx, layer, '#d6ffff');   // pale ice cyan
   }
 
+  // Dust tints (alpha-blended tan) rather than glowing — each speck keeps the sand
+  // colour it was seeded with, so the field reads as mixed grains of blowing sand.
   private drawDust(ctx: CanvasRenderingContext2D, layer: Layer): void {
-    this.drawDots(ctx, layer, '#c8ad82');
+    for (const p of layer.particles) {
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle = DUST_TANS[p.ci];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.6, p.size), 0, TWO_PI);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   private drawRain(ctx: CanvasRenderingContext2D, layer: Layer): void {

@@ -249,8 +249,15 @@ export class CLand {
       // dirt (the original's destructible bitmap loses the green pixels).
       if (this.m_degrass) this.m_degrass[dx] = 1;
       // A blast destroys any irradiated-earth deposit here (a normal bomb or a
-      // terrain-clear removes the fallout terrain + its red glow, like the original).
+      // terrain-clear removes the fallout + its red glow, like the original).
       if (this.m_radDeposit) this.m_radDeposit[dx] = 0;
+    }
+
+    // Wipe the radiation specks + settle-glow the blast overran — the fallout that
+    // sat here is gone (the damage query is gated on the deposit, cleared above).
+    if (this.m_radSpecks.length) {
+      const lo = x - nRadius, hi = x + nRadius;
+      this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
     }
 
     this.preBlast(x - nRadius, x + nRadius);
@@ -572,6 +579,15 @@ export class CLand {
 
   getRadiationZones(): RadParticle[] {
     return this.m_radParticles.filter(r => r.timeRemaining > 0);
+  }
+
+  /** Fallout deposit height (px) at a column — 0 where there is no live irradiation
+   *  (cleared when a blast overruns it). Gates radiation damage to the visible zone. */
+  radDepositAt(x: number): number {
+    if (!this.m_radDeposit) return 0;
+    const ix = Math.floor(x);
+    if (ix < 0 || ix >= this.m_nWidth) return 0;
+    return this.m_radDeposit[ix];
   }
 
   // ========================================================================

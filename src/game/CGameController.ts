@@ -443,8 +443,9 @@ export class CGameController implements ShotWorld {
       this.drawStars(ctx);
     }
 
-    // Blowing-sand haze sits between the backdrop and the terrain (occluded by hills).
-    this.m_weather.drawBackground(ctx);
+    // Weather (rain / snow / hail / dust) sits between the backdrop and the
+    // terrain, so it only shows against the sky and is occluded by the ground.
+    this.m_weather.draw(ctx);
 
     // Draw terrain
     this.m_land.draw(ctx);
@@ -486,9 +487,6 @@ export class CGameController implements ShotWorld {
 
     // Draw explosions on top
     this.m_particles.draw(ctx);
-
-    // Precipitation (snow / rain / hail) falls in front of the whole scene.
-    this.m_weather.drawForeground(ctx);
 
     ctx.restore();
   }
@@ -666,16 +664,22 @@ export class CGameController implements ShotWorld {
       if (tank.isAlive()) {
         tank.update(this.m_land, dt);
         
-        // Apply radiation damage from nuclear zones
+        // Apply radiation damage from nuclear zones — but ONLY where the fallout
+        // deposit still exists at the tank's column. A bomb/terrain-clear that
+        // overran the fallout zeroed the deposit there, so the irradiation is gone.
         const radZones = this.m_land.getRadiationZones();
-        for (const rZone of radZones) {
-          const dist = tank.distanceTo(rZone.x, rZone.y);
-          
-          if (dist < rZone.radius + 16) {  // TANK_RADIUS
-            tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
-            
-            if (!tank.isAlive()) {
-              this.handleTankDestroyed(tank);
+        const irradiated = this.m_land.radDepositAt(tank.getPosition().x) > 0;
+        if (irradiated) {
+          for (const rZone of radZones) {
+            const dist = tank.distanceTo(rZone.x, rZone.y);
+
+            if (dist < rZone.radius + 16) {  // TANK_RADIUS
+              tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
+
+              if (!tank.isAlive()) {
+                this.handleTankDestroyed(tank);
+                break;
+              }
             }
           }
         }
