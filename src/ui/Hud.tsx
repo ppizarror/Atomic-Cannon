@@ -21,19 +21,20 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
 const R = {
-  list:   [0.6, 11.9, 29.9, 71],
-  up:     [30.5, 10, 6.5, 20],  down:  [30.5, 62, 6.5, 18],
-  plus:   [38, 10, 6.5, 20],    minus: [38, 62, 6.5, 18],
-  pnum:   [38, 34, 6.5, 25],           // black readout box between +/−
-  wicon:  [30.1, 34, 6.4, 26],         // 32x32 preview of the selected weapon
+  // Extents measured directly from the gui.bmp pixels (button faces + black boxes).
+  list:   [0.9, 11.7, 29.1, 70.8],
+  up:     [30.8, 12, 5.0, 21],   down:  [30.8, 62, 5.0, 21],
+  plus:   [38.3, 13, 5.0, 24],   minus: [38.3, 60, 5.0, 22],
+  pnum:   [38.3, 40, 5.0, 19.2],       // black readout box between +/−
+  wicon:  [30.8, 34.2, 5.0, 26.7],     // 32x32 preview of the selected weapon
   meter:  [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
-  fire:   [54.5, 15, 16, 33],
-  buy:    [54.5, 62, 5.5, 20], reset: [61, 62, 6, 20], help: [68, 62, 5.5, 20],
-  aleft:  [75.5, 60, 5.5, 20], aright: [83.5, 60, 5.5, 20],
+  fire:   [54.8, 16.5, 15, 29.5],
+  buy:    [54.7, 62, 3.9, 20], reset: [60.7, 62, 3.9, 20], help: [66.5, 62, 3.9, 20],
+  aleft:  [75.9, 63, 3.4, 19], aright: [84.0, 63, 3.5, 19],
   anglen: [77.5, 45, 11, 13],
-  close:  [91, 13, 5.5, 19],
-  wind:   [90.5, 40, 6.5, 32],
+  close:  [94.4, 15, 3.0, 20],
+  wind:   [90.6, 42.5, 7.5, 40],
   // group captions printed on the metal below each cluster (black text)
   lblWeapon: [1.5, 82, 28.5, 16],
   lblPower:  [33, 82, 17, 16],
