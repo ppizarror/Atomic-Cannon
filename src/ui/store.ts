@@ -42,6 +42,11 @@ export function game(): CGameController {
   return controller;
 }
 
+/** UI button click (click.wav) — used by menu-style HUD controls. */
+export function uiClick(): void {
+  controller?.getAudio()?.uiClick();
+}
+
 /** Copy the current game state into the signals (called each frame). */
 export function syncHud(): void {
   const c = controller;
@@ -50,6 +55,13 @@ export function syncHud(): void {
   angle.value = Math.round(c.getAngle());
   wind.value = c.getWindValue();
   weaponIndex.value = c.getCurrentWeaponIndex();
+  // The selectable list can change with the turn (the human's control-weapon
+  // lock vs. a bot's full arsenal); refresh only when it actually flips so the
+  // list doesn't re-render every frame.
+  const defs = c.getWeaponDefs() as WeaponDef[];
+  if (defs.length !== weapons.value.length || defs[0] !== weapons.value[0]) {
+    weapons.value = defs;
+  }
   playerName.value = c.getCurrentPlayerName();
   teamColor.value = c.getCurrentTeamColor();
   const h = c.getCurrentTank().getHealth();

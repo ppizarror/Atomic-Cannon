@@ -85,6 +85,26 @@ console.log('Particle system');
   ok('opposite winds separate the smoke', rx - lx > 20, `dx=${(rx - lx).toFixed(1)}`);
 }
 
+// 4c. Higher shot speed (∝ power) lays down more trail smoke per frame.
+{
+  const lo = new CParticleSystem(); lo.setBounds(4000, 2000);
+  const hi = new CParticleSystem(); hi.setBounds(4000, 2000);
+  lo.trail(2000, 1000, '#ffffff', 120, 0);    // slow shot
+  hi.trail(2000, 1000, '#ffffff', 950, 0);    // fast (high-power) shot
+  ok('faster shot emits more trail smoke', hi.count() > lo.count(), `lo=${lo.count()} hi=${hi.count()}`);
+}
+
+// 4d. A named preset drives explosion colour (eGreen → green fireball particles).
+{
+  const ps = new CParticleSystem(); ps.setBounds(1600, 1200);
+  ps.blast(800, 600, 45, '#ffffff', false, 'eGreen');
+  const parts = (ps as unknown as { m_particles: { r: number; g: number; b: number; kind: string }[] }).m_particles;
+  const flares = parts.filter(p => p.kind === 'flare');
+  const greenish = flares.filter(p => p.g > p.r && p.g > p.b).length;
+  ok('preset tints the fireball (eGreen → green)', flares.length > 0 && greenish > flares.length * 0.5,
+     `flares=${flares.length} green=${greenish}`);
+}
+
 // 5. Out-of-bounds reap: a particle pushed past the clip window dies immediately.
 {
   const ps = new CParticleSystem();

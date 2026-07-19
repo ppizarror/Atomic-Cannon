@@ -35,8 +35,10 @@ export interface ShotWorld {
   readonly land: CLand;
   readonly tanks: CTank[];
   spawnShot(shot: CShot): void;
-  /** Detonation FX. `color`/`radiusPx`/`nuclear` tint & scale the burst; `blastPreset` names its particles.json effect. */
-  explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear?: boolean, blastPreset?: string): void;
+  /** Detonation FX. `color`/`radiusPx`/`nuclear` tint & scale the burst; `blastPreset`
+   * names its particles.json effect; `expType` (0–4) + `expBitmap` select the weapon's
+   * own explosion flare sprite and style. */
+  explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear?: boolean, blastPreset?: string, expType?: number, expBitmap?: string): void;
   shake(mag: number, dur: number): void;
   ripple(x: number, y: number, strength: number): void;
   /** Falloff blast damage + kick + shield/armor (FUN_00404670). `full` skips falloff (beams). */
@@ -44,6 +46,8 @@ export interface ShotWorld {
   aimMarker(x: number, y: number): void;
   deployMine(x: number, y: number, owner: CTank | null, weaponIndex: number): void;
   deploySentry(x: number, y: number, owner: CTank | null, weaponIndex: number): void;
+  /** Play a weapon's impact sound (`soundHit`) panned to the blast, if audio is wired. */
+  hitSound(name: string, x: number): void;
 }
 
 export type FlyAction = 'continue' | 'detonate' | 'consumed';
@@ -195,7 +199,8 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   const radiusPx = shot.getRadius();
   const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
-  world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9, weapon.getColor(), radiusPx, weapon.isNuclear(), weapon.getBlastParticle());
+  world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9, weapon.getColor(), radiusPx, weapon.isNuclear(), weapon.getBlastParticle(), weapon.getExpType(), weapon.getExpBitmap());
+  world.hitSound(weapon.getHitSound(), pos.x);   // soundHit, panned to the blast (RE: shot field +0xC4)
   world.shake(isPrimary ? 8 : 3, 0.3);
 
   // Terrain effect.
@@ -206,8 +211,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   } else if (!isBeam) {
     land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
     land.scorch(Math.floor(pos.x), Math.floor(surfaceY), radiusPx);   // blackened blast rim
-    // Throw a dirt spray scaled by the crater size (more debris for bigger blasts).
-    const chunks = Math.min(90, 14 + Math.round(radiusPx * 1.6));
+    // Eject a dirt spray scaled by the crater size — the chunks fly out and settle,
+    // each RAISING the column where it lands, so a big blast piles rim mounds
+    // (crater centre down, rim up) rather than just flattening the surface. Nukes
+    // (expType 4) throw a huge amount of ejecta that fills the crater bowl.
+    const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
+    const chunks = Math.min(3000, Math.round(radiusPx * (heavy ? 18 : 5)) + 30);
     land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks, radiusPx);
   }
 

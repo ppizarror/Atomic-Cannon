@@ -70,6 +70,7 @@ export class CLand {
     
     this.m_particles = [];
     this.m_radParticles = [];
+    this.m_degrass = new Uint8Array(width);
   }
   
   initFromArray(heights: Int16Array, scaleX: number = 1, scaleY: number = 1): void {
@@ -127,6 +128,7 @@ export class CLand {
   // Ymin is the highest peaks can reach, Ymax the lowest valleys.
   private generateProfile(mode: number): void {
     const W = this.m_nWidth;
+    this.m_degrass?.fill(0);       // fresh terrain: grass everywhere again
     const A = 15;                                   // walk amplitude (obj +0x4c)
     const Ymin = Math.floor(this.m_nHeight * 0.30); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -237,6 +239,9 @@ export class CLand {
       if (craterBottom > this.m_arrHeights[dx]) {
         this.m_arrHeights[dx] = Math.min(this.m_nHeight, Math.floor(craterBottom));
       }
+      // Strip the grass cap here — the blast tears through it, exposing bare
+      // dirt (the original's destructible bitmap loses the green pixels).
+      if (this.m_degrass) this.m_degrass[dx] = 1;
     }
 
     this.preBlast(x - nRadius, x + nRadius);
@@ -311,7 +316,8 @@ export class CLand {
     fDurationSeconds: number,
     rgb?: [number, number, number]
   ): void {
-    const [r, g, b] = rgb && (rgb[0] || rgb[1] || rgb[2]) ? rgb : [255, 128, 0];
+    // Nukes/DOT ship no explicit irRGB → glow a hot radioactive red-orange.
+    const [r, g, b] = rgb && (rgb[0] || rgb[1] || rgb[2]) ? rgb : [255, 46, 20];
 
     // Gameplay damage zone (queried against tanks each frame).
     this.m_radParticles.push({
@@ -325,7 +331,7 @@ export class CLand {
     // Visual: a cloud of glowing specks thrown out of the crater. They fall,
     // settle on the surface, and glow tinted by irRGB fading over irTime — so the
     // zone conforms to the ground instead of floating (port of FUN_004a6c20).
-    const n = Math.max(40, Math.min(700, Math.round(nRadius * 2.4)));
+    const n = Math.max(40, Math.min(1500, Math.round(nRadius * 6)));
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
       const dist = this.rand01() * nRadius;
@@ -336,7 +342,7 @@ export class CLand {
         vx: Math.cos(ang) * speed,
         vy: Math.sin(ang) * speed - (60 + this.rand01() * 120), // thrown up and out
         age: 0,
-        life: fDurationSeconds * (0.6 + this.rand01() * 0.4),
+        life: fDurationSeconds * (0.85 + this.rand01() * 0.15),   // lasts most of irTime
         settled: false,
         size: 1.6 + this.rand01() * 2,
         r, g, b,
@@ -377,14 +383,16 @@ export class CLand {
   addShowerParticles(x: number, y: number, count: number, radius = 24): void {
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const v = 30 + Math.floor(Math.random() * 100);     // brightness [30,129]
-      const speed = 80 + Math.random() * 220;
+      // Dirt brown (R=v, G≈v/2, B≈0), occasionally a darker clod for texture.
+      let v = 24 + Math.floor(Math.random() * 116);       // [24,139]
+      if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark chunks
+      const speed = 40 + Math.random() * 300;             // wide → some fly far, some fill the bowl
       const p: LandParticle = {
-        x: x + Math.cos(ang) * Math.random() * radius,
-        y,
+        x: x + (Math.random() * 2 - 1) * radius,
+        y: y + (Math.random() * 2 - 1) * radius * 0.4,
         vx: Math.cos(ang) * speed,
-        vy: Math.sin(ang) * speed - (100 + Math.random() * 120),  // biased up and out
-        color: `rgb(${v},${v >> 1},0)`,
+        vy: Math.sin(ang) * speed * 0.7 - (40 + Math.random() * 190),  // varied up-and-out
+        color: `rgb(${v},${v >> 1},${v >> 3})`,
         size: 1 + Math.floor(Math.random() * 2),          // 1..2 px chunks
         spin: 0,
       };
@@ -493,12 +501,15 @@ export class CLand {
     }
     
     const dx = 2;
-    const dy = this.m_arrHeights[Math.min(x + 1, this.m_nWidth - 1)] - 
+    const dy = this.m_arrHeights[Math.min(x + 1, this.m_nWidth - 1)] -
                this.m_arrHeights[Math.max(x - 1, 0)];
-    
+
     const len = Math.sqrt(dx * dx + dy * dy);
-    
-    return new Vec2(-dy / len, -dx / len).normalize();
+
+    // Surface tangent is (dx, dy); the outward (upward) normal is (dy, -dx) —
+    // for a slope descending to the right (dy>0) it points up-right, and it is
+    // (0,-1) on flat ground.
+    return new Vec2(dy / len, -dx / len).normalize();
   }
 
   // ========================================================================
@@ -590,6 +601,19 @@ export class CLand {
     g.lineJoin = 'round';
     g.stroke();
 
+    // De-grassed columns: the blast tore off the green cap → paint bare dirt over
+    // it so craters read as exposed earth, not grass (destructible-bitmap parity).
+    if (this.m_degrass && this.m_layers.length > 1) {
+      const grassDepth = (this.m_layers[0]?.depth ?? 10) + 4;
+      const dirtPat = this.m_patterns[1] ?? this.m_patterns[this.m_patterns.length - 1];
+      if (dirtPat) {
+        g.fillStyle = dirtPat;
+        for (let x = 0; x < W; x++) {
+          if (this.m_degrass[x]) g.fillRect(x, heights[x] - 2, 1, grassDepth);
+        }
+      }
+    }
+
     // Permanent scorch marks — `source-atop` darkens only existing terrain pixels
     // so the blackening hugs the ground surface and never bleeds into the sky.
     if (this.m_scorches.length) {
@@ -633,23 +657,26 @@ export class CLand {
       }
     }
 
-    // Radiation glow: additive specks lying on the terrain, tinted by irRGB and
-    // fading over their life (the "anthrax" glow that conforms to the ground).
+    // Radiation glow: crisp additive pixel-crosses lying on the terrain (port of
+    // the 5-px additive plus in the original — NOT a soft blob). Each speck is a
+    // glowing ember tinted by irRGB × remaining life; density makes the band read.
     if (this.m_radSpecks.length) {
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
       for (const s of this.m_radSpecks) {
-        const fade = 1 - s.age / s.life;
+        // Glow stays strong for most of its life, then fades out near the end —
+        // so a nuke's radiation lingers rather than decaying immediately.
+        const t = s.age / s.life;
+        const fade = t < 0.7 ? 1 : (1 - t) / 0.3;
         if (fade <= 0) continue;
-        const a = fade * 0.85;
-        const rad = s.size * (s.settled ? 3 : 1.8);
-        const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, rad);
-        grad.addColorStop(0, `rgba(${s.r},${s.g},${s.b},${a})`);
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
-        ctx.fill();
+        const px = Math.round(s.x), py = Math.round(s.y);
+        // Arms of the plus + a slightly hotter centre. Low alpha so dense clusters
+        // build up as a deep RED glow rather than saturating to white.
+        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.4})`;
+        ctx.fillRect(px - 1, py, 1, 1); ctx.fillRect(px + 1, py, 1, 1);
+        ctx.fillRect(px, py - 1, 1, 1); ctx.fillRect(px, py + 1, 1, 1);
+        ctx.fillStyle = `rgba(${Math.min(255, s.r + 30)},${Math.min(255, s.g + 12)},${Math.min(255, s.b + 8)},${fade * 0.7})`;
+        ctx.fillRect(px, py, 1, 1);
       }
       ctx.globalCompositeOperation = prevOp;
     }
@@ -676,6 +703,7 @@ export class CLand {
   private m_radParticles: RadParticle[] = [];
   private m_radSpecks: RadSpeck[] = [];
   private m_scorches: Scorch[] = [];
+  private m_degrass: Uint8Array | null = null;   // per-column: 1 = grass torn off by a blast
 
   // Layered textures + cached destructible-terrain bitmap.
   private m_layers: { image: CanvasImageSource; depth: number }[] = [];

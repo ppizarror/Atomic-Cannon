@@ -16,6 +16,7 @@ import { Vec2 } from '../math/Vec2';
 import { CParticleSystem, ScreenShake } from '../core/CParticleSystem';
 import { CAssetManager } from '../core/rendering/CAssetManager';
 import { weaponFlyStep, weaponDetonate, EXT, type ShotWorld } from '../core/weapons/WeaponBehavior';
+import { CAudio } from '../audio/CAudio';
 
 /**
  * Game state machine states
@@ -44,6 +45,13 @@ interface LandConfig {
 }
 const LAND_DATA = landData as LandConfig[];
 
+// TEMPORARY (explosion-FX testing): lock the weapon selection to one control
+// weapon so it can be spammed to review effects. Set to null to restore the
+// full arsenal.
+const CONTROL_WEAPON: string | null = 'Uranium Nuke';
+const controlWeaponIndex = (): number =>
+  CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
+
 /**
  * CGameController - Main game controller
  */
@@ -68,8 +76,9 @@ export class CGameController implements ShotWorld {
     this.m_screenShake = new ScreenShake();
     this.m_assets = new CAssetManager();
     
-    // Initialize weapon list (index into WEAPON_DATABASE)
-    this.m_currentWeaponIndex = getDefaultWeaponIndex();
+    // Initialize weapon list (index into WEAPON_DATABASE). The control-weapon
+    // override (if set) forces the FX-test weapon.
+    this.m_currentWeaponIndex = controlWeaponIndex() >= 0 ? controlWeaponIndex() : getDefaultWeaponIndex();
     
     // Wind: positive = right, negative = left
     this.m_wind = new Vec2(0, 0);
@@ -113,7 +122,8 @@ export class CGameController implements ShotWorld {
       const pTank = new CTank(tankName, teamId);
       pTank.init(xPos, this.m_land);
       pTank.setHuman(i === 0); // Only first player is human
-      
+      pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
+
       this.m_tanks.push(pTank);
     }
 
@@ -133,11 +143,22 @@ export class CGameController implements ShotWorld {
     }
     // The green turn-indicator triangle (bounces over the active tank).
     this.m_assets.loadSprite('gui/turn-arrow', '/assets/gui/arrow.bmp');
+    // Shield icon shown on a tank's badge when it has shields (magenta-keyed).
+    this.m_assets.loadSprite('gui/shield', '/assets/gui/shield.bmp');
 
     // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
     // and the additive starburst flare used for trail plumes / fireballs.
     this.m_assets.loadSprite('fx:smoke', '/assets/gui/smoke.bmp');
     this.m_assets.loadImage('fx:flare', '/assets/flares/04.bmp');
+    // The generic fallback fireball, keyed on its light blue-purple bg.
+    this.m_assets.loadSprite('fx:explosion', '/assets/effects/explosion1.bmp', [127, 127, 255]);
+    // Each weapon explodes with its OWN flare sprite (expBitmap): load the distinct
+    // set. They're on a black background → additive blit, no colorkey needed.
+    for (const b of new Set(WEAPON_DATABASE.map(w => w.expBitmap).filter(Boolean))) {
+      this.m_assets.loadImage(`fx:${b}`, `/assets/${b}`);
+    }
+    // The in-flight rocket flare (flareType/flareBmp), black-bg → additive.
+    this.m_assets.loadImage('fx:flares/01.bmp', '/assets/flares/01.bmp');
     this.m_particles.setAssets(this.m_assets);
 
     // Pick a landscape (background + depth-layered terrain textures + weather).
@@ -150,6 +171,10 @@ export class CGameController implements ShotWorld {
     // Player 0 (the human) takes the first turn.
     this.m_currentPlayerIndex = 0;
     this.beginTurn();
+
+    // Warm the combat SFX set and start a random battle track (RE: FUN_00445160).
+    this.m_audio?.preloadCombat();
+    this.m_audio?.battleMusic();
   }
 
   /**
@@ -206,14 +231,36 @@ export class CGameController implements ShotWorld {
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
+    this.updateMoveSound();
+  }
+
+  /**
+   * Drive the looping `tank moving.wav` from tank motion state (RE: the movement
+   * sound machine FUN_00460d60 — start the named loop while a unit moves, stop it
+   * when none do, repan to the mover). Idempotent starts are handled downstream.
+   */
+  private updateMoveSound(): void {
+    if (!this.m_audio) return;
+    const mover = this.m_tanks.find(t => t.isAlive() && t.isMoving());
+    if (mover) {
+      const x = mover.getPosition().x;
+      if (!this.m_tanksMoving) { this.m_audio.startTankMove(x); this.m_tanksMoving = true; }
+      else this.m_audio.updateTankMove(x);
+    } else if (this.m_tanksMoving) {
+      this.m_audio.stopTankMove();
+      this.m_tanksMoving = false;
+    }
   }
 
   // ========================================================================
   // DRAG-TO-AIM (the primary control — port of FUN_0048aee0)
   // ========================================================================
 
-  /** Longest drag (px) = full power. */
-  private static AIM_MAX_DRAG = 340;
+  /** Longest drag (px) = full power (also the arrow's max length). */
+  private static AIM_MAX_DRAG = 400;
+
+  /** Fixed aim origin — the tank body centre. NOT the muzzle (which rotates with aim). */
+  private aimOrigin(): Vec2 { return this.getCurrentTank().getPosition(); }
 
   /** Begin aiming from the current tank (world coords). No-op unless it's a human's turn. */
   beginAim(wx: number, wy: number): boolean {
@@ -228,8 +275,8 @@ export class CGameController implements ShotWorld {
     if (!this.m_aim.active) return;
     this.m_aim.tx = wx; this.m_aim.ty = wy;
 
-    const m = this.getCurrentTank().getMuzzlePosition();
-    const dx = wx - m.x, dy = wy - m.y;
+    const o = this.aimOrigin();
+    const dx = wx - o.x, dy = wy - o.y;
     // Screen-Y is down; up-aim → negative dy → larger angle. 0..180, 90 = straight up.
     const angleDeg = Math.max(0, Math.min(180, Math.atan2(-dy, dx) * 180 / Math.PI));
     const frac = Math.min(1, Math.hypot(dx, dy) / CGameController.AIM_MAX_DRAG);
@@ -282,7 +329,9 @@ export class CGameController implements ShotWorld {
     // Draw tanks
     for (const tank of this.m_tanks) {
       if (tank.isAlive()) {
-        tank.draw(ctx, this.m_assets);
+        // Full stat lines when the mouse hovers this tank.
+        const hover = tank.isPointInside(this.m_mouse.x, this.m_mouse.y);
+        tank.draw(ctx, this.m_assets, hover);
         
         // Highlight current player's tank with indicator
         if (this.getCurrentTank() === tank && 
@@ -347,16 +396,18 @@ export class CGameController implements ShotWorld {
    */
   private drawAim(ctx: CanvasRenderingContext2D): void {
     if (!this.m_aim.active) return;
-    const m = this.getCurrentTank().getMuzzlePosition();
-    const dx = this.m_aim.tx - m.x, dy = this.m_aim.ty - m.y;
+    // The arrow starts at the cannon tip (muzzle) and its tip reaches the cursor.
+    // (The crosshair markers still use the fixed body centre, so the faded
+    // "initial" marker stays put while aiming.)
+    const o = this.getCurrentTank().getMuzzlePosition();
+    const dx = this.m_aim.tx - o.x, dy = this.m_aim.ty - o.y;
     const ang = Math.atan2(dy, dx);
-    const MAX = CGameController.AIM_MAX_DRAG;
-    const f = Math.min(1, Math.hypot(dx, dy) / MAX);   // power fraction (0..1)
+    // Length = distance to the cursor, capped — so the tip sits on the cursor
+    // (until full power). The whole shape scales with length (thickness too).
+    const L = Math.min(Math.hypot(dx, dy), CGameController.AIM_MAX_DRAG);
 
-    // Exact original block-arrow shape (FUN_0048aee0): 7 points, base half 1,
-    // shaft-junction half 1.5, head half 4, junction at 10/15, tip at 15 — all
-    // scaled uniformly by power (grows in length AND thickness).
-    const L = 22 + f * 430;                             // total length, grows with power
+    // Exact original block-arrow shape (FUN_0048aee0): base half 1, shaft-junction
+    // half 1.5, head half 4, junction at 10/15, tip at 15 — all in units of L/15.
     const sh0 = L * (1 / 15);                           // base half-width
     const sh1 = L * (1.5 / 15);                         // shaft-junction half-width
     const hw = L * (4 / 15);                            // head half-width
@@ -366,7 +417,8 @@ export class CGameController implements ShotWorld {
     ];
 
     ctx.save();
-    ctx.translate(m.x, m.y);
+    ctx.globalAlpha = 0.6;
+    ctx.translate(o.x, o.y);
     ctx.rotate(ang);
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
@@ -381,11 +433,11 @@ export class CGameController implements ShotWorld {
 
   /** World point the current (angle, power) aims at — where the target cross sits. */
   private aimPoint(angleDeg: number, power: number): Vec2 {
-    const m = this.getCurrentTank().getMuzzlePosition();
+    const o = this.aimOrigin();
     const r = angleDeg * Math.PI / 180;
     const f = Math.max(0, (power - 10) / 990);        // POWER_MIN..MAX → 0..1
-    const L = 18 + f * 400;                            // same scale as the aim arrow
-    return new Vec2(m.x + Math.cos(r) * L, m.y - Math.sin(r) * L);   // screen-Y up = -sin
+    const L = f * CGameController.AIM_MAX_DRAG;        // = the arrow tip (drag distance, capped)
+    return new Vec2(o.x + Math.cos(r) * L, o.y - Math.sin(r) * L);   // screen-Y up = -sin
   }
 
   /**
@@ -396,29 +448,28 @@ export class CGameController implements ShotWorld {
   private drawAimTarget(ctx: CanvasRenderingContext2D): void {
     if (this.m_gameState !== EGameState.Battle || !this.isPlayerTurn()) return;
 
-    // Drawn crosshair in the current player's team colour (like the original —
-    // that's why it reads orange, green, etc. per player). A "+" with a centre gap.
-    const col = this.getCurrentTeamColor();
+    // Small white/grey "+" reticle (like the original), with a black backing.
     const cross = (p: Vec2, alpha: number) => {
-      const arm = 10, gap = 3;
+      const arm = 6, gap = 2;
       const path = () => {
         ctx.beginPath();
         ctx.moveTo(p.x - arm, p.y); ctx.lineTo(p.x - gap, p.y);
         ctx.moveTo(p.x + gap, p.y); ctx.lineTo(p.x + arm, p.y);
         ctx.moveTo(p.x, p.y - arm); ctx.lineTo(p.x, p.y - gap);
         ctx.moveTo(p.x, p.y + gap); ctx.lineTo(p.x, p.y + arm);
-        ctx.moveTo(p.x + 2, p.y); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
       };
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 3; path(); ctx.stroke();
-      ctx.strokeStyle = col; ctx.lineWidth = 1.5; path(); ctx.stroke();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5; path(); ctx.stroke();
+      ctx.strokeStyle = '#e6e6e6'; ctx.lineWidth = 1; path(); ctx.stroke();
       ctx.restore();
     };
 
     cross(this.aimPoint(this.m_turnStartAngle, this.m_turnStartPower), 0.35);  // initial (faded)
-    cross(this.aimPoint(this.m_angle, this.m_power), 1);                        // current
+    // While dragging, the arrow's tip already marks the current aim — hide the
+    // active cross and show it again on release.
+    if (!this.m_aim.active) cross(this.aimPoint(this.m_angle, this.m_power), 1);
   }
 
   /**
@@ -524,7 +575,12 @@ export class CGameController implements ShotWorld {
       // Per-frame behaviour dispatch (extType): roller/digger/airburst/beam/…
       const weapon = getWeapon(shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex);
       const sp = shot.getPosition();
-      this.m_particles.trail(sp.x, sp.y, weapon.getColor());
+      const sv = shot.getVelocity();
+      // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume).
+      this.m_particles.trail(sp.x, sp.y, weapon.getColor(), sv.x, sv.y, weapon.getTrailType(), weapon.getTrailLength());
+      // In-flight glowing flare on the projectile (rockets: flareType/flareBmp).
+      const iff = weapon.getInFlightFlare();
+      if (iff) this.m_particles.inflightFlare(sp.x, sp.y, `fx:${iff}`, 8 + weapon.getFlareSize() * 24);
       const action = weaponFlyStep(shot, weapon, this, dt);
       if (action === 'detonate') weaponDetonate(shot, weapon, this);
       else if (action === 'consumed') shot.kill();
@@ -551,11 +607,12 @@ export class CGameController implements ShotWorld {
   get land(): CLand { return this.m_land; }
   get tanks(): CTank[] { return this.m_tanks; }
   spawnShot(shot: CShot): void { this.m_shots.push(shot); }
-  explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear = false, blastPreset?: string): void {
-    if (color !== undefined && radiusPx !== undefined) this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset);
+  explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear = false, blastPreset?: string, expType = 0, expBitmap?: string): void {
+    if (color !== undefined && radiusPx !== undefined) this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
     else this.m_particles.explode(x, y, scale);
   }
   shake(mag: number, dur: number): void { this.m_screenShake.trigger(mag, dur); }
+  hitSound(name: string, x: number): void { this.m_audio?.hit(name, x); }
   ripple(x: number, y: number, strength: number): void { this.m_onImpact?.(x, y, strength); }
   aimMarker(x: number, y: number): void { this.m_aimMarkers.push({ x, y }); }
   deployMine(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
@@ -576,7 +633,7 @@ export class CGameController implements ShotWorld {
       if (!near) continue;
       const w = getWeapon(m.weaponIndex);
       this.m_mines.splice(i, 1);
-      this.explode(m.x, m.y, 1.3, w.getColor(), w.getRadius(), w.isNuclear(), w.getBlastParticle());
+      this.explode(m.x, m.y, 1.3, w.getColor(), w.getRadius(), w.isNuclear(), w.getBlastParticle(), w.getExpType(), w.getExpBitmap());
       this.shake(8, 0.3);
       this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
       this.m_land.scorch(Math.floor(m.x), Math.floor(m.y), w.getRadius());
@@ -623,6 +680,7 @@ export class CGameController implements ShotWorld {
     // Create explosion at tank position
     this.m_particles.tankDeath(pos.x, pos.y + 12);
     this.m_screenShake.trigger(15, 0.5);
+    this.m_audio?.tankExplode(pos.x);   // tank explode.wav (RE: FUN_00488910)
   }
 
 
@@ -646,6 +704,9 @@ export class CGameController implements ShotWorld {
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
     const tank = this.getCurrentTank();
+    // Restore THIS player's own weapon so the previous player's (or a bot's)
+    // choice never carries over.
+    this.m_currentWeaponIndex = tank.getWeaponIndex();
     this.m_gameState = EGameState.Battle;
     this.m_turnStartPos = tank.getPosition();   // faded "initial" marker anchor
     this.m_turnStartAngle = this.m_angle;
@@ -662,6 +723,10 @@ export class CGameController implements ShotWorld {
     if (alive.length <= 1) {
       this.m_gameState = EGameState.BattleEnd;
       this.m_winnerName = alive.length === 1 ? alive[0].getName() : '';
+      this.m_audio?.stopTankMove();
+      // Win/lose jingle (RE: FUN_0047d2d0) — victory if the human survived.
+      if (alive.length === 1 && alive[0].isHuman()) this.m_audio?.battleWon();
+      else this.m_audio?.battleLost();
       return;
     }
     this.advanceToNextPlayer();
@@ -689,6 +754,9 @@ export class CGameController implements ShotWorld {
 
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
+
+    // soundFire, panned to the firing tank (RE: weapon field +0xbc, FUN_00458c20:313).
+    this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
 
     // Utility items apply an effect to the firing tank instead of launching a shot.
     if (this.applyUtility(tank, weapon, ext)) {
@@ -740,6 +808,14 @@ export class CGameController implements ShotWorld {
       this.m_shots.push(pShot);
     }
 
+    // Muzzle blast: forward flash + smoke (bombs/shells have it; rockets/beams don't).
+    if (weapon.getMuzzleFlash() > 0 || weapon.getMuzzleSmoke() > 0) {
+      const d = baseAngle >= 0
+        ? { x: Math.cos(baseAngle), y: -Math.sin(Math.abs(baseAngle)) }
+        : { x: -Math.cos(Math.abs(baseAngle)), y: -Math.sin(Math.abs(baseAngle)) };
+      this.m_particles.muzzle(muzzlePos.x, muzzlePos.y, d.x, d.y, weapon.getMuzzleFlash(), weapon.getMuzzleSmoke(), weapon.getColor());
+    }
+
     this.m_gameState = EGameState.ShotFlying;
   }
 
@@ -784,7 +860,7 @@ export class CGameController implements ShotWorld {
     this.m_land.blastCircle(Math.floor(end.x), Math.floor(end.y), Math.max(6, Math.round(r * 0.6)));
     this.m_land.scorch(Math.floor(end.x), Math.floor(end.y), r);
     this.m_particles.beam(muzzle.x, muzzle.y, end.x, end.y, weapon.getColor());
-    this.m_particles.blast(end.x, end.y, r, weapon.getColor(), weapon.isNuclear());
+    this.m_particles.blast(end.x, end.y, r, weapon.getColor(), weapon.isNuclear(), weapon.getBlastParticle(), weapon.getExpType(), weapon.getExpBitmap());
     this.shake(4, 0.22);
     this.ripple(end.x, end.y, 1.0 + r / 120);
 
@@ -848,7 +924,9 @@ export class CGameController implements ShotWorld {
     // Pick a random straightforward ballistic weapon (bots can't use exotics yet).
     const usable = WEAPON_DATABASE.filter(w => w.type === 'Shell' || w.type === 'Bomb' || w.type === 'Rocket');
     const pick = usable[Math.floor(Math.random() * usable.length)];
-    this.m_currentWeaponIndex = pick ? pick.index : getDefaultWeaponIndex();
+    const botWeapon = pick ? pick.index : getDefaultWeaponIndex();
+    botTank.setWeaponIndex(botWeapon);            // store on the bot, not shared
+    this.m_currentWeaponIndex = botWeapon;
     
     // Calculate firing angle to hit target (simplified trajectory)
     const target = enemies[Math.floor(Math.random() * enemies.length)];
@@ -935,11 +1013,19 @@ export class CGameController implements ShotWorld {
   selectWeapon(index: number): void {
     if (index >= 0 && index < WEAPON_DATABASE.length) {
       this.m_currentWeaponIndex = index;
+      // Persist the choice on the acting tank so it survives the turn cycle.
+      this.m_tanks[this.m_currentPlayerIndex]?.setWeaponIndex(index);
     }
   }
 
   // --- HUD accessors ---------------------------------------------------------
-  getWeaponDefs() { return WEAPON_DATABASE; }
+  getWeaponDefs() {
+    // The control-weapon lock only restricts the HUMAN's own list. During a bot's
+    // turn (or normal play) the full arsenal is shown, so the HUD reflects the
+    // weapon the active player is actually using rather than the locked one.
+    const ci = controlWeaponIndex();
+    return ci >= 0 && this.isPlayerTurn() ? [WEAPON_DATABASE[ci]] : WEAPON_DATABASE;
+  }
   getCurrentWeaponIndex(): number { return this.m_currentWeaponIndex; }
   getCurrentWeapon(): CWeapon { return getWeapon(this.m_currentWeaponIndex); }
   getAngle(): number { return this.m_angle; }
@@ -953,6 +1039,13 @@ export class CGameController implements ShotWorld {
   setImpactListener(cb: (x: number, y: number, strength: number) => void): void {
     this.m_onImpact = cb;
   }
+
+  /** Wire the audio facade (SFX + music). Optional — the game runs silently without it. */
+  setAudio(audio: CAudio): void {
+    this.m_audio = audio;
+    this.m_audio.setWorldWidth(this.m_canvas.width);
+  }
+  getAudio(): CAudio | null { return this.m_audio; }
 
 
   // ========================================================================
@@ -981,6 +1074,8 @@ export class CGameController implements ShotWorld {
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
+  private m_audio: CAudio | null = null;
+  private m_tanksMoving = false;   // tracks the tank-moving loop state (RE: FUN_00460d60)
 
   // Placed entities from special weapons (Mine/Sentry) and Tracer aim markers.
   private m_mines: { x: number; y: number; owner: CTank | null; weaponIndex: number; armed: number }[] = [];
@@ -991,6 +1086,9 @@ export class CGameController implements ShotWorld {
   private m_time: number = 0;
   // Live drag-aim state: the world-space target the player is dragging toward.
   private m_aim: { active: boolean; tx: number; ty: number } = { active: false, tx: 0, ty: 0 };
+  // Last known mouse position in world coords (for hover-detail on tank badges).
+  private m_mouse: { x: number; y: number } = { x: -1, y: -1 };
+  setMouse(wx: number, wy: number): void { this.m_mouse.x = wx; this.m_mouse.y = wy; }
   // Where the active tank sat at the start of its turn (the faded "initial" marker).
   private m_turnStartPos: Vec2 = new Vec2(0, 0);
   // The aim (angle, power) at turn start — anchors the faded "initial" target cross.

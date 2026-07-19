@@ -6,6 +6,21 @@
 
 import { Vec2, Vec2f } from '../math/Vec2';
 import { CLand } from './CLand';
+import { getFont } from '../ui/BitmapFont';
+
+// Render text with one of the game's bitmap fonts (cached). Returns null until the
+// font has loaded, so callers can fall back to a canvas font that first frame.
+const labelCache = new Map<string, HTMLCanvasElement>();
+function bmpLabel(font: string, text: string, tint: string): HTMLCanvasElement | null {
+  const key = `${font}|${tint}|${text}`;
+  const c = labelCache.get(key);
+  if (c) return c;
+  const f = getFont(font);
+  if (!f.ready) return null;
+  const cv = f.render(text, { tint });
+  labelCache.set(key, cv);
+  return cv;
+}
 
 /** A drawable image plus its dimensions. */
 export interface Sprite {
@@ -19,15 +34,70 @@ export interface ISpriteSource {
     getSprite(name: string): Sprite | null;
 }
 
-// Tank hull variants (real sprite sets under assets/tanks/), assigned per team.
-const TANK_TYPES = ['Standard', 'MA1', 'MSPO', 'Sentry', 'Green', 'Atomic Cannon'];
+// Tank variants
+const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
 
+// The original's 16-team palette (FUN_00447e40 switch, 0xRRGGBB). Team 0 = blue.
 export const TEAM_COLORS: Record<number, string> = {
-  0: '#ff4444',
-  1: '#4444ff',
-  2: '#44ff44',
-  3: '#ffff44',
+  0: '#0000ff', 1: '#ff0000', 2: '#00ff00', 3: '#0080ff',
+  4: '#f000f0', 5: '#8000ff', 6: '#00ffff', 7: '#800080',
+  8: '#000080', 9: '#008000', 10: '#800000', 11: '#ffff00',
+  12: '#ff8000', 13: '#ff0080', 14: '#00ff80', 15: '#80ff00',
 };
+
+// --- team-colour body tint (HSL hue-swap: keep each pixel's luminance, force the
+// team hue at sat 0.5 — port of FUN_004074c0). Cached per sprite+team. ----------
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn;
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h = 0;
+  if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hk = (t: number) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [Math.round(hk(h + 1 / 3) * 255), Math.round(hk(h) * 255), Math.round(hk(h - 1 / 3) * 255)];
+}
+function hueOf(hexColor: string): number {
+  const n = parseInt(hexColor.slice(1), 16);
+  return rgbToHsl((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff)[0];
+}
+
+const tintCache = new Map<string, HTMLCanvasElement>();
+function tintToHue(sprite: Sprite, hue: number, key: string): HTMLCanvasElement {
+  const cached = tintCache.get(key);
+  if (cached) return cached;
+  const cv = document.createElement('canvas');
+  cv.width = sprite.width; cv.height = sprite.height;
+  const g = cv.getContext('2d', { willReadFrequently: true })!;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(sprite.bitmap, 0, 0);
+  const im = g.getImageData(0, 0, cv.width, cv.height);
+  const px = im.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;                       // keep transparency
+    const l = rgbToHsl(px[i], px[i + 1], px[i + 2])[2];   // keep luminance
+    const [r, gg, b] = hslToRgb(hue, 0.5, l);            // team hue, sat 0.5
+    px[i] = r; px[i + 1] = gg; px[i + 2] = b;
+  }
+  g.putImageData(im, 0, 0);
+  tintCache.set(key, cv);
+  return cv;
+}
 
 /**
  * Tank health/shield status structure
@@ -54,10 +124,11 @@ export class CTank {
     constructor(sName: string = '', nTeamId: number = 0) {
         this.m_nId = 0;
         this.m_pPlayerData = null;
-        this.m_sName = sName;
+        this.m_sName = sName.toUpperCase();   // player names are uppercase (like the original)
         this.m_nTeamId = nTeamId;
         this.m_bIsHuman = false;
-        this.m_sTankType = TANK_TYPES[nTeamId % TANK_TYPES.length];
+        // TEMP: random player hull per tank (until per-player tank selection exists in settings).
+        this.m_sTankType = PLAYER_TANKS[Math.floor(Math.random() * PLAYER_TANKS.length)];
 
         // Position and physics
         this.m_vPos = new Vec2(0, 0);
@@ -159,7 +230,7 @@ export class CTank {
             this.m_bFalling = false;
 
             const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
-            this.m_fAngle = Math.atan2(-vNormal.x, vNormal.y);
+            this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);   // 0 on flat, tilts with the slope
         }
 
         this.m_fLastTurretAngle = this.m_fTurretAngle;
@@ -206,7 +277,7 @@ export class CTank {
         
         // Set body angle to slope of terrain at position
         const normal = pLand.getNormal(Math.floor(nNewX));
-        this.m_fAngle = Math.atan2(-normal.x, normal.y);
+        this.m_fAngle = Math.atan2(normal.x, -normal.y);
     }
     
     /**
@@ -324,7 +395,7 @@ export class CTank {
      * Render the tank to the canvas. Uses the loaded hull sprite when available
      * and falls back to a vector silhouette while assets are still loading.
      */
-    draw(ctx: CanvasRenderingContext2D, assets?: ISpriteSource): void {
+    draw(ctx: CanvasRenderingContext2D, assets?: ISpriteSource, showDetail = false): void {
         if (!this.m_bIsAlive && !this.m_bExploded) return;
 
         const cx = this.m_vPos.x;
@@ -340,7 +411,10 @@ export class CTank {
         if (sprite) {
             const w = TANK_DRAW_WIDTH;
             const h = (sprite.height / sprite.width) * w;
-            ctx.drawImage(sprite.bitmap, -w / 2, -h, w, h);
+            // Team-tint the hull (not the wreck), keeping its shading.
+            const img = this.m_bExploded ? sprite.bitmap
+                : tintToHue(sprite, hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'), `${bodyKey}|${this.m_nTeamId}`);
+            ctx.drawImage(img, -w / 2, -h, w, h);
         } else {
             this.drawVectorHull(ctx);
         }
@@ -348,8 +422,8 @@ export class CTank {
 
         // Barrel + turret dome (aim is independent of body tilt)
         if (!this.m_bExploded && this.m_bIsAlive) {
-            this.drawBarrel(ctx);
-            this.drawHealthBar(ctx, surfaceY);
+            this.drawBarrel(ctx, assets);
+            this.drawBadge(ctx, surfaceY, showDetail, assets);
         }
     }
 
@@ -374,38 +448,128 @@ export class CTank {
     }
 
     /** Draw the gun barrel from the turret pivot along the aim direction. */
-    private drawBarrel(ctx: CanvasRenderingContext2D): void {
-        const pivotX = this.m_vPos.x;
-        const pivotY = this.m_vPos.y;
-        const muzzle = this.getMuzzlePosition();
+    private drawBarrel(ctx: CanvasRenderingContext2D, assets?: ISpriteSource): void {
+        const pivot = this.getTurretPivot();
+        const aim = this.aimUnit();
 
+        // Use the tank's own turret sprite (coloured to match the hull). It points
+        // right; we rotate it along the aim and mirror it vertically when aiming
+        // left so the art stays upright. Scaled so its length = the muzzle offset.
+        const turret = assets?.getSprite(`tanks/${this.m_sTankType} turret`) ?? null;
+        if (turret) {
+            const scale = TANK_TURRET_LENGTH / turret.width;
+            const tw = turret.width * scale, th = turret.height * scale;
+            const img = tintToHue(turret, hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'),
+                `tanks/${this.m_sTankType} turret|${this.m_nTeamId}`);
+            ctx.save();
+            ctx.translate(pivot.x, pivot.y);
+            ctx.rotate(Math.atan2(aim.y, aim.x));
+            if (aim.x < 0) ctx.scale(1, -1);           // mirror when facing left
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, 0, -th / 2, tw, th);    // base at the pivot
+            ctx.restore();
+            return;
+        }
+
+        // Fallback: a simple grey barrel until the sprite loads.
+        const muzzle = this.getMuzzlePosition();
         ctx.strokeStyle = '#d0d0d0';
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(pivotX, pivotY);
+        ctx.moveTo(pivot.x, pivot.y);
         ctx.lineTo(muzzle.x, muzzle.y);
         ctx.stroke();
     }
 
-    /** Small life/shield bar floating above the tank. */
-    private drawHealthBar(ctx: CanvasRenderingContext2D, surfaceY: number): void {
-        const w = TANK_DRAW_WIDTH;
-        const x = this.m_vPos.x - w / 2;
-        const y = surfaceY - TANK_HEIGHT_PIXELS - 22;
+    /**
+     * The on-field badge (port of FUN_00487340), stacked upward above the tank:
+     * name box (team colour) → shield bar (if any) → armour strip (if any) →
+     * life bar → full stat lines (only on hover / detail). Life & shield are
+     * green/blue fills over black with a red/grey depleted remainder.
+     */
+    private drawBadge(ctx: CanvasRenderingContext2D, surfaceY: number, showDetail: boolean, assets?: ISpriteSource): void {
+        const w = Math.round(TANK_DRAW_WIDTH * 0.8);   // bars a little narrower than the hull
+        const cx = this.m_vPos.x;
+        const team = TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
+        const life = Math.max(0, Math.min(1, this.m_health.nLife / 1000));
+        const shield = Math.max(0, Math.min(1, this.m_health.nShield / 1000));
+        const armor = this.m_health.nArmor;
+        const BH = 2;                                  // thin bar (like the original)
 
-        const life = Math.max(0, this.m_health.nLife) / 1000;
-        const shield = Math.max(0, this.m_health.nShield) / 1000;
+        // Bar: coloured fill over a black border + a "depleted" remainder.
+        const bar = (y: number, frac: number, fill: string, empty: string): number => {
+            const x = cx - w / 2;
+            ctx.fillStyle = '#000'; ctx.fillRect(x - 1, y - 1, w + 2, BH + 2);
+            ctx.fillStyle = empty; ctx.fillRect(x, y, w, BH);
+            ctx.fillStyle = fill; ctx.fillRect(x, y, w * frac, BH);
+            return y + BH + 2;
+        };
 
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(x, y, w, 5);
-        ctx.fillStyle = life > 0.5 ? '#41d95d' : life > 0.25 ? '#e0c040' : '#e04040';
-        ctx.fillRect(x, y, w * life, 5);
+        // Draw a bitmap-font line centred at cx; falls back to a canvas font.
+        const line = (text: string, y: number, tint: string, px: number): number => {
+            const lab = bmpLabel('Microsoft Sans Serif 12', text, tint);
+            if (lab) {
+                const s = px / lab.height, lw = lab.width * s;
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(lab, Math.round(cx - lw / 2), Math.round(y), Math.round(lw), px);
+            } else {
+                ctx.fillStyle = tint; ctx.font = `${px}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                ctx.fillText(text, cx, y);
+            }
+            return y + px + 1;
+        };
 
-        if (shield > 0) {
-            ctx.fillStyle = '#40b0ff';
-            ctx.fillRect(x, y - 3, w * shield, 2);
+        // The badge sits UNDER the tank (like the original), stacked downward.
+        // Offset clears the tank even when it's tilted on a slope.
+        let y = surfaceY + 11;
+        y = bar(y, life, '#00ff00', '#ff0000');                 // life (green / red)
+        if (shield > 0) y = bar(y, shield, '#0000ff', '#808080'); // shield (blue / grey)
+        if (armor > 0) {                                        // armour (yellow strip)
+            ctx.fillStyle = '#000'; ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 3);
+            ctx.fillStyle = '#ffff00'; ctx.fillRect(cx - w / 2, y, w * Math.min(1, armor / 100), 1);
+            y += 3;
         }
+
+        // --- name box (team colour @ 50% + solid outline), with a shield icon ---
+        const name = this.m_sName || '—';
+        const lab = bmpLabel('Microsoft Sans Serif 12', name, '#ffffff');
+        const nameH = 10;
+        const nameW = lab ? lab.width * (nameH / lab.height) : name.length * 6;
+        const icon = shield > 0 ? (assets?.getSprite('gui/shield') ?? null) : null;
+        const iconW = icon ? Math.round(icon.width * (nameH / icon.height)) : 0;
+        const pad = 3, gap = icon ? 2 : 0;
+        const bw = Math.round(pad * 2 + iconW + gap + nameW);
+        const bh = nameH + 4;
+        const bx = Math.round(cx - bw / 2), by = Math.round(y + 2);
+
+        ctx.globalAlpha = 0.5; ctx.fillStyle = team; ctx.fillRect(bx, by, bw, bh); ctx.globalAlpha = 1;
+        ctx.strokeStyle = team; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+
+        let contentX = bx + pad;
+        if (icon) {
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(icon.bitmap, contentX, by + (bh - nameH) / 2, iconW, nameH);
+            contentX += iconW + gap;
+        }
+        if (lab) {
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(lab, contentX, by + (bh - nameH) / 2, nameW, nameH);
+        } else {
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(name, contentX, by + bh / 2);
+        }
+        y = by + bh + 1;
+
+        // --- full stat lines (on hover), below the name box ---
+        if (showDetail) {
+            y = line(`Team ${this.m_nTeamId + 1}`, y, '#ffffff', 9);
+            y = line(`Life ${Math.round(this.m_health.nLife)}`, y, '#ffffff', 9);
+            if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y, '#ffffff', 9);
+            if (this.m_health.nShield > 0) y = line(`Shield ${Math.round(this.m_health.nShield)}`, y, '#ffffff', 9);
+            y = line(`Credits ${this.m_credits}`, y, '#ffffff', 9);
+        }
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }
     
     // ========================================================================
@@ -445,14 +609,24 @@ export class CTank {
     }
 
     /**
+     * World position of the turret pivot — a point on the hull (top-centre),
+     * carried along the body's terrain tilt so the barrel stays attached.
+     */
+    getTurretPivot(): Vec2 {
+        const groundX = this.m_vPos.x;
+        const groundY = this.m_vPos.y + TANK_HEIGHT_PIXELS;   // ground-contact line
+        const up = TANK_TURRET_HEIGHT;                        // turret height above ground
+        const s = Math.sin(this.m_fAngle), c = Math.cos(this.m_fAngle);
+        return new Vec2(groundX + up * s, groundY - up * c);  // (0,-up) rotated by body tilt
+    }
+
+    /**
      * World position of the barrel tip, where a shot should spawn.
      */
     getMuzzlePosition(): Vec2 {
+        const pivot = this.getTurretPivot();
         const aim = this.aimUnit();
-        return new Vec2(
-            this.m_vPos.x + aim.x * TANK_TURRET_LENGTH,
-            this.m_vPos.y + aim.y * TANK_TURRET_LENGTH
-        );
+        return new Vec2(pivot.x + aim.x * TANK_TURRET_LENGTH, pivot.y + aim.y * TANK_TURRET_LENGTH);
     }
     
     /**
@@ -494,11 +668,24 @@ export class CTank {
     // ========================================================================
     
     isAlive(): boolean { return this.m_bIsAlive; }
+    isMoving(): boolean { return this.m_bIsMoving; }
     isBot(): boolean { return !this.isHuman(); }
     isHuman(): boolean { return this.m_bIsHuman; }
     setHuman(bHuman: boolean): void { this.m_bIsHuman = bHuman; }
 
     getName(): string { return this.m_sName; }
+    // Each tank keeps its OWN selected weapon so one player's choice never leaks
+    // into another's turn.
+    getWeaponIndex(): number { return this.m_weaponIndex; }
+    setWeaponIndex(i: number): void { this.m_weaponIndex = i; }
+    getCredits(): number { return this.m_credits; }
+    setCredits(n: number): void { this.m_credits = n; }
+    getTeamColor(): string { return TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'; }
+    /** Screen/world hit-test for hover (badge detail) — matches FUN_00403520. */
+    isPointInside(px: number, py: number): boolean {
+        const dx = px - this.m_vPos.x, dy = py - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2);
+        return dx * dx + dy * dy < (TANK_RADIUS + 8) * (TANK_RADIUS + 8);
+    }
     isLocalPlayer(): boolean { return false; }   // TODO
     
     getPosition(): Vec2 { return this.m_vPos.clone(); }
@@ -517,7 +704,7 @@ export class CTank {
      * names match what draw() looks up, so the loader and renderer stay in sync.
      */
     getRequiredSprites(): { name: string; file: string }[] {
-        return ['body', 'wreck'].map(part => ({
+        return ['body', 'wreck', 'turret'].map(part => ({
             name: `tanks/${this.m_sTankType} ${part}`,
             file: `/assets/tanks/${this.m_sTankType} ${part}.bmp`,
         }));
@@ -548,6 +735,8 @@ export class CTank {
     
     private m_nTeamId: number = 0;      // Team assignment (for color)
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
+    private m_credits: number = 0;      // Economy credits (shown in the detail badge)
+    private m_weaponIndex: number = 0;  // This tank's own selected weapon
     private m_bIsHuman: boolean = false; // True for the human-controlled tank
     private m_sTankType: string = 'Standard'; // Hull sprite variant
     
@@ -586,5 +775,6 @@ export class CTank {
 const TANK_RADIUS = 16;                 // Half-width of tank collision box
 const TANK_HEIGHT_PIXELS = 24;          // Approximate height in pixels
 const TANK_TURRET_LENGTH = 20;          // Turret barrel length for muzzle calc
+const TANK_TURRET_HEIGHT = 15;          // Turret pivot height above the ground line
 const TANK_DRAW_WIDTH = 46;             // On-screen hull width in pixels
 const TANK_GRAVITY = 400;               // Fall acceleration when unsupported (px/s^2)

@@ -47,6 +47,7 @@ interface Particle {
   kind: RenderKind;
   gravMul: number;   // gravity scale (smoke is buoyant → negative)
   windMul: number;   // how strongly wind pushes this particle sideways
+  spr?: string;      // optional sprite key for plume particles (else the default flare)
 }
 
 // Per-kind physics response: how gravity and wind act on each render kind.
@@ -84,9 +85,15 @@ interface Beam {
   age: number; life: number;
 }
 
+// The main explosion fireball — the real `effects/explosion1.bmp` chromatic
+// starburst, blitted additively and scaled up (an "animation" via growth) as it
+// fades, matching the original's expanding explosion-sprite object.
+interface Explosion { x: number; y: number; age: number; life: number; size: number; sprite: string; }
+
 export class CParticleSystem {
   private m_particles: Particle[] = [];
   private m_beams: Beam[] = [];
+  private m_explosions: Explosion[] = [];
 
   // Real sprites (looked up lazily each frame; falls back to procedural draws
   // until they finish loading). 'fx:smoke' = gui/smoke.bmp, 'fx:flare' = flares/04.bmp.
@@ -116,11 +123,11 @@ export class CParticleSystem {
 
   private add(
     x: number, y: number, vx: number, vy: number,
-    c: RGB, life: number, size: number, kind: RenderKind,
+    c: RGB, life: number, size: number, kind: RenderKind, spr?: string,
   ): void {
     this.m_particles.push({
       x, y, vx, vy, r: c.r, g: c.g, b: c.b, age: 0, life, size, kind,
-      gravMul: KIND_GRAV[kind], windMul: KIND_WIND[kind],
+      gravMul: KIND_GRAV[kind], windMul: KIND_WIND[kind], spr,
     });
   }
 
@@ -176,14 +183,20 @@ export class CParticleSystem {
    * drives the fireball's colour / density / speed / life / spread so each
    * weapon explodes differently; otherwise a generic tinted burst is used.
    */
-  blast(x: number, y: number, radiusPx: number, color: string, nuclear = false, presetName?: string): void {
-    const preset = presetName ? PRESETS[presetName] : undefined;
+  blast(x: number, y: number, radiusPx: number, color: string, nuclear = false, presetName?: string, expType = 0, expBitmap?: string): void {
+    // `eLlightBlue` is a typo in the original weapon table for `eLightBlue`.
+    const preset = presetName ? (PRESETS[presetName] ?? PRESETS[presetName.replace('Llight', 'Light')]) : undefined;
     const c = preset ? { r: preset.colorr, g: preset.colorg, b: preset.colorb } : parseColor(color);
     const r = Math.max(12, radiusPx);
+    const big = expType === 4 || nuclear;   // expType 4 = the nuke white-out
 
-    // A hot flash marks the detonation instant; nuclear rounds white out, while
-    // conventional rounds keep their weapon tint so the colour reads.
-    this.spawnFlash(x, y, r * (nuclear ? 5 : 1.6), nuclear ? { r: 255, g: 255, b: 255 } : toward255(c, 0.4), nuclear ? 0.55 : 0.22);
+    // The expanding fireball uses the WEAPON'S own explosion flare (expBitmap);
+    // falls back to the generic sprite if that weapon has none.
+    this.spawnExplosion(x, y, r * (big ? 3.0 : 1.9), big ? 0.7 : 0.5, expBitmap ? `fx:${expBitmap}` : 'fx:explosion');
+
+    // A hot flash marks the detonation instant; expType-4/nuclear rounds white
+    // out the screen (brief), others keep their weapon tint so the colour reads.
+    this.spawnFlash(x, y, r * (big ? 3.4 : 1.6), big ? { r: 255, g: 255, b: 255 } : toward255(c, 0.4), big ? 0.34 : 0.22);
 
     if (preset) {
       this.emitPreset(x, y, r, preset);
@@ -234,17 +247,64 @@ export class CParticleSystem {
 
   /** In-flight trail — call each frame while a shot flies. A hot leading glow
    * plus a grey smoke puff that lingers and drifts downwind. */
-  trail(x: number, y: number, color: string): void {
+  trail(x: number, y: number, color: string, vx = 0, vy = 0, trailType = 1, trailLength = 0): void {
+    if (trailType <= 0) return;   // no trail (nukes / beams / diggers)
     const hot = toward255(parseColor(color), 0.4);
-    // Bright starburst ember (real flares/04.bmp, additive) — the visible plume.
-    this.add(x, y, between(-6, 6), between(-8, 2), hot, between(0.2, 0.4), between(3, 5), 'plume');
-    // Grey smoke puff (real gui/smoke.bmp) that lingers, rises, and drifts downwind.
-    const g = 155 + between(-25, 25);
-    this.add(
-      x + between(-2, 2), y + between(-2, 2),
-      between(-5, 5), between(-14, -4),
-      { r: g, g, b: g }, between(1.1, 2.1), between(3, 6), 'smoke',
-    );
+    const speed = Math.hypot(vx, vy);
+    // Exhaust is thrown BACKWARD out of the nose at 0.1·|velocity| (faithful),
+    // and a faster (higher-power) shot lays down more puffs → more smoke.
+    const back = speed > 1 ? { x: -vx / speed, y: -vy / speed } : { x: 0, y: -1 };
+    const pspd = speed * 0.1;
+    const rocket = trailType >= 2;                       // rocket/missile exhaust
+    const lenScale = trailLength > 0 ? 0.6 + trailLength / 100 : 1;   // trailLength 80 → 1.4
+    // Uses the flares/04 starburst asset; rocket types just emit denser + longer.
+    const n = (rocket ? 2 : 1) + Math.min(3, Math.floor(speed / 240));
+    for (let i = 0; i < n; i++) {
+      this.add(
+        x, y,
+        back.x * pspd * between(0.3, 1) + between(-8, 8),
+        back.y * pspd * between(0.3, 1) + between(-8, 2),
+        hot, between(0.2, 0.4) * lenScale, between(3, 5) * (rocket ? 1.2 : 1), 'plume',
+      );
+      const g = 155 + between(-25, 25);
+      this.add(
+        x + between(-2, 2), y + between(-2, 2),
+        back.x * pspd * between(0.2, 0.6) + between(-5, 5),
+        back.y * pspd * between(0.2, 0.6) - between(4, 14),
+        { r: g, g, b: g }, between(1.1, 2.1) * lenScale, between(3, 6), 'smoke',
+      );
+    }
+  }
+
+  /** A glowing flare riding on the projectile (rocket `flareType`/`flareBmp`). */
+  inflightFlare(x: number, y: number, sprite: string, size: number): void {
+    this.add(x, y, 0, 0, { r: 255, g: 255, b: 255 }, 0.14, Math.max(4, size), 'plume', sprite);
+  }
+
+  /** Muzzle blast on fire: a forward flash (`muzzleFlash`) + smoke (`muzzleSmoke`). */
+  muzzle(x: number, y: number, vx: number, vy: number, flash: number, smoke: number, color: string): void {
+    const speed = Math.hypot(vx, vy);
+    const dir = speed > 1 ? { x: vx / speed, y: vy / speed } : { x: 1, y: 0 };
+    if (flash > 0) {
+      const c = toward255(parseColor(color), 0.5);
+      for (let i = 0; i < 7; i++) {
+        this.add(
+          x, y,
+          dir.x * between(30, 150) + between(-30, 30), dir.y * between(30, 150) + between(-30, 30),
+          c, between(0.1, 0.24), between(2.5, 4.5), 'plume',
+        );
+      }
+    }
+    if (smoke > 0) {
+      for (let i = 0; i < smoke * 4; i++) {
+        const g = 150 + between(-25, 25);
+        this.add(
+          x + between(-4, 4), y + between(-4, 4),
+          dir.x * between(0, 60) + between(-20, 20), between(-30, 5),
+          { r: g, g, b: g }, between(0.5, 1.1), between(3, 5), 'smoke',
+        );
+      }
+    }
   }
 
   /** A slow column of grey smoke rising from a blast site (lingers after the flash). */
@@ -268,6 +328,11 @@ export class CParticleSystem {
   beam(x0: number, y0: number, x1: number, y1: number, color: string): void {
     const c = parseColor(color);
     this.m_beams.push({ x0, y0, x1, y1, r: c.r, g: c.g, b: c.b, age: 0, life: 0.35 });
+  }
+
+  /** Spawn the expanding fireball sprite (the weapon's own `expBitmap` flare). */
+  private spawnExplosion(x: number, y: number, size: number, life: number, sprite: string): void {
+    this.m_explosions.push({ x, y, age: 0, life, size, sprite });
   }
 
   // ------------------------------------------------------------------ update
@@ -308,6 +373,14 @@ export class CParticleSystem {
       if (b.age < b.life) this.m_beams[bw++] = b;
     }
     this.m_beams.length = bw;
+
+    let ew = 0;
+    for (let i = 0; i < this.m_explosions.length; i++) {
+      const e = this.m_explosions[i];
+      e.age += dt;
+      if (e.age < e.life) this.m_explosions[ew++] = e;
+    }
+    this.m_explosions.length = ew;
   }
 
   // -------------------------------------------------------------------- draw
@@ -350,20 +423,43 @@ export class CParticleSystem {
       }
     }
 
-    // Pass 2: additive — trail plumes (flare sprite), fireball glows, flashes.
+    // Pass 2: additive — explosion fireball, trail plumes, glows, flashes.
     const prev = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'lighter';
 
-    // Plume embers: the real flares/04.bmp starburst blitted along the trail.
+    // The expanding fireball — each weapon's own explosion flare (expBitmap),
+    // grows and fades as the main body of the blast under everything else.
+    for (const e of this.m_explosions) {
+      const t = e.age / e.life;
+      if (t >= 1) continue;
+      const d = e.size * (0.7 + t * 1.8) * 2;
+      const a = (1 - t) * (t < 0.15 ? t / 0.15 : 1);   // quick fade-in, then fade out
+      const spr = this.m_assets?.getSprite(e.sprite) ?? this.m_assets?.getSprite('fx:explosion') ?? null;
+      if (spr) {
+        ctx.globalAlpha = a;
+        ctx.drawImage(spr.bitmap, e.x - d / 2, e.y - d / 2, d, d);
+        ctx.globalAlpha = 1;
+      } else {
+        const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, d / 2);
+        g.addColorStop(0, `rgba(255,220,150,${a})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(e.x, e.y, d / 2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Plume embers: an additive sprite blitted along the trail — the weapon's
+    // own sprite (rocket plume / in-flight flare) or the default flares/04 star.
     for (const p of ps) {
       if (p.kind !== 'plume') continue;
       const t = p.age / p.life;
       if (t >= 1) continue;
       const a = (1 - t) * 0.9;
       const d = p.size * (2.6 - t * 1.2) * 3;
-      if (flareSpr) {
+      const pspr = p.spr ? (this.m_assets?.getSprite(p.spr) ?? flareSpr) : flareSpr;
+      if (pspr) {
         ctx.globalAlpha = a;
-        ctx.drawImage(flareSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
+        ctx.drawImage(pspr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
         ctx.globalAlpha = 1;
       } else {
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, d / 2);
@@ -415,7 +511,7 @@ export class CParticleSystem {
   }
 
   hasActiveExplosions(): boolean {
-    return this.m_particles.length > 0 || this.m_beams.length > 0;
+    return this.m_particles.length > 0 || this.m_beams.length > 0 || this.m_explosions.length > 0;
   }
 
   /** Live particle count (diagnostics / tests). */

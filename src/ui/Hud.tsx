@@ -12,7 +12,7 @@ import type { JSX, ComponentChildren } from 'preact';
 import { BmpText } from './BmpText';
 import {
   power, angle, wind, weaponIndex, playerName, teamColor, life, shield, canFire,
-  winner, weapons, game, loadWeaponIcon,
+  winner, weapons, game, loadWeaponIcon, uiClick,
   POWER_MIN, POWER_MAX, ANGLE_MIN, ANGLE_MAX,
 } from './store';
 
@@ -30,7 +30,7 @@ const R = {
   meter:  [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
   fire:   [54.8, 16.5, 15, 29.5],
-  buy:    [54.7, 65, 3.5, 18], reset: [60.7, 64, 3.5, 18], help: [66.5, 64, 3.5, 18],
+  buy:    [55, 64.6, 3.2, 18], reset: [60.8, 64, 3.2, 18], help: [66.8, 64, 3.2, 18],
   aleft:  [75.5, 64, 2.7, 17], aright: [84.0, 64, 2.7, 17],
   anglen: [76.1, 66, 10, 11],          // number box, lower-centre of the dial
   close:  [94.4, 14, 3.4, 18],
@@ -110,8 +110,11 @@ function WeaponIcon({ name, size, cls }: { name: string; size: 16 | 32; cls: str
   return src ? <img class={cls} src={src} alt="" /> : <span class={cls} />;
 }
 // The 32x32 preview of the current weapon, in the box between the ▲/▼ arrows.
+// The weapon rows/preview key off each weapon's real database `index`, not its
+// position in the (possibly filtered) displayed list, so selection and highlight
+// stay correct regardless of how the list is scoped.
 function WeaponPreview() {
-  const wp = weapons.value[weaponIndex.value];
+  const wp = weapons.value.find(w => w.index === weaponIndex.value) ?? weapons.value[0];
   return <div class="ov weapon-preview" style={pos(R.wicon)}>{wp && <WeaponIcon name={wp.name} size={32} cls="wbig" />}</div>;
 }
 function WeaponList() {
@@ -123,9 +126,9 @@ function WeaponList() {
   return (
     <div class="ov wlist" style={pos(R.list)} ref={listRef}>
       {weapons.value.map((wp, i) => {
-        const active = i === idx;
+        const active = wp.index === idx;
         return (
-          <div key={wp.name} class={`wrow${active ? ' active' : ''}`} onClick={() => game().selectWeapon(i)}>
+          <div key={wp.name} class={`wrow${active ? ' active' : ''}`} onClick={() => { uiClick(); game().selectWeapon(wp.index); }}>
             <WeaponIcon name={wp.name} size={16} cls="wicon" />
             <BmpText class="wtext" font={LIST_FONT} text={`${i + 1}. ${wp.name}`} tint={active ? '#eaffea' : '#c8e8c8'} />
           </div>
@@ -140,7 +143,15 @@ function ControlPanel() {
   const g = () => game();
   const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
   const dA = (d: number) => g().setAngle(clamp(g().getAngle() + d, ANGLE_MIN, ANGLE_MAX));
-  const dW = (d: number) => g().selectWeapon(clamp(g().getCurrentWeaponIndex() + d, 0, weapons.value.length - 1));
+  // ▲/▼ step through the displayed list (by list position), then select that
+  // row's real weapon index — works whether the list is full or filtered.
+  const dW = (d: number) => {
+    const list = weapons.value;
+    if (!list.length) return;
+    uiClick();
+    const cur = Math.max(0, list.findIndex(w => w.index === g().getCurrentWeaponIndex()));
+    g().selectWeapon(list[clamp(cur + d, 0, list.length - 1)].index);
+  };
 
   return (
     <div id="hud-panel">
@@ -203,7 +214,7 @@ function LcdLine({ text, title }: { text: string; title?: boolean }) {
   return <BmpText class="lcd-line" font={title ? 'Trebuchet MS 9 bold' : 'Microsoft Sans Serif 12'} text={text} tint={title ? '#ffffff' : '#d7e4d7'} />;
 }
 function WeaponDetails() {
-  const w = weapons.value[weaponIndex.value];
+  const w = weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
   return (
     <div class="side-lcd" id="weapon-details">
       <LcdLine title text="WEAPON DETAILS" />

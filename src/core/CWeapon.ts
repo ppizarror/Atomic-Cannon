@@ -32,7 +32,8 @@ export interface RawWeapon {
   earth: number; crackle: number; fodder: number;
   trail: string; blast: string;
   soundFire: string; soundHit: string;
-  flareParam: number; flareBmp: string; flareSize: number;
+  trailType: number; trailLength: number;
+  flareParam: number; flareType: number; flareBmp: string; flareSize: number;
   muzzleFlash: number; muzzleSmoke: number;
   extType: number;
   iradiate: number; irDmg: number; irTime: number;
@@ -143,6 +144,21 @@ export class CWeapon {
   getFireSound(): string { return this.m_def.soundFire; }
   getHitSound(): string { return this.m_def.soundHit; }
   getFlareBitmap(): string { return this.m_def.flareBmp || this.m_def.expBitmap; }
+  /** Explosion style 0–4 (4 = nuke: biggest + full-screen white flash). */
+  getExpType(): number { return this.m_def.expType || 0; }
+  /** The weapon's explosion flare sprite, e.g. `flares/00.bmp`. */
+  getExpBitmap(): string { return this.m_def.expBitmap || ''; }
+
+  // --- trail / muzzle / in-flight flare (weapons.txt legacy fields) ----------
+  /** 0 = no trail, 1 = basic flare+smoke, 2–6 = rocket-plume exhaust. */
+  getTrailType(): number { return this.m_def.trailType || 0; }
+  /** Trail persistence (0 = short, up to ~100 = long rocket trail). */
+  getTrailLength(): number { return this.m_def.trailLength || 0; }
+  getMuzzleFlash(): number { return this.m_def.muzzleFlash || 0; }
+  getMuzzleSmoke(): number { return this.m_def.muzzleSmoke || 0; }
+  /** In-flight glowing flare sprite on the projectile (rockets), else ''. */
+  getInFlightFlare(): string { return this.m_def.flareType ? `flares/${this.m_def.flareBmp}` : ''; }
+  getFlareSize(): number { return this.m_def.flareSize || 0; }
 }
 
 export function getWeapon(index: number): CWeapon {

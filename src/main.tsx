@@ -9,6 +9,7 @@ import './hud.css';
 import { render } from 'preact';
 import { CGameController } from './game/CGameController';
 import { CPixiCompositor } from './core/rendering/CPixiCompositor';
+import { CAudio } from './audio/CAudio';
 import { App } from './ui/App';
 import {
   setController, syncHud, canFire,
@@ -32,6 +33,14 @@ async function main(): Promise<void> {
 
   const gameController = new CGameController(scene);
   gameController.setImpactListener((x, y, s) => compositor.shockwave(x, y, s));
+
+  // Audio: one shared AudioContext (SFX + libopenmpt .it music), unlocked on the
+  // first user gesture per the browser autoplay policy. Wired before startGame so
+  // the combat preload + battle track kick off with the round.
+  const audio = new CAudio();
+  audio.attachUnlock(window);
+  gameController.setAudio(audio);
+
   gameController.startGame(2);
 
   setController(gameController);
@@ -72,7 +81,9 @@ async function main(): Promise<void> {
   // Move/up on the window in the CAPTURE phase so they fire even though the Pixi
   // canvas captures the pointer (its handlers run after ours).
   window.addEventListener('pointermove', (e) => {
-    if (aiming) { const [wx, wy] = toWorld(e); gameController.dragAim(wx, wy); }
+    const [wx, wy] = toWorld(e);
+    gameController.setMouse(wx, wy);              // hover-detail on tank badges
+    if (aiming) gameController.dragAim(wx, wy);
   }, true);
   // Release only commits the aim (angle/power) — it does NOT fire. Fire is the
   // FIRE button / Space.
@@ -97,7 +108,7 @@ async function main(): Promise<void> {
   window.addEventListener('resize', refit);
 
   if (import.meta.env.DEV) {
-    (window as unknown as { atomic: unknown }).atomic = { gameController, compositor };
+    (window as unknown as { atomic: unknown }).atomic = { gameController, compositor, audio };
   }
 
   // Game loop — drive the sim, present, and pump UI signals. While paused we

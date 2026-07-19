@@ -211,7 +211,8 @@ export class CShot {
   draw(ctx: CanvasRenderingContext2D, color: string = '#ff8800', sprite: CanvasImageSource | null = null, size = 12): void {
     if (this.m_bIsDead) return;
 
-    this.drawStreak(ctx);
+    // No procedural streak — the trail is entirely sprite-based particles now
+    // (per-weapon trailType), so trailType-0 weapons (nukes/beams) fly cleanly.
 
     // Real projectile sprite, rotated to point along its velocity. The original
     // draws these scaled by a uniform map scale; we normalise each sprite's

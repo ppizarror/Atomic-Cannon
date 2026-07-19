@@ -39,6 +39,7 @@ class MockWorld implements ShotWorld {
   aimMarker() { this.markers++; }
   deployMine() { this.mines++; }
   deploySentry() { this.sentries++; }
+  hitSound() {}
 }
 
 // ---- 1. Airburst detonates at apex (mid-air, before hitting ground) ----------
