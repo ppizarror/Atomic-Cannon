@@ -328,6 +328,8 @@ export class CLand {
       this.m_arrHeights[dx] = Math.max(0, Math.floor(top));
       // A raised mound is solid new terrain — lift the cavity ceiling with it.
       if (this.m_baseHeights) this.m_baseHeights[dx] = Math.min(this.m_baseHeights[dx], this.m_arrHeights[dx]);
+      // Deposited dirt is bare EARTH — de-grass so the mound never re-grows grass.
+      if (this.m_degrass) this.m_degrass[dx] = 1;
     }
 
     this.preBlast(x - nRadius, x + nRadius);
@@ -514,6 +516,18 @@ export class CLand {
         const dcol = Math.min(this.m_nWidth - 1, Math.max(0, col + ((Math.random() * 5) | 0) - 2));
         this.m_arrHeights[dcol] = Math.max(0, this.m_arrHeights[dcol] - 1);
         if (this.m_baseHeights) this.m_baseHeights[dcol] = Math.min(this.m_baseHeights[dcol], this.m_arrHeights[dcol]);
+        // Deposited dirt is bare EARTH — de-grass the column so a settled ejecta mound
+        // never re-grows the grass cap. But ONLY where it CONNECTS to already-bared
+        // ground (the crater and its growing rim mound): a lone chunk flung far out and
+        // settling on virgin grass must not bare a single isolated column, since
+        // renderTerrainBitmap bakes a 1px dirt bar per de-grassed column — scattered
+        // singletons read as ugly vertical stripes speckled across the whole map.
+        // Requiring a de-grassed neighbour keeps the bare zone one contiguous run that
+        // grows outward from the blast. (m_degrass is a Uint8Array → OOB reads are
+        // undefined/falsy, so the edge columns need no bounds guard.)
+        if (this.m_degrass && (this.m_degrass[dcol - 1] || this.m_degrass[dcol + 1])) {
+          this.m_degrass[dcol] = 1;
+        }
         this.preBlast(dcol - 1, dcol + 1);
         // Let the slump smooth this area over the next few seconds.
         this.m_slumpTimer = 3;
