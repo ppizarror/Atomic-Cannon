@@ -231,7 +231,7 @@ export class CGameController implements ShotWorld {
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
-    if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.22);
+    if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.6);
     this.updateMoveSound();
 
     // Fire any due deferred actions (bot turns, turn hand-off). These run off the
@@ -260,8 +260,11 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Pause/resume the whole game. The sim clock (update) stops in the loop; this
-   * also freezes/restores audio so music and SFX don't play on behind the pause.
+   * Pause/resume the whole game. This is a DEBUG freeze: the sim clock (update)
+   * stops in the loop, audio is suspended, and all player input is rejected (the
+   * fire/aim/angle/power/weapon handlers below early-out) so nothing at all moves
+   * while paused. (A future player-facing pause with an overlay menu will relax
+   * the input + audio parts.)
    */
   setPaused(paused: boolean): void {
     if (paused === this.m_paused) return;
@@ -302,7 +305,7 @@ export class CGameController implements ShotWorld {
 
   /** Begin aiming from the current tank (world coords). No-op unless it's a human's turn. */
   beginAim(wx: number, wy: number): boolean {
-    if (this.m_gameState !== EGameState.Battle || !this.isPlayerTurn()) return false;
+    if (this.m_paused || this.m_gameState !== EGameState.Battle || !this.isPlayerTurn()) return false;
     this.m_aim.active = true;
     this.dragAim(wx, wy);
     return true;
@@ -310,13 +313,15 @@ export class CGameController implements ShotWorld {
 
   /** Update aim while dragging: angle = tank→cursor direction, power = drag length. */
   dragAim(wx: number, wy: number): void {
-    if (!this.m_aim.active) return;
+    if (this.m_paused || !this.m_aim.active) return;
     this.m_aim.tx = wx; this.m_aim.ty = wy;
 
     const o = this.aimOrigin();
     const dx = wx - o.x, dy = wy - o.y;
-    // Screen-Y is down; up-aim → negative dy → larger angle. 0..180, 90 = straight up.
-    const angleDeg = Math.max(0, Math.min(180, Math.atan2(-dy, dx) * 180 / Math.PI));
+    // Screen-Y is down; up-aim → negative dy → larger angle. 0 = right, 90 = up,
+    // 180 = left, 270 = down. atan2 returns (-180,180]; fold into the wrapping
+    // 0..359 range the HUD uses (so down-right reads 315, not -45).
+    const angleDeg = ((Math.atan2(-dy, dx) * 180 / Math.PI) % 360 + 360) % 360;
     const frac = Math.min(1, Math.hypot(dx, dy) / CGameController.AIM_MAX_DRAG);
     const power = 10 + frac * 990;               // POWER_MIN(10)..POWER_MAX(1000)
 
@@ -650,13 +655,17 @@ export class CGameController implements ShotWorld {
       this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
       // Phase 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
       // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
-      if (expType === 4 || nuclear) this.flashScreen(1);
-      else if ((radiusPx ?? 0) >= 45) this.flashScreen(0.4);
+      // It inherits the weapon's colour (uranium reads red, plutonium green, …).
+      if (expType === 4 || nuclear) this.flashScreen(1, color ?? '#ffffff');
+      else if ((radiusPx ?? 0) >= 45) this.flashScreen(0.45, color ?? '#ffffff');
     } else this.m_particles.explode(x, y, scale);
   }
-  /** Trigger the full-viewport white-out (0..1); read by the HUD as an overlay. */
-  flashScreen(intensity: number): void { this.m_screenFlash = Math.max(this.m_screenFlash, intensity); }
+  /** Trigger the full-viewport flash (0..1) tinted by the weapon's colour. */
+  flashScreen(intensity: number, color = '#ffffff'): void {
+    if (intensity > this.m_screenFlash) { this.m_screenFlash = intensity; this.m_flashColor = color; }
+  }
   getScreenFlash(): number { return this.m_screenFlash; }
+  getScreenFlashColor(): string { return this.m_flashColor; }
   shake(mag: number, dur: number): void { this.m_screenShake.trigger(mag, dur); }
   hitSound(name: string, x: number): void { this.m_audio?.hit(name, x); }
   ripple(x: number, y: number, strength: number): void { this.m_onImpact?.(x, y, strength); }
@@ -753,6 +762,11 @@ export class CGameController implements ShotWorld {
     // Restore THIS player's own weapon so the previous player's (or a bot's)
     // choice never carries over.
     this.m_currentWeaponIndex = tank.getWeaponIndex();
+    // Likewise restore THIS player's own aim + power (per-tank), so the previous
+    // player's shot settings never carry over into this turn.
+    this.m_angle = tank.getAimAngle();
+    this.m_power = tank.getPower();
+    if (tank.isHuman()) tank.setTurretAngle(this.m_angle);
     this.m_gameState = EGameState.Battle;
     this.m_turnStartPos = tank.getPosition();   // faded "initial" marker anchor
     this.m_turnStartAngle = this.m_angle;
@@ -795,6 +809,7 @@ export class CGameController implements ShotWorld {
    * Fire currently selected weapon from current player
    */
   fire(): void {
+    if (this.m_paused) return;                 // debug freeze rejects all input
     const tank = this.getCurrentTank();
     if (!tank.isAlive()) return;
 
@@ -856,9 +871,7 @@ export class CGameController implements ShotWorld {
 
     // Muzzle blast: forward flash + smoke (bombs/shells have it; rockets/beams don't).
     if (weapon.getMuzzleFlash() > 0 || weapon.getMuzzleSmoke() > 0) {
-      const d = baseAngle >= 0
-        ? { x: Math.cos(baseAngle), y: -Math.sin(Math.abs(baseAngle)) }
-        : { x: -Math.cos(Math.abs(baseAngle)), y: -Math.sin(Math.abs(baseAngle)) };
+      const d = { x: Math.cos(baseAngle), y: -Math.sin(baseAngle) };
       this.m_particles.muzzle(muzzlePos.x, muzzlePos.y, d.x, d.y, weapon.getMuzzleFlash(), weapon.getMuzzleSmoke(), weapon.getColor());
     }
 
@@ -871,11 +884,9 @@ export class CGameController implements ShotWorld {
    * full damage — beams ignore falloff), carve + scorch the impact, flash a line.
    */
   private fireBeam(muzzle: Vec2, angleRad: number, weapon: CWeapon, owner: CTank): void {
-    // Aim unit vector — same branching as the projectile velocity so the beam
-    // points exactly where the turret does (screen-Y down, up-aim → negative y).
-    const dir = angleRad >= 0
-      ? new Vec2(Math.cos(angleRad), -Math.sin(Math.abs(angleRad)))
-      : new Vec2(-Math.cos(Math.abs(angleRad)), -Math.sin(Math.abs(angleRad)));
+    // Aim unit vector — same unified convention as the projectile velocity so the
+    // beam points exactly where the turret does (screen-Y down, up-aim → negative y).
+    const dir = new Vec2(Math.cos(angleRad), -Math.sin(angleRad));
 
     // March until the ray drops below the terrain surface or leaves the world.
     const W = this.m_land.width, H = this.m_land.height;
@@ -991,10 +1002,12 @@ export class CGameController implements ShotWorld {
       angle = 180 - angle;
     }
     
-    // Set firing parameters
+    // Set firing parameters (also persisted on the bot so its aim carries over).
     this.m_angle = angle;
     this.m_power = Math.min(100, Math.max(30, distance / 8 + Math.random() * 20));
-    
+    botTank.setAimAngle(this.m_angle);
+    botTank.setPower(this.m_power);
+
     botTank.setTurretAngle(angle);
     // The HUD (Preact) shows the bot's angle/power via getAngle()/getPower().
 
@@ -1044,19 +1057,26 @@ export class CGameController implements ShotWorld {
   // ========================================================================
   
   setAngle(angle: number): void {
+    if (this.m_paused) return;
     this.m_angle = angle;
     const tank = this.getCurrentTank();
-    
+    // Persist the aim on the acting tank so it survives the turn cycle.
+    tank.setAimAngle(angle);
+
     if (tank.isHuman()) {
       tank.setTurretAngle(this.m_angle);
     }
   }
-  
+
   setPower(power: number): void {
+    if (this.m_paused) return;
     this.m_power = power;
+    // Persist the power on the acting tank so it survives the turn cycle.
+    this.getCurrentTank().setPower(power);
   }
   
   selectWeapon(index: number): void {
+    if (this.m_paused) return;
     if (index >= 0 && index < WEAPON_DATABASE.length) {
       this.m_currentWeaponIndex = index;
       // Persist the choice on the acting tank so it survives the turn cycle.
@@ -1133,6 +1153,7 @@ export class CGameController implements ShotWorld {
   // together while paused.
   private m_time: number = 0;
   private m_screenFlash: number = 0;   // full-viewport white-out intensity (0..1), decays each frame
+  private m_flashColor: string = '#ffffff';   // weapon-tinted flash colour
   // Deferred sim-clock actions (bot turns, turn hand-off): {at: sim-time due, fn}.
   private m_timers: { at: number; fn: () => void }[] = [];
   // Whole-game pause: freezes the sim clock (update is skipped) and audio.

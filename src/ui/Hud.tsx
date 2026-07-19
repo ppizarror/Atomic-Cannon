@@ -13,7 +13,7 @@ import { BmpText } from './BmpText';
 import {
   power, angle, wind, weaponIndex, playerName, teamColor, life, shield, canFire,
   winner, weapons, game, loadWeaponIcon, uiClick,
-  POWER_MIN, POWER_MAX, ANGLE_MIN, ANGLE_MAX,
+  POWER_MIN, POWER_MAX, wrapAngle,
 } from './store';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -46,6 +46,10 @@ const R = {
 // Square (px) box centred on the dial circle so the needle stays circular and
 // pivots at the ring's centre (11.5% × 736px ≈ 61.3% × 138px ≈ 85px square).
 const DIAL_BOX = [75.35, 8.6, 11.5, 61.3] as const;
+// Grab layer over the dial face for drag-to-aim. Same left/width as the dial but
+// stops short of the ◀/▶ buttons (top ~64%) so it never steals their clicks.
+const DIAL_GRAB = [75.35, 8.6, 11.5, 52] as const;
+const ANGLE_PER_PX = 0.5;   // degrees of aim per pixel of horizontal drag
 
 // Readout ink — the panel readouts are white, like the original.
 const INK = '#f4f8f4';
@@ -68,13 +72,43 @@ function PanelLabel({ r, text, left }: { r: readonly number[]; text: string; lef
   return <div class="ov readout-box" style={{ ...pos(r), justifyContent: left ? 'flex-start' : 'center' }}><BmpText font="Microsoft Sans Serif 14" text={text} tint="#111" /></div>;
 }
 
+// The power column. Besides showing the fill it is grabbable: press anywhere on
+// it and drag to set power, mapping the pointer's Y to a value (top = POWER_MAX,
+// bottom = POWER_MIN). Pointer capture keeps the drag tracking even when the
+// cursor slips off the narrow bar sideways.
 function MeterOverlay() {
   const p = power.value;
   const emptyH = R.meter[3] * (1 - (p - POWER_MIN) / (POWER_MAX - POWER_MIN));
+  const barRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const powerFromEvent = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    const rect = barRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const frac = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+    game().setPower(Math.round(POWER_MAX - frac * (POWER_MAX - POWER_MIN)));
+  };
+  const onDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    dragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    powerFromEvent(e);
+    e.preventDefault();
+  };
+  const onMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    if (dragging.current) powerFromEvent(e);
+  };
+  const onUp = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    dragging.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
   return (
     <>
       <div class="ov meter-empty" style={{ position: 'absolute', left: `${R.meter[0]}%`, top: `${R.meter[1]}%`, width: `${R.meter[2]}%`, height: `${emptyH}%` }} />
       <ReadoutBox r={R.pnum}><BmpText font="Trebuchet MS 18" text={String(p)} tint={INK} /></ReadoutBox>
+      <div ref={barRef} class="ov meter-drag" style={pos(R.meter)}
+        title="Drag to set power (top 1000 · bottom 10)"
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
     </>
   );
 }
@@ -96,6 +130,29 @@ function Needle() {
 }
 function AngleReadout() {
   return <ReadoutBox r={R.anglen}><BmpText font="Microsoft Sans Serif 12" text={`${angle.value}`} tint={INK} /></ReadoutBox>;
+}
+// Horizontal drag over the dial scrubs the aim: drag left → aim left (angle up),
+// drag right → aim right (angle down), matching the ◀/▶ buttons. Relative to the
+// press point so the needle doesn't jump; pointer capture keeps it tracking when
+// the cursor slips off the small dial.
+function DialGrab() {
+  const drag = useRef<{ x: number; a: number } | null>(null);
+  const onDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    drag.current = { x: e.clientX, a: game().getAngle() };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (d) game().setAngle(wrapAngle(Math.round(d.a - (e.clientX - d.x) * ANGLE_PER_PX)));
+  };
+  const onUp = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+    drag.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  return <div class="ov dial-drag" style={pos(DIAL_GRAB)}
+    title="Drag left/right to aim"
+    onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />;
 }
 function WindReadout() {
   const w = wind.value;
@@ -142,7 +199,7 @@ function WeaponList() {
 function ControlPanel() {
   const g = () => game();
   const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
-  const dA = (d: number) => g().setAngle(clamp(g().getAngle() + d, ANGLE_MIN, ANGLE_MAX));
+  const dA = (d: number) => g().setAngle(wrapAngle(g().getAngle() + d));
   // ▲/▼ step through the displayed list (by list position), then select that
   // row's real weapon index — works whether the list is full or filtered.
   const dW = (d: number) => {
@@ -169,8 +226,9 @@ function ControlPanel() {
       <Hotspot r={R.help} title="Help" onClick={() => {}} />
       <Needle />
       <AngleReadout />
-      <Hotspot r={R.aleft} title="Angle -" onClick={() => dA(-2)} />
-      <Hotspot r={R.aright} title="Angle +" onClick={() => dA(2)} />
+      <DialGrab />
+      <Hotspot r={R.aleft} title="Aim left (+)" onClick={() => dA(2)} />
+      <Hotspot r={R.aright} title="Aim right (-)" onClick={() => dA(-2)} />
       <WindReadout />
       <Hotspot r={R.close} title="Menu" onClick={() => {}} />
       <PanelLabel r={R.lblWeapon} text="Select Weapon" left />
