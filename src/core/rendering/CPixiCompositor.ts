@@ -23,6 +23,9 @@ export class CPixiCompositor {
   private m_shockwave!: ShockwaveFilter;
   private m_waveAge: number = Infinity;
 
+  // The element the presentation fills (so resize() can read its live size).
+  private m_resizeTo: HTMLElement | Window = window;
+
   // Logical size of the scene canvas (game-world pixels).
   private m_worldW: number = 1;
   private m_worldH: number = 1;
@@ -39,6 +42,7 @@ export class CPixiCompositor {
   async init(sceneCanvas: HTMLCanvasElement, resizeTo: HTMLElement | Window = window): Promise<void> {
     this.m_worldW = sceneCanvas.width;
     this.m_worldH = sceneCanvas.height;
+    this.m_resizeTo = resizeTo;
 
     await this.m_app.init({
       preference: 'webgl',
@@ -65,8 +69,19 @@ export class CPixiCompositor {
     this.resize();
   }
 
-  /** Fit the scene sprite to the current viewport. */
+  /**
+   * Fit the presentation to the current viewport. Explicitly resizes the Pixi
+   * renderer to the live element size (Pixi's own `resizeTo` throttles and can
+   * miss a fast resize, e.g. toggling devtools) and then fits the scene sprite.
+   */
   resize(): void {
+    const el = this.m_resizeTo;
+    const w = el instanceof Window ? window.innerWidth : el.clientWidth;
+    const h = el instanceof Window ? window.innerHeight : el.clientHeight;
+    if (w > 0 && h > 0 &&
+        (Math.round(this.m_app.renderer.width) !== w || Math.round(this.m_app.renderer.height) !== h)) {
+      this.m_app.renderer.resize(w, h);
+    }
     this.m_scene.width = this.m_app.screen.width;
     this.m_scene.height = this.m_app.screen.height;
   }

@@ -83,7 +83,18 @@ async function main(): Promise<void> {
     if (aiming) { aiming = false; gameController.endAim(false); }
   }, true);
 
-  window.addEventListener('resize', () => compositor.resize());
+  // Keep the canvas fitted to the container. A ResizeObserver fires after layout
+  // for ANY size change (window resize, devtools open/close, HUD height change) —
+  // more reliable than the throttled window `resize` event. We coalesce bursts
+  // into a single rAF so a fast drag doesn't thrash the renderer.
+  let resizePending = false;
+  const refit = () => {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(() => { resizePending = false; compositor.resize(); });
+  };
+  new ResizeObserver(refit).observe(container);
+  window.addEventListener('resize', refit);
 
   if (import.meta.env.DEV) {
     (window as unknown as { atomic: unknown }).atomic = { gameController, compositor };
