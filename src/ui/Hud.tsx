@@ -8,7 +8,8 @@
  * (not every frame) — keeps it cheap and lets async icons stick.
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { JSX } from 'preact';
+import type { JSX, ComponentChildren } from 'preact';
+import { BmpText } from './BmpText';
 import {
   power, angle, wind, weaponIndex, playerName, teamColor, life, shield, canFire,
   winner, weapons, game, loadWeaponIcon,
@@ -18,19 +19,32 @@ import {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
+// Measured off a gridded render of the 640x120 panel.
 const R = {
-  list:   [1.0, 5, 25.5, 88],
-  up:     [27, 6, 5, 30],  down:  [27, 64, 5, 30],
-  plus:   [32.5, 6, 6, 30], minus: [32.5, 64, 6, 30],
-  meter:  [38.8, 7, 4.0, 85],
-  fire:   [44.5, 14, 23, 30],
-  buy:    [45.5, 62, 5, 27], reset: [52, 62, 5, 27], help: [58.5, 62, 5, 27],
-  aleft:  [70.4, 77, 4.5, 18], aright: [79, 77, 4.5, 18],
-  anglen: [72, 63, 9, 15],
-  close:  [93.7, 5, 5, 27],
-  wind:   [92, 48, 7, 42],
+  list:   [1.5, 9, 28.5, 71],
+  up:     [30.5, 10, 6.5, 20],  down:  [30.5, 62, 6.5, 18],
+  plus:   [38, 10, 6.5, 20],    minus: [38, 62, 6.5, 18],
+  pnum:   [38, 34, 6.5, 25],           // black readout box between +/−
+  meter:  [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
+
+  fire:   [54, 15, 16, 33],
+  buy:    [54.5, 62, 5.5, 20], reset: [61, 62, 6, 20], help: [68, 62, 5.5, 20],
+  aleft:  [75.5, 60, 5.5, 20], aright: [83.5, 60, 5.5, 20],
+  anglen: [77.5, 45, 11, 13],
+  close:  [91, 13, 5.5, 19],
+  wind:   [90.5, 40, 6.5, 32],
+  // group captions printed on the metal below each cluster (black text)
+  lblWeapon: [1.5, 82, 28.5, 16],
+  lblPower:  [33, 82, 17, 16],
+  lblAngle:  [73, 82, 17, 16],
+  lblWind:   [87.5, 82, 11, 16],
 } as const;
-const DIAL_BOX = [70.9, 7, 11.25, 60] as const;
+// Square (px) box over the round dial so the needle stays circular.
+const DIAL_BOX = [76.3, 4.4, 11.5, 61.3] as const;
+
+// Readout ink — the panel readouts are white, like the original.
+const INK = '#f4f8f4';
+const LIST_FONT = 'Microsoft Sans Serif 14';   // rendered 1:1 (native ~17px)
 
 const pos = (r: readonly number[]): JSX.CSSProperties =>
   ({ position: 'absolute', left: `${r[0]}%`, top: `${r[1]}%`, width: `${r[2]}%`, height: `${r[3]}%` });
@@ -40,19 +54,32 @@ function Hotspot({ r, onClick, title }: { r: readonly number[]; onClick: () => v
 }
 
 // ---- leaf readouts (each subscribes to exactly one live signal) -------------
+function ReadoutBox({ r, children }: { r: readonly number[]; children: ComponentChildren }) {
+  return <div class="ov readout-box" style={pos(r)}>{children}</div>;
+}
+
+// Static black caption printed on the metal under a control cluster.
+function PanelLabel({ r, text }: { r: readonly number[]; text: string }) {
+  return <div class="ov readout-box" style={pos(r)}><BmpText font="Trebuchet MS 9 bold" text={text} /></div>;
+}
+
 function MeterOverlay() {
   const p = power.value;
-  const emptyH = R.meter[3] * (1 - p / POWER_MAX);
+  const emptyH = R.meter[3] * (1 - (p - POWER_MIN) / (POWER_MAX - POWER_MIN));
   return (
     <>
       <div class="ov meter-empty" style={{ position: 'absolute', left: `${R.meter[0]}%`, top: `${R.meter[1]}%`, width: `${R.meter[2]}%`, height: `${emptyH}%` }} />
-      <div class="ov readout meter-num" style={pos(R.meter)}>{p}</div>
+      <ReadoutBox r={R.pnum}><BmpText font="Trebuchet MS 18" text={String(p)} tint={INK} /></ReadoutBox>
     </>
   );
 }
 function FireButton() {
   const on = canFire.value;
-  return <button class={`ov fire-btn${on ? '' : ' disabled'}`} style={pos(R.fire)} onClick={() => { if (game().isPlayerTurn()) game().fire(); }}>FIRE</button>;
+  return (
+    <button class={`ov fire-btn${on ? '' : ' disabled'}`} style={pos(R.fire)} onClick={() => { if (game().isPlayerTurn()) game().fire(); }}>
+      <BmpText font="fire" text="FIRE" height={38} />
+    </button>
+  );
 }
 function Needle() {
   const a = angle.value;
@@ -62,8 +89,14 @@ function Needle() {
     </svg>
   );
 }
-function AngleReadout() { return <div class="ov readout angle-num" style={pos(R.anglen)}>{angle.value}°</div>; }
-function WindReadout() { const w = wind.value; return <div class="ov readout wind-num" style={pos(R.wind)}>{w >= 0 ? '→' : '←'}{Math.abs(w).toFixed(1)}</div>; }
+function AngleReadout() {
+  return <ReadoutBox r={R.anglen}><BmpText font="Trebuchet MS 18" text={`${angle.value}`} tint={INK} /></ReadoutBox>;
+}
+function WindReadout() {
+  const w = wind.value;
+  const txt = Math.abs(w) < 0.05 ? 'OFF' : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
+  return <ReadoutBox r={R.wind}><BmpText font="Microsoft Sans Serif 12" text={txt} tint={INK} /></ReadoutBox>;
+}
 
 // ---- weapon list (re-renders only when the weapon changes) ------------------
 function WeaponIcon({ name }: { name: string }) {
@@ -79,13 +112,15 @@ function WeaponList() {
   }, [idx]);
   return (
     <div class="ov wlist" style={pos(R.list)} ref={listRef}>
-      {weapons.value.map((wp, i) => (
-        <div key={wp.name} class={`wrow${i === idx ? ' active' : ''}`} onClick={() => game().selectWeapon(i)}>
-          <span class="wnum">{i + 1}.</span>
-          <WeaponIcon name={wp.name} />
-          <span class="wname">{wp.name}</span>
-        </div>
-      ))}
+      {weapons.value.map((wp, i) => {
+        const active = i === idx;
+        return (
+          <div key={wp.name} class={`wrow${active ? ' active' : ''}`} onClick={() => game().selectWeapon(i)}>
+            <WeaponIcon name={wp.name} />
+            <BmpText class="wtext" font={LIST_FONT} text={`${i + 1}. ${wp.name}`} tint={active ? '#eaffea' : '#c8e8c8'} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -116,6 +151,10 @@ function ControlPanel() {
       <Hotspot r={R.aright} title="Angle +" onClick={() => dA(2)} />
       <WindReadout />
       <Hotspot r={R.close} title="Menu" onClick={() => {}} />
+      <PanelLabel r={R.lblWeapon} text="Select Weapon" />
+      <PanelLabel r={R.lblPower} text="Power" />
+      <PanelLabel r={R.lblAngle} text="Angle" />
+      <PanelLabel r={R.lblWind} text="Wind" />
     </div>
   );
 }
@@ -147,33 +186,33 @@ function TurnBanner() {
   if (win) return <div id="turn-indicator" class="visible">{win} WINS!</div>;
   return <div id="turn-indicator" class={show ? 'visible' : ''}>{name}'s Turn</div>;
 }
-function LcdRow({ k, v }: { k: string; v: string }) { return <div><dt>{k}</dt><dd>{v}</dd></div>; }
+
+// A single bitmap-font line inside a black side box.
+function LcdLine({ text, title }: { text: string; title?: boolean }) {
+  return <BmpText class="lcd-line" font={title ? 'Trebuchet MS 9 bold' : 'Microsoft Sans Serif 12'} text={text} tint={title ? '#ffffff' : '#d7e4d7'} />;
+}
 function WeaponDetails() {
   const w = weapons.value[weaponIndex.value];
   return (
     <div class="side-lcd" id="weapon-details">
-      <div class="side-title">Weapon Details</div>
-      {w && (
-        <dl class="wd-list">
-          <LcdRow k="Type" v={String(w.type)} />
-          <LcdRow k="Damage" v={String(w.damage)} />
-          <LcdRow k="Radius" v={String(w.radius)} />
-          <LcdRow k="Variance" v={(w.variance ?? 0).toFixed(1)} />
-          <LcdRow k="Cluster" v={w.cluNum > 0 ? String(w.cluNum) : '—'} />
-          <LcdRow k="Cost" v={String(w.cost)} />
-        </dl>
-      )}
+      <LcdLine title text="WEAPON DETAILS" />
+      {w && <>
+        <LcdLine text={`TYPE ${String(w.type).toUpperCase()}`} />
+        <LcdLine text={`DAMAGE ${w.damage}`} />
+        <LcdLine text={`RADIUS ${w.radius}`} />
+        <LcdLine text={`VARIANCE ${(w.variance ?? 0).toFixed(1)}`} />
+        <LcdLine text={`CLUSTER ${w.cluNum > 0 ? w.cluNum : '-'}`} />
+        <LcdLine text={`COST $${w.cost}`} />
+      </>}
     </div>
   );
 }
 function PlayerStats() {
   return (
     <div class="side-lcd" id="player-stats">
-      <div class="side-title" style={{ color: teamColor.value }}>{playerName.value}</div>
-      <dl class="wd-list">
-        <LcdRow k="Life" v={`${life.value}/1000`} />
-        <LcdRow k="Shield" v={`${shield.value}/1000`} />
-      </dl>
+      <LcdLine title text={playerName.value.toUpperCase()} />
+      <LcdLine text={`LIFE ${life.value}/1000`} />
+      <LcdLine text={`SHIELD ${shield.value}/1000`} />
     </div>
   );
 }
