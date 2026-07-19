@@ -15,6 +15,7 @@ import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex, CWeapon } from '../c
 import { Vec2 } from '../math/Vec2';
 import { CParticleSystem, ScreenShake } from '../core/CParticleSystem';
 import { CWeather } from '../core/CWeather';
+import { CEconomy } from '../core/CEconomy';
 import { CAssetManager } from '../core/rendering/CAssetManager';
 import { weaponFlyStep, weaponDetonate, EXT, type ShotWorld } from '../core/weapons/WeaponBehavior';
 import { CAudio } from '../audio/CAudio';
@@ -76,6 +77,7 @@ export class CGameController implements ShotWorld {
     this.m_particles = new CParticleSystem();
     this.m_particles.setBounds(canvas.width, canvas.height);
     this.m_weather = new CWeather(canvas.width, canvas.height);
+    this.m_economy = new CEconomy();
     this.m_screenShake = new ScreenShake();
     this.m_assets = new CAssetManager();
     
@@ -189,6 +191,14 @@ export class CGameController implements ShotWorld {
 
     // Precipitation / blowing sand declared by this map (snow, rain, hail, dust).
     this.m_weather.configure(cfg.weather);
+
+    // A themed name for the depot footer, derived from the map's dominant weather.
+    const wx = new Set((cfg.weather ?? []).map(w => w.type));
+    this.m_mapName =
+      wx.has('snow') ? 'Frozen Wastes' :
+      wx.has('dust') ? 'Desert' :
+      wx.has('rain') ? 'Wetlands' :
+      wx.has('hail') ? 'Highlands' : 'Battlefield';
 
     this.m_assets.loadImage('bg', '/assets/' + cfg.bg);
 
@@ -1199,6 +1209,16 @@ export class CGameController implements ShotWorld {
   }
   getCurrentWeaponIndex(): number { return this.m_currentWeaponIndex; }
   getCurrentWeapon(): CWeapon { return getWeapon(this.m_currentWeaponIndex); }
+
+  // --- Weapons Depot / economy ----------------------------------------------
+  getCredits(): number { return this.m_economy.getCredits(); }
+  getMapName(): string { return this.m_mapName; }
+  /** Per-weapon owned rounds (Infinity = unlimited staple). */
+  getOwnedCounts(): number[] { return this.m_economy.ownedSnapshot(); }
+  isUnlimitedWeapon(i: number): boolean { return this.m_economy.isUnlimited(i); }
+  buyWeapon(i: number): boolean { return this.m_economy.buy(i); }
+  sellWeapon(i: number): boolean { return this.m_economy.sell(i); }
+  autoBuyWeapons(): void { this.m_economy.autoBuy(); }
   getAngle(): number { return this.m_angle; }
   getPower(): number { return this.m_power; }
   getWindValue(): number { return this.m_wind.x; }
@@ -1248,6 +1268,8 @@ export class CGameController implements ShotWorld {
   
   private m_particles: CParticleSystem;
   private m_weather: CWeather;
+  private m_economy: CEconomy;
+  private m_mapName = 'Battlefield';
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;

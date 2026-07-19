@@ -388,7 +388,7 @@ export class CLand {
     // Visual: a cloud of glowing specks thrown out of the crater. They fall, settle,
     // and scatter THROUGH the pile (granular texture) tinted by irRGB fading over
     // irTime — so the zone conforms to the ground, not floating (port of FUN_004a6c20).
-    const n = Math.max(120, Math.min(6000, Math.round(nRadius * 30)));
+    const n = Math.max(200, Math.min(12000, Math.round(nRadius * 60)));
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
       const dist = this.rand01() * nRadius;              // stays within the crater zone
@@ -408,7 +408,7 @@ export class CLand {
         r, g, b,
       });
     }
-    if (this.m_radSpecks.length > 7000) this.m_radSpecks.splice(0, this.m_radSpecks.length - 7000);
+    if (this.m_radSpecks.length > 13000) this.m_radSpecks.splice(0, this.m_radSpecks.length - 13000);
   }
   
   /**
@@ -561,12 +561,11 @@ export class CLand {
           // Scatter the grain THROUGH the fallout pile at this column: from a few px
           // in the soil (grounded base) up to the pile top, biased low so the crown
           // thins out. rise = height ABOVE the surface (the grain's pile position).
-          const dep = this.m_radDeposit ? this.m_radDeposit[col] : 0;
-          const u = this.rand01();
-          // Scatter the grain DOWN INTO the raised earth (below the surface), denser
-          // near the top — it is a grain of the terrain that glows while radioactive,
-          // never a mote floating in the sky above.
-          s.rise = -(u * u * dep) - this.rand01() * 2;    // 0..-dep: below the surface
+          // Settle as a granular CARPET hugging the surface across the WHOLE bowl
+          // (walls + floor + rim), like the original's fallout dots — a small spread
+          // mostly on/just below the ground, a thin fringe above. NOT pooled in the
+          // deposit, so it coats the deep walls, not just the bottom.
+          s.rise = this.rand01() * 4 - this.rand01() * this.rand01() * 30;   // +4 above .. -30 below (thick, grounded)
           s.y = this.getHeightAt(col) - s.rise;
         }
       } else {
@@ -821,8 +820,8 @@ export class CLand {
           const edge = 1 - Math.abs(col - z.x) / rr;
           if (edge <= 0) continue;
           const sy = this.getHeightAt(col);
-          ctx.fillStyle = `rgba(${z.r},${Math.round(z.g * 0.55)},${Math.round(z.b * 0.45)},${fade * (0.34 + edge * 0.34)})`;
-          ctx.fillRect(col, sy - 1, 1, d + 3);              // into the raised terrain, not the sky
+          ctx.fillStyle = `rgba(${z.r},${Math.round(z.g * 0.5)},${Math.round(z.b * 0.4)},${fade * (0.14 + edge * 0.2)})`;
+          ctx.fillRect(col, sy - 3, 1, 15);                 // a soft red BASE hugging the surface — the dots dominate
         }
       }
       // Pass B — additive GLOW, strongest over the dense centre.
@@ -840,9 +839,9 @@ export class CLand {
           const edge = 1 - Math.abs(col - z.x) / rr;
           if (edge <= 0) continue;
           const sy = this.getHeightAt(col);
-          const a = fade * (0.12 + edge * 0.3) * (0.5 + 0.5 * life);
+          const a = fade * (0.1 + edge * 0.22) * (0.5 + 0.5 * life);
           ctx.fillStyle = `rgba(${z.r},${z.g},${z.b},${a})`;
-          ctx.fillRect(col, sy - 1, 1, d + 3);
+          ctx.fillRect(col, sy - 3, 1, 16);
         }
       }
       ctx.globalCompositeOperation = prevOp;
@@ -852,7 +851,6 @@ export class CLand {
     // soft red EMISSIVE glow. They sit within the raised deposit and fade over life.
     if (this.m_radSpecks.length) {
       const prevOp = ctx.globalCompositeOperation;
-      const TWO_PI = Math.PI * 2;
       // Pass 1 — earthy grain bodies (normal blend), subtle texture over the deposit.
       for (const s of this.m_radSpecks) {
         const t = s.age / s.life;
@@ -867,10 +865,9 @@ export class CLand {
         const t = s.age / s.life;
         const fade = t < 0.7 ? 1 : (1 - t) / 0.3;
         if (fade <= 0) continue;
-        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.45})`;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, 0.9 + s.size * 0.5, 0, TWO_PI);
-        ctx.fill();
+        const gr = 1 + s.size * 0.5;                       // ~1.8–2.5px glow dot (square — cheap, pixelated like legacy)
+        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.5})`;
+        ctx.fillRect(s.x - gr, s.y - gr, gr * 2, gr * 2);
       }
       ctx.globalCompositeOperation = prevOp;
     }

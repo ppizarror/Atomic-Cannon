@@ -12,7 +12,7 @@ import { CPixiCompositor } from './core/rendering/CPixiCompositor';
 import { CAudio } from './audio/CAudio';
 import { App } from './ui/App';
 import {
-  setController, syncHud, canFire,
+  setController, syncHud, canFire, openDepot,
   POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
@@ -46,6 +46,9 @@ async function main(): Promise<void> {
 
   setController(gameController);
   render(<App />, uiRoot);
+
+  // Dev/review affordance: `?depot=1` opens the Weapons Depot on load.
+  if (new URLSearchParams(location.search).get('depot') === '1') openDepot();
 
   // Pause: 'P' freezes the sim so a clean screenshot can be taken; 'P' resumes.
   // The frame keeps rendering while paused (only the simulation clock stops).

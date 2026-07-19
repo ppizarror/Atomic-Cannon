@@ -15,6 +15,32 @@ export const screen = signal<Screen>('battle');
 // Audio settings overlay — shown above the battle HUD without switching screens.
 export const showSettings = signal(false);
 
+// Weapons Depot overlay — buy/sell screen shown above the battle HUD.
+export const showDepot = signal(false);
+// Economy state, mirrored from the controller on demand (not every frame — it only
+// changes on buy/sell). `owned[i]` = rounds for weapon i (Infinity = unlimited).
+export const credits = signal(0);
+export const ownedCounts = signal<number[]>([]);
+export const mapName = signal('');
+
+/** Pull the current credits + inventory into the signals (after a buy/sell/open). */
+export function refreshEconomy(): void {
+  const c = controller;
+  if (!c) return;
+  credits.value = c.getCredits();
+  ownedCounts.value = c.getOwnedCounts();
+  mapName.value = c.getMapName();
+}
+
+/** Open/close the depot (refreshes the economy snapshot on open). */
+export function openDepot(): void { refreshEconomy(); showDepot.value = true; uiClick(); }
+export function closeDepot(): void { showDepot.value = false; uiClick(); }
+
+/** Depot actions — mutate the controller's economy, then re-sync + click. */
+export function depotBuy(i: number): void { if (controller?.buyWeapon(i)) { refreshEconomy(); uiClick(); } }
+export function depotSell(i: number): void { if (controller?.sellWeapon(i)) { refreshEconomy(); uiClick(); } }
+export function depotAutoBuy(): void { controller?.autoBuyWeapons(); refreshEconomy(); uiClick(); }
+
 // Jet flight (extType 17): live while the human is airborne, with remaining fuel.
 export const flying = signal(false);
 export const jetFuel = signal(0);
@@ -107,6 +133,36 @@ export function syncHud(): void {
   if (sig !== lastBattleSig) { lastBattleSig = sig; battleStatus.value = { lines, battle }; }
 }
 let lastBattleSig = '';
+
+// --- generic UI bitmap loader (magenta → transparent), cached as a data URL ---
+const bmpCache = new Map<string, Promise<string | null>>();
+
+/** Load an /assets BMP, knock out magenta (255,0,255) as transparency, cache it.
+ * Used for the depot's colour-keyed UI art (sort arrows, tooltip pointer). */
+export function loadUiBmp(path: string): Promise<string | null> {
+  const cached = bmpCache.get(path);
+  if (cached) return cached;
+  const p = new Promise<string | null>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = img.width; cv.height = img.height;
+      const g = cv.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const im = g.getImageData(0, 0, cv.width, cv.height);
+      const px = im.data;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i] > 200 && px[i + 1] < 70 && px[i + 2] > 200) px[i + 3] = 0;
+      }
+      g.putImageData(im, 0, 0);
+      resolve(cv.toDataURL());
+    };
+    img.onerror = () => resolve(null);
+    img.src = encodeURI(path.startsWith('/') ? path : `/assets/${path}`);
+  });
+  bmpCache.set(path, p);
+  return p;
+}
 
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
 const iconCache = new Map<string, Promise<string | null>>();

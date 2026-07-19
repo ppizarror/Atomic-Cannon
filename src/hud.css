@@ -153,3 +153,111 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
   z-index: 9999;
   will-change: opacity;
 }
+
+/* ============================ WEAPONS DEPOT ============================ */
+.dep-overlay {
+  position: fixed; inset: 0; z-index: 21;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.72);
+}
+/* Brushed-metal panel (real depot texture) with a bevelled frame. */
+.dep-card {
+  position: relative;
+  width: min(700px, 94vw); height: min(680px, 90vh);
+  display: flex; flex-direction: column;
+  background: #4a4d55 url('/assets/gui/weapons depot.jpg') center/cover;
+  border: 2px solid #24262b; border-radius: 6px;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.7), inset 0 0 0 2px rgba(255,255,255,0.12), inset 0 0 60px rgba(0,0,0,0.5);
+  padding: 14px 16px 12px;
+  color: #eef2f6; font-variant-numeric: tabular-nums;
+}
+.dep-head { text-align: left; margin-bottom: 8px; }
+.dep-title {
+  font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #ece3bf;
+  text-shadow: 0 2px 0 #2a2618, 0 -1px 0 #fffbe6, 1px 1px 2px rgba(0,0,0,0.6);
+}
+.dep-sub { font-size: 11px; letter-spacing: 1px; color: #b9c0c8; margin-top: 2px; }
+
+/* Column header + rows share one grid so cells line up. */
+.dep-cols, .dep-row {
+  display: grid; grid-template-columns: 46px 1fr 96px 64px 72px;
+  align-items: center; column-gap: 6px;
+}
+.dep-cols {
+  padding: 0 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.25); margin-bottom: 3px;
+}
+.dep-th {
+  display: flex; align-items: center; gap: 4px;
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  font: 700 13px 'Segoe UI', sans-serif; color: #d7dde3; letter-spacing: 0.5px;
+}
+.dep-th.c-num { justify-content: flex-end; }
+.dep-th:hover { color: #fff; }
+.dep-sort { width: 10px; height: 8px; image-rendering: pixelated; }
+
+.dep-list {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  border: 1px solid rgba(0,0,0,0.4); border-radius: 3px;
+  background: rgba(0,0,0,0.28);
+}
+.dep-row {
+  padding: 2px 8px; cursor: pointer; font-size: 13px;
+  border-bottom: 1px solid rgba(0,0,0,0.25);
+}
+.dep-row.afford { background: rgba(34,104,40,0.5); }        /* green = affordable */
+.dep-row.broke  { background: rgba(122,38,38,0.5); color: #e9c9c9; }  /* red = too costly */
+.dep-row:hover  { filter: brightness(1.25); }
+.dep-row.sel    { background: #d8dde2; color: #14171a; box-shadow: inset 0 0 0 1px #fff; }
+.dep-row.sel .dep-nm { font-weight: 700; }
+
+.c-qty  { text-align: center; font-weight: 700; }
+.c-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dep-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-type { color: inherit; opacity: 0.92; }
+.c-num  { text-align: right; }
+.dep-icon { width: 16px; height: 16px; image-rendering: pixelated; flex: 0 0 16px; }
+
+/* Green tooltip — the `zeon` dialog look: bright green fill, black rounded frame,
+ * upward pointer. Floats at the cursor. */
+.dep-tooltip {
+  position: fixed; z-index: 22; max-width: 300px; pointer-events: none;
+  background: linear-gradient(#48e23a, #1f9e16);
+  border: 2px solid #06210a; border-radius: 7px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.6);
+  padding: 6px 9px; color: #08240a;
+}
+.dep-tt-arrow {
+  position: absolute; top: -8px; left: 14px;
+  border-left: 7px solid transparent; border-right: 7px solid transparent;
+  border-bottom: 8px solid #1f9e16;
+  filter: drop-shadow(0 -1px 0 #06210a);
+}
+.dep-tt-name { font-weight: 800; font-size: 13px; margin-bottom: 2px; }
+.dep-tt-desc { font-size: 12px; line-height: 1.25; color: #0a2b0c; }
+
+/* Selected-weapon stats popup (the "Stats" button). */
+.dep-stats {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 23;
+  min-width: 260px; padding: 14px 18px; cursor: pointer;
+  background: linear-gradient(#c3c8cf, #8b9198); color: #14171a;
+  border: 2px solid #2a2f34; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+}
+.dep-stat-grid { display: grid; grid-template-columns: 1fr auto; gap: 3px 18px; margin-top: 8px; font-size: 14px; }
+.dep-stat-grid span:nth-child(odd) { font-weight: 700; }
+.dep-hint { text-align: center; font-size: 11px; opacity: 0.7; margin-top: 10px; }
+
+/* Footer: credits/map on the left, action buttons on the right. */
+.dep-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.dep-map { font-size: 12px; color: #c6cdd4; letter-spacing: 0.5px; }
+.dep-credits { font-size: 20px; font-weight: 800; color: #ffd23f; text-shadow: 0 1px 2px rgba(0,0,0,0.7); }
+.dep-btns { display: flex; gap: 7px; }
+.dep-btn {
+  min-width: 58px; padding: 7px 12px; cursor: pointer;
+  font: 700 13px 'Segoe UI', sans-serif; color: #14171a;
+  background: linear-gradient(#d3d8df, #9aa0a8); border: 1px solid #2a2f34; border-radius: 5px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.dep-btn.wide { min-width: 76px; }
+.dep-btn:hover:not(:disabled) { background: linear-gradient(#e2e7ed, #a7adb5); }
+.dep-btn:active:not(:disabled) { background: linear-gradient(#9aa0a8, #b8bec6); }
+.dep-btn:disabled { opacity: 0.42; cursor: default; }
