@@ -13,7 +13,7 @@ import { CAudio } from './audio/CAudio';
 import { App } from './ui/App';
 import {
   setController, syncHud, canFire,
-  POWER_MIN, POWER_MAX, ANGLE_MIN, ANGLE_MAX,
+  POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
 async function main(): Promise<void> {
@@ -56,8 +56,9 @@ async function main(): Promise<void> {
     if (!canFire.value) return;
     switch (e.code) {
       case 'Space': e.preventDefault(); gameController.fire(); break;
-      case 'ArrowLeft': gameController.setAngle(Math.max(ANGLE_MIN, gameController.getAngle() - 2)); break;
-      case 'ArrowRight': gameController.setAngle(Math.min(ANGLE_MAX, gameController.getAngle() + 2)); break;
+      // Aim left = increase angle (CCW), aim right = decrease; both wrap at 0/359.
+      case 'ArrowLeft': gameController.setAngle(wrapAngle(gameController.getAngle() + 2)); break;
+      case 'ArrowRight': gameController.setAngle(wrapAngle(gameController.getAngle() - 2)); break;
       case 'ArrowUp': gameController.setPower(Math.min(POWER_MAX, gameController.getPower() + 50)); break;
       case 'ArrowDown': gameController.setPower(Math.max(POWER_MIN, gameController.getPower() - 50)); break;
     }

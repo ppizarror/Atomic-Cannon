@@ -71,6 +71,8 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
 /* live readouts (bitmap-font text, centred in their box) */
 .readout-box { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
 .meter-empty { background: #090b09; }
+/* invisible grab layer over the power column — drag vertically to set power */
+.meter-drag { cursor: ns-resize; touch-action: none; }
 
 /* FIRE (bitmap "fire" font over the silver panel box) */
 .fire-btn { display: flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; padding: 0; }
@@ -79,6 +81,8 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
 
 /* angle needle drawn over the panel's dial */
 .dial-overlay { pointer-events: none; }
+/* invisible grab layer over the dial — drag horizontally to aim */
+.dial-drag { cursor: ew-resize; touch-action: none; }
 .needle { stroke: #e01e1e; stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(255,40,40,.7)); }
 
 /* side LCD boxes (weapon details / player stats) — black panels with a border */

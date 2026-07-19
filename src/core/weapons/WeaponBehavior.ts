@@ -209,15 +209,17 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // Dirt: deposit a mound instead of a crater (INTERP of the debris-settle deposit).
     land.raiseTerrain(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (!isBeam) {
-    land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
-    land.scorch(Math.floor(pos.x), Math.floor(surfaceY), radiusPx);   // blackened blast rim
+    // Nukes (expType 4) blow a much wider crater than their base radius.
+    const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
+    const craterR = Math.round(radiusPx * (heavy ? 1.35 : 1));
+    land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), craterR);
+    land.scorch(Math.floor(pos.x), Math.floor(surfaceY), craterR);   // blackened blast rim
     // Eject a dirt spray scaled by the crater size — the chunks fly out and settle,
     // each RAISING the column where it lands, so a big blast piles rim mounds
     // (crater centre down, rim up) rather than just flattening the surface. Nukes
-    // (expType 4) throw a huge amount of ejecta that fills the crater bowl.
-    const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
-    const chunks = Math.min(3000, Math.round(radiusPx * (heavy ? 18 : 5)) + 30);
-    land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks, radiusPx);
+    // throw a huge amount of ejecta that fills the crater bowl.
+    const chunks = Math.min(6500, Math.round(radiusPx * (heavy ? 42 : 9)) + 40);
+    land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks, Math.round(radiusPx * (heavy ? 1.6 : 1)));
   }
 
   if (isPrimary) {
@@ -234,7 +236,9 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // INTERP — the DOT applicator is outside the decompiled subset; driven by real fields.
   const rad = weapon.getRadiation();
   if (rad.time > 0 && rad.dmg > 0) {
-    const zoneR = Math.max(radiusPx, Math.round(rad.amount * 800));   // iradiate is a small fraction
+    // Nukes spread a much wider fallout field than their crater.
+    const big = weapon.getExpType() === 4 || weapon.isNuclear();
+    const zoneR = Math.max(Math.round(radiusPx * (big ? 1.4 : 1)), Math.round(rad.amount * 800));
     land.blastIradiate(Math.floor(pos.x), Math.floor(surfaceY), zoneR, rad.dmg * 60, rad.time, rad.rgb);
   }
 

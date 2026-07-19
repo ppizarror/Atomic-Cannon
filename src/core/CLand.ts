@@ -331,11 +331,11 @@ export class CLand {
     // Visual: a cloud of glowing specks thrown out of the crater. They fall,
     // settle on the surface, and glow tinted by irRGB fading over irTime — so the
     // zone conforms to the ground instead of floating (port of FUN_004a6c20).
-    const n = Math.max(40, Math.min(1500, Math.round(nRadius * 6)));
+    const n = Math.max(60, Math.min(2800, Math.round(nRadius * 16)));
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
-      const dist = this.rand01() * nRadius;
-      const speed = 40 + this.rand01() * 150;
+      const dist = this.rand01() * nRadius * 1.3;        // spread wider than the crater
+      const speed = 60 + this.rand01() * 240;            // thrown farther → bigger zone
       this.m_radSpecks.push({
         x: x + Math.cos(ang) * dist,
         y: y + Math.sin(ang) * dist * 0.5,           // start near the surface line
@@ -393,7 +393,7 @@ export class CLand {
         vx: Math.cos(ang) * speed,
         vy: Math.sin(ang) * speed * 0.7 - (40 + Math.random() * 190),  // varied up-and-out
         color: `rgb(${v},${v >> 1},${v >> 3})`,
-        size: 1 + Math.floor(Math.random() * 2),          // 1..2 px chunks
+        size: Math.random() < 0.82 ? 1 : 2,               // mostly 1px → many fine chunks
         spin: 0,
       };
       this.m_particles.push(p);
@@ -663,20 +663,15 @@ export class CLand {
     if (this.m_radSpecks.length) {
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
+      // Each speck is a single crisp additive square (1 draw call — cheap even at
+      // thousands of specks). Low alpha so dense clusters build a deep RED glow
+      // instead of saturating to white. Glow holds for most of its life then fades.
       for (const s of this.m_radSpecks) {
-        // Glow stays strong for most of its life, then fades out near the end —
-        // so a nuke's radiation lingers rather than decaying immediately.
         const t = s.age / s.life;
         const fade = t < 0.7 ? 1 : (1 - t) / 0.3;
         if (fade <= 0) continue;
-        const px = Math.round(s.x), py = Math.round(s.y);
-        // Arms of the plus + a slightly hotter centre. Low alpha so dense clusters
-        // build up as a deep RED glow rather than saturating to white.
-        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.4})`;
-        ctx.fillRect(px - 1, py, 1, 1); ctx.fillRect(px + 1, py, 1, 1);
-        ctx.fillRect(px, py - 1, 1, 1); ctx.fillRect(px, py + 1, 1, 1);
-        ctx.fillStyle = `rgba(${Math.min(255, s.r + 30)},${Math.min(255, s.g + 12)},${Math.min(255, s.b + 8)},${fade * 0.7})`;
-        ctx.fillRect(px, py, 1, 1);
+        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.55})`;
+        ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
       }
       ctx.globalCompositeOperation = prevOp;
     }

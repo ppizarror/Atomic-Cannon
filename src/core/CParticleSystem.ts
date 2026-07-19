@@ -179,9 +179,16 @@ export class CParticleSystem {
   // ---------------------------------------------------------------- profiles
 
   /**
-   * Weapon detonation. If `presetName` names a `particles.json` effect, that
-   * drives the fireball's colour / density / speed / life / spread so each
-   * weapon explodes differently; otherwise a generic tinted burst is used.
+   * Weapon detonation, staged like the original's explosion sequence:
+   *   Phase 1 — a brief central fireball (the weapon's own `expBitmap` flare) + a
+   *             hot flash; big/nuclear rounds also trigger the full-viewport
+   *             white-out (a DOM overlay, driven from the controller — see `explode`).
+   *   Phase 2 — the FIREWORK: the weapon's flare sprite scattered many times as
+   *             blobs radiating outward (nuke = white puffs, ring-flares = rings),
+   *             plus a circular ejecta ring for big blasts.
+   *   Phase 3 — sparks, a fire line, and a lingering smoke column (+ the caller's
+   *             dirt shower / radiation specks in CLand).
+   * `presetName` (particles.json) drives the fireball's colour/density/speed/spread.
    */
   blast(x: number, y: number, radiusPx: number, color: string, nuclear = false, presetName?: string, expType = 0, expBitmap?: string): void {
     // `eLlightBlue` is a typo in the original weapon table for `eLightBlue`.
@@ -193,9 +200,10 @@ export class CParticleSystem {
     // Phase 1 — a moderate central fireball (the weapon's own expBitmap flare)
     // and a hot flash. The full-screen white-out is the DOM overlay; the firework
     // blobs (below) carry the bulk of the visual, so this core stays contained.
-    // Big + BRIEF core so it's a prominent phase-1 blob but fades before phase 2,
-    // letting the (longer-lived) firework blobs read clearly.
-    this.spawnExplosion(x, y, r * (big ? 2.2 : 1.6), big ? 0.35 : 0.5, expBitmap ? `fx:${expBitmap}` : 'fx:explosion');
+    // Central bloom = the GENERIC `explosion1.bmp` animated sprite (same for every
+    // weapon in the original — the per-weapon look comes from the firework below).
+    // Big + BRIEF so it's a prominent core that fades before the firework spreads.
+    this.spawnExplosion(x, y, r * (big ? 2.2 : 1.6), big ? 0.35 : 0.5, 'fx:explosion');
     this.spawnFlash(x, y, r * (big ? 2.4 : 1.6), big ? { r: 255, g: 255, b: 255 } : toward255(c, 0.4), big ? 0.3 : 0.22);
 
     if (preset) {
@@ -210,7 +218,7 @@ export class CParticleSystem {
     // many times as scattered blobs radiating out (nuke=flares/00 white puffs,
     // excavator=flares/03 green rings, …). Plus, for big blasts, a circular ejecta ring.
     const flareSpr = expBitmap ? `fx:${expBitmap}` : 'fx:explosion';
-    this.emitGasBlobs(x, y, r, Math.round(r * 0.7) + 14, flareSpr);
+    this.emitGasBlobs(x, y, r, Math.round(r * 1.5) + 30, flareSpr);
     if (big) this.emitEjectaRing(x, y, r);
 
     this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc'); // sparks
@@ -227,8 +235,8 @@ export class CParticleSystem {
     const white: RGB = { r: 255, g: 255, b: 248 };   // procedural fallback tint only
     for (let i = 0; i < count; i++) {
       const a = rnd() * Math.PI * 2;
-      const sp = between(160, 540);                    // fly out fast, clear of the core
-      const d0 = rnd() * rnd() * r * 0.35;            // some near the core, some flung out
+      const sp = between(180, 700);                    // fly out fast + far → a bigger blast
+      const d0 = rnd() * rnd() * r * 0.4;             // some near the core, some flung out
       this.add(
         x + Math.cos(a) * d0, y + Math.sin(a) * d0,
         Math.cos(a) * sp, Math.sin(a) * sp - between(20, 90),   // slight upward bias (mushroom)
@@ -242,15 +250,15 @@ export class CParticleSystem {
    * outward so it reads as an expanding shockwave shell around the crater.
    */
   private emitEjectaRing(x: number, y: number, r: number): void {
-    const n = Math.round(r * 2.2) + 30;
+    const n = Math.round(r * 4.5) + 50;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + between(-0.05, 0.05);   // evenly around the circle
-      const sp = between(280, 380);                              // narrow band → a clean shell
-      const g = 60 + Math.floor(rnd() * 80);
+      const a = (i / n) * Math.PI * 2 + between(-0.06, 0.06);   // evenly around the circle
+      const sp = between(320, 520);                              // narrow band → a clean, wide shell
+      const g = 100 + Math.floor(rnd() * 110);                  // brighter, warmer dirt
       this.add(
         x, y,
         Math.cos(a) * sp, Math.sin(a) * sp * 0.55 - between(30, 120),   // out and slightly up
-        { r: g, g: g >> 1, b: g >> 3 }, between(0.45, 0.9), between(1.5, 3), 'disc',
+        { r: g, g: Math.round(g * 0.55), b: g >> 3 }, between(0.45, 0.9), between(1, 1.8), 'disc',
       );
     }
   }

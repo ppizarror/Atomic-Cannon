@@ -24,12 +24,19 @@ export const shield = signal(0);
 export const canFire = signal(false);
 export const winner = signal('');
 export const screenFlash = signal(0);   // full-viewport white-out intensity (0..1)
+export const screenFlashColor = signal('#ffffff');   // flash tint (the bomb's colour)
 
 export const weapons = signal<WeaponDef[]>([]);
 
-// Power/angle ranges (UI units).
+// Power/angle ranges (UI units). Angle is a full circle measured CCW from
+// horizontal-right and WRAPS at the ends: 0 = right, 90 = up, 180 = left,
+// 270 = straight down, 315 = down-right. Stepping past 359 wraps to 0 (and 0 → 359),
+// so below-horizon aim reads 181..359 rather than going negative.
 export const POWER_MIN = 10, POWER_MAX = 1000;
-export const ANGLE_MIN = 0, ANGLE_MAX = 180;
+export const ANGLE_MIN = 0, ANGLE_MAX = 359;
+
+/** Fold any angle (deg) into the wrapping 0..359 range the HUD uses. */
+export const wrapAngle = (deg: number): number => ((deg % 360) + 360) % 360;
 
 let controller: CGameController | null = null;
 
@@ -71,6 +78,7 @@ export function syncHud(): void {
   canFire.value = c.isPlayerTurn();
   winner.value = c.getWinnerName();
   screenFlash.value = c.getScreenFlash();
+  screenFlashColor.value = c.getScreenFlashColor();
 }
 
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------

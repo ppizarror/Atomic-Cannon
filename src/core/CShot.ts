@@ -77,15 +77,10 @@ export class CShot {
     const SPEED_SCALE = 0.9;
     const speed = power * SPEED_SCALE;
 
-    if (turretAngleRad >= 0) {
-      // Aiming right side
-      this.m_vel.x = Math.cos(turretAngleRad) * speed;
-      this.m_vel.y = -Math.sin(Math.abs(turretAngleRad)) * speed;
-    } else {
-      // Aiming left side  
-      this.m_vel.x = -Math.cos(Math.abs(turretAngleRad)) * speed;
-      this.m_vel.y = -Math.sin(Math.abs(turretAngleRad)) * speed;
-    }
+    // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
+    // Works for every direction, including below-horizon (negative) angles.
+    this.m_vel.x = Math.cos(turretAngleRad) * speed;
+    this.m_vel.y = -Math.sin(turretAngleRad) * speed;
 
     this.m_bIsDead = false;
     this.m_trailPoints = [];
