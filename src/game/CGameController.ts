@@ -14,6 +14,7 @@ import { CShot } from '../core/CShot';
 import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex, CWeapon } from '../core/CWeapon';
 import { Vec2 } from '../math/Vec2';
 import { CParticleSystem, ScreenShake } from '../core/CParticleSystem';
+import { RenderGate } from './RenderGate';
 import { CWeather } from '../core/CWeather';
 import { CEconomy } from '../core/CEconomy';
 import { CAssetManager } from '../core/rendering/CAssetManager';
@@ -288,6 +289,50 @@ export class CGameController implements ShotWorld {
   }
 
   /**
+   * Invalidate the frame — the next draw must be rendered. Called on any input or
+   * one-off state change (aim, weapon, mouse move, entity placement, resize). Also
+   * the hook a future networking layer calls when it applies a remote update, so
+   * the scene redraws for the remote player's actions even while the local player
+   * is idle.
+   */
+  markDirty(): void {
+    this.m_renderGate.markDirty(performance.now());
+  }
+
+  /**
+   * Whether any GAMEPLAY motion is on screen this frame (as opposed to the purely
+   * cosmetic turn-arrow bob / star twinkle, which the gate handles via its grace
+   * window). Deliberately conservative: if anything here can move, we keep drawing.
+   */
+  private isAnimating(): boolean {
+    switch (this.m_gameState) {
+      case EGameState.Flying:
+      case EGameState.ShotFlying:
+      case EGameState.Explosion:
+        return true;                                   // shot/flight/blast in progress
+    }
+    if (this.m_screenShake.isActive()) return true;
+    if (this.m_screenFlash > 0) return true;
+    if (this.m_particles.hasActiveExplosions()) return true;
+    if (this.m_weather.isActive()) return true;        // rain/snow/dust never rest
+    if (this.m_land.isAnimating()) return true;        // debris / fallout / slump / terrain rebuild
+    if (!this.m_assets.isReady()) return true;         // sprites still popping in
+    for (const s of this.m_shots) if (!s.isDead()) return true;
+    for (const m of this.m_mines) if (m.armed > 0) return true;   // arming → colour flips
+    for (const t of this.m_tanks) if (t.isMoving() || t.isFalling() || t.isThrustingUp()) return true;
+    return false;
+  }
+
+  /**
+   * Decide whether to redraw + re-upload the scene this frame. The game loop always
+   * ticks update() (so the sim keeps advancing); only the expensive redraw + GPU
+   * upload are gated here. Returns true whenever something changed or is moving.
+   */
+  shouldRedraw(): boolean {
+    return this.m_renderGate.shouldRedraw(this.m_paused, this.isAnimating(), performance.now());
+  }
+
+  /**
    * Schedule `fn` to run after `sec` of *simulation* time. Because it's driven by
    * update() (which is skipped while paused), the callback is naturally deferred
    * across a pause rather than firing on the wall clock. Replaces setTimeout for
@@ -316,6 +361,7 @@ export class CGameController implements ShotWorld {
   setPaused(paused: boolean): void {
     if (paused === this.m_paused) return;
     this.m_paused = paused;
+    this.markDirty();               // draw the pause frame once; redraw on resume
     if (paused) void this.m_audio?.suspend();
     else void this.m_audio?.resume();
   }
@@ -418,6 +464,7 @@ export class CGameController implements ShotWorld {
 
   /** Release the drag. If it was a real aim, fire (the authentic AC control). */
   endAim(fire: boolean): void {
+    this.markDirty();               // the aim arrow disappears this frame
     const wasActive = this.m_aim.active;
     this.m_aim.active = false;
     if (fire && wasActive && this.m_gameState === EGameState.Battle && this.isPlayerTurn()) {
@@ -766,14 +813,16 @@ export class CGameController implements ShotWorld {
   shake(mag: number, dur: number): void { this.m_screenShake.trigger(mag, dur); }
   hitSound(name: string, x: number): void { this.m_audio?.hit(name, x); }
   ripple(x: number, y: number, strength: number): void { this.m_onImpact?.(x, y, strength); }
-  aimMarker(x: number, y: number): void { this.m_aimMarkers.push({ x, y }); }
+  aimMarker(x: number, y: number): void { this.m_aimMarkers.push({ x, y }); this.markDirty(); }
   deployMine(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
     // Arms after a short delay so it doesn't trigger on the tank that laid it.
     this.m_mines.push({ x, y, owner, weaponIndex, armed: 0.6 });
+    this.markDirty();
   }
   deploySentry(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
     // TODO: auto-firing turret each turn. For now the sentry is a static placed marker.
     this.m_sentries.push({ x, y, owner, weaponIndex });
+    this.markDirty();
   }
 
   /** Mines detonate when a living tank rolls over them (after they arm). */
@@ -872,6 +921,7 @@ export class CGameController implements ShotWorld {
     if (tank.isBot()) {
       this.schedule(0.7, () => this.executeBotTurn());
     }
+    this.markDirty();               // new turn: indicator moves, aim resets → redraw
   }
 
   /** End the current turn: declare a winner, or hand off to the next player. */
@@ -1173,6 +1223,7 @@ export class CGameController implements ShotWorld {
   
   setAngle(angle: number): void {
     if (this.m_paused) return;
+    this.markDirty();
     this.m_angle = angle;
     const tank = this.getCurrentTank();
     // Persist the aim on the acting tank so it survives the turn cycle.
@@ -1185,6 +1236,7 @@ export class CGameController implements ShotWorld {
 
   setPower(power: number): void {
     if (this.m_paused) return;
+    this.markDirty();
     this.m_power = power;
     // Persist the power on the acting tank so it survives the turn cycle.
     this.getCurrentTank().setPower(power);
@@ -1192,6 +1244,7 @@ export class CGameController implements ShotWorld {
   
   selectWeapon(index: number): void {
     if (this.m_paused) return;
+    this.markDirty();
     if (index >= 0 && index < WEAPON_DATABASE.length) {
       this.m_currentWeaponIndex = index;
       // Persist the choice on the acting tank so it survives the turn cycle.
@@ -1292,11 +1345,14 @@ export class CGameController implements ShotWorld {
   private m_timers: { at: number; fn: () => void }[] = [];
   // Whole-game pause: freezes the sim clock (update is skipped) and audio.
   private m_paused: boolean = false;
+  // Present-on-demand gate: the loop keeps ticking, but the heavy 2D redraw + GPU
+  // upload are skipped on frames where nothing visible changed (see shouldRedraw).
+  private m_renderGate = new RenderGate();
   // Live drag-aim state: the world-space target the player is dragging toward.
   private m_aim: { active: boolean; tx: number; ty: number } = { active: false, tx: 0, ty: 0 };
   // Last known mouse position in world coords (for hover-detail on tank badges).
   private m_mouse: { x: number; y: number } = { x: -1, y: -1 };
-  setMouse(wx: number, wy: number): void { this.m_mouse.x = wx; this.m_mouse.y = wy; }
+  setMouse(wx: number, wy: number): void { this.m_mouse.x = wx; this.m_mouse.y = wy; this.markDirty(); }
 
   // Top-left status counters (RE: FUN_0048c480 "Battle %d of %d - Shot %d").
   private m_shotsFired = 0;

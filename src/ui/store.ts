@@ -134,13 +134,23 @@ export function syncHud(): void {
 }
 let lastBattleSig = '';
 
-// --- generic UI bitmap loader (magenta → transparent), cached as a data URL ---
+// --- generic UI bitmap loader (colour-key → transparent), cached as a data URL ---
 const bmpCache = new Map<string, Promise<string | null>>();
 
-/** Load an /assets BMP, knock out magenta (255,0,255) as transparency, cache it.
- * Used for the depot's colour-keyed UI art (sort arrows, tooltip pointer). */
-export function loadUiBmp(path: string): Promise<string | null> {
-  const cached = bmpCache.get(path);
+// Colour-key predicates. The zeon dialog art keys grey (64,64,64) as its outside
+// (so the rounded corners cut out), while its arrows key pure green (0,255,0).
+export type BmpKey = 'magenta' | 'green' | 'grey';
+const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
+  magenta: (p, i) => p[i] > 200 && p[i + 1] < 70 && p[i + 2] > 200,
+  green:   (p, i) => p[i] < 70 && p[i + 1] > 200 && p[i + 2] < 70,
+  grey:    (p, i) => Math.abs(p[i] - 64) < 26 && Math.abs(p[i + 1] - 64) < 26 && Math.abs(p[i + 2] - 64) < 26,
+};
+
+/** Load an /assets BMP, knock out the `key` colour as transparency, cache it.
+ * Used for the depot's colour-keyed UI art (sort arrows, tooltip dialog/pointer). */
+export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string | null> {
+  const cacheKey = `${path}#${key}`;
+  const cached = bmpCache.get(cacheKey);
   if (cached) return cached;
   const p = new Promise<string | null>((resolve) => {
     const img = new Image();
@@ -151,8 +161,9 @@ export function loadUiBmp(path: string): Promise<string | null> {
       g.drawImage(img, 0, 0);
       const im = g.getImageData(0, 0, cv.width, cv.height);
       const px = im.data;
+      const hit = KEYERS[key];
       for (let i = 0; i < px.length; i += 4) {
-        if (px[i] > 200 && px[i + 1] < 70 && px[i + 2] > 200) px[i + 3] = 0;
+        if (hit(px, i)) px[i + 3] = 0;
       }
       g.putImageData(im, 0, 0);
       resolve(cv.toDataURL());
@@ -160,7 +171,7 @@ export function loadUiBmp(path: string): Promise<string | null> {
     img.onerror = () => resolve(null);
     img.src = encodeURI(path.startsWith('/') ? path : `/assets/${path}`);
   });
-  bmpCache.set(path, p);
+  bmpCache.set(cacheKey, p);
   return p;
 }
 

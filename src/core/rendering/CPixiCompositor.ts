@@ -103,10 +103,17 @@ export class CPixiCompositor {
     this.m_waveAge = 0;
   }
 
-  /** Advance effects and push the latest scene frame to the GPU. */
-  update(dt: number): void {
-    // Re-upload the 2D scene into the GPU texture for this frame.
-    this.m_sceneTexture.source.update();
+  /**
+   * Advance effects and (optionally) push the latest scene frame to the GPU.
+   * `sceneChanged` is the present-on-demand gate: when the 2D scene was NOT
+   * redrawn this frame we skip the full-canvas texture re-upload (the expensive
+   * CPU→GPU transfer). The shockwave still advances every call — it's a GPU
+   * post-filter that warps the already-uploaded texture, so it keeps animating
+   * over a static scene with no re-upload needed.
+   */
+  update(dt: number, sceneChanged: boolean = true): void {
+    // Re-upload the 2D scene into the GPU texture only when it actually changed.
+    if (sceneChanged) this.m_sceneTexture.source.update();
 
     if (this.m_shockwave.enabled) {
       this.m_waveAge += dt;

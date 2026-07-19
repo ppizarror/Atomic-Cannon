@@ -141,14 +141,20 @@ async function main(): Promise<void> {
     (window as unknown as { atomic: unknown }).atomic = { gameController, compositor, audio };
   }
 
-  // Game loop — drive the sim, present, and pump UI signals. While paused we
-  // skip the simulation step entirely (so nothing advances or emits) but keep
-  // drawing/presenting so the frozen frame stays live for a screenshot.
+  // Game loop — drive the sim, present, and pump UI signals. While paused we skip
+  // the simulation step entirely (nothing advances or emits); the present-on-demand
+  // gate then draws the frozen frame once and skips subsequent identical frames (the
+  // GPU texture retains it, so a screenshot still works).
   compositor.app.ticker.add((ticker) => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
     if (!paused) gameController.update(dt);
-    gameController.draw();
-    compositor.update(paused ? 0 : dt);
+    // Present-on-demand: the loop always ticks (so the sim keeps advancing), but the
+    // full 2D redraw + GPU texture upload are skipped on frames where nothing visible
+    // changed. The shockwave still advances every call (it warps the already-uploaded
+    // texture on the GPU), so it animates over a static scene without a re-upload.
+    const redraw = gameController.shouldRedraw();
+    if (redraw) gameController.draw();
+    compositor.update(paused ? 0 : dt, redraw);
     syncHud();
   });
 

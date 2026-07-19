@@ -794,6 +794,20 @@ export class CLand {
     this.m_terrainDirty = false;
   }
 
+  /**
+   * True while the terrain layer will still change visibly — debris/fallout in
+   * motion, an active slump, or a stale cached bitmap awaiting a rebuild. Drives
+   * the game's present-on-demand gate: when this (and everything else) is false,
+   * the frame is static and the redraw/upload can be skipped.
+   */
+  isAnimating(): boolean {
+    return this.m_terrainDirty ||
+           this.m_slumpTimer > 0 ||
+           this.m_particles.length > 0 ||
+           this.m_radSpecks.length > 0 ||
+           this.m_radParticles.length > 0;
+  }
+
   draw(ctx: CanvasRenderingContext2D): void {
     if (!this.m_arrHeights) return;
     const W = this.m_nWidth, H = this.m_nHeight;

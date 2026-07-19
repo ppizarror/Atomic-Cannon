@@ -11,16 +11,37 @@ function ok(name: string, cond: boolean, extra = '') {
   else { fail++; console.log(`  ✗ ${name}  ${extra}`); }
 }
 
-// A minimal 2D-context stand-in that records nothing but never throws.
-function mockCtx(): CanvasRenderingContext2D {
-  const noop = () => {};
-  const grad = { addColorStop: noop };
-  return {
+// A recording 2D-context stand-in: never throws, and logs each PAINT op with the
+// composite mode + alpha in force at the time. That lets the draw tests assert the
+// blend mode per particle kind and that ctx state is left clean — the invariants
+// the glow-sprite draw path must preserve — without a real canvas.
+interface PaintCall { m: string; op: string; alpha: number; }
+type RecCtx = CanvasRenderingContext2D & { _calls: PaintCall[] };
+
+function mockCtx(): RecCtx {
+  const grad = { addColorStop() {} };
+  const ctx = {
     globalCompositeOperation: 'source-over',
-    fillStyle: '',
-    beginPath: noop, arc: noop, fill: noop,
-    createRadialGradient: () => grad,
-  } as unknown as CanvasRenderingContext2D;
+    globalAlpha: 1,
+    fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: 'butt',
+    _calls: [] as PaintCall[],
+    save() {}, restore() {}, translate() {},
+    beginPath() {}, arc() {}, moveTo() {}, lineTo() {},
+    createRadialGradient() { return grad; },
+    createLinearGradient() { return grad; },
+    fill(this: RecCtx) { this._calls.push({ m: 'fill', op: this.globalCompositeOperation, alpha: this.globalAlpha }); },
+    fillRect(this: RecCtx) { this._calls.push({ m: 'fillRect', op: this.globalCompositeOperation, alpha: this.globalAlpha }); },
+    stroke(this: RecCtx) { this._calls.push({ m: 'stroke', op: this.globalCompositeOperation, alpha: this.globalAlpha }); },
+    drawImage(this: RecCtx) { this._calls.push({ m: 'drawImage', op: this.globalCompositeOperation, alpha: this.globalAlpha }); },
+  };
+  return ctx as unknown as RecCtx;
+}
+
+// Push one live particle of a given render kind straight into the pool (reaches the
+// private `add` emitter) so a test can exercise a single kind's draw branch.
+function addKind(ps: CParticleSystem, kind: string, c = { r: 200, g: 120, b: 40 }): void {
+  (ps as unknown as { add(x: number, y: number, vx: number, vy: number, c: object, life: number, size: number, kind: string): void })
+    .add(400, 300, 0, 0, c, 1, 10, kind);
 }
 
 function stepN(ps: CParticleSystem, n: number, dt: number, wind?: Vec2) {
@@ -154,6 +175,81 @@ console.log('Particle system');
   const off = s.getOffset();
   ok('shake starts active', active0);
   ok('shake settles to zero', off.x === 0 && off.y === 0, `off=${off.x},${off.y}`);
+}
+
+// ---------------------------------------------------------------------------
+// Draw-path invariants — the safety net for the glow-sprite optimisation. These
+// pin down behaviour that must survive replacing per-particle radial gradients
+// with pre-baked glow blits: the blend mode of each kind, clean ctx state on
+// exit, and that no live particle is silently skipped.
+// ---------------------------------------------------------------------------
+
+// 9. Additive kinds (flare/flash/plume) paint under the 'lighter' composite mode.
+{
+  for (const kind of ['flare', 'flash', 'plume']) {
+    const ps = new CParticleSystem(); ps.setBounds(800, 600);
+    addKind(ps, kind);
+    const ctx = mockCtx();
+    ps.draw(ctx);
+    ok(`${kind} paints`, ctx._calls.length > 0, `calls=${ctx._calls.length}`);
+    ok(`${kind} paints additively (lighter)`,
+       ctx._calls.length > 0 && ctx._calls.every(c => c.op === 'lighter'),
+       ctx._calls.map(c => c.op).join(','));
+  }
+}
+
+// 9b. Normal-blend kinds (disc/smoke) paint under 'source-over'.
+{
+  const d = new CParticleSystem(); d.setBounds(800, 600); addKind(d, 'disc');
+  const dctx = mockCtx(); d.draw(dctx);
+  ok('disc paints normally (source-over)',
+     dctx._calls.length > 0 && dctx._calls.every(c => c.op === 'source-over'),
+     dctx._calls.map(c => c.op).join(','));
+
+  // Smoke's alpha envelope opens with age (sin), so at t=0 it draws nothing —
+  // step it forward first, then it must paint under normal blend.
+  const s = new CParticleSystem(); s.setBounds(800, 600);
+  addKind(s, 'smoke', { r: 150, g: 150, b: 150 });
+  s.update(0.2);
+  const sctx = mockCtx(); s.draw(sctx);
+  ok('smoke paints after a step', sctx._calls.length > 0, `calls=${sctx._calls.length}`);
+  ok('smoke paints normally (source-over)',
+     sctx._calls.every(c => c.op === 'source-over'), sctx._calls.map(c => c.op).join(','));
+}
+
+// 10. A full scene leaves ctx state clean: composite op restored to what it found,
+//     and globalAlpha back to 1 (no leaked alpha from a mid-blit).
+{
+  const ps = new CParticleSystem(); ps.setBounds(800, 600);
+  ps.blast(400, 300, 45, '#ffaa00', true);   // every kind
+  ps.tankDeath(410, 310);
+  ps.beam(0, 0, 100, 100, '#00ff00');
+  ps.update(0.05);
+  const ctx = mockCtx();
+  (ctx as { globalCompositeOperation: string }).globalCompositeOperation = 'multiply';
+  ps.draw(ctx);
+  ok('full scene restores composite op', ctx.globalCompositeOperation === 'multiply', ctx.globalCompositeOperation);
+  ok('full scene restores globalAlpha to 1', ctx.globalAlpha === 1, `alpha=${ctx.globalAlpha}`);
+  ok('full scene paints something', ctx._calls.length > 0, `calls=${ctx._calls.length}`);
+}
+
+// 11. No live particle is silently dropped: N glow particles → exactly N paints.
+{
+  const ps = new CParticleSystem(); ps.setBounds(800, 600);
+  for (let i = 0; i < 5; i++) addKind(ps, 'flare');
+  const ctx = mockCtx(); ps.draw(ctx);
+  ok('one paint per live flare', ctx._calls.length === 5, `calls=${ctx._calls.length}`);
+}
+
+// 12. When real sprites are available, the sprite kinds blit images (drawImage)
+//     rather than only filling — the sprite fast-path stays wired up.
+{
+  const ps = new CParticleSystem(); ps.setBounds(800, 600);
+  ps.setAssets({ getSprite: () => ({ bitmap: {} as CanvasImageSource, width: 8, height: 8 }) });
+  ps.blast(400, 300, 40, '#ff8800', false);
+  ps.update(0.1);
+  const ctx = mockCtx(); ps.draw(ctx);
+  ok('assets drive drawImage blits', ctx._calls.some(c => c.m === 'drawImage'), ctx._calls.map(c => c.m).join(','));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -6,16 +6,16 @@
 
 import { Vec2, Vec2f } from '../math/Vec2';
 import { CLand } from './CLand';
-import { getFont } from '../ui/BitmapFont';
+import { getFont, type FontId } from '../ui/BitmapFont';
 
 // Tank-badge text font — small pixel font rendered at NATIVE size (10px) so it
 // stays crisp and matches the original's compact label size.
-const BADGE_FONT = 'UPF Silkscreen ReMix 8 white';
+const BADGE_FONT: FontId = 'silkscreen-8-white';
 
 // Render text with one of the game's bitmap fonts (cached). Returns null until the
 // font has loaded, so callers can fall back to a canvas font that first frame.
 const labelCache = new Map<string, HTMLCanvasElement>();
-function bmpLabel(font: string, text: string, tint: string): HTMLCanvasElement | null {
+function bmpLabel(font: FontId, text: string, tint: string): HTMLCanvasElement | null {
   const key = `${font}|${tint}|${text}`;
   const c = labelCache.get(key);
   if (c) return c;
