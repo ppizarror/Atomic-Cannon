@@ -208,25 +208,43 @@ export class CShot {
     return this.m_bIsDead;
   }
 
-  draw(ctx: CanvasRenderingContext2D, color: string = '#ff8800'): void {
+  draw(ctx: CanvasRenderingContext2D, color: string = '#ff8800', sprite: CanvasImageSource | null = null, size = 12): void {
     if (this.m_bIsDead) return;
 
     this.drawStreak(ctx);
 
+    // Real projectile sprite, rotated to point along its velocity. The original
+    // draws these scaled by a uniform map scale; we normalise each sprite's
+    // longest side to a consistent on-screen size (from the weapon's `size`) so a
+    // huge sprite (ball/mine) and a tiny one (shell) read at comparable scale.
+    if (sprite) {
+      const nw = (sprite as { width: number }).width;
+      const nh = (sprite as { height: number }).height;
+      const targetLong = Math.max(14, Math.min(34, size * 1.3));
+      const k = targetLong / Math.max(nw, nh);
+      const w = nw * k, h = nh * k;
+      const ang = Math.atan2(this.m_vel.y, this.m_vel.x);
+      ctx.save();
+      ctx.translate(this.m_pos.x, this.m_pos.y);
+      ctx.rotate(ang);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+      ctx.restore();
+      return;
+    }
+
+    // Fallback glowing dot until the sprite is loaded.
     ctx.save();
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
-
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(this.m_pos.x, this.m_pos.y, 4, 0, Math.PI * 2);
     ctx.fill();
-
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(this.m_pos.x, this.m_pos.y, 2, 0, Math.PI * 2);
     ctx.fill();
-
     ctx.restore();
   }
 

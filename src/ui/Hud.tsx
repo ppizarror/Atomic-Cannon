@@ -23,17 +23,17 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const R = {
   // Extents measured directly from the gui.bmp pixels (button faces + black boxes).
   list:   [0.9, 11.7, 29.1, 70.8],
-  up:     [30.8, 12, 3.7, 18],   down:  [30.8, 63, 3.7, 18],
-  plus:   [38.3, 16, 5, 20],   minus: [38.3, 62, 5.0, 20],
+  up:     [30.8, 12, 3.5, 18],   down:  [30.8, 63, 3.5, 18],
+  plus:   [38.3, 16, 4.6, 19],   minus: [38.3, 62, 4.6, 18.5],
   pnum:   [38.3, 41, 5.0, 19.2],       // black readout box between +/−
   wicon:  [30.8, 34.2, 5.0, 26.7],     // 32x32 preview of the selected weapon
   meter:  [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
   fire:   [54.8, 16.5, 15, 29.5],
-  buy:    [54.7, 63, 3.5, 20], reset: [60.7, 63, 3.5, 20], help: [66.5, 63, 3.5, 20],
-  aleft:  [75.9, 63, 3.4, 19], aright: [84.0, 63, 3.5, 19],
-  anglen: [76.1, 49, 10, 11],          // number box, lower-centre of the dial
-  close:  [94.4, 15, 3.0, 20],
+  buy:    [54.7, 65, 3.5, 18], reset: [60.7, 64, 3.5, 18], help: [66.5, 64, 3.5, 18],
+  aleft:  [75.5, 64, 2.7, 17], aright: [84.0, 64, 2.7, 17],
+  anglen: [76.1, 66, 10, 11],          // number box, lower-centre of the dial
+  close:  [94.4, 14, 3.4, 18],
   wind:   [90.6, 42.5, 7.5, 40],
 
   // group captions printed on the metal below each cluster (black text)
@@ -87,9 +87,10 @@ function FireButton() {
 }
 function Needle() {
   const a = angle.value;
+  const b = 41;
   return (
     <svg class="ov dial-overlay" style={pos(DIAL_BOX)} viewBox="0 0 100 100" preserveAspectRatio="none">
-      <line class="needle" x1="50" y1="50" x2="84" y2="50" transform={`rotate(${-a} 50 50)`} />
+      <line class="needle" x1={`${b}`} y1={`${b}`} x2="84" y2={`${b}`} transform={`rotate(${-a} 50 50)`} />
     </svg>
   );
 }

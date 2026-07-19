@@ -204,7 +204,9 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     land.raiseTerrain(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (!isBeam) {
     land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
-    land.addShowerParticles(Math.floor(pos.x), Math.floor(surfaceY), 10);
+    // Throw a dirt spray scaled by the crater size (more debris for bigger blasts).
+    const chunks = Math.min(70, 10 + Math.round(radiusPx * 1.2));
+    land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks);
   }
 
   if (isPrimary) {

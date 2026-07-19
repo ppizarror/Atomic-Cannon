@@ -124,6 +124,13 @@ export class CGameController implements ShotWorld {
       }
     }
 
+    // Preload projectile sprites (each weapon's `bitmap` under assets/weapons/).
+    // They all use a magenta (255,0,255) background, same as the hull sprites.
+    const bitmaps = new Set(WEAPON_DATABASE.map(w => w.bitmap).filter(Boolean));
+    for (const bmp of bitmaps) {
+      this.m_assets.loadSprite(`weapons/${bmp}`, `/assets/weapons/${bmp}`);
+    }
+
     // Pick a landscape (background + depth-layered terrain textures + weather).
     this.loadLandscape();
 
@@ -241,11 +248,13 @@ export class CGameController implements ShotWorld {
       }
     }
     
-    // Draw active shots (each tinted by its own weapon).
+    // Draw active shots (real projectile sprite, tinted trail fallback).
     for (const shot of this.m_shots) {
       if (!shot.isDead()) {
         const wi = shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex;
-        shot.draw(ctx, getWeapon(wi).getColor());
+        const weapon = getWeapon(wi);
+        const sprite = this.m_assets.getSprite(`weapons/${weapon.getBitmap()}`);
+        shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize());
       }
     }
 

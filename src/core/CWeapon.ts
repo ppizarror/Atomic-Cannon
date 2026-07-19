@@ -91,6 +91,10 @@ export class CWeapon {
   getDef(): WeaponDef { return this.m_def; }
   getName(): string { return this.m_def.name; }
   getIndex(): number { return this.m_def.index; }
+  /** Projectile sprite file under assets/weapons/ (e.g. "missile.bmp"). */
+  getBitmap(): string { return this.m_def.bitmap; }
+  /** Authored projectile size (drives on-screen sprite scale). */
+  getSize(): number { return this.m_def.size || 12; }
   getType(): WeaponType { return this.m_def.type; }
   getDamage(): number { return this.m_def.damage; }
   getRadius(): number { return this.m_def.radius; }

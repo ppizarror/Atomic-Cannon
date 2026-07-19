@@ -55,6 +55,29 @@ export class CAssetManager implements ISpriteSource {
     this.m_pending--;
   }
 
+  /**
+   * Load a sprite, keying out whatever colour occupies the top-left corner.
+   * Weapon/projectile bitmaps use different transparency colours per sprite
+   * (magenta, red, green…), so the corner pixel is the reliable key.
+   */
+  async loadSpriteAutoKey(name: string, path: string): Promise<void> {
+    this.m_pending++;
+    const img = await this.fetchImage(path);
+    if (img) {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width; canvas.height = img.height;
+      const g = canvas.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const data = g.getImageData(0, 0, canvas.width, canvas.height);
+      const px = data.data;
+      const key: RGB = [px[0], px[1], px[2]];
+      this.keyOut(px, key);
+      g.putImageData(data, 0, 0);
+      this.m_sprites.set(name, { bitmap: canvas, width: canvas.width, height: canvas.height });
+    }
+    this.m_pending--;
+  }
+
   private fetchImage(path: string): Promise<HTMLImageElement | null> {
     return new Promise((resolve) => {
       const img = new Image();
@@ -66,7 +89,7 @@ export class CAssetManager implements ISpriteSource {
   }
 
   /** Draw the image to an offscreen canvas and zero the alpha of key pixels. */
-  private applyColorKey(img: HTMLImageElement, [kr, kg, kb]: RGB): HTMLCanvasElement {
+  private applyColorKey(img: HTMLImageElement, key: RGB): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
     canvas.width = img.width;
     canvas.height = img.height;
@@ -75,7 +98,13 @@ export class CAssetManager implements ISpriteSource {
     g.drawImage(img, 0, 0);
 
     const image = g.getImageData(0, 0, canvas.width, canvas.height);
-    const px = image.data;
+    this.keyOut(image.data, key);
+    g.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  /** Zero the alpha of every pixel within tolerance of the key colour. */
+  private keyOut(px: Uint8ClampedArray, [kr, kg, kb]: RGB): void {
     for (let i = 0; i < px.length; i += 4) {
       if (Math.abs(px[i] - kr) <= KEY_TOLERANCE &&
           Math.abs(px[i + 1] - kg) <= KEY_TOLERANCE &&
@@ -83,7 +112,5 @@ export class CAssetManager implements ISpriteSource {
         px[i + 3] = 0;
       }
     }
-    g.putImageData(image, 0, 0);
-    return canvas;
   }
 }

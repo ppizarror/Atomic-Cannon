@@ -13,6 +13,9 @@ interface LandParticle {
   y: number;
   vx: number;
   vy: number;
+  color: string;   // dirt-chunk colour, sampled from the terrain palette
+  size: number;    // chunk size in px
+  spin: number;    // visual tumble
 }
 
 interface RadParticle {
@@ -325,13 +328,23 @@ export class CLand {
     }
   }
 
+  // Dirt-chunk palette (the original colours each chunk with the terrain pixel it
+  // was thrown from; we sample this earthy palette to the same visual effect).
+  private static DEBRIS_COLORS = ['#6b4a2b', '#7a5230', '#5c3d22', '#8a6a3e', '#4e3a24', '#3f6b2f'];
+
+  /** Throw dirt chunks from a blast — they arc up, tumble, then settle. */
   addShowerParticles(x: number, y: number, count: number): void {
+    const C = CLand.DEBRIS_COLORS;
     for (let i = 0; i < count; i++) {
+      const spread = (Math.random() - 0.5) * 2;           // -1..1 → sideways bias
       const p: LandParticle = {
-        x,
+        x: x + spread * 6,
         y,
-        vx: (Math.random() - 0.5) * 100,
-        vy: -(Math.random() * 150 + 50)
+        vx: spread * (120 + Math.random() * 140),
+        vy: -(Math.random() * 260 + 120),                 // launched upward
+        color: C[(Math.random() * C.length) | 0],
+        size: 1 + Math.floor(Math.random() * 3),          // 1..3 px chunks
+        spin: (Math.random() - 0.5) * 8,
       };
       this.m_particles.push(p);
     }
@@ -342,16 +355,20 @@ export class CLand {
     
     for (let i = this.m_particles.length - 1; i >= 0; i--) {
       const p = this.m_particles[i];
-      
+
       p.vy += GRAVITY * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      
-      const terrainY = this.getHeightAt(Math.floor(p.x));
-      
-      if (p.y >= terrainY) {
+
+      const col = Math.floor(p.x);
+      if (col < 0 || col >= this.m_nWidth) { this.m_particles.splice(i, 1); continue; }
+
+      // A chunk settles when it reaches the surface (only on the way down) and
+      // deposits — raising that column by 1px, like the original's debris.
+      if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
         this.m_particles.splice(i, 1);
-        this.blastCircle(Math.floor(p.x), Math.floor(terrainY), 3);
+        this.m_arrHeights[col] = Math.max(0, this.m_arrHeights[col] - 1);
+        this.preBlast(col - 1, col + 1);
       }
     }
     
@@ -528,12 +545,8 @@ export class CLand {
       ctx.fill();
     }
     for (const p of this.m_particles) {
-      if (p.y < this.getHeightAt(Math.floor(p.x))) {
-        ctx.fillStyle = '#8B4513';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
     }
   }
 
