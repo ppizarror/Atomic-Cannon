@@ -25,9 +25,10 @@ const R = {
   up:     [30.5, 10, 6.5, 20],  down:  [30.5, 62, 6.5, 18],
   plus:   [38, 10, 6.5, 20],    minus: [38, 62, 6.5, 18],
   pnum:   [38, 34, 6.5, 25],           // black readout box between +/−
+  wicon:  [30.1, 34, 6.4, 26],         // 32x32 preview of the selected weapon
   meter:  [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
-  fire:   [54, 15, 16, 33],
+  fire:   [54.5, 15, 16, 33],
   buy:    [54.5, 62, 5.5, 20], reset: [61, 62, 6, 20], help: [68, 62, 5.5, 20],
   aleft:  [75.5, 60, 5.5, 20], aright: [83.5, 60, 5.5, 20],
   anglen: [77.5, 45, 11, 13],
@@ -59,8 +60,8 @@ function ReadoutBox({ r, children }: { r: readonly number[]; children: Component
 }
 
 // Static black caption printed on the metal under a control cluster.
-function PanelLabel({ r, text }: { r: readonly number[]; text: string }) {
-  return <div class="ov readout-box" style={pos(r)}><BmpText font="Trebuchet MS 9 bold" text={text} /></div>;
+function PanelLabel({ r, text, left }: { r: readonly number[]; text: string; left?: boolean }) {
+  return <div class="ov readout-box" style={{ ...pos(r), justifyContent: left ? 'flex-start' : 'center' }}><BmpText font="Microsoft Sans Serif 14" text={text} tint="#111" /></div>;
 }
 
 function MeterOverlay() {
@@ -99,10 +100,15 @@ function WindReadout() {
 }
 
 // ---- weapon list (re-renders only when the weapon changes) ------------------
-function WeaponIcon({ name }: { name: string }) {
+function WeaponIcon({ name, size, cls }: { name: string; size: 16 | 32; cls: string }) {
   const [src, setSrc] = useState('');
-  useEffect(() => { let ok = true; loadWeaponIcon(name).then(u => { if (ok && u) setSrc(u); }); return () => { ok = false; }; }, [name]);
-  return src ? <img class="wicon" src={src} alt="" /> : <span class="wicon" />;
+  useEffect(() => { let ok = true; loadWeaponIcon(name, size).then(u => { if (ok && u) setSrc(u); }); return () => { ok = false; }; }, [name, size]);
+  return src ? <img class={cls} src={src} alt="" /> : <span class={cls} />;
+}
+// The 32x32 preview of the current weapon, in the box between the ▲/▼ arrows.
+function WeaponPreview() {
+  const wp = weapons.value[weaponIndex.value];
+  return <div class="ov weapon-preview" style={pos(R.wicon)}>{wp && <WeaponIcon name={wp.name} size={32} cls="wbig" />}</div>;
 }
 function WeaponList() {
   const listRef = useRef<HTMLDivElement>(null);
@@ -116,7 +122,7 @@ function WeaponList() {
         const active = i === idx;
         return (
           <div key={wp.name} class={`wrow${active ? ' active' : ''}`} onClick={() => game().selectWeapon(i)}>
-            <WeaponIcon name={wp.name} />
+            <WeaponIcon name={wp.name} size={16} cls="wicon" />
             <BmpText class="wtext" font={LIST_FONT} text={`${i + 1}. ${wp.name}`} tint={active ? '#eaffea' : '#c8e8c8'} />
           </div>
         );
@@ -136,6 +142,7 @@ function ControlPanel() {
     <div id="hud-panel">
       <img class="panel-bg" src="/assets/gui/gui.bmp" alt="" />
       <WeaponList />
+      <WeaponPreview />
       <Hotspot r={R.up} title="Previous weapon" onClick={() => dW(-1)} />
       <Hotspot r={R.down} title="Next weapon" onClick={() => dW(1)} />
       <Hotspot r={R.plus} title="Power up" onClick={() => dP(5)} />
@@ -151,7 +158,7 @@ function ControlPanel() {
       <Hotspot r={R.aright} title="Angle +" onClick={() => dA(2)} />
       <WindReadout />
       <Hotspot r={R.close} title="Menu" onClick={() => {}} />
-      <PanelLabel r={R.lblWeapon} text="Select Weapon" />
+      <PanelLabel r={R.lblWeapon} text="Select Weapon" left />
       <PanelLabel r={R.lblPower} text="Power" />
       <PanelLabel r={R.lblAngle} text="Angle" />
       <PanelLabel r={R.lblWind} text="Wind" />

@@ -62,8 +62,10 @@ export function syncHud(): void {
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
 const iconCache = new Map<string, Promise<string | null>>();
 
-export function loadWeaponIcon(name: string): Promise<string | null> {
-  const cached = iconCache.get(name);
+/** Load a weapon icon at the given native pixel size (12 | 16 | 32). */
+export function loadWeaponIcon(name: string, size: 12 | 16 | 32 = 32): Promise<string | null> {
+  const key = `${size}/${name}`;
+  const cached = iconCache.get(key);
   if (cached) return cached;
 
   const p = new Promise<string | null>((resolve) => {
@@ -75,18 +77,18 @@ export function loadWeaponIcon(name: string): Promise<string | null> {
       g.drawImage(img, 0, 0);
       const im = g.getImageData(0, 0, cv.width, cv.height);
       const px = im.data;
-      // Knock out whatever the top-left corner colour is (the sprite's key).
-      const [kr, kg, kb] = [px[0], px[1], px[2]];
+      // Only magenta (255,0,255) is the transparency key — the grey (128,128,128)
+      // tile is the icon's intended background and must be kept (like the original).
       for (let i = 0; i < px.length; i += 4) {
-        if (Math.abs(px[i] - kr) < 24 && Math.abs(px[i + 1] - kg) < 24 && Math.abs(px[i + 2] - kb) < 24) px[i + 3] = 0;
+        if (px[i] > 200 && px[i + 1] < 70 && px[i + 2] > 200) px[i + 3] = 0;
       }
       g.putImageData(im, 0, 0);
       resolve(cv.toDataURL());
     };
     img.onerror = () => resolve(null);
     // Icon files are lowercase; Vite serves public assets case-sensitively.
-    img.src = encodeURI(`/assets/icons/32x32/${name.toLowerCase()}.bmp`);
+    img.src = encodeURI(`/assets/icons/${size}x${size}/${name.toLowerCase()}.bmp`);
   });
-  iconCache.set(name, p);
+  iconCache.set(key, p);
   return p;
 }

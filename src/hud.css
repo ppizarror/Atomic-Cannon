@@ -61,6 +61,10 @@ body { background: #000; color: #cfe; font-family: 'Segoe UI', Arial, sans-serif
 .wicon { width: 16px; height: 16px; image-rendering: pixelated; flex: 0 0 auto; }
 .wtext { flex: 0 1 auto; min-width: 0; }
 
+/* 32x32 preview of the current weapon (box between the ▲/▼ arrows) */
+.weapon-preview { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
+.wbig { width: 32px; height: 32px; image-rendering: pixelated; }
+
 /* live readouts (bitmap-font text, centred in their box) */
 .readout-box { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; }
 .meter-empty { background: #090b09; }
