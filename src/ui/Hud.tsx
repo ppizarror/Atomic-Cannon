@@ -43,8 +43,9 @@ const R = {
   lblWind:   [87.5, 82, 11, 16],
 } as const;
 
-// Square (px) box over the round dial so the needle stays circular.
-const DIAL_BOX = [76.3, 4.4, 11.5, 61.3] as const;
+// Square (px) box centred on the dial circle so the needle stays circular and
+// pivots at the ring's centre (11.5% × 736px ≈ 61.3% × 138px ≈ 85px square).
+const DIAL_BOX = [75.35, 8.6, 11.5, 61.3] as const;
 
 // Readout ink — the panel readouts are white, like the original.
 const INK = '#f4f8f4';
@@ -87,10 +88,9 @@ function FireButton() {
 }
 function Needle() {
   const a = angle.value;
-  const b = 41;
   return (
     <svg class="ov dial-overlay" style={pos(DIAL_BOX)} viewBox="0 0 100 100" preserveAspectRatio="none">
-      <line class="needle" x1={`${b}`} y1={`${b}`} x2="84" y2={`${b}`} transform={`rotate(${-a} 50 50)`} />
+      <line class="needle" x1="50" y1="50" x2="80" y2="50" transform={`rotate(${-a} 50 50)`} />
     </svg>
   );
 }
