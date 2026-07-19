@@ -7,9 +7,10 @@
  * cheap (no per-frame spawn/expire churn). Motion couples to the same wind vector
  * that pushes smoke and shots, so the whole scene reads as one weather system.
  *
- * Layering: snow / rain / hail are FOREGROUND (drawn over terrain and tanks);
- * dust is BACKGROUND haze (drawn between the backdrop and the terrain) so it
- * reads as sand blowing across the distance and is naturally occluded by hills.
+ * Layering: ALL weather is drawn BEHIND the terrain (between the backdrop and the
+ * ground), so precipitation only shows against the sky and is naturally occluded
+ * by hills — the same look as the original. The per-band `hover` flag selects
+ * MOTION only: dust hovers and drifts sideways; snow / rain / hail fall.
  */
 
 import type { Vec2 } from '../math/Vec2';
@@ -25,14 +26,14 @@ const REF_AREA = 1280 * 720;
 // `size` is the dot radius in px — kept tiny so the field reads as flecks, not smudges.
 const TUNING = {
   // Small slow flakes that sway side to side and drift on the wind.
-  snow: { density: 240, fall: 45, fallVar: 28, sway: 16, swayFreq: 1.6, wind: 15, sizeMin: 0.9, sizeMax: 2.0, alphaMin: 0.6, alphaMax: 1.0, background: false, cap: 900 },
+  snow: { density: 240, fall: 45, fallVar: 28, sway: 16, swayFreq: 1.6, wind: 15, sizeMin: 0.9, sizeMax: 2.0, alphaMin: 0.6, alphaMax: 1.0, hover: false, cap: 900 },
   // Fast near-vertical streaks that slant hard with the wind.
-  rain: { density: 300, fall: 780, fallVar: 240, sway: 0, swayFreq: 0, wind: 34, sizeMin: 0.7, sizeMax: 1.3, alphaMin: 0.2, alphaMax: 0.45, background: false, cap: 1100 },
+  rain: { density: 300, fall: 780, fallVar: 240, sway: 0, swayFreq: 0, wind: 34, sizeMin: 0.7, sizeMax: 1.3, alphaMin: 0.2, alphaMax: 0.45, hover: false, cap: 1100 },
   // Heavy pellets: fast, mostly vertical, only lightly pushed by wind, with a tiny flutter.
-  hail: { density: 150, fall: 560, fallVar: 170, sway: 6, swayFreq: 8, wind: 12, sizeMin: 0.9, sizeMax: 1.7, alphaMin: 0.8, alphaMax: 1.0, background: false, cap: 700 },
+  hail: { density: 150, fall: 560, fallVar: 170, sway: 6, swayFreq: 8, wind: 12, sizeMin: 0.9, sizeMax: 1.7, alphaMin: 0.8, alphaMax: 1.0, hover: false, cap: 700 },
   // Blowing sand: tiny specks that barely fall, bob gently, and are carried mostly
   // horizontally by the wind across the distance.
-  dust: { density: 260, fall: 0, fallVar: 0, sway: 10, swayFreq: 0.55, wind: 36, sizeMin: 0.7, sizeMax: 1.6, alphaMin: 0.22, alphaMax: 0.5, background: true, cap: 900 },
+  dust: { density: 260, fall: 0, fallVar: 0, sway: 10, swayFreq: 0.55, wind: 36, sizeMin: 0.7, sizeMax: 1.6, alphaMin: 0.22, alphaMax: 0.5, hover: true, cap: 900 },
 } as const;
 
 type Tuning = typeof TUNING[WeatherType];
@@ -146,9 +147,9 @@ export class CWeather {
       for (const p of layer.particles) {
         // Horizontal: wind + type-specific sway/flutter (+ ambient drift for dust).
         const sway = tune.sway ? Math.sin(t * tune.swayFreq + p.seed) * tune.sway : 0;
-        const vx = windDx + sway + (tune.background ? p.drift : 0);
+        const vx = windDx + sway + (tune.hover ? p.drift : 0);
         // Vertical: fall speed (dust barely falls — it bobs on the oscillator instead).
-        const vy = tune.background
+        const vy = tune.hover
           ? Math.sin(t * tune.swayFreq + p.seed * 1.7) * tune.fallVar + Math.cos(t * 0.3 + p.seed) * tune.sway
           : (tune.fall + p.size * 6) * p.speedMul + Math.sin(t * 2 + p.seed) * tune.fallVar * 0.15;
 
@@ -159,7 +160,7 @@ export class CWeather {
         if (p.x < -m) p.x += W + 2 * m;
         else if (p.x > W + m) p.x -= W + 2 * m;
 
-        if (tune.background) {
+        if (tune.hover) {
           // Dust hovers: wrap Y toroidally too so the haze band stays filled.
           if (p.y < -m) p.y += H + 2 * m;
           else if (p.y > H + m) p.y -= H + 2 * m;
@@ -173,14 +174,10 @@ export class CWeather {
     }
   }
 
-  /** Background weather (blowing sand). Draw AFTER the backdrop, BEFORE terrain. */
-  drawBackground(ctx: CanvasRenderingContext2D): void {
-    for (const layer of this.m_layers) if (layer.t.background) this.drawLayer(ctx, layer);
-  }
-
-  /** Foreground weather (snow / rain / hail). Draw over terrain, tanks and FX. */
-  drawForeground(ctx: CanvasRenderingContext2D): void {
-    for (const layer of this.m_layers) if (!layer.t.background) this.drawLayer(ctx, layer);
+  /** Draw all weather. Called BEHIND the terrain (between backdrop and ground) so
+   * precipitation only shows against the sky and is occluded by hills. */
+  draw(ctx: CanvasRenderingContext2D): void {
+    for (const layer of this.m_layers) this.drawLayer(ctx, layer);
   }
 
   private drawLayer(ctx: CanvasRenderingContext2D, layer: Layer): void {
