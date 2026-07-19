@@ -21,7 +21,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
 const R = {
-  list:   [1.5, 9, 28.5, 71],
+  list:   [0.6, 11.9, 29.9, 71],
   up:     [30.5, 10, 6.5, 20],  down:  [30.5, 62, 6.5, 18],
   plus:   [38, 10, 6.5, 20],    minus: [38, 62, 6.5, 18],
   pnum:   [38, 34, 6.5, 25],           // black readout box between +/−
