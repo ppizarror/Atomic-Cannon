@@ -653,33 +653,53 @@ img, canvas {
     color: #14171a;
 }
 
-/* Green tooltip — the real `zeon` dialog.bmp frame (9-slice via border-image, its
- * grey corners keyed transparent) with a tt-arrow-down pointer. Sits ABOVE the
- * cursor (translated up by its own height) so the arrow points down at the row. */
+/* Green tooltip — the `zeon` dialog look: pure #00ff00 fill, a uniform black
+ * rounded border, and a small down-pointer. Sits ABOVE the cursor (translated up
+ * by its own height) so the pointer aims down at the hovered row.
+ *   NB: rebuilt in plain CSS. The 33px dialog.bmp has thick rounded corners but
+ *   hairline straight edges, which border-image stretches into jagged corners +
+ *   1px edges — the "broken" frame. A CSS border+radius reproduces it cleanly. */
 .dep-tooltip {
     position: fixed;
     z-index: 22;
-    max-width: 320px;
+    max-width: 340px;
     pointer-events: none;
     transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
-    padding: 7px 10px 9px;
-    border-style: solid;
-    border-width: 9px; /* border-image (dialog.bmp) fills these */
-    border-image-repeat: stretch;
-    image-rendering: pixelated;
+    padding: 5px 9px 7px;
+    background: #00ff00;
+    border: 2px solid #000;
+    border-radius: 5px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55);
 }
 
 .dep-tooltip > canvas {
     display: block;
 }
 
+/* Down-pointer: a black outer triangle with a green inner triangle laid over it,
+   so only the two slanted black edges show and the green merges with the box. */
 .dep-tt-arrow {
     position: absolute;
-    bottom: -13px;
-    left: 16px;
-    width: 11px;
-    height: 22px;
-    image-rendering: pixelated;
+    top: 100%;
+    left: 15px;
+    width: 0;
+    height: 0;
+    margin-top: -2px; /* overlap the box's bottom border */
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 9px solid #000;
+}
+
+.dep-tt-arrow::after {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: -6px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 7px solid #00ff00;
 }
 
 .dep-tt-desc {

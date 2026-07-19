@@ -48,6 +48,10 @@ interface RadSpeck {
     b: number;   // tint (from the weapon's irRGB, per zone)
 }
 
+// A faint warm plume rising off the radioactive carpet — it lifts, widens and
+// fades, so the hot fallout SHIMMERS with heat. Purely visual, transient.
+interface HeatWisp { x: number; y: number; age: number; life: number; size: number; vx: number; }
+
 // A permanent blackened blast mark baked into the terrain bitmap.
 interface Scorch {
     x: number;
@@ -141,6 +145,7 @@ export class CLand {
         this.m_radDeposit?.fill(0);    // clear any old fallout pile
         this.m_radSpecks.length = 0;
         this.m_radParticles.length = 0;
+        this.m_heat.length = 0;
         const A = 15;                                   // walk amplitude (obj +0x4c)
         const Ymin = Math.floor(this.m_nHeight * 0.30); // top clamp
         const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -628,6 +633,53 @@ export class CLand {
                 if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col) - s.rise;
             }
         }
+
+        // Heat haze: faint warm plumes rise off the live fallout — spawned across the
+        // active deposit (fewer as the zone cools), they lift, widen and fade so the
+        // radioactive ground reads as HOT. Gated on the deposit, so a bomb that clears
+        // the fallout stops new heat there too.
+        if (this.m_radParticles.length && this.m_radDeposit && this.m_heat.length < 240) {
+            for (const z of this.m_radParticles) {
+                const cool = z.timeRemaining / Math.max(0.5, z.duration);   // 1 hot → 0 cold
+                const rr = z.radius;
+                const spawn = Math.round(3 * cool);
+                for (let k = 0; k < spawn; k++) {
+                    const col = Math.floor(z.x - rr + this.rand01() * rr * 2);
+                    if (col < 0 || col >= this.m_nWidth || this.m_radDeposit[col] <= 0) continue;
+                    this.m_heat.push({
+                        x: col + this.rand01() * 2 - 1,
+                        y: this.getHeightAt(col) - this.rand01() * 4,
+                        age: 0,
+                        life: 0.7 + this.rand01() * 0.8,
+                        size: 5 + this.rand01() * 7,
+                        vx: (this.rand01() - 0.5) * 12,
+                    });
+                }
+            }
+        }
+        for (let i = this.m_heat.length - 1; i >= 0; i--) {
+            const h = this.m_heat[i];
+            h.age += dt;
+            if (h.age >= h.life) { this.m_heat.splice(i, 1); continue; }
+            h.y -= (26 + h.size) * dt;    // rise, bigger plumes lift faster
+            h.x += h.vx * dt;
+        }
+    }
+
+    /** Lazily build the soft warm radial glow blitted per heat wisp (additive). */
+    private heatSprite(): HTMLCanvasElement {
+        if (this.m_heatSprite) return this.m_heatSprite;
+        const S = 32, c = document.createElement('canvas');
+        c.width = c.height = S;
+        const g = c.getContext('2d')!;
+        const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+        grad.addColorStop(0, 'rgba(255,150,70,0.9)');
+        grad.addColorStop(0.4, 'rgba(255,90,40,0.4)');
+        grad.addColorStop(1, 'rgba(255,60,30,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, S, S);
+        this.m_heatSprite = c;
+        return this.m_heatSprite;
     }
 
     getRadiationZones(): RadParticle[] {
@@ -845,7 +897,8 @@ export class CLand {
             this.m_slumpTimer > 0 ||
             this.m_particles.length > 0 ||
             this.m_radSpecks.length > 0 ||
-            this.m_radParticles.length > 0;
+            this.m_radParticles.length > 0 ||
+            this.m_heat.length > 0;
     }
 
     draw(ctx: CanvasRenderingContext2D): void {
@@ -919,6 +972,7 @@ export class CLand {
         // soft red EMISSIVE glow. They sit within the raised deposit and fade over life.
         if (this.m_radSpecks.length) {
             const prevOp = ctx.globalCompositeOperation;
+            const TWO_PI = Math.PI * 2;
             // Pass 1 — earthy grain bodies (normal blend), subtle texture over the deposit.
             for (const s of this.m_radSpecks) {
                 const t = s.age / s.life;
@@ -927,16 +981,35 @@ export class CLand {
                 ctx.fillStyle = `rgba(42,24,13,${fade * 0.4})`;
                 ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
             }
-            // Pass 2 — the soft red emissive glow on top (additive circles).
+            // Pass 2 — the soft red emissive glow on top (additive round dots).
             ctx.globalCompositeOperation = 'lighter';
             for (const s of this.m_radSpecks) {
                 const t = s.age / s.life;
                 const fade = Math.min(1, 2.2 * (1 - t));   // full for the first ~55%, then dim gradually to 0
                 if (fade <= 0) continue;
-                const gr = 1 + s.size * 0.5;                       // ~1.8–2.5px glow dot (square — cheap, pixelated like legacy)
                 ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.5})`;
-                ctx.fillRect(s.x - gr, s.y - gr, gr * 2, gr * 2);
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, 1 + s.size * 0.5, 0, TWO_PI);
+                ctx.fill();
             }
+            ctx.globalCompositeOperation = prevOp;
+        }
+
+        // Heat haze — faint warm plumes rising off the hot fallout (additive, soft,
+        // widening + fading as they lift), so the radioactive carpet SHIMMERS.
+        if (this.m_heat.length) {
+            const spr = this.heatSprite();
+            const prevOp = ctx.globalCompositeOperation;
+            ctx.globalCompositeOperation = 'lighter';
+            for (const h of this.m_heat) {
+                const t = h.age / h.life;
+                const a = Math.sin(Math.PI * t) * 0.17;   // ease in, ease out
+                if (a <= 0.01) continue;
+                const d = h.size * (1 + t * 1.6);         // widen as it rises
+                ctx.globalAlpha = a;
+                ctx.drawImage(spr, h.x - d, h.y - d, d * 2, d * 2);
+            }
+            ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = prevOp;
         }
 
@@ -964,6 +1037,8 @@ export class CLand {
     private m_particles: LandParticle[] = [];
     private m_radParticles: RadParticle[] = [];
     private m_radSpecks: RadSpeck[] = [];
+    private m_heat: HeatWisp[] = [];                // rising heat-haze plumes off the fallout
+    private m_heatSprite: HTMLCanvasElement | null = null;   // cached soft warm glow sprite
     private m_scorches: Scorch[] = [];
     private m_degrass: Uint8Array | null = null;   // per-column: 1 = grass torn off by a blast
     private m_radDeposit: Float32Array | null = null;   // per-column: accumulated fallout PILE height (px above surface)

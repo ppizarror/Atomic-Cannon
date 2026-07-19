@@ -106,36 +106,18 @@ function Header({k, label, cls, activeKey, dir, onSort}: {
     );
 }
 
-// Green weapon tooltip (the `zeon` dialog look) — the real dialog.bmp frame (a
-// 9-slice, grey corners keyed out) with a tt-arrow-down pointer, floating ABOVE
-// the cursor so the arrow points down at the hovered row.
+// Green weapon tooltip (the `zeon` dialog look) — pure-green fill, uniform black
+// rounded border (plain CSS, see .dep-tooltip) with a CSS down-pointer, floating
+// ABOVE the cursor so the pointer aims at the hovered row.
 function Tooltip({w, x, y}: { w: WeaponDef; x: number; y: number }) {
-    const lines = wrap(w.desc || 'No description available.', 34);
-    const [frame, setFrame] = useState('');
-    const [arrow, setArrow] = useState('');
-    useEffect(() => {
-        let ok = true;
-        loadUiBmp('gui/zeon/dialog.bmp', 'grey').then(u => {
-            if (ok && u) setFrame(u);
-        });
-        loadUiBmp('gui/zeon/tt arrow down.bmp', 'green').then(u => {
-            if (ok && u) setArrow(u);
-        });
-        return () => {
-            ok = false;
-        };
-    }, []);
-    // 9-slice the 33x33 dialog: ~9px corners, `fill` keeps the green centre.
-    const frameStyle = frame
-        ? {borderImageSource: `url(${frame})`, borderImageSlice: '9 fill', borderImageWidth: '9px'}
-        : undefined;
+    const lines = wrap(w.desc || 'No description available.', 44);
     return (
-        <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`, ...frameStyle}}>
+        <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
             <BmpText font={ROW_FONT} text={w.name} tint="#06210a"/>
             <div class="dep-tt-desc">
                 {lines.map((l, i) => <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c"/>)}
             </div>
-            {arrow && <img class="dep-tt-arrow" src={arrow} alt=""/>}
+            <div class="dep-tt-arrow"/>
         </div>
     );
 }
@@ -160,8 +142,8 @@ export function DepotPanel() {
 
     const [sel, setSel] = useState(weaponIndex.value);
     const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({key: 'cost', dir: 1});
-    const [hover, setHover] = useState<number | null>(3); /*TEMP-TT*/
-    const [pos, setPos] = useState({x: 300, y: 470}); /*TEMP-TT*/
+    const [hover, setHover] = useState<number | null>(null);
+    const [pos, setPos] = useState({x: 0, y: 0});
     const [showStats, setShowStats] = useState(false);
 
     const owned = ownedCounts.value;
