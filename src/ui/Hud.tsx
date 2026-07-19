@@ -33,7 +33,7 @@ const R = {
   buy:    [55, 64.6, 3.2, 18], reset: [60.8, 64, 3.2, 18], help: [66.8, 64, 3.2, 18],
   aleft:  [75.5, 64, 2.7, 17], aright: [84.0, 64, 2.7, 17],
   anglen: [76.1, 66, 10, 11],          // number box, lower-centre of the dial
-  close:  [94.4, 14, 3.4, 18],
+  close:  [94.6, 14, 3.4, 18],
   wind:   [90.6, 42.5, 7.5, 40],
 
   // group captions printed on the metal below each cluster (black text)
@@ -53,7 +53,6 @@ const ANGLE_PER_PX = 0.5;   // degrees of aim per pixel of horizontal drag
 
 // Readout ink — the panel readouts are white, like the original.
 const INK = '#f4f8f4';
-const LIST_FONT = 'Microsoft Sans Serif 14';   // small/thin text; row height sets the count
 
 const pos = (r: readonly number[]): JSX.CSSProperties =>
   ({ position: 'absolute', left: `${r[0]}%`, top: `${r[1]}%`, width: `${r[2]}%`, height: `${r[3]}%` });
@@ -71,7 +70,7 @@ function ReadoutBox({ r, children }: { r: readonly number[]; children: Component
 
 // Static black caption printed on the metal under a control cluster.
 function PanelLabel({ r, text, left }: { r: readonly number[]; text: string; left?: boolean }) {
-  return <div class="ov readout-box" style={{ ...pos(r), justifyContent: left ? 'flex-start' : 'center' }}><BmpText font="Microsoft Sans Serif 14" text={text} tint="#111" /></div>;
+  return <div class="ov readout-box" style={{ ...pos(r), justifyContent: left ? 'flex-start' : 'center' }}><BmpText font="msans-14" text={text} tint="#111" /></div>;
 }
 
 // The power column. Besides showing the fill it is grabbable: press anywhere on
@@ -107,7 +106,7 @@ function MeterOverlay() {
   return (
     <>
       <div class="ov meter-empty" style={{ position: 'absolute', left: `${R.meter[0]}%`, top: `${R.meter[1]}%`, width: `${R.meter[2]}%`, height: `${emptyH}%` }} />
-      <ReadoutBox r={R.pnum}><BmpText font="Trebuchet MS 18" text={String(p)} tint={INK} /></ReadoutBox>
+      <ReadoutBox r={R.pnum}><BmpText font="trebuchet-18" text={String(p)} tint={INK} /></ReadoutBox>
       <div ref={barRef} class={`ov meter-drag${blocked.value ? ' blocked' : ''}`} style={pos(R.meter)}
         title="Drag to set power (top 1000 · bottom 10)"
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
@@ -131,7 +130,7 @@ function Needle() {
   );
 }
 function AngleReadout() {
-  return <ReadoutBox r={R.anglen}><BmpText font="Microsoft Sans Serif 12" text={`${angle.value}`} tint={INK} /></ReadoutBox>;
+  return <ReadoutBox r={R.anglen}><BmpText font="msans-12" text={`${angle.value}`} tint={INK} /></ReadoutBox>;
 }
 // Horizontal drag over the dial scrubs the aim: drag left → aim left (angle up),
 // drag right → aim right (angle down), matching the ◀/▶ buttons. Relative to the
@@ -159,7 +158,7 @@ function DialGrab() {
 function WindReadout() {
   const w = wind.value;
   const txt = Math.abs(w) < 0.05 ? 'OFF' : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
-  return <ReadoutBox r={R.wind}><BmpText font="Microsoft Sans Serif 12" text={txt} tint={INK} /></ReadoutBox>;
+  return <ReadoutBox r={R.wind}><BmpText font="msans-12" text={txt} tint={INK} /></ReadoutBox>;
 }
 
 // ---- weapon list (re-renders only when the weapon changes) ------------------
@@ -189,7 +188,7 @@ function WeaponList() {
         return (
           <div key={wp.name} class={`wrow${active ? ' active' : ''}`} onClick={() => { uiClick(); game().selectWeapon(wp.index); }}>
             <WeaponIcon name={wp.name} size={16} cls="wicon" />
-            <BmpText class="wtext" font={LIST_FONT} text={`${i + 1}. ${wp.name}`} tint={active ? '#eaffea' : '#c8e8c8'} />
+            <BmpText class="wtext" font="beijing-16-out" text={`${i + 1}. ${wp.name}`} spacing={-1} />
           </div>
         );
       })}
@@ -245,9 +244,6 @@ function ControlPanel() {
 // "Battle X of Y - Shot Z" (white) — matches the original (FUN_0048c480).
 function BattleStatus() {
   const s = battleStatus.value;
-  // The original's status font: BeijingSSK 16 outlined (white fill + baked black
-  // outline). Rendered at NATIVE size (no tint) so it stays crisp. Only the
-  // ACTIVE tank's line is boxed in its team colour.
   return (
     <div id="battle-status">
       {s.lines.map((l, i) => (
@@ -255,10 +251,10 @@ function BattleStatus() {
         // canvas) on every life change, which flashes an undrawn canvas. Redraw in place.
         <div key={i} class={`bstat-line${l.active ? ' active' : ''}${l.dead ? ' dead' : ''}`}
           style={l.active ? { background: l.color + '66', borderColor: l.color } : undefined}>
-          <BmpText font="BeijingSSK 16 outlined" text={l.text} height={18} spacing={-1} />
+          <BmpText font="beijing-16-out" text={l.text} height={18} spacing={-1} />
         </div>
       ))}
-      <div class="bstat-line"><BmpText font="BeijingSSK 16 outlined" text={s.battle} height={18} spacing={-1} /></div>
+      <div class="bstat-line"><BmpText font="beijing-16-out" text={s.battle} height={18} spacing={-1} /></div>
     </div>
   );
 }
@@ -280,7 +276,7 @@ function TurnBanner() {
 
 // A single bitmap-font line inside a black side box.
 function LcdLine({ text, title }: { text: string; title?: boolean }) {
-  return <BmpText class="lcd-line" font={title ? 'Trebuchet MS 9 bold' : 'Microsoft Sans Serif 12'} text={text} tint={title ? '#ffffff' : '#d7e4d7'} />;
+  return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={3} />;
 }
 function WeaponDetails() {
   const w = weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];

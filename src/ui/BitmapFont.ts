@@ -117,9 +117,40 @@ export class BitmapFont {
   }
 }
 
-const registry = new Map<string, BitmapFont>();
-export function getFont(name: string): BitmapFont {
-  let f = registry.get(name);
-  if (!f) { f = new BitmapFont(`/assets/fonts/${name}.bmp`); registry.set(name, f); }
+// ---------------------------------------------------------------------------
+// Font catalog. Short, memorable ids → the real `.bmp` filename under
+// public/assets/fonts. Everything that draws bitmap text (`<BmpText>`, the tank
+// badge labels) takes a `FontId`, so only fonts that actually exist can be
+// referenced: a typo is a compile error, never a silent blank render. Add a new
+// font by dropping its `.bmp` in the fonts folder and adding one line here.
+export const FONTS = {
+  'arial-14':           'Arial 14',
+  'arial-14-out':       'Arial 14 outlined',
+  'arial-black-16-out': 'Arial Black 16 outlined',
+  'bazouk-28':          'BazoukSSK 28 bold outlined',
+  'beijing-16':         'BeijingSSK 16',
+  'beijing-16-out':     'BeijingSSK 16 outlined',
+  'beijing-20':         'BeijingSSK 20',
+  'beijing-20-out':     'BeijingSSK 20 outlined',
+  'msans-12':           'Microsoft Sans Serif 12',
+  'msans-14':           'Microsoft Sans Serif 14',
+  'msans-18':           'Microsoft Sans Serif 18',
+  'trebuchet-9':        'Trebuchet MS 9 bold',
+  'trebuchet-18':       'Trebuchet MS 18',
+  'silkscreen-8':       'UPF Silkscreen ReMix 8',
+  'silkscreen-8-black': 'UPF Silkscreen ReMix 8 black',
+  'silkscreen-8-out':   'UPF Silkscreen ReMix 8 outlined',
+  'silkscreen-8-white': 'UPF Silkscreen ReMix 8 white',
+  'verdana-10-out':     'Verdana 10 bold outlined',
+  'fire':               'fire',
+} as const;
+
+/** The only strings any caller may pass as a font — the keys of FONTS. */
+export type FontId = keyof typeof FONTS;
+
+const registry = new Map<FontId, BitmapFont>();
+export function getFont(id: FontId): BitmapFont {
+  let f = registry.get(id);
+  if (!f) { f = new BitmapFont(`/assets/fonts/${FONTS[id]}.bmp`); registry.set(id, f); }
   return f;
 }

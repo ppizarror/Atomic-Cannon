@@ -1,26 +1,61 @@
 /**
  * Weapons Depot — the buy/sell screen. Shown above the battle HUD (via the
- * `showDepot` signal), styled to match the original: a brushed-metal panel with
- * a sortable Qty / Name / Type / Power / Cost table, green affordability rows,
- * a green tooltip (the `zeon` UI kit) describing the weapon under the cursor, and
- * Buy / Sell / Auto Buy / Stats / Close controls over a Credits readout.
+ * `showDepot` signal), styled to match the original: a brushed-metal panel, the
+ * game's own bitmap fonts, a sortable Qty / Name / Type / Power / Cost table with
+ * green affordability rows, a green tooltip (the `zeon` UI kit) describing the
+ * weapon under the cursor, and Buy / Sell / Auto Buy / Stats / Close controls
+ * (the metal button art) over a Credits readout.
  */
 import { useEffect, useMemo, useState } from 'preact/hooks';
+import { BmpText } from './BmpText';
 import {
-  showDepot, credits, ownedCounts, mapName, weaponIndex,
+  showDepot, credits, ownedCounts, playerName, weaponIndex,
   closeDepot, depotBuy, depotSell, depotAutoBuy, loadWeaponIcon, loadUiBmp, game, uiClick,
 } from './store';
 import { WEAPON_DATABASE, type WeaponDef } from '../core/CWeapon';
 
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
-// The depot's "Power" column. NOTE: in the original this is a derived figure that
-// exceeds raw damage for some weapons (nukes/organics count their fallout, etc.);
-// pending the exact formula we show base damage.
-function powerOf(w: WeaponDef): number { return w.damage; }
+// The game's bitmap fonts — catalog ids (see FONTS in BitmapFont.ts).
+const TITLE_FONT = 'bazouk-28';       // native white+outline
+const TABLE_FONT = 'beijing-16-out';  // table header + rows: native white + baked outline
+const ROW_FONT = 'msans-14';
+const SMALL_FONT = 'msans-12';
+const BIG_FONT = 'msans-18';
+const SUB_FONT = 'arial-14-out';      // header subtitle: native white + baked outline
+const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native outline)
+
+// The depot's "Power" figure. In the original it's derived at weapon-load rather
+// than stored: base damage × the effective projectile count (cluster submunitions
+// dominate), plus a flat +200 for the big fallout weapons (nukes / DOT / organics),
+// and just the raw stat for utilities (a heal/move amount). This reproduces the
+// confirmed values (Plutonium Nuke 650, Toxic Cow 700, Shell 50, Rocket 100); the
+// exact per-field multiplier set isn't fully recovered, so it's an approximation.
+const POWER_BONUS_TYPES = new Set(['NUKE', 'DOT', 'Organic']);
+function powerOf(w: WeaponDef): number {
+  if (w.type === 'Utility') return w.damage;
+  let count = 1;
+  if (w.cluRecurse === 1) count = w.cluNum || 1;
+  else if (w.cluRecurse > 1 && (w.cluNum ?? 0) > 0) count = Math.pow(w.cluNum, w.cluRecurse);
+  else if ((w.spread ?? 0) > 0) count = w.spread + 1;
+  let power = count * w.damage;
+  if (POWER_BONUS_TYPES.has(String(w.type))) power += 200;
+  return Math.round(power);
+}
 
 const UNLIMITED = Number.POSITIVE_INFINITY;
-const fmtQty = (n: number) => (n === UNLIMITED ? '∞' : n > 0 ? String(n) : '0');
+
+// Word-wrap a description into lines of ~`max` chars (BmpText draws one line each).
+function wrap(text: string, max: number): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    if (line && (line.length + 1 + word.length) > max) { out.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) out.push(line);
+  return out;
+}
 
 // ---- small leaf pieces ------------------------------------------------------
 function WeaponIcon({ name }: { name: string }) {
@@ -37,18 +72,59 @@ function SortArrow({ dir }: { dir: 1 | -1 }) {
     loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`).then(u => { if (ok && u) setSrc(u); });
     return () => { ok = false; };
   }, [dir]);
-  return <img class="dep-sort" src={src} alt="" />;
+  // Keep a fixed-size placeholder while the bitmap loads so nothing reflows and no
+  // broken-image glyph shows.
+  return src ? <img class="dep-sort" src={src} alt="" /> : <span class="dep-sort" />;
 }
 
-// Green weapon tooltip (the `zeon` dialog art) — name + description, floating just
-// below-right of the cursor with a small upward pointer.
-function Tooltip({ w, x, y }: { w: WeaponDef; x: number; y: number }) {
+// A sortable column header. Defined at MODULE scope (not inside DepotPanel) so it
+// keeps a stable component identity across re-renders — otherwise every mouse-move
+// (which repositions the tooltip) would remount the header and blank the sort arrow.
+function Header({ k, label, cls, activeKey, dir, onSort }: {
+  k: SortKey; label: string; cls?: string; activeKey: SortKey; dir: 1 | -1; onSort: (k: SortKey) => void;
+}) {
   return (
-    <div class="dep-tooltip" style={{ left: `${x + 16}px`, top: `${y + 18}px` }}>
-      <div class="dep-tt-arrow" />
-      <div class="dep-tt-name">{w.name}</div>
-      <div class="dep-tt-desc">{w.desc || 'No description.'}</div>
+    <button class={`dep-th ${cls ?? ''}`} onClick={() => onSort(k)}>
+      <BmpText font={TABLE_FONT} text={label} spacing={-1} />
+      {activeKey === k && <SortArrow dir={dir} />}
+    </button>
+  );
+}
+
+// Green weapon tooltip (the `zeon` dialog look) — the real dialog.bmp frame (a
+// 9-slice, grey corners keyed out) with a tt-arrow-down pointer, floating ABOVE
+// the cursor so the arrow points down at the hovered row.
+function Tooltip({ w, x, y }: { w: WeaponDef; x: number; y: number }) {
+  const lines = wrap(w.desc || 'No description available.', 34);
+  const [frame, setFrame] = useState('');
+  const [arrow, setArrow] = useState('');
+  useEffect(() => {
+    let ok = true;
+    loadUiBmp('gui/zeon/dialog.bmp', 'grey').then(u => { if (ok && u) setFrame(u); });
+    loadUiBmp('gui/zeon/tt arrow down.bmp', 'green').then(u => { if (ok && u) setArrow(u); });
+    return () => { ok = false; };
+  }, []);
+  // 9-slice the 33x33 dialog: ~9px corners, `fill` keeps the green centre.
+  const frameStyle = frame
+    ? { borderImageSource: `url(${frame})`, borderImageSlice: '9 fill', borderImageWidth: '9px' }
+    : undefined;
+  return (
+    <div class="dep-tooltip" style={{ left: `${x + 12}px`, top: `${y - 14}px`, ...frameStyle }}>
+      <BmpText font={ROW_FONT} text={w.name} tint="#06210a" />
+      <div class="dep-tt-desc">
+        {lines.map((l, i) => <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c" />)}
+      </div>
+      {arrow && <img class="dep-tt-arrow" src={arrow} alt="" />}
     </div>
+  );
+}
+
+// A metal action button (the game's button art) with a bitmap-font label.
+function DepBtn({ label, onClick, disabled, span }: { label: string; onClick: () => void; disabled?: boolean; span?: boolean }) {
+  return (
+    <button class={`dep-btn${span ? ' span' : ''}`} disabled={disabled} onClick={onClick}>
+      <BmpText font={ROW_FONT} text={label} tint={disabled ? '#5b5f64' : '#14171a'} />
+    </button>
   );
 }
 
@@ -65,8 +141,7 @@ export function DepotPanel() {
   const owned = ownedCounts.value;
   const creds = credits.value;
 
-  // The catalog, sorted by the active column. Kept stable per (sort, owned) so the
-  // list isn't rebuilt on every hover.
+  // The catalog, sorted by the active column. Rebuilt only when sort/owned change.
   const rows = useMemo(() => {
     const val = (w: WeaponDef): number | string => {
       switch (sort.key) {
@@ -93,48 +168,48 @@ export function DepotPanel() {
   const selectRow = (i: number) => { uiClick(); setSel(i); game().selectWeapon(i); };
 
   const selW = WEAPON_DATABASE[sel];
-  const canBuy = selW && !(owned[sel] === UNLIMITED) && creds >= selW.cost;
-  const canSell = selW && !(owned[sel] === UNLIMITED) && (owned[sel] ?? 0) > 0;
-
-  const Header = ({ k, label, cls }: { k: SortKey; label: string; cls?: string }) => (
-    <button class={`dep-th ${cls ?? ''}`} onClick={() => clickHeader(k)}>
-      {label}{sort.key === k && <SortArrow dir={sort.dir} />}
-    </button>
-  );
+  const canBuy = !!selW && owned[sel] !== UNLIMITED && creds >= selW.cost;
+  const canSell = !!selW && owned[sel] !== UNLIMITED && (owned[sel] ?? 0) > 0;
 
   return (
     <div class="dep-overlay" onClick={closeDepot}>
       <div class="dep-card" onClick={e => e.stopPropagation()}>
         <div class="dep-head">
-          <div class="dep-title">WEAPONS DEPOT</div>
-          <div class="dep-sub">CLICK A WEAPON FOR ITS DESCRIPTION</div>
+          <BmpText font={TITLE_FONT} text="WEAPONS DEPOT" />
+          <div class="dep-sub"><BmpText font={SUB_FONT} text="CLICK ICON FOR DESCRIPTIONS" spacing={-1} /></div>
         </div>
 
         <div class="dep-cols">
-          <Header k="qty" label="Qty" cls="c-qty" />
-          <Header k="name" label="Name" cls="c-name" />
-          <Header k="type" label="Type" cls="c-type" />
-          <Header k="power" label="Power" cls="c-num" />
-          <Header k="cost" label="Cost" cls="c-num" />
+          <Header k="qty" label="Qty" cls="c-qty" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="name" label="Name" cls="c-name" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="type" label="Type" cls="c-type" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="power" label="Power" cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="cost" label="Cost" cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
         </div>
 
         <div class="dep-list" onMouseMove={e => setPos({ x: e.clientX, y: e.clientY })}>
           {rows.map(w => {
             const q = owned[w.index] ?? 0;
+            const isSel = w.index === sel;
             const affordable = q === UNLIMITED || creds >= w.cost;
+            // Table cells use the outlined font at native colour — its baked
+            // white+black outline stays legible on every row state (green afford,
+            // red broke, grey selected), so no per-state tint is applied.
             return (
               <div
                 key={w.index}
-                class={`dep-row${w.index === sel ? ' sel' : ''}${affordable ? ' afford' : ' broke'}`}
+                class={`dep-row${isSel ? ' sel' : ''}${affordable ? ' afford' : ' broke'}`}
                 onClick={() => selectRow(w.index)}
                 onMouseEnter={() => setHover(w.index)}
                 onMouseLeave={() => setHover(h => (h === w.index ? null : h))}
               >
-                <span class="c-qty">{fmtQty(q)}</span>
-                <span class="c-name"><WeaponIcon name={w.name} /><span class="dep-nm">{w.name}</span></span>
-                <span class="c-type">{w.type}</span>
-                <span class="c-num">{powerOf(w)}</span>
-                <span class="c-num">{w.cost}</span>
+                <span class="c-qty">
+                  {q === UNLIMITED ? <span class="dep-inf">∞</span> : <BmpText font={TABLE_FONT} text={String(q)} spacing={-1} />}
+                </span>
+                <span class="c-name"><WeaponIcon name={w.name} /><BmpText font={TABLE_FONT} text={w.name} spacing={-1} /></span>
+                <span class="c-type"><BmpText font={TABLE_FONT} text={String(w.type)} spacing={-1} /></span>
+                <span class="c-num"><BmpText font={TABLE_FONT} text={String(powerOf(w))} spacing={-1} /></span>
+                <span class="c-num"><BmpText font={TABLE_FONT} text={String(w.cost)} spacing={-1} /></span>
               </div>
             );
           })}
@@ -143,31 +218,39 @@ export function DepotPanel() {
         {hover !== null && WEAPON_DATABASE[hover] && <Tooltip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y} />}
         {showStats && selW && (
           <div class="dep-stats" onClick={() => setShowStats(false)}>
-            <div class="dep-tt-name">{selW.name}</div>
+            <BmpText font={BIG_FONT} text={selW.name} tint="#14171a" />
             <div class="dep-stat-grid">
-              <span>Type</span><span>{selW.type}</span>
-              <span>Damage</span><span>{selW.damage}</span>
-              <span>Radius</span><span>{selW.radius}</span>
-              <span>Variance</span><span>{(selW.variance ?? 0).toFixed(1)}</span>
-              <span>Cluster</span><span>{selW.cluNum > 0 ? selW.cluNum : '—'}</span>
-              <span>Cost</span><span>${selW.cost}</span>
-              <span>Owned</span><span>{fmtQty(owned[sel] ?? 0)}</span>
+              {([['Type', selW.type], ['Damage', selW.damage], ['Radius', selW.radius],
+                 ['Variance', (selW.variance ?? 0).toFixed(1)], ['Cluster', selW.cluNum > 0 ? selW.cluNum : '-'],
+                 ['Cost', `$${selW.cost}`], ['Owned', owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)]] as const)
+                .map(([k, v]) => (
+                  <div class="dep-stat-row" key={k}>
+                    <BmpText font={ROW_FONT} text={String(k)} tint="#14171a" />
+                    <BmpText font={ROW_FONT} text={String(v)} tint="#14171a" />
+                  </div>
+                ))}
             </div>
-            <div class="dep-hint">click to close</div>
+            <div class="dep-hint"><BmpText font={SMALL_FONT} text="click to close" tint="#3a3f45" /></div>
           </div>
         )}
 
         <div class="dep-foot">
           <div class="dep-money">
-            <div class="dep-map">{mapName.value}</div>
-            <div class="dep-credits">Credits {creds}</div>
+            <div class="dep-map"><BmpText font={STATUS_FONT} text={playerName.value} spacing={-1} /></div>
+            <div class="dep-credits"><BmpText font={STATUS_FONT} text={`Credits ${creds}`} spacing={-1} /></div>
           </div>
           <div class="dep-btns">
-            <button class="dep-btn" disabled={!canBuy} onClick={() => depotBuy(sel)}>Buy</button>
-            <button class="dep-btn" disabled={!canSell} onClick={() => depotSell(sel)}>Sell</button>
-            <button class="dep-btn wide" onClick={depotAutoBuy}>Auto Buy</button>
-            <button class="dep-btn" onClick={() => { uiClick(); setShowStats(s => !s); }}>Stats</button>
-            <button class="dep-btn" onClick={closeDepot}>Close</button>
+            {/* Left cluster: Buy | Sell on top, Auto Buy spanning both beneath. */}
+            <div class="dep-btn-col left">
+              <DepBtn label="Buy" disabled={!canBuy} onClick={() => depotBuy(sel)} />
+              <DepBtn label="Sell" disabled={!canSell} onClick={() => depotSell(sel)} />
+              <DepBtn label="Auto Buy" span onClick={depotAutoBuy} />
+            </div>
+            {/* Right cluster: Stats over Close. */}
+            <div class="dep-btn-col right">
+              <DepBtn label="Stats" onClick={() => { uiClick(); setShowStats(s => !s); }} />
+              <DepBtn label="Close" onClick={closeDepot} />
+            </div>
           </div>
         </div>
       </div>
