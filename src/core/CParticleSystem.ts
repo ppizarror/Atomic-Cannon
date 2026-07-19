@@ -190,13 +190,13 @@ export class CParticleSystem {
     const r = Math.max(12, radiusPx);
     const big = expType === 4 || nuclear;   // expType 4 = the nuke white-out
 
-    // The expanding fireball uses the WEAPON'S own explosion flare (expBitmap);
-    // falls back to the generic sprite if that weapon has none.
-    this.spawnExplosion(x, y, r * (big ? 3.0 : 1.9), big ? 0.7 : 0.5, expBitmap ? `fx:${expBitmap}` : 'fx:explosion');
-
-    // A hot flash marks the detonation instant; expType-4/nuclear rounds white
-    // out the screen (brief), others keep their weapon tint so the colour reads.
-    this.spawnFlash(x, y, r * (big ? 3.4 : 1.6), big ? { r: 255, g: 255, b: 255 } : toward255(c, 0.4), big ? 0.34 : 0.22);
+    // Phase 1 — a moderate central fireball (the weapon's own expBitmap flare)
+    // and a hot flash. The full-screen white-out is the DOM overlay; the firework
+    // blobs (below) carry the bulk of the visual, so this core stays contained.
+    // Big + BRIEF core so it's a prominent phase-1 blob but fades before phase 2,
+    // letting the (longer-lived) firework blobs read clearly.
+    this.spawnExplosion(x, y, r * (big ? 2.2 : 1.6), big ? 0.35 : 0.5, expBitmap ? `fx:${expBitmap}` : 'fx:explosion');
+    this.spawnFlash(x, y, r * (big ? 2.4 : 1.6), big ? { r: 255, g: 255, b: 255 } : toward255(c, 0.4), big ? 0.3 : 0.22);
 
     if (preset) {
       this.emitPreset(x, y, r, preset);
@@ -206,9 +206,53 @@ export class CParticleSystem {
       this.emitRadial(x, y, ring * 2, 25, 110, 0.5,  1.1, r * 0.11 + 2, c, 'flare');
     }
 
+    // Phase 2 — the firework: the weapon's OWN explosion flare sprite rendered
+    // many times as scattered blobs radiating out (nuke=flares/00 white puffs,
+    // excavator=flares/03 green rings, …). Plus, for big blasts, a circular ejecta ring.
+    const flareSpr = expBitmap ? `fx:${expBitmap}` : 'fx:explosion';
+    this.emitGasBlobs(x, y, r, Math.round(r * 0.7) + 14, flareSpr);
+    if (big) this.emitEjectaRing(x, y, r);
+
     this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc'); // sparks
     this.emitFireLine(x, y, r * 0.8, c);
     this.emitSmokeColumn(x, y, Math.round(r * 0.4) + (nuclear ? 24 : 8), r * 0.5); // lingering smoke
+  }
+
+  /**
+   * Phase-2 firework: scatter many instances of the weapon's explosion flare
+   * SPRITE radiating outward — the cloudy blob burst (each blob is one flare, so
+   * its shape/colour is the weapon's own: nuke puffs, excavator green rings, …).
+   */
+  private emitGasBlobs(x: number, y: number, r: number, count: number, spr: string): void {
+    const white: RGB = { r: 255, g: 255, b: 248 };   // procedural fallback tint only
+    for (let i = 0; i < count; i++) {
+      const a = rnd() * Math.PI * 2;
+      const sp = between(160, 540);                    // fly out fast, clear of the core
+      const d0 = rnd() * rnd() * r * 0.35;            // some near the core, some flung out
+      this.add(
+        x + Math.cos(a) * d0, y + Math.sin(a) * d0,
+        Math.cos(a) * sp, Math.sin(a) * sp - between(20, 90),   // slight upward bias (mushroom)
+        white, between(0.6, 1.35), between(2.5, 5.5), 'plume', spr,   // small distinct puffs
+      );
+    }
+  }
+
+  /**
+   * Phase-2 circular ejecta: a fast, near-uniform ring of dirt launched radially
+   * outward so it reads as an expanding shockwave shell around the crater.
+   */
+  private emitEjectaRing(x: number, y: number, r: number): void {
+    const n = Math.round(r * 2.2) + 30;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + between(-0.05, 0.05);   // evenly around the circle
+      const sp = between(280, 380);                              // narrow band → a clean shell
+      const g = 60 + Math.floor(rnd() * 80);
+      this.add(
+        x, y,
+        Math.cos(a) * sp, Math.sin(a) * sp * 0.55 - between(30, 120),   // out and slightly up
+        { r: g, g: g >> 1, b: g >> 3 }, between(0.45, 0.9), between(1.5, 3), 'disc',
+      );
+    }
   }
 
   /**

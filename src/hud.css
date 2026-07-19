@@ -100,3 +100,13 @@ img, canvas { -webkit-user-drag: none; user-select: none; }
 .screen-overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.72); }
 .screen-card { background: linear-gradient(#9aa0a8, #626870); border: 2px solid #3a3f45; border-radius: 10px; padding: 30px 44px; text-align: center; color: #14171a; box-shadow: 0 6px 20px rgba(0,0,0,0.6); }
 .screen-card h1 { margin-bottom: 8px; } .screen-card p { margin-bottom: 18px; color: #2a2f34; }
+
+/* Full-viewport white-out for big blasts (nuke phase 1) — above everything. */
+.screen-flash {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  z-index: 9999;
+  will-change: opacity;
+}

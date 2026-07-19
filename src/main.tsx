@@ -52,7 +52,7 @@ async function main(): Promise<void> {
 
   // Keyboard shortcuts (the on-screen controls live in the Preact HUD).
   document.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyP') { e.preventDefault(); paused = !paused; return; }
+    if (e.code === 'KeyP') { e.preventDefault(); paused = !paused; gameController.setPaused(paused); return; }
     if (!canFire.value) return;
     switch (e.code) {
       case 'Space': e.preventDefault(); gameController.fire(); break;

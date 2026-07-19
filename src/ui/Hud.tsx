@@ -181,20 +181,7 @@ function ControlPanel() {
   );
 }
 
-// ---- status bar / banner / side LCDs ---------------------------------------
-function StatusBar() {
-  return (
-    <div id="status-bar">
-      <div class="player-info" style={{ color: teamColor.value }}>{playerName.value}</div>
-      <div class="player-info tank-health">
-        <span>Life:</span>
-        <div class="health-bar"><div class="health-fill life-fill" style={{ width: `${life.value / 10}%` }} /></div>
-        <span>Shield:</span>
-        <div class="health-bar"><div class="health-fill shield-fill" style={{ width: `${shield.value / 10}%` }} /></div>
-      </div>
-    </div>
-  );
-}
+// ---- turn banner / side LCDs -----------------------------------------------
 function TurnBanner() {
   const [show, setShow] = useState(false);
   const name = playerName.value;
@@ -242,7 +229,6 @@ function PlayerStats() {
 export function Hud() {
   return (
     <>
-      <StatusBar />
       <TurnBanner />
       <div id="hud">
         <WeaponDetails />

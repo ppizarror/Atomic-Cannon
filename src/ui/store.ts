@@ -23,6 +23,7 @@ export const life = signal(1000);
 export const shield = signal(0);
 export const canFire = signal(false);
 export const winner = signal('');
+export const screenFlash = signal(0);   // full-viewport white-out intensity (0..1)
 
 export const weapons = signal<WeaponDef[]>([]);
 
@@ -69,6 +70,7 @@ export function syncHud(): void {
   shield.value = Math.max(0, Math.round(h.nShield));
   canFire.value = c.isPlayerTurn();
   winner.value = c.getWinnerName();
+  screenFlash.value = c.getScreenFlash();
 }
 
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------

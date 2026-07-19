@@ -47,6 +47,7 @@ export class CAudio {
   private m_sfx: CSoundManager;
   private m_music: CMusicPlayer;
   private m_unlocked = false;
+  private m_suspended = false;   // suspended by a game pause (distinct from the autoplay lock)
 
   constructor() {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -77,10 +78,30 @@ export class CAudio {
   async unlock(): Promise<void> {
     if (this.m_unlocked) return;
     this.m_unlocked = true;
-    if (this.m_ctx.state === 'suspended') { try { await this.m_ctx.resume(); } catch { /* ignore */ } }
+    // Don't wake the context if the game is paused (e.g. the very first gesture is
+    // the pause key) — resume() is the only thing that clears a game suspend.
+    if (!this.m_suspended && this.m_ctx.state === 'suspended') { try { await this.m_ctx.resume(); } catch { /* ignore */ } }
   }
 
   isUnlocked(): boolean { return this.m_unlocked; }
+
+  // ── Pause (freeze/restore all audio through the shared context) ──────────────
+
+  /**
+   * Freeze all audio for a game pause. Suspending the shared AudioContext halts
+   * every SFX voice, looping sounds AND the music worklet in one shot (the graph
+   * clock stops), so nothing needs to know it was paused to come back cleanly.
+   */
+  async suspend(): Promise<void> {
+    this.m_suspended = true;
+    if (this.m_ctx.state === 'running') { try { await this.m_ctx.suspend(); } catch { /* ignore */ } }
+  }
+
+  /** Resume audio after a game pause (no-op until the autoplay lock is cleared). */
+  async resume(): Promise<void> {
+    this.m_suspended = false;
+    if (this.m_unlocked && this.m_ctx.state === 'suspended') { try { await this.m_ctx.resume(); } catch { /* ignore */ } }
+  }
 
   /** Preload the combat effect set (fire-and-forget). */
   preloadCombat(): void { void this.m_sfx.preload(COMBAT_PRELOAD); }

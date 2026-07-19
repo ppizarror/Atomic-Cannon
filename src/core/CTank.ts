@@ -8,6 +8,10 @@ import { Vec2, Vec2f } from '../math/Vec2';
 import { CLand } from './CLand';
 import { getFont } from '../ui/BitmapFont';
 
+// Tank-badge text font — small pixel font rendered at NATIVE size (10px) so it
+// stays crisp and matches the original's compact label size.
+const BADGE_FONT = 'UPF Silkscreen ReMix 8 white';
+
 // Render text with one of the game's bitmap fonts (cached). Returns null until the
 // font has loaded, so callers can fall back to a canvas font that first frame.
 const labelCache = new Map<string, HTMLCanvasElement>();
@@ -506,18 +510,21 @@ export class CTank {
             return y + BH + 2;
         };
 
-        // Draw a bitmap-font line centred at cx; falls back to a canvas font.
-        const line = (text: string, y: number, tint: string, px: number): number => {
-            const lab = bmpLabel('Microsoft Sans Serif 12', text, tint);
+        // Draw a bitmap-font stat line centred at cx, at NATIVE size (1:1 — never
+        // downscaled, or the 1-bit glyphs go jaggy) over a dark strip for contrast.
+        const line = (text: string, y: number): number => {
+            const lab = bmpLabel(BADGE_FONT, text, '#ffffff');
             if (lab) {
-                const s = px / lab.height, lw = lab.width * s;
+                const lx = Math.round(cx - lab.width / 2), ly = Math.round(y);
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(lx - 1, ly - 1, lab.width + 2, lab.height + 2);
                 ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(lab, Math.round(cx - lw / 2), Math.round(y), Math.round(lw), px);
-            } else {
-                ctx.fillStyle = tint; ctx.font = `${px}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-                ctx.fillText(text, cx, y);
+                ctx.drawImage(lab, lx, ly);
+                return y + lab.height + 1;
             }
-            return y + px + 1;
+            ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText(text, cx, y);
+            return y + 12;
         };
 
         // The badge sits UNDER the tank (like the original), stacked downward.
@@ -531,13 +538,15 @@ export class CTank {
             y += 3;
         }
 
-        // --- name box (team colour @ 50% + solid outline), with a shield icon ---
+        // --- name box (team colour @ 50% + solid outline), with a shield icon.
+        // Name rendered at NATIVE bitmap-font size (crisp) ---
         const name = this.m_sName || '—';
-        const lab = bmpLabel('Microsoft Sans Serif 12', name, '#ffffff');
-        const nameH = 10;
-        const nameW = lab ? lab.width * (nameH / lab.height) : name.length * 6;
+        const lab = bmpLabel(BADGE_FONT, name, '#ffffff');
+        const nameH = lab ? lab.height : 12;
+        const nameW = lab ? lab.width : name.length * 6;
         const icon = shield > 0 ? (assets?.getSprite('gui/shield') ?? null) : null;
-        const iconW = icon ? Math.round(icon.width * (nameH / icon.height)) : 0;
+        const iconH = nameH;
+        const iconW = icon ? Math.round(icon.width * (iconH / icon.height)) : 0;
         const pad = 3, gap = icon ? 2 : 0;
         const bw = Math.round(pad * 2 + iconW + gap + nameW);
         const bh = nameH + 4;
@@ -547,27 +556,26 @@ export class CTank {
         ctx.strokeStyle = team; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
 
         let contentX = bx + pad;
+        ctx.imageSmoothingEnabled = false;
         if (icon) {
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(icon.bitmap, contentX, by + (bh - nameH) / 2, iconW, nameH);
+            ctx.drawImage(icon.bitmap, contentX, Math.round(by + (bh - iconH) / 2), iconW, iconH);
             contentX += iconW + gap;
         }
         if (lab) {
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(lab, contentX, by + (bh - nameH) / 2, nameW, nameH);
+            ctx.drawImage(lab, Math.round(contentX), Math.round(by + (bh - nameH) / 2));   // native 1:1
         } else {
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
             ctx.fillText(name, contentX, by + bh / 2);
         }
         y = by + bh + 1;
 
         // --- full stat lines (on hover), below the name box ---
         if (showDetail) {
-            y = line(`Team ${this.m_nTeamId + 1}`, y, '#ffffff', 9);
-            y = line(`Life ${Math.round(this.m_health.nLife)}`, y, '#ffffff', 9);
-            if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y, '#ffffff', 9);
-            if (this.m_health.nShield > 0) y = line(`Shield ${Math.round(this.m_health.nShield)}`, y, '#ffffff', 9);
-            y = line(`Credits ${this.m_credits}`, y, '#ffffff', 9);
+            y = line(`Team ${this.m_nTeamId + 1}`, y);
+            y = line(`Life ${Math.round(this.m_health.nLife)}`, y);
+            if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y);
+            if (this.m_health.nShield > 0) y = line(`Shield ${Math.round(this.m_health.nShield)}`, y);
+            y = line(`Credits ${this.m_credits}`, y);
         }
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }

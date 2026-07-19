@@ -5,8 +5,15 @@
  * Battle HUD is built; menu / settings / depot are scaffolded here so they slot
  * in as components without touching the game or the canvas.
  */
-import { screen } from './store';
+import { screen, screenFlash } from './store';
 import { Hud } from './Hud';
+
+/** Full-viewport white-out for big blasts — sits above everything, incl. the HUD. */
+function ScreenFlash() {
+  const a = screenFlash.value;
+  if (a <= 0.001) return null;
+  return <div class="screen-flash" style={{ opacity: a }} />;
+}
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -20,7 +27,7 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-export function App() {
+function CurrentScreen() {
   switch (screen.value) {
     case 'battle': return <Hud />;
     case 'menu': return <Placeholder title="Atomic Cannon" />;
@@ -28,4 +35,13 @@ export function App() {
     case 'depot': return <Placeholder title="Weapons Depot" />;
     default: return <Hud />;
   }
+}
+
+export function App() {
+  return (
+    <>
+      <CurrentScreen />
+      <ScreenFlash />
+    </>
+  );
 }

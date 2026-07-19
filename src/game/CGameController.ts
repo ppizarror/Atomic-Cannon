@@ -231,8 +231,46 @@ export class CGameController implements ShotWorld {
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
+    if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.22);
     this.updateMoveSound();
+
+    // Fire any due deferred actions (bot turns, turn hand-off). These run off the
+    // sim clock — not wall-clock timers — so they freeze with the rest of the game
+    // while paused (update() is skipped) instead of firing behind the pause.
+    this.runTimers();
   }
+
+  /**
+   * Schedule `fn` to run after `sec` of *simulation* time. Because it's driven by
+   * update() (which is skipped while paused), the callback is naturally deferred
+   * across a pause rather than firing on the wall clock. Replaces setTimeout for
+   * all game-flow delays so pause actually freezes the flow.
+   */
+  private schedule(sec: number, fn: () => void): void {
+    this.m_timers.push({ at: this.m_time + sec, fn });
+  }
+
+  /** Run (and drop) every scheduled action whose sim-time has arrived. */
+  private runTimers(): void {
+    if (this.m_timers.length === 0) return;
+    const due = this.m_timers.filter(t => this.m_time >= t.at);
+    if (due.length === 0) return;
+    this.m_timers = this.m_timers.filter(t => this.m_time < t.at);
+    for (const t of due) t.fn();
+  }
+
+  /**
+   * Pause/resume the whole game. The sim clock (update) stops in the loop; this
+   * also freezes/restores audio so music and SFX don't play on behind the pause.
+   */
+  setPaused(paused: boolean): void {
+    if (paused === this.m_paused) return;
+    this.m_paused = paused;
+    if (paused) void this.m_audio?.suspend();
+    else void this.m_audio?.resume();
+  }
+
+  isPaused(): boolean { return this.m_paused; }
 
   /**
    * Drive the looping `tank moving.wav` from tank motion state (RE: the movement
@@ -596,7 +634,7 @@ export class CGameController implements ShotWorld {
       // short beat so the explosion is visible.
       this.m_shots = [];
       this.m_gameState = EGameState.Battle;
-      setTimeout(() => this.endTurn(), 600);
+      this.schedule(0.6, () => this.endTurn());
     }
   }
   
@@ -608,9 +646,17 @@ export class CGameController implements ShotWorld {
   get tanks(): CTank[] { return this.m_tanks; }
   spawnShot(shot: CShot): void { this.m_shots.push(shot); }
   explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear = false, blastPreset?: string, expType = 0, expBitmap?: string): void {
-    if (color !== undefined && radiusPx !== undefined) this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
-    else this.m_particles.explode(x, y, scale);
+    if (color !== undefined && radiusPx !== undefined) {
+      this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
+      // Phase 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
+      // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
+      if (expType === 4 || nuclear) this.flashScreen(1);
+      else if ((radiusPx ?? 0) >= 45) this.flashScreen(0.4);
+    } else this.m_particles.explode(x, y, scale);
   }
+  /** Trigger the full-viewport white-out (0..1); read by the HUD as an overlay. */
+  flashScreen(intensity: number): void { this.m_screenFlash = Math.max(this.m_screenFlash, intensity); }
+  getScreenFlash(): number { return this.m_screenFlash; }
   shake(mag: number, dur: number): void { this.m_screenShake.trigger(mag, dur); }
   hitSound(name: string, x: number): void { this.m_audio?.hit(name, x); }
   ripple(x: number, y: number, strength: number): void { this.m_onImpact?.(x, y, strength); }
@@ -713,7 +759,7 @@ export class CGameController implements ShotWorld {
     this.m_turnStartPower = this.m_power;
 
     if (tank.isBot()) {
-      setTimeout(() => this.executeBotTurn(), 700);
+      this.schedule(0.7, () => this.executeBotTurn());
     }
   }
 
@@ -761,7 +807,7 @@ export class CGameController implements ShotWorld {
     // Utility items apply an effect to the firing tank instead of launching a shot.
     if (this.applyUtility(tank, weapon, ext)) {
       this.m_gameState = EGameState.Battle;
-      setTimeout(() => this.endTurn(), 400);
+      this.schedule(0.4, () => this.endTurn());
       return;
     }
 
@@ -954,7 +1000,7 @@ export class CGameController implements ShotWorld {
 
     // Execute fire after a brief "thinking" delay. The turn ends automatically
     // once the shot resolves (updateShotInFlight → endTurn).
-    setTimeout(() => this.fire(), 800);
+    this.schedule(0.8, () => this.fire());
   }
 
 
@@ -1082,8 +1128,15 @@ export class CGameController implements ShotWorld {
   private m_sentries: { x: number; y: number; owner: CTank | null; weaponIndex: number }[] = [];
   private m_aimMarkers: { x: number; y: number }[] = [];
 
-  // Free-running clock for animated indicators (bouncing turn triangle).
+  // Free-running clock for animated indicators (bouncing turn triangle) — also
+  // the timebase for scheduled game-flow actions (see m_timers), so both freeze
+  // together while paused.
   private m_time: number = 0;
+  private m_screenFlash: number = 0;   // full-viewport white-out intensity (0..1), decays each frame
+  // Deferred sim-clock actions (bot turns, turn hand-off): {at: sim-time due, fn}.
+  private m_timers: { at: number; fn: () => void }[] = [];
+  // Whole-game pause: freezes the sim clock (update is skipped) and audio.
+  private m_paused: boolean = false;
   // Live drag-aim state: the world-space target the player is dragging toward.
   private m_aim: { active: boolean; tx: number; ty: number } = { active: false, tx: 0, ty: 0 };
   // Last known mouse position in world coords (for hover-detail on tank badges).
