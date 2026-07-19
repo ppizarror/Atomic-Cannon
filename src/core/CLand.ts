@@ -42,7 +42,7 @@ interface RadSpeck {
   life: number;
   settled: boolean;
   size: number;
-  rise: number;                       // depth BELOW the surface once settled (embedded in the soil, +down)
+  rise: number;                       // height ABOVE the surface once settled (position within the fallout pile)
   r: number; g: number; b: number;   // tint (from the weapon's irRGB, per zone)
 }
 
@@ -73,6 +73,7 @@ export class CLand {
     this.m_particles = [];
     this.m_radParticles = [];
     this.m_degrass = new Uint8Array(width);
+    this.m_radDeposit = new Float32Array(width);
   }
   
   initFromArray(heights: Int16Array, scaleX: number = 1, scaleY: number = 1): void {
@@ -131,6 +132,9 @@ export class CLand {
   private generateProfile(mode: number): void {
     const W = this.m_nWidth;
     this.m_degrass?.fill(0);       // fresh terrain: grass everywhere again
+    this.m_radDeposit?.fill(0);    // clear any old fallout pile
+    this.m_radSpecks.length = 0;
+    this.m_radParticles.length = 0;
     const A = 15;                                   // walk amplitude (obj +0x4c)
     const Ymin = Math.floor(this.m_nHeight * 0.30); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -263,6 +267,13 @@ export class CLand {
     this.m_dirtyMin = 0;
     this.m_dirtyMax = this.m_nWidth - 1;
     this.m_terrainDirty = true;
+    // Snapshot the fresh, undisturbed surface as the crater-cavity ceiling. Only
+    // called on terrain (re)generation, so this captures the pristine profile.
+    if (this.m_arrHeights) {
+      if (!this.m_baseHeights || this.m_baseHeights.length !== this.m_nWidth)
+        this.m_baseHeights = new Int16Array(this.m_nWidth);
+      this.m_baseHeights.set(this.m_arrHeights);
+    }
   }
 
   blastEllipse(x: number, y: number, nRadiusX: number, nRadiusY: number): void {
@@ -305,6 +316,8 @@ export class CLand {
       // Screen-Y down: raising = smaller Y. Mound sits on top of whatever is lower.
       const top = Math.min(this.m_arrHeights[dx], y) - lift;
       this.m_arrHeights[dx] = Math.max(0, Math.floor(top));
+      // A raised mound is solid new terrain — lift the cavity ceiling with it.
+      if (this.m_baseHeights) this.m_baseHeights[dx] = Math.min(this.m_baseHeights[dx], this.m_arrHeights[dx]);
     }
 
     this.preBlast(x - nRadius, x + nRadius);
@@ -340,10 +353,25 @@ export class CLand {
       r, g, b,
     });
 
-    // Visual: a cloud of glowing specks thrown out of the crater. They fall,
-    // settle on the surface, and glow tinted by irRGB fading over irTime — so the
-    // zone conforms to the ground instead of floating (port of FUN_004a6c20).
-    const n = Math.max(80, Math.min(3600, Math.round(nRadius * 22)));
+    // Build the accumulated fallout PILE profile — a grounded deposit thickest over
+    // the bowl centre, thinning up the walls to the rim. This gives the radiation
+    // real HEIGHT (the original's fallout piles INTO the crater), not a thin surface
+    // skin. The specks fill this pile; the solid dirt band renders to its height.
+    if (this.m_radDeposit) {
+      const pileMax = Math.min(nRadius * 0.45, 85);
+      const px0 = Math.max(0, Math.floor(x - nRadius)), px1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
+      for (let col = px0; col <= px1; col++) {
+        const edge = 1 - Math.abs(col - x) / nRadius;    // 1 centre → 0 rim
+        if (edge <= 0) continue;
+        const target = pileMax * Math.pow(edge, 0.55);   // gentle falloff → walls stay thick
+        if (target > this.m_radDeposit[col]) this.m_radDeposit[col] = target;
+      }
+    }
+
+    // Visual: a cloud of glowing specks thrown out of the crater. They fall, settle,
+    // and scatter THROUGH the pile (granular texture) tinted by irRGB fading over
+    // irTime — so the zone conforms to the ground, not floating (port of FUN_004a6c20).
+    const n = Math.max(120, Math.min(6000, Math.round(nRadius * 30)));
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
       const dist = this.rand01() * nRadius;              // stays within the crater zone
@@ -363,7 +391,7 @@ export class CLand {
         r, g, b,
       });
     }
-    if (this.m_radSpecks.length > 4000) this.m_radSpecks.splice(0, this.m_radSpecks.length - 4000);
+    if (this.m_radSpecks.length > 7000) this.m_radSpecks.splice(0, this.m_radSpecks.length - 7000);
   }
   
   /**
@@ -468,6 +496,7 @@ export class CLand {
         this.m_particles.splice(i, 1);
         const dcol = Math.min(this.m_nWidth - 1, Math.max(0, col + ((Math.random() * 5) | 0) - 2));
         this.m_arrHeights[dcol] = Math.max(0, this.m_arrHeights[dcol] - 1);
+        if (this.m_baseHeights) this.m_baseHeights[dcol] = Math.min(this.m_baseHeights[dcol], this.m_arrHeights[dcol]);
         this.preBlast(dcol - 1, dcol + 1);
         // Let the slump smooth this area over the next few seconds.
         this.m_slumpTimer = 3;
@@ -512,17 +541,20 @@ export class CLand {
         if (s.vy > 0 && s.y >= this.getHeightAt(col)) {
           s.settled = true;
           s.vx = s.vy = 0;
-          // Bury the speck a few px INTO the soil (RE: settles ON surface[col], never
-          // a floating glow). A small rand²-biased depth keeps them hugging the ground
-          // so the fallout reads as irradiated dirt embedded in the crater, not hovering.
-          const rnd = this.rand01();
-          s.rise = rnd * rnd * 4;                        // 0..4 px below the surface
-          s.y = this.getHeightAt(col) + s.rise;
+          // Scatter the grain THROUGH the fallout pile at this column: from a few px
+          // in the soil (grounded base) up to the pile top, biased low so the crown
+          // thins out. rise = height ABOVE the surface (the grain's pile position).
+          const pile = this.m_radDeposit ? this.m_radDeposit[col] : 0;
+          const u = this.rand01();
+          // Keep grains WITHIN the solid band (max 0.92·pile) so none poke above it
+          // into the sky as isolated floaters; bias low so the crown thins out.
+          s.rise = pile * (u * u * 0.92) - this.rand01() * 2;   // -2..0.92·pile, denser near the base
+          s.y = this.getHeightAt(col) - s.rise;
         }
       } else {
         // Keep clinging to the surface as craters below it change the height.
         const col = Math.floor(s.x);
-        if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col) + s.rise;
+        if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col) - s.rise;
       }
     }
   }
@@ -744,11 +776,12 @@ export class CLand {
           const edge = 1 - Math.abs(col - z.x) / rr;
           if (edge <= 0) continue;
           const sy = this.getHeightAt(col);
-          ctx.fillStyle = `rgba(${dr},${dg},${db},${fade * (0.5 + edge * 0.45)})`;   // opaque enough to hide grass
-          ctx.fillRect(col, sy - 2, 1, 5 + Math.round(edge * 12));   // into the ground
+          const pile = this.m_radDeposit ? Math.round(this.m_radDeposit[col]) : 0;   // pile height above surface
+          ctx.fillStyle = `rgba(${dr},${dg},${db},${fade * (0.55 + edge * 0.4)})`;   // opaque enough to hide grass
+          ctx.fillRect(col, sy - pile, 1, pile + 5);   // from the pile top down into the ground
         }
       }
-      // Pass B — additive GLOW band on top of the dirt.
+      // Pass B — additive GLOW over the whole pile.
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
       for (const z of this.m_radParticles) {
@@ -761,10 +794,10 @@ export class CLand {
           const edge = 1 - Math.abs(col - z.x) / rr;       // 1 at centre → 0 at the rim
           if (edge <= 0) continue;
           const sy = this.getHeightAt(col);
-          const a = fade * (0.16 + edge * 0.4) * (0.5 + 0.5 * life);
-          const h = 4 + Math.round(edge * 12);
+          const pile = this.m_radDeposit ? Math.round(this.m_radDeposit[col]) : 0;
+          const a = fade * (0.13 + edge * 0.3) * (0.5 + 0.5 * life);
           ctx.fillStyle = `rgba(${z.r},${z.g},${z.b},${a})`;
-          ctx.fillRect(col, sy - 2, 1, h);
+          ctx.fillRect(col, sy - pile, 1, pile + 4);
         }
       }
       ctx.globalCompositeOperation = prevOp;
@@ -811,6 +844,9 @@ export class CLand {
   private m_nWidth: number = 800;
   private m_nHeight: number = 600;
   private m_arrHeights: Int16Array | null = null;
+  // Undisturbed surface (highest ground ever, incl. raised mounds). Craters expose
+  // the cavity between this and the current lowered surface — we fill it with dirt.
+  private m_baseHeights: Int16Array | null = null;
   
   private m_dirtyMin: number = -1;
   private m_dirtyMax: number = -1;
@@ -820,6 +856,7 @@ export class CLand {
   private m_radSpecks: RadSpeck[] = [];
   private m_scorches: Scorch[] = [];
   private m_degrass: Uint8Array | null = null;   // per-column: 1 = grass torn off by a blast
+  private m_radDeposit: Float32Array | null = null;   // per-column: accumulated fallout PILE height (px above surface)
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
   private m_slumpTimer: number = 0;
   private m_slumpX0: number = 1e9;

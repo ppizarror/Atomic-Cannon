@@ -250,8 +250,10 @@ function BattleStatus() {
   // ACTIVE tank's line is boxed in its team colour.
   return (
     <div id="battle-status">
-      {s.lines.map(l => (
-        <div key={l.text} class={`bstat-line${l.active ? ' active' : ''}${l.dead ? ' dead' : ''}`}
+      {s.lines.map((l, i) => (
+        // Key by slot, NOT by text — keying on the text remounts the line (and its
+        // canvas) on every life change, which flashes an undrawn canvas. Redraw in place.
+        <div key={i} class={`bstat-line${l.active ? ' active' : ''}${l.dead ? ' dead' : ''}`}
           style={l.active ? { background: l.color + '66', borderColor: l.color } : undefined}>
           <BmpText font="BeijingSSK 16 outlined" text={l.text} height={18} spacing={-1} />
         </div>
