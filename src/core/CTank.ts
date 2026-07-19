@@ -592,28 +592,24 @@ export class CTank {
     }
 
     /**
-     * Aim the turret from a UI angle in degrees, where 0 = horizontal-right,
-     * 90 = straight up, 180 = horizontal-left. Stored internally as a signed
-     * elevation: sign selects side (+right / -left), magnitude is elevation
-     * above the horizon (0..90 deg).
+     * Aim the turret from a UI angle in degrees measured counter-clockwise from
+     * horizontal-right: 0 = right, 90 = straight up, 180 = left, and NEGATIVE
+     * values point below the horizon (e.g. -45 = down-right). Stored directly as
+     * that angle in radians — a single full-circle value, so any direction
+     * (including below-horizon aim) is representable.
      */
     setTurretAngle(fDegrees: number): void {
         this.m_fLastTurretAngle = this.m_fTurretAngle;
-
-        const clamped = Math.max(0, Math.min(180, fDegrees));
-        const signedElevationDeg = clamped <= 90 ? clamped : -(180 - clamped);
-        this.m_fTurretAngle = (signedElevationDeg * Math.PI) / 180;
+        this.m_fTurretAngle = (fDegrees * Math.PI) / 180;
     }
 
     /**
      * Unit vector the barrel points along, matching the projectile launch
-     * direction: up is negative-Y.
+     * direction. Screen-Y is down, so up = negative-Y: (cos θ, -sin θ) for all θ.
      */
     aimUnit(): Vec2 {
         const r = this.m_fTurretAngle;
-        return r >= 0
-            ? new Vec2(Math.cos(r), -Math.sin(r))     // right side
-            : new Vec2(-Math.cos(r), Math.sin(r));    // left side
+        return new Vec2(Math.cos(r), -Math.sin(r));
     }
 
     /**
@@ -686,6 +682,12 @@ export class CTank {
     // into another's turn.
     getWeaponIndex(): number { return this.m_weaponIndex; }
     setWeaponIndex(i: number): void { this.m_weaponIndex = i; }
+    // Likewise, each tank keeps its OWN aim (UI angle in degrees, 0..180) and
+    // power (10..1000) so they persist across turns and never leak between players.
+    getAimAngle(): number { return this.m_aimAngle; }
+    setAimAngle(deg: number): void { this.m_aimAngle = deg; }
+    getPower(): number { return this.m_power; }
+    setPower(p: number): void { this.m_power = p; }
     getCredits(): number { return this.m_credits; }
     setCredits(n: number): void { this.m_credits = n; }
     getTeamColor(): string { return TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'; }
@@ -745,6 +747,8 @@ export class CTank {
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
     private m_credits: number = 0;      // Economy credits (shown in the detail badge)
     private m_weaponIndex: number = 0;  // This tank's own selected weapon
+    private m_aimAngle: number = 45;    // This tank's own aim (UI degrees, 0..180)
+    private m_power: number = 500;      // This tank's own firing power (10..1000)
     private m_bIsHuman: boolean = false; // True for the human-controlled tank
     private m_sTankType: string = 'Standard'; // Hull sprite variant
     
