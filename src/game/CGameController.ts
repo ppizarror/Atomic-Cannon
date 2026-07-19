@@ -197,7 +197,13 @@ export class CGameController implements ShotWorld {
       })
       .filter((x): x is { image: CanvasImageSource; depth: number } => x !== null);
 
-    this.m_land.setLayers(layers);
+    // Bare-earth texture for de-grassed crater columns: the first stratum whose
+    // tile is NOT grass (fallback: the deepest layer). Prevents craters from being
+    // repainted with grass on landscapes whose second layer is itself a grass tile.
+    const bareTile = cfg.layers.find(l => !/grass/i.test(l.tile)) ?? cfg.layers[cfg.layers.length - 1];
+    const bareImage = bareTile ? this.m_assets.getSprite('tile:' + bareTile.tile)?.bitmap : undefined;
+
+    this.m_land.setLayers(layers, bareImage);
   }
 
 

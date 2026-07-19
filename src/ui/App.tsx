@@ -5,8 +5,9 @@
  * Battle HUD is built; menu / settings / depot are scaffolded here so they slot
  * in as components without touching the game or the canvas.
  */
-import { screen, screenFlash, screenFlashColor } from './store';
+import { screen, screenFlash, screenFlashColor, flying, jetFuel } from './store';
 import { Hud } from './Hud';
+import { SettingsPanel } from './SettingsPanel';
 
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
@@ -30,6 +31,17 @@ function ScreenFlash() {
       class="screen-flash"
       style={{ background: `rgb(${mix(cr)},${mix(cg)},${mix(cb)})`, opacity: Math.min(1, a * 1.15) }}
     />
+  );
+}
+
+// Jet-flight indicator: shows remaining fuel + controls while the human flies.
+function FlightHud() {
+  if (!flying.value) return null;
+  return (
+    <div class="flight-hud">
+      <div class="flight-fuel">JET FUEL {jetFuel.value.toFixed(1)}s</div>
+      <div class="flight-hint">◀ ▲ ▶ / A W D to fly · Space to cut engine</div>
+    </div>
   );
 }
 
@@ -59,6 +71,8 @@ export function App() {
   return (
     <>
       <CurrentScreen />
+      <SettingsPanel />
+      <FlightHud />
       <ScreenFlash />
     </>
   );

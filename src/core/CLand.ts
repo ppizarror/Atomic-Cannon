@@ -24,6 +24,7 @@ interface RadParticle {
   radius: number;
   damagePerSecond: number;
   timeRemaining: number;
+  duration: number;      // original irTime (for the visual fade)
   r: number;
   g: number;
   b: number;
@@ -41,6 +42,7 @@ interface RadSpeck {
   life: number;
   settled: boolean;
   size: number;
+  rise: number;                       // depth BELOW the surface once settled (embedded in the soil, +down)
   r: number; g: number; b: number;   // tint (from the weapon's irRGB, per zone)
 }
 
@@ -319,41 +321,73 @@ export class CLand {
     // Nukes/DOT ship no explicit irRGB → glow a hot radioactive red-orange.
     const [r, g, b] = rgb && (rgb[0] || rgb[1] || rgb[2]) ? rgb : [255, 46, 20];
 
-    // Gameplay damage zone (queried against tanks each frame).
+    // The irradiated ground turns to bare DIRT (grass stripped) so the fallout
+    // reads as radiated earth, not green grass with a red tint over it.
+    if (this.m_degrass) {
+      const gx0 = Math.max(0, Math.floor(x - nRadius)), gx1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
+      for (let col = gx0; col <= gx1; col++) this.m_degrass[col] = 1;
+      this.m_terrainDirty = true;
+    }
+
+    // Gameplay damage zone (queried against tanks each frame) — also drives the
+    // solid glowing band painted along the surface.
     this.m_radParticles.push({
       x, y,
       radius: nRadius,
       damagePerSecond: fDamagePerSecond,
       timeRemaining: fDurationSeconds,
+      duration: fDurationSeconds,
       r, g, b,
     });
 
     // Visual: a cloud of glowing specks thrown out of the crater. They fall,
     // settle on the surface, and glow tinted by irRGB fading over irTime — so the
     // zone conforms to the ground instead of floating (port of FUN_004a6c20).
-    const n = Math.max(60, Math.min(2800, Math.round(nRadius * 16)));
+    const n = Math.max(80, Math.min(3600, Math.round(nRadius * 22)));
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
-      const dist = this.rand01() * nRadius * 1.3;        // spread wider than the crater
-      const speed = 60 + this.rand01() * 240;            // thrown farther → bigger zone
+      const dist = this.rand01() * nRadius;              // stays within the crater zone
+      // Thrown mostly UP and a little out, so specks rain back down INSIDE the
+      // crater rather than flying onto the surrounding ridges.
+      const speed = 30 + this.rand01() * 110;
       this.m_radSpecks.push({
         x: x + Math.cos(ang) * dist,
         y: y + Math.sin(ang) * dist * 0.5,           // start near the surface line
-        vx: Math.cos(ang) * speed,
-        vy: Math.sin(ang) * speed - (60 + this.rand01() * 120), // thrown up and out
+        vx: Math.cos(ang) * speed * 0.6,
+        vy: Math.sin(ang) * speed * 0.5 - (70 + this.rand01() * 150), // up-biased
         age: 0,
         life: fDurationSeconds * (0.85 + this.rand01() * 0.15),   // lasts most of irTime
         settled: false,
         size: 1.6 + this.rand01() * 2,
+        rise: 0,
         r, g, b,
       });
     }
-    if (this.m_radSpecks.length > 2500) this.m_radSpecks.splice(0, this.m_radSpecks.length - 2500);
+    if (this.m_radSpecks.length > 4000) this.m_radSpecks.splice(0, this.m_radSpecks.length - 4000);
   }
   
+  /**
+   * One erosion pass over [x0,x1] (port of the original's per-frame slump
+   * `FUN_004a51d0`): where two adjacent columns differ by more than the angle of
+   * repose, move 1px of dirt from the taller column to the lower one. Repeated,
+   * this melts the thin spikes debris stacks up into smooth mounds.
+   */
+  private slump(x0: number, x1: number): void {
+    const h = this.m_arrHeights;
+    if (!h) return;
+    const THRESH = 6;   // adjacent columns may differ by up to this before dirt slides
+    const a = Math.max(1, Math.floor(x0)), b = Math.min(this.m_nWidth - 2, Math.floor(x1));
+    for (let x = a; x <= b; x++) {
+      const diff = h[x + 1] - h[x];   // >0: column x is TALLER (smaller screen-Y)
+      if (diff >= THRESH) { h[x]++; h[x + 1]--; }
+      else if (diff <= -THRESH) { h[x]--; h[x + 1]++; }
+    }
+    if (b >= a) this.preBlast(a, b + 1);
+  }
+
   smoothy(): void {
     if (!this.m_arrHeights) return;
-    
+
     const smoothed = new Int16Array(this.m_nWidth);
     const kernelSize = 5;
     const halfKernel = Math.floor(kernelSize / 2);
@@ -386,12 +420,15 @@ export class CLand {
       // Dirt brown (R=v, G≈v/2, B≈0), occasionally a darker clod for texture.
       let v = 24 + Math.floor(Math.random() * 116);       // [24,139]
       if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark chunks
-      const speed = 40 + Math.random() * 300;             // wide → some fly far, some fill the bowl
+      // Launch speed scales with the blast radius so a small weapon's debris stays
+      // near the crater instead of raining across the whole map.
+      const speed = 30 + Math.random() * (radius * 2.4);
+      const up = radius * (0.3 + Math.random() * 1.3);
       const p: LandParticle = {
         x: x + (Math.random() * 2 - 1) * radius,
         y: y + (Math.random() * 2 - 1) * radius * 0.4,
         vx: Math.cos(ang) * speed,
-        vy: Math.sin(ang) * speed * 0.7 - (40 + Math.random() * 190),  // varied up-and-out
+        vy: Math.sin(ang) * speed * 0.7 - up,             // varied up-and-out, scaled to the blast
         color: `rgb(${v},${v >> 1},${v >> 3})`,
         size: Math.random() < 0.82 ? 1 : 2,               // mostly 1px → many fine chunks
         spin: 0,
@@ -425,12 +462,29 @@ export class CLand {
       if (col < 0 || col >= this.m_nWidth) { this.m_particles.splice(i, 1); continue; }
 
       // A chunk settles when it reaches the surface (only on the way down) and
-      // deposits — raising that column by 1px, like the original's debris.
+      // deposits — raising a column by 1px. The landing column is jittered ±2 (as
+      // the original does) so chunks spread instead of stacking into a thin spike.
       if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
         this.m_particles.splice(i, 1);
-        this.m_arrHeights[col] = Math.max(0, this.m_arrHeights[col] - 1);
-        this.preBlast(col - 1, col + 1);
+        const dcol = Math.min(this.m_nWidth - 1, Math.max(0, col + ((Math.random() * 5) | 0) - 2));
+        this.m_arrHeights[dcol] = Math.max(0, this.m_arrHeights[dcol] - 1);
+        this.preBlast(dcol - 1, dcol + 1);
+        // Let the slump smooth this area over the next few seconds.
+        this.m_slumpTimer = 3;
+        this.m_slumpX0 = Math.min(this.m_slumpX0, dcol - 3);
+        this.m_slumpX1 = Math.max(this.m_slumpX1, dcol + 3);
       }
+    }
+
+    // Terrain slump (avalanche): where adjacent columns differ by more than the
+    // repose threshold, move 1px of dirt from the taller to the lower — this
+    // erodes the thin spikes debris would otherwise stack up, matching the
+    // original's per-frame slump. Scoped to the recently-disturbed span (+timer)
+    // so it never erodes the natural mountains elsewhere.
+    if (this.m_slumpTimer > 0 && this.m_arrHeights) {
+      for (let pass = 0; pass < 2; pass++) this.slump(this.m_slumpX0, this.m_slumpX1);
+      this.m_slumpTimer -= dt;
+      if (this.m_slumpTimer <= 0) { this.m_slumpX0 = this.m_nWidth; this.m_slumpX1 = 0; }
     }
     
     for (let i = this.m_radParticles.length - 1; i >= 0; i--) {
@@ -456,14 +510,19 @@ export class CLand {
         const col = Math.floor(s.x);
         if (col < 0 || col >= this.m_nWidth) { this.m_radSpecks.splice(i, 1); continue; }
         if (s.vy > 0 && s.y >= this.getHeightAt(col)) {
-          s.y = this.getHeightAt(col);
           s.settled = true;
           s.vx = s.vy = 0;
+          // Bury the speck a few px INTO the soil (RE: settles ON surface[col], never
+          // a floating glow). A small rand²-biased depth keeps them hugging the ground
+          // so the fallout reads as irradiated dirt embedded in the crater, not hovering.
+          const rnd = this.rand01();
+          s.rise = rnd * rnd * 4;                        // 0..4 px below the surface
+          s.y = this.getHeightAt(col) + s.rise;
         }
       } else {
         // Keep clinging to the surface as craters below it change the height.
         const col = Math.floor(s.x);
-        if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col);
+        if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col) + s.rise;
       }
     }
   }
@@ -520,13 +579,17 @@ export class CLand {
    * Set the depth-sorted texture layers (from land.txt): the smallest depth is
    * the surface cap, larger depths are deeper strata. Rebuilds the cached bitmap.
    */
-  setLayers(layers: { image: CanvasImageSource; depth: number }[]): void {
+  setLayers(layers: { image: CanvasImageSource; depth: number }[], bareImage?: CanvasImageSource): void {
     // land.txt depths are authored for the original ~480px play area; scale them
     // to our (taller) terrain so the strata bands stay proportional.
     const scale = this.m_nHeight / 480;
     this.m_layers = layers
       .map(l => ({ image: l.image, depth: Math.round(l.depth * scale) }))
       .sort((a, b) => a.depth - b.depth);
+    // Guaranteed-bare (non-grass) earth texture used to repaint de-grassed crater
+    // columns. Fall back to the deepest stratum (always sub-surface, never the cap).
+    this.m_bareImage = bareImage ?? this.m_layers[this.m_layers.length - 1]?.image ?? null;
+    this.m_barePattern = null;
     this.m_patterns = [];
     this.m_terrainDirty = true;
   }
@@ -601,11 +664,16 @@ export class CLand {
     g.lineJoin = 'round';
     g.stroke();
 
-    // De-grassed columns: the blast tore off the green cap → paint bare dirt over
-    // it so craters read as exposed earth, not grass (destructible-bitmap parity).
+    // De-grassed columns: the blast tore off the green cap → paint bare EARTH over
+    // it so craters read as exposed dirt, not grass (destructible-bitmap parity).
+    // Uses a guaranteed non-grass texture (m_barePattern), so it never repaints
+    // grass on landscapes whose second layer is itself a grass tile.
     if (this.m_degrass && this.m_layers.length > 1) {
-      const grassDepth = (this.m_layers[0]?.depth ?? 10) + 4;
-      const dirtPat = this.m_patterns[1] ?? this.m_patterns[this.m_patterns.length - 1];
+      const grassDepth = (this.m_layers[0]?.depth ?? 10) + 6;
+      if (!this.m_barePattern && this.m_bareImage) {
+        this.m_barePattern = g.createPattern(this.m_bareImage, 'repeat');
+      }
+      const dirtPat = this.m_barePattern ?? this.m_patterns[this.m_patterns.length - 1];
       if (dirtPat) {
         g.fillStyle = dirtPat;
         for (let x = 0; x < W; x++) {
@@ -657,21 +725,74 @@ export class CLand {
       }
     }
 
-    // Radiation glow: crisp additive pixel-crosses lying on the terrain (port of
-    // the 5-px additive plus in the original — NOT a soft blob). Each speck is a
-    // glowing ember tinted by irRGB × remaining life; density makes the band read.
-    if (this.m_radSpecks.length) {
+    // Radiation: a SOLID glowing band painted along the whole surface of the zone
+    // (port of the original's `0xff0000` rim line) — this hugs the crater bowl so
+    // the fallout carpets the entire ground, not just a few specks on top. It
+    // lingers for most of irTime, fading only near the end.
+    if (this.m_radParticles.length && this.m_arrHeights) {
+      // Pass A — SOLID irradiated DIRT: paint the crater ground a strong reddish-
+      // BROWN (normal blend) so the earth itself reads as radiated dirt, covering
+      // any remaining grass — not just a faint glow over green.
+      for (const z of this.m_radParticles) {
+        const fade = Math.min(1, z.timeRemaining / 3);
+        if (fade <= 0) continue;
+        const rr = z.radius;
+        // Brown earth base biased toward the fallout hue (red for a nuke).
+        const dr = 78 + Math.round(z.r * 0.32), dg = 40 + Math.round(z.g * 0.2), db = 20 + Math.round(z.b * 0.12);
+        const x0 = Math.max(0, Math.floor(z.x - rr)), x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
+        for (let col = x0; col <= x1; col++) {
+          const edge = 1 - Math.abs(col - z.x) / rr;
+          if (edge <= 0) continue;
+          const sy = this.getHeightAt(col);
+          ctx.fillStyle = `rgba(${dr},${dg},${db},${fade * (0.5 + edge * 0.45)})`;   // opaque enough to hide grass
+          ctx.fillRect(col, sy - 2, 1, 5 + Math.round(edge * 12));   // into the ground
+        }
+      }
+      // Pass B — additive GLOW band on top of the dirt.
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
-      // Each speck is a single crisp additive square (1 draw call — cheap even at
-      // thousands of specks). Low alpha so dense clusters build a deep RED glow
-      // instead of saturating to white. Glow holds for most of its life then fades.
+      for (const z of this.m_radParticles) {
+        const life = z.timeRemaining / Math.max(0.5, z.duration);
+        const fade = Math.min(1, z.timeRemaining / 3);   // hold, fade over the last 3 s
+        if (fade <= 0) continue;
+        const rr = z.radius;
+        const x0 = Math.max(0, Math.floor(z.x - rr)), x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
+        for (let col = x0; col <= x1; col++) {
+          const edge = 1 - Math.abs(col - z.x) / rr;       // 1 at centre → 0 at the rim
+          if (edge <= 0) continue;
+          const sy = this.getHeightAt(col);
+          const a = fade * (0.16 + edge * 0.4) * (0.5 + 0.5 * life);
+          const h = 4 + Math.round(edge * 12);
+          ctx.fillStyle = `rgba(${z.r},${z.g},${z.b},${a})`;
+          ctx.fillRect(col, sy - 2, 1, h);
+        }
+      }
+      ctx.globalCompositeOperation = prevOp;
+    }
+
+    // Radiation specks = irradiated DIRT grains sitting on the ground, each a dark
+    // dirt body (grounds it — not a floating glow) with a soft red EMISSIVE glow.
+    if (this.m_radSpecks.length) {
+      const prevOp = ctx.globalCompositeOperation;
+      const TWO_PI = Math.PI * 2;
+      // Pass 1 — dark dirt bodies (normal blend) so the specks read as grounded earth.
       for (const s of this.m_radSpecks) {
         const t = s.age / s.life;
         const fade = t < 0.7 ? 1 : (1 - t) / 0.3;
         if (fade <= 0) continue;
-        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.55})`;
+        ctx.fillStyle = `rgba(28,14,8,${fade * 0.6})`;
         ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
+      }
+      // Pass 2 — the soft red emissive glow on top (additive circles).
+      ctx.globalCompositeOperation = 'lighter';
+      for (const s of this.m_radSpecks) {
+        const t = s.age / s.life;
+        const fade = t < 0.7 ? 1 : (1 - t) / 0.3;
+        if (fade <= 0) continue;
+        ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.45})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 0.9 + s.size * 0.5, 0, TWO_PI);
+        ctx.fill();
       }
       ctx.globalCompositeOperation = prevOp;
     }
@@ -699,10 +820,16 @@ export class CLand {
   private m_radSpecks: RadSpeck[] = [];
   private m_scorches: Scorch[] = [];
   private m_degrass: Uint8Array | null = null;   // per-column: 1 = grass torn off by a blast
+  // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
+  private m_slumpTimer: number = 0;
+  private m_slumpX0: number = 1e9;
+  private m_slumpX1: number = 0;
 
   // Layered textures + cached destructible-terrain bitmap.
   private m_layers: { image: CanvasImageSource; depth: number }[] = [];
   private m_patterns: (CanvasPattern | null)[] = [];
+  private m_bareImage: CanvasImageSource | null = null;   // non-grass earth for de-grassed craters
+  private m_barePattern: CanvasPattern | null = null;
   private m_terrainCanvas: HTMLCanvasElement | null = null;
   private m_terrainDirty: boolean = true;
 

@@ -38,6 +38,7 @@ async function main(): Promise<void> {
   // first user gesture per the browser autoplay policy. Wired before startGame so
   // the combat preload + battle track kick off with the round.
   const audio = new CAudio();
+  audio.loadSettings();
   audio.attachUnlock(window);
   gameController.setAudio(audio);
 
@@ -50,9 +51,28 @@ async function main(): Promise<void> {
   // The frame keeps rendering while paused (only the simulation clock stops).
   let paused = false;
 
+  // Jet-flight steering: held-key state (arrows / WASD), pushed to the controller
+  // each event. Only acts while the game is in the Flying state.
+  const thrust = { up: false, left: false, right: false };
+  const isFlying = () => gameController.getState() === 'flying';
+  const pushThrust = () => gameController.setJetInput(thrust.up, thrust.left, thrust.right);
+  const thrustKey = (code: string): 'up' | 'left' | 'right' | null =>
+    code === 'ArrowUp' || code === 'KeyW' ? 'up'
+    : code === 'ArrowLeft' || code === 'KeyA' ? 'left'
+    : code === 'ArrowRight' || code === 'KeyD' ? 'right' : null;
+
   // Keyboard shortcuts (the on-screen controls live in the Preact HUD).
   document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyP') { e.preventDefault(); paused = !paused; gameController.setPaused(paused); return; }
+
+    // While flying, arrows/WASD are thrust and Space cuts the engine (ends flight).
+    if (isFlying()) {
+      const dir = thrustKey(e.code);
+      if (dir) { e.preventDefault(); thrust[dir] = true; pushThrust(); return; }
+      if (e.code === 'Space') { e.preventDefault(); gameController.cutJet(); return; }
+      return;
+    }
+
     if (!canFire.value) return;
     switch (e.code) {
       case 'Space': e.preventDefault(); gameController.fire(); break;
@@ -62,6 +82,12 @@ async function main(): Promise<void> {
       case 'ArrowUp': gameController.setPower(Math.min(POWER_MAX, gameController.getPower() + 50)); break;
       case 'ArrowDown': gameController.setPower(Math.max(POWER_MIN, gameController.getPower() - 50)); break;
     }
+  });
+
+  // Release thrust keys (and clear all thrust when flight ends).
+  document.addEventListener('keyup', (e) => {
+    const dir = thrustKey(e.code);
+    if (dir) { thrust[dir] = false; pushThrust(); }
   });
 
   // Drag-to-aim: click in the world and drag to set angle + power; release fires.

@@ -128,7 +128,7 @@ export class CTank {
     constructor(sName: string = '', nTeamId: number = 0) {
         this.m_nId = 0;
         this.m_pPlayerData = null;
-        this.m_sName = sName.toUpperCase();   // player names are uppercase (like the original)
+        this.m_sName = sName;   // names keep their given case (upper/lower allowed)
         this.m_nTeamId = nTeamId;
         this.m_bIsHuman = false;
         // TEMP: random player hull per tank (until per-player tank selection exists in settings).
@@ -207,6 +207,52 @@ export class CTank {
         // Where the tank rests when sitting on the current terrain surface.
         const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
 
+        // Jet flight (extType 17): while fuel remains the player thrusts against
+        // gravity. Port of FUN_00460d60 / FUN_00402a00 — UP = -1.2g vertical (net
+        // -0.2g, a gentle rise), L/R = ∓0.1g horizontal; fuel drains on real dt.
+        // At empty this branch is skipped and the tank simply falls & lands below.
+        if (this.m_fJetFuel > 0) {
+            this.m_fJetFuel = Math.max(0, this.m_fJetFuel - dt);
+            const { up, left, right } = this.m_jetInput;
+            const airborne = this.m_vPos.y < fRestY - 0.5;
+
+            if (airborne || up) {
+                // Semi-implicit Euler: gravity, then thrust, then integrate.
+                this.m_vVel.y += TANK_GRAVITY * dt;
+                if (up)    this.m_vVel.y += JET_UP_ACCEL * dt;     // -1.2g
+                if (left)  this.m_vVel.x += JET_SIDE_ACCEL * dt;  // -0.1g
+                if (right) this.m_vVel.x -= JET_SIDE_ACCEL * dt;  // +0.1g
+                this.m_vPos.x += this.m_vVel.x * dt;
+                this.m_vPos.y += this.m_vVel.y * dt;
+                this.m_bFalling = true;
+                this.m_bIsMoving = true;
+
+                // Ceiling clamp at the top of the map (RE: y→8 when above it).
+                if (this.m_vPos.y < JET_CEILING) { this.m_vPos.y = JET_CEILING; if (this.m_vVel.y < 0) this.m_vVel.y = 0; }
+                this.m_vPos.x = Math.max(TANK_RADIUS, Math.min(pLand.width - TANK_RADIUS, this.m_vPos.x));
+
+                // Land when descending onto the surface (keeps fuel for re-lift).
+                const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+                if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
+                    this.m_vPos.y = fLandY;
+                    this.m_vVel = new Vec2(0, 0);
+                    this.m_bFalling = false;
+                    this.m_bIsMoving = false;
+                    const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
+                    this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);
+                }
+            } else {
+                // Grounded, engine idle: rest on the surface but keep the fuel.
+                this.m_vPos.y = fRestY;
+                this.m_vVel = new Vec2(0, 0);
+                this.m_bIsMoving = false;
+                const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
+                this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);
+            }
+            this.m_fLastTurretAngle = this.m_fTurretAngle;
+            return;
+        }
+
         // Airborne when above the surface (crater under us) or moving from a kick.
         const bKicked = Math.abs(this.m_vVel.x) > 1 || this.m_vVel.y < -1;
 
@@ -225,6 +271,7 @@ export class CTank {
                 this.m_vPos.y = fLandY;
                 this.m_vVel = new Vec2(0, 0);
                 this.m_bFalling = false;
+                this.m_bIsMoving = false;   // settled — clears the motion loop / flight exit
             }
         } else {
             // Resting on the surface: stay glued to it as the terrain deforms,
@@ -232,6 +279,7 @@ export class CTank {
             this.m_vPos.y = fRestY;
             this.m_vVel = new Vec2(0, 0);
             this.m_bFalling = false;
+            this.m_bIsMoving = false;
 
             const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
             this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);   // 0 on flat, tilts with the slope
@@ -291,6 +339,20 @@ export class CTank {
         this.m_bIsMoving = false;
         this.m_vVel = new Vec2(0, 0);
     }
+
+    // ── Jet flight (extType 17) ──────────────────────────────────────────────
+
+    /** Light the jet with `fuelSeconds` of fuel (the weapon's damage field). */
+    igniteJet(fuelSeconds: number): void { this.m_fJetFuel = Math.max(0, fuelSeconds); }
+    /** Cut the engine — drops remaining fuel (turn-end / early-out; RE: tank+0x88=0). */
+    cutJet(): void { this.m_fJetFuel = 0; this.m_jetInput = { up: false, left: false, right: false }; }
+    hasJetFuel(): boolean { return this.m_fJetFuel > 0; }
+    getJetFuel(): number { return this.m_fJetFuel; }
+    /** Held thrust input for this frame (up/left/right). */
+    setJetInput(up: boolean, left: boolean, right: boolean): void { this.m_jetInput = { up, left, right }; }
+    /** True while the up-thrust is firing with fuel — drives the jet.wav loop. */
+    isThrustingUp(): boolean { return this.m_fJetFuel > 0 && this.m_jetInput.up; }
+    isFalling(): boolean { return this.m_bFalling; }
     
     /**
      * Apply knockback to tank (from explosions)
@@ -769,9 +831,14 @@ export class CTank {
         fRadiation: 0
     };
     
+    // Jet flight (extType 17): fuel in seconds remaining, and the current held
+    // thrust input. Flying == fuel > 0 (there is no separate flag; RE: tank+0x88).
+    private m_fJetFuel: number = 0;
+    private m_jetInput = { up: false, left: false, right: false };
+
     // State flags
     public m_bIsAlive: boolean = true;
-    public m_bIsMoving: boolean = false;  
+    public m_bIsMoving: boolean = false;
     private m_bFalling: boolean = false;
     public m_bExploded: boolean = false;
     private m_bUnderground: boolean = false;
@@ -790,3 +857,9 @@ const TANK_TURRET_LENGTH = 20;          // Turret barrel length for muzzle calc
 const TANK_TURRET_HEIGHT = 15;          // Turret pivot height above the ground line
 const TANK_DRAW_WIDTH = 46;             // On-screen hull width in pixels
 const TANK_GRAVITY = 400;               // Fall acceleration when unsupported (px/s^2)
+
+// Jet thrust as multiples of gravity (RE: FUN_00460d60 force constants).
+// UP = -1.2g (net -0.2g up while held); L/R = ∓0.1g. Ceiling at the map top.
+const JET_UP_ACCEL = -1.2 * TANK_GRAVITY;
+const JET_SIDE_ACCEL = -0.1 * TANK_GRAVITY;
+const JET_CEILING = 8;

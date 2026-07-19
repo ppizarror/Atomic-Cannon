@@ -223,7 +223,6 @@ export class CParticleSystem {
 
     this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc'); // sparks
     this.emitFireLine(x, y, r * 0.8, c);
-    this.emitSmokeColumn(x, y, Math.round(r * 0.4) + (nuclear ? 24 : 8), r * 0.5); // lingering smoke
   }
 
   /**
@@ -233,14 +232,21 @@ export class CParticleSystem {
    */
   private emitGasBlobs(x: number, y: number, r: number, count: number, spr: string): void {
     const white: RGB = { r: 255, g: 255, b: 248 };   // procedural fallback tint only
+    const size = between(2, 3) + r * 0.02;           // bigger blobs for bigger blasts
+    // Centre the firework a bit DOWN into the crater bowl — the blast point is at
+    // the rim while the bowl carves below it, so this fills the whole crater.
+    const cy = y + r * 0.35;
     for (let i = 0; i < count; i++) {
       const a = rnd() * Math.PI * 2;
-      const sp = between(180, 700);                    // fly out fast + far → a bigger blast
-      const d0 = rnd() * rnd() * r * 0.4;             // some near the core, some flung out
+      // Spread to ≈1.5·r (the crater edge), only lightly centre-biased so blobs
+      // reach the rim AND the bottom of the bowl — not just a ball in the middle.
+      const life = between(0.4, 0.85);
+      const sp = (0.25 + rnd() * 0.75) * (1.5 * r / life);
+      const d0 = rnd() * r * 0.35;
       this.add(
-        x + Math.cos(a) * d0, y + Math.sin(a) * d0,
-        Math.cos(a) * sp, Math.sin(a) * sp - between(20, 90),   // slight upward bias (mushroom)
-        white, between(0.6, 1.35), between(2.5, 5.5), 'plume', spr,   // small distinct puffs
+        x + Math.cos(a) * d0, cy + Math.sin(a) * d0,
+        Math.cos(a) * sp, Math.sin(a) * sp,   // symmetric → fills DOWN into the bowl too
+        white, life, size + between(-0.5, 1), 'plume', spr,
       );
     }
   }
