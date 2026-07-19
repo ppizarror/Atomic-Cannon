@@ -27,6 +27,10 @@ export const SFX = {
   TYPING: 'typing.wav',
 } as const;
 
+// Persisted audio preferences (options-menu equivalents).
+const SETTINGS_KEY = 'atomic.audio';
+interface AudioSettings { sfxVol: number; musicVol: number; sfxOn: boolean; musicOn: boolean; }
+
 // Music policy (RE: FUN_00445160 battle-start, FUN_0047d2d0 end jingles).
 const MENU_MUSIC = 'Four Ages.it';
 const BATTLE_TRACKS = ['Into the Wild Blue Monster.it', 'Anubis Claws.it', 'Rust.it'];
@@ -38,7 +42,7 @@ const DEFEAT_MUSIC = 'Well.it';
 // event sounds plus the most common shared weapon hits.
 const COMBAT_PRELOAD = [
   SFX.TANK_EXPLODE, SFX.TANK_MOVING, SFX.JET, SFX.BATTLE_WON, SFX.BATTLE_LOST,
-  SFX.CLICK, 'fire.wav', 'cannon.wav', 'hit.wav', 'hit high.wav', 'bomb.wav',
+  SFX.CLICK, SFX.JET, 'fire.wav', 'cannon.wav', 'hit.wav', 'hit high.wav', 'bomb.wav',
 ];
 
 export class CAudio {
@@ -120,6 +124,10 @@ export class CAudio {
   updateTankMove(worldX: number): void { this.m_sfx.setLoopPan(SFX.TANK_MOVING, worldX); }
   stopTankMove(): void { this.m_sfx.stopLoop(SFX.TANK_MOVING); }
 
+  startJet(worldX?: number): void { this.m_sfx.startLoop(SFX.JET, worldX); }
+  updateJet(worldX: number): void { this.m_sfx.setLoopPan(SFX.JET, worldX); }
+  stopJet(): void { this.m_sfx.stopLoop(SFX.JET); }
+
   uiClick(): void { this.m_sfx.play(SFX.CLICK); }
 
   // ── Music ────────────────────────────────────────────────────────────────
@@ -145,8 +153,43 @@ export class CAudio {
 
   // ── Settings (options menu: SFX vol / music vol / on-off toggles) ───────────
 
-  setSfxVolume(v: number): void { this.m_sfx.setVolume(v); }
-  setMusicVolume(v: number): void { this.m_music.setVolume(v); }
-  setSfxEnabled(on: boolean): void { this.m_sfx.setEnabled(on); }
-  setMusicEnabled(on: boolean): void { this.m_music.setEnabled(on); }
+  setSfxVolume(v: number): void { this.m_sfx.setVolume(v); this.saveSettings(); }
+  setMusicVolume(v: number): void { this.m_music.setVolume(v); this.saveSettings(); }
+  setSfxEnabled(on: boolean): void { this.m_sfx.setEnabled(on); this.saveSettings(); }
+  setMusicEnabled(on: boolean): void {
+    this.m_music.setEnabled(on);
+    // Re-arm the current bed when unmuted mid-battle (setEnabled(false) stops it).
+    if (on && !this.m_music.currentTrack()) this.battleMusic();
+    this.saveSettings();
+  }
+
+  getSfxVolume(): number { return this.m_sfx.getVolume(); }
+  getMusicVolume(): number { return this.m_music.getVolume(); }
+  isSfxEnabled(): boolean { return this.m_sfx.isEnabled(); }
+  isMusicEnabled(): boolean { return this.m_music.isEnabled(); }
+
+  // ── Persistence ─────────────────────────────────────────────────────────────
+
+  /** Apply saved volume/enable settings (call once, after construction). */
+  loadSettings(): void {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw) as Partial<AudioSettings>;
+      if (typeof s.sfxVol === 'number') this.m_sfx.setVolume(s.sfxVol);
+      if (typeof s.musicVol === 'number') this.m_music.setVolume(s.musicVol);
+      if (typeof s.sfxOn === 'boolean') this.m_sfx.setEnabled(s.sfxOn);
+      if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
+    } catch { /* corrupt/absent storage — keep defaults */ }
+  }
+
+  private saveSettings(): void {
+    try {
+      const s: AudioSettings = {
+        sfxVol: this.m_sfx.getVolume(), musicVol: this.m_music.getVolume(),
+        sfxOn: this.m_sfx.isEnabled(), musicOn: this.m_music.isEnabled(),
+      };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+    } catch { /* storage unavailable (private mode) — settings just won't persist */ }
+  }
 }

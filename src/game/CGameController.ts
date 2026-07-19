@@ -25,6 +25,7 @@ export enum EGameState {
   Menu = 'menu',
   WeaponSelect = 'weaponselect', 
   Battle = 'battle',
+  Flying = 'flying',
   ShotFlying = 'shot_flying',
   Explosion = 'explosion',
   BattleEnd = 'battle_end'
@@ -212,7 +213,11 @@ export class CGameController implements ShotWorld {
       case EGameState.Battle:
         this.updateBattle(dt);
         break;
-        
+
+      case EGameState.Flying:
+        this.updateFlying(dt);
+        break;
+
       case EGameState.ShotFlying:
         this.updateShotInFlight(dt);
         break;
@@ -291,6 +296,46 @@ export class CGameController implements ShotWorld {
       this.m_audio.stopTankMove();
       this.m_tanksMoving = false;
     }
+
+    // jet.wav loops only while the up-thrust is firing (RE: local_179), layered
+    // under tank moving.wav. Stops the instant thrust releases or fuel runs out.
+    const jet = this.m_tanks.find(t => t.isAlive() && t.isThrustingUp());
+    if (jet) {
+      const x = jet.getPosition().x;
+      if (!this.m_jetSounding) { this.m_audio.startJet(x); this.m_jetSounding = true; }
+      else this.m_audio.updateJet(x);
+    } else if (this.m_jetSounding) {
+      this.m_audio.stopJet();
+      this.m_jetSounding = false;
+    }
+  }
+
+  /**
+   * Jet flight (extType 17): the active tank thrusts against gravity until its
+   * fuel runs out and it settles. Port of FUN_00460d60 — flight repositions the
+   * tank but does NOT end the turn; the player still fires afterwards. Other
+   * tanks keep falling/settling passively.
+   */
+  private updateFlying(dt: number): void {
+    const tank = this.getCurrentTank();
+    for (const t of this.m_tanks) if (t.isAlive()) t.update(this.m_land, dt);
+    this.updateMines(dt);
+    // Back to the aim phase once the jet is spent and the tank has settled.
+    if (!tank.hasJetFuel() && !tank.isMoving() && !tank.isFalling()) {
+      tank.setJetInput(false, false, false);
+      this.m_gameState = EGameState.Battle;
+    }
+  }
+
+  /** Set the flying tank's held thrust (arrow/WASD). No-op outside the Flying state. */
+  setJetInput(up: boolean, left: boolean, right: boolean): void {
+    if (this.m_gameState !== EGameState.Flying) return;
+    this.getCurrentTank().setJetInput(up, left, right);
+  }
+
+  /** Cut the jet early (drop remaining fuel); flight ends once the tank lands. */
+  cutJet(): void {
+    if (this.m_gameState === EGameState.Flying) this.getCurrentTank().cutJet();
   }
 
   // ========================================================================
@@ -819,12 +864,29 @@ export class CGameController implements ShotWorld {
     // soundFire, panned to the firing tank (RE: weapon field +0xbc, FUN_00458c20:313).
     this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
 
+    // Jet (extType 17): light the jet with fuel = damage (5s/15s) and enter the
+    // Flying state. Flight repositions the tank but does NOT end the turn — the
+    // player still fires afterwards (RE: FUN_00458c20:498). Bots don't fly, so
+    // for them it just consumes the turn.
+    if (ext === EXT.JET) {
+      if (tank.isHuman()) {
+        tank.igniteJet(weapon.getDamage());
+        this.m_gameState = EGameState.Flying;
+      } else {
+        this.m_gameState = EGameState.Battle;
+        this.schedule(0.4, () => this.endTurn());
+      }
+      return;
+    }
+
     // Utility items apply an effect to the firing tank instead of launching a shot.
     if (this.applyUtility(tank, weapon, ext)) {
       this.m_gameState = EGameState.Battle;
       this.schedule(0.4, () => this.endTurn());
       return;
     }
+
+    this.m_shotsFired++;   // a real projectile is launched (utilities don't count)
 
     // Death: a self-targeting round that drops straight down onto the firer.
     if (ext === EXT.DEATH) {
@@ -951,7 +1013,8 @@ export class CGameController implements ShotWorld {
       case 10: tank.addLife(v);   return true;          // repair
       case 11: tank.setArmor(v);  return true;          // set armor %
       case 14: return true;                             // secondary resist (no field yet) — consumes turn
-      case 3: case 15: case 17: return true;            // UNVERIFIED effect — consume turn, no-op
+      case 3: case 15: return true;                     // UNVERIFIED effect — consume turn, no-op
+      // extType 17 (jet) is handled in fire() before this — flight, not a no-op.
       default: return false;
     }
   }
@@ -1119,6 +1182,11 @@ export class CGameController implements ShotWorld {
   // ========================================================================
   
   getState(): EGameState { return this.m_gameState; }
+
+  /** True while the human is jet-flying (Flying state). */
+  isFlying(): boolean { return this.m_gameState === EGameState.Flying; }
+  /** Remaining jet fuel (seconds) of the current tank — 0 when not flying. */
+  getJetFuel(): number { return this.getCurrentTank().getJetFuel(); }
   
   isPlayerTurn(): boolean {
     return this.getCurrentTank().isHuman() && 
@@ -1142,6 +1210,7 @@ export class CGameController implements ShotWorld {
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
   private m_audio: CAudio | null = null;
   private m_tanksMoving = false;   // tracks the tank-moving loop state (RE: FUN_00460d60)
+  private m_jetSounding = false;   // tracks the jet.wav loop state
 
   // Placed entities from special weapons (Mine/Sentry) and Tracer aim markers.
   private m_mines: { x: number; y: number; owner: CTank | null; weaponIndex: number; armed: number }[] = [];
@@ -1163,6 +1232,25 @@ export class CGameController implements ShotWorld {
   // Last known mouse position in world coords (for hover-detail on tank badges).
   private m_mouse: { x: number; y: number } = { x: -1, y: -1 };
   setMouse(wx: number, wy: number): void { this.m_mouse.x = wx; this.m_mouse.y = wy; }
+
+  // Top-left status counters (RE: FUN_0048c480 "Battle %d of %d - Shot %d").
+  private m_shotsFired = 0;
+  private m_currentBattle = 1;
+  private m_totalBattles = 5;
+  getShotCount(): number { return this.m_shotsFired; }
+  getBattleNum(): number { return this.m_currentBattle; }
+  getTotalBattles(): number { return this.m_totalBattles; }
+  /** Per-tank life status for the top-left overlay ("%s: %d%% life"). */
+  getTankStatuses(): { name: string; lifePct: number; color: string; alive: boolean; active: boolean }[] {
+    const cur = this.m_tanks[this.m_currentPlayerIndex];
+    return this.m_tanks.map(t => ({
+      name: t.getName(),
+      lifePct: Math.max(0, Math.round(t.getHealth().nLife / 10)),   // 0..1000 → 0..100
+      color: t.getTeamColor(),
+      alive: t.isAlive(),
+      active: t === cur,
+    }));
+  }
   // Where the active tank sat at the start of its turn (the faded "initial" marker).
   private m_turnStartPos: Vec2 = new Vec2(0, 0);
   // The aim (angle, power) at turn start — anchors the faded "initial" target cross.

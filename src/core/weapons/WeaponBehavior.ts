@@ -17,7 +17,7 @@ import { CWeapon } from '../CWeapon';
 /** extType values (weapon+0x70). 0 and unlisted = plain ballistic. */
 export const EXT = {
   BALLISTIC: 0, DIGGER: 1, ROLLER: 2, TRACER: 4, BEAM: 5, BEAM2: 6,
-  ESCAPE: 8, REBOUND: 9, DEATH: 12, AIRBURST: 13, MINE: 16, SENTRY: 18,
+  ESCAPE: 8, REBOUND: 9, DEATH: 12, AIRBURST: 13, MINE: 16, JET: 17, SENTRY: 18,
 } as const;
 
 // Shot speed per unit power — same scaling the launch path uses.
@@ -222,9 +222,9 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks, Math.round(radiusPx * (heavy ? 1.6 : 1)));
   }
 
-  if (isPrimary) {
-    const strength = (weapon.isNuclear() ? 2.6 : 1.0) + radiusPx / 120;
-    world.ripple(pos.x, pos.y, strength);
+  // The screen refraction / shockwave warp is a NUKE-only effect in the original.
+  if (isPrimary && (weapon.isNuclear() || weapon.getExpType() === 4)) {
+    world.ripple(pos.x, pos.y, 2.6 + radiusPx / 120);
   }
 
   if (ext === EXT.TRACER) world.aimMarker(pos.x, pos.y);

@@ -12,6 +12,13 @@ export type Screen = 'menu' | 'battle' | 'settings' | 'depot';
 
 export const screen = signal<Screen>('battle');
 
+// Audio settings overlay — shown above the battle HUD without switching screens.
+export const showSettings = signal(false);
+
+// Jet flight (extType 17): live while the human is airborne, with remaining fuel.
+export const flying = signal(false);
+export const jetFuel = signal(0);
+
 // Live HUD values (updated every frame from the controller).
 export const power = signal(500);
 export const angle = signal(45);
@@ -22,11 +29,19 @@ export const teamColor = signal('#ff4444');
 export const life = signal(1000);
 export const shield = signal(0);
 export const canFire = signal(false);
+// True whenever the HUD controls should read as "held": the game is paused, or
+// it's not the human's live turn (shot in flight, explosion, a bot playing). The
+// panel greys out and stops responding while this is set.
+export const blocked = signal(true);
 export const winner = signal('');
 export const screenFlash = signal(0);   // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff');   // flash tint (the bomb's colour)
 
 export const weapons = signal<WeaponDef[]>([]);
+
+// Top-left status overlay: per-tank life lines (team-coloured) + the battle/shot
+// line — "%s: %d%% life" and "Battle %d of %d - Shot %d" (RE: FUN_0048c480).
+export const battleStatus = signal<{ lines: { text: string; color: string; dead: boolean; active: boolean }[]; battle: string }>({ lines: [], battle: '' });
 
 // Power/angle ranges (UI units). Angle is a full circle measured CCW from
 // horizontal-right and WRAPS at the ends: 0 = right, 90 = up, 180 = left,
@@ -76,10 +91,22 @@ export function syncHud(): void {
   life.value = Math.max(0, Math.round(h.nLife));
   shield.value = Math.max(0, Math.round(h.nShield));
   canFire.value = c.isPlayerTurn();
+  flying.value = c.isFlying();
+  jetFuel.value = c.getJetFuel();
+  // Held when paused or when it isn't the human's live turn (see `blocked`).
+  blocked.value = c.isPaused() || !c.isPlayerTurn();
   winner.value = c.getWinnerName();
   screenFlash.value = c.getScreenFlash();
   screenFlashColor.value = c.getScreenFlashColor();
+
+  // Top-left status text — only re-publish when it actually changes so the
+  // bitmap-font lines don't re-render every frame.
+  const lines = c.getTankStatuses().map(s => ({ text: `${s.name}: ${s.lifePct}% life`, color: s.color, dead: !s.alive, active: s.active }));
+  const battle = `Battle ${c.getBattleNum()} of ${c.getTotalBattles()} - Shot ${c.getShotCount()}`;
+  const sig = lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle;
+  if (sig !== lastBattleSig) { lastBattleSig = sig; battleStatus.value = { lines, battle }; }
 }
+let lastBattleSig = '';
 
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
 const iconCache = new Map<string, Promise<string | null>>();
