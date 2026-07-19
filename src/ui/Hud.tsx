@@ -32,7 +32,7 @@ const R = {
   fire:   [54.8, 16.5, 15, 29.5],
   buy:    [54.7, 63, 3.5, 20], reset: [60.7, 63, 3.5, 20], help: [66.5, 63, 3.5, 20],
   aleft:  [75.9, 63, 3.4, 19], aright: [84.0, 63, 3.5, 19],
-  anglen: [75.6, 48, 11, 11],          // lower-centre of the dial
+  anglen: [76.1, 49, 10, 11],          // number box, lower-centre of the dial
   close:  [94.4, 15, 3.0, 20],
   wind:   [90.6, 42.5, 7.5, 40],
 
@@ -89,12 +89,12 @@ function Needle() {
   const a = angle.value;
   return (
     <svg class="ov dial-overlay" style={pos(DIAL_BOX)} viewBox="0 0 100 100" preserveAspectRatio="none">
-      <line class="needle" x1="50" y1="50" x2="90" y2="50" transform={`rotate(${-a} 50 50)`} />
+      <line class="needle" x1="50" y1="50" x2="84" y2="50" transform={`rotate(${-a} 50 50)`} />
     </svg>
   );
 }
 function AngleReadout() {
-  return <ReadoutBox r={R.anglen}><BmpText font="Trebuchet MS 18" text={`${angle.value}`} tint={INK} /></ReadoutBox>;
+  return <ReadoutBox r={R.anglen}><BmpText font="Microsoft Sans Serif 12" text={`${angle.value}`} tint={INK} /></ReadoutBox>;
 }
 function WindReadout() {
   const w = wind.value;

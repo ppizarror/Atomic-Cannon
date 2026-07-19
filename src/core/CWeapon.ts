@@ -103,12 +103,35 @@ export class CWeapon {
   digsTerrain(): boolean { return DIGGING_TYPES.has(this.m_def.type); }
 
   // --- mechanics for CShot (Phase 3) -----------------------------------------
+  // extType (weapon+0x70) is the behaviour dispatcher — see symbols/notes/weapon_types.md.
+  getExtType(): number { return this.m_def.extType || 0; }
+
+  // Cluster: cluNum submunitions on detonation, fanning cluStart..cluEnd, at 0.5x power,
+  // re-clustering until generation reaches cluRecurse.
   getClusterCount(): number { return this.m_def.cluNum || 0; }
   getClusterSpread(): [number, number] { return [this.m_def.cluStart || 0, this.m_def.cluEnd || 0]; }
-  getClusterRecurse(): boolean { return (this.m_def.cluRecurse || 0) > 0; }
+  getClusterRecurse(): number { return this.m_def.cluRecurse || 0; }
+
+  // Battery: drop a bomblet straight down every batSec seconds while descending.
+  getBatterySeconds(): number { return this.m_def.batSec || 0; }
+
+  // Multi-fire: `spread` simultaneous fanned rounds; `spawn` sequential salvos.
+  getSpreadCount(): number { return this.m_def.spread || 0; }
   getSpawnCount(): number { return this.m_def.spawn || 1; }
   getVariance(): number { return this.m_def.variance || 0; }
-  getRadiation(): { dmg: number; time: number } { return { dmg: this.m_def.irDmg || 0, time: this.m_def.irTime || 0 }; }
+
+  // Terrain shaping: Dirt raises terrain by `earth`; digging types remove it.
+  getEarth(): number { return this.m_def.earth || 0; }
+
+  // Radiation zone (NUKE / DOT): irDmg per second for irTime seconds; irRGB tints it.
+  getRadiation(): { amount: number; dmg: number; time: number; rgb: [number, number, number] } {
+    return {
+      amount: this.m_def.iradiate || 0,
+      dmg: this.m_def.irDmg || 0,
+      time: this.m_def.irTime || 0,
+      rgb: [this.m_def.irRed || 0, this.m_def.irGreen || 0, this.m_def.irBlue || 0],
+    };
+  }
 
   // --- effects ---------------------------------------------------------------
   getBlastParticle(): string { return this.m_def.blast; }

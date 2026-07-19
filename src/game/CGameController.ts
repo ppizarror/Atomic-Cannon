@@ -15,6 +15,7 @@ import { getWeapon, WEAPON_DATABASE, getDefaultWeaponIndex, CWeapon } from '../c
 import { Vec2 } from '../math/Vec2';
 import { CExplosion, ScreenShake } from '../core/CExplosion';
 import { CAssetManager } from '../core/rendering/CAssetManager';
+import { weaponFlyStep, weaponDetonate, EXT, type ShotWorld } from '../core/weapons/WeaponBehavior';
 
 /**
  * Game state machine states
@@ -46,8 +47,8 @@ const LAND_DATA = landData as LandConfig[];
 /**
  * CGameController - Main game controller
  */
-export class CGameController {
-  
+export class CGameController implements ShotWorld {
+
   // ========================================================================
   // CONSTRUCTION & INITIALIZATION
   // ========================================================================
@@ -84,7 +85,10 @@ export class CGameController {
     // Reset state
     this.m_tanks = [];
     this.m_shots = [];
-    
+    this.m_mines = [];
+    this.m_sentries = [];
+    this.m_aimMarkers = [];
+
     // Generate terrain
     this.m_land.generateRandomTerrain();
     
@@ -237,20 +241,43 @@ export class CGameController {
       }
     }
     
-    // Draw active shots and effects
+    // Draw active shots (each tinted by its own weapon).
     for (const shot of this.m_shots) {
       if (!shot.isDead()) {
-        const weapon = getWeapon(this.m_currentWeaponIndex);
-        shot.draw(ctx, weapon.getColor());
+        const wi = shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex;
+        shot.draw(ctx, getWeapon(wi).getColor());
       }
     }
-    
+
+    this.drawPlacedEntities(ctx);
+
     // Draw explosions on top
     this.m_explosionSystem.draw(ctx);
     
     ctx.restore();
   }
 
+
+  /** Mines, sentries and tracer markers placed on the field. */
+  private drawPlacedEntities(ctx: CanvasRenderingContext2D): void {
+    for (const m of this.m_mines) {
+      ctx.fillStyle = m.armed > 0 ? '#886600' : '#ffcc00';
+      ctx.beginPath(); ctx.arc(m.x, m.y - 2, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.fillRect(m.x - 5, m.y - 1, 10, 2);
+    }
+    for (const s of this.m_sentries) {
+      ctx.fillStyle = '#9aa';
+      ctx.fillRect(s.x - 5, s.y - 10, 10, 10);
+      ctx.fillRect(s.x, s.y - 8, 12, 3);
+    }
+    for (const mk of this.m_aimMarkers) {
+      ctx.strokeStyle = 'rgba(255,80,80,0.8)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(mk.x - 6, mk.y); ctx.lineTo(mk.x + 6, mk.y);
+      ctx.moveTo(mk.x, mk.y - 6); ctx.lineTo(mk.x, mk.y + 6);
+      ctx.stroke();
+    }
+  }
 
   /**
    * Background stars for atmosphere
@@ -307,6 +334,8 @@ export class CGameController {
    * Update during battle state (waiting for player input)
    */
   private updateBattle(dt: number): void {
+    this.updateMines(dt);
+
     // Update tanks on terrain (for falling/movement animations)
     for (const tank of this.m_tanks) {
       if (tank.isAlive()) {
@@ -343,24 +372,14 @@ export class CGameController {
     
     for (const shot of activeShots) {
       shot.update(dt, this.m_wind);
-      
-      // Check terrain collision
-      if (shot.checkTerrainCollision(this.m_land)) {
-        this.handleShotImpact(shot);
-        continue;
-      }
-      
-      // Check tank collisions
-      for (const tank of this.m_tanks) {
-        if (!tank.isAlive()) continue;
-        if (shot.checkTankCollision(tank)) {
-          // Direct hit on a tank.
-          this.handleShotImpact(shot);
-          break;
-        }
-      }
+
+      // Per-frame behaviour dispatch (extType): roller/digger/airburst/beam/…
+      const weapon = getWeapon(shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex);
+      const action = weaponFlyStep(shot, weapon, this, dt);
+      if (action === 'detonate') weaponDetonate(shot, weapon, this);
+      else if (action === 'consumed') shot.kill();
     }
-    
+
     // Include submunitions spawned this frame, so a cluster keeps the round in
     // flight until every child has landed.
     const stillFlying = this.m_shots.some(s => !s.isDead());
@@ -375,102 +394,64 @@ export class CGameController {
     }
   }
   
-  /**
-   * Handle shot impact at current position
-   */
-  private handleShotImpact(shot: CShot): void {
-    const pos = shot.getPosition();
-    const isPrimary = shot.getGeneration() === 0;   // player's shot vs a submunition
+  // ========================================================================
+  // ShotWorld — the surface the weapon behaviours (WeaponBehavior.ts) act on
+  // ========================================================================
 
-    shot.m_bIsDead = true;
+  get land(): CLand { return this.m_land; }
+  get tanks(): CTank[] { return this.m_tanks; }
+  spawnShot(shot: CShot): void { this.m_shots.push(shot); }
+  explode(x: number, y: number, scale: number): void { this.m_explosionSystem.createExplosion(x, y, scale); }
+  shake(mag: number, dur: number): void { this.m_screenShake.trigger(mag, dur); }
+  ripple(x: number, y: number, strength: number): void { this.m_onImpact?.(x, y, strength); }
+  aimMarker(x: number, y: number): void { this.m_aimMarkers.push({ x, y }); }
+  deployMine(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
+    // Arms after a short delay so it doesn't trigger on the tank that laid it.
+    this.m_mines.push({ x, y, owner, weaponIndex, armed: 0.6 });
+  }
+  deploySentry(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
+    // TODO: auto-firing turret each turn. For now the sentry is a static placed marker.
+    this.m_sentries.push({ x, y, owner, weaponIndex });
+  }
 
-    // The weapon that fired this shot (submunitions inherit it).
-    const weapon = getWeapon(shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex);
-
-    this.m_explosionSystem.createExplosion(pos.x, pos.y, isPrimary ? 1.5 : 0.9);
-    this.m_screenShake.trigger(isPrimary ? 8 : 3, 0.3);
-    this.m_land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), shot.getRadius());
-    this.m_land.addShowerParticles(Math.floor(pos.x), Math.floor(this.m_land.getHeightAt(Math.floor(pos.x))), 10);
-
-    // Ripple the whole scene — only for the primary impact, to avoid warp spam
-    // when a cluster of submunitions all land at once.
-    if (isPrimary) {
-      const waveStrength = (weapon.isNuclear() ? 2.6 : 1.0) + shot.getRadius() / 120;
-      this.m_onImpact?.(pos.x, pos.y, waveStrength);
+  /** Mines detonate when a living tank rolls over them (after they arm). */
+  private updateMines(dt: number): void {
+    for (let i = this.m_mines.length - 1; i >= 0; i--) {
+      const m = this.m_mines[i];
+      if (m.armed > 0) { m.armed -= dt; continue; }
+      const near = this.m_tanks.find(t => t.isAlive() && t.distanceTo(m.x, m.y) < 20);
+      if (!near) continue;
+      const w = getWeapon(m.weaponIndex);
+      this.m_mines.splice(i, 1);
+      this.explode(m.x, m.y, 1.3);
+      this.shake(8, 0.3);
+      this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
+      this.applyBlast(new Vec2(m.x, m.y), w.getRadius(), w.getDamage(), m.owner, false);
     }
-
-    for (const tank of this.m_tanks) {
-      if (!tank.isAlive()) continue;
-      if (tank.isInBlastRadius(pos.x, pos.y, shot.getRadius())) {
-        // Damage falls off linearly from the blast centre to its edge.
-        const dist = tank.distanceTo(pos.x, pos.y);
-        const falloff = Math.max(0, 1 - dist / (shot.getRadius() + 1));
-        const dmg = shot.getDamage() * falloff;
-
-        // Pass raw damage; the tank applies its own shield/armor model.
-        tank.hit(dmg);
-
-        // Kick: throw the tank up and away from the blast, scaled by damage.
-        const dx = tank.getPosition().x - pos.x;
-        const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
-        const kickMag = Math.min(1, dmg / 400) * 320;
-        tank.kick(kickDir, kickMag);
-
-        if (!tank.isAlive()) {
-          this.handleTankDestroyed(tank);
-        }
-      }
-    }
-    
-    // Handle nuclear weapons - create radiation zone
-    if (weapon.isNuclear()) {
-      this.m_land.blastIradiate(
-        Math.floor(pos.x),
-        Math.floor(this.m_land.getHeightAt(Math.floor(pos.x))),
-        80,     // Radius
-        10,     // Damage per second
-        15      // Duration seconds
-      );
-    }
-
-    // Cluster weapons scatter submunitions on impact.
-    this.spawnCluster(shot, weapon, pos);
-
-    // Transition to explosion state (wait for effects)
-    this.m_gameState = EGameState.Explosion;
   }
 
   /**
-   * Scatter cluster submunitions from an impact. Each child fans upward within
-   * the weapon's spread arc and falls to explode on its own. cluRecurse lets one
-   * more generation cluster again; depth is hard-capped to avoid runaway counts.
+   * Falloff blast damage + kick, applied through the tank's shield/armor model
+   * (port of FUN_00404670). `full` = beam direct hit: no distance falloff.
    */
-  private spawnCluster(parent: CShot, weapon: CWeapon, pos: Vec2): void {
-    const cluNum = weapon.getClusterCount();
-    if (cluNum <= 0) return;
+  applyBlast(pos: Vec2, radius: number, damage: number, _owner: CTank | null, full: boolean): void {
+    for (const tank of this.m_tanks) {
+      if (!tank.isAlive()) continue;
+      const dist = tank.distanceTo(pos.x, pos.y);
+      const inRange = full ? dist < Math.max(radius, 20) : dist <= radius + 1;
+      if (!inRange) continue;
 
-    const gen = parent.getGeneration();
-    const maxGen = weapon.getClusterRecurse() ? 2 : 1;
-    if (gen >= maxGen) return;
+      const falloff = full ? 1 : Math.max(0, 1 - dist / (radius + 1));
+      const dmg = damage * falloff;
+      if (dmg <= 0) continue;
 
-    const [startDeg, endDeg] = weapon.getClusterSpread();
-    const spreadDeg = Math.min(160, Math.abs(endDeg - startDeg) || 120);
-    const halfRad = (spreadDeg / 2) * Math.PI / 180;
+      tank.hit(dmg);                               // shield/armor applied by the tank
 
-    const childRadius = Math.max(12, Math.floor(weapon.getRadius() * 0.7));
+      const dx = tank.getPosition().x - pos.x;     // kick up and away from the blast
+      const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
+      tank.kick(kickDir, Math.min(1, dmg / 400) * 320);
 
-    for (let i = 0; i < cluNum; i++) {
-      const t = cluNum > 1 ? i / (cluNum - 1) : 0.5;
-      const theta = -halfRad + t * (2 * halfRad);   // fan around straight up
-      const speed = 200 + Math.random() * 80;
-      const vx = Math.sin(theta) * speed;
-      const vy = -Math.cos(theta) * speed;
-
-      const child = new CShot();
-      child.initFromVelocity(pos, vx, vy, weapon.getDamage(), childRadius, parent.getOwner());
-      child.setWeaponIndex(weapon.getIndex());
-      child.setGeneration(gen + 1);
-      this.m_shots.push(child);
+      if (!tank.isAlive()) this.handleTankDestroyed(tank);
     }
   }
 
@@ -547,38 +528,67 @@ export class CGameController {
    */
   fire(): void {
     const tank = this.getCurrentTank();
-    
     if (!tank.isAlive()) return;
-    
+
     const weapon = getWeapon(this.m_currentWeaponIndex);
+    const ext = weapon.getExtType();
+
+    // Utility items apply an effect to the firing tank instead of launching a shot.
+    if (this.applyUtility(tank, weapon, ext)) {
+      this.m_gameState = EGameState.Battle;
+      setTimeout(() => this.endTurn(), 400);
+      return;
+    }
+
+    // Death: a self-targeting round that drops straight down onto the firer.
+    if (ext === EXT.DEATH) {
+      const tp = tank.getPosition();
+      const drop = new CShot();
+      drop.initFromVelocity(new Vec2(tp.x, Math.max(0, tp.y - 220)), 0, 0, weapon.getDamage(), weapon.getRadius(), tank);
+      drop.setWeaponIndex(this.m_currentWeaponIndex);
+      this.m_shots.push(drop);
+      this.m_gameState = EGameState.ShotFlying;
+      return;
+    }
+
     const muzzlePos = tank.getMuzzlePosition();
     const baseAngle = tank.getTurretAngle();
+    const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
+    const varianceRad = weapon.getVariance() * Math.PI / 180;   // per-shot inaccuracy
 
-    // Some weapons fire several projectiles at once (spawn), fanned slightly.
-    const shots = Math.max(1, weapon.getSpawnCount());
-    const spreadRad = 6 * Math.PI / 180;                    // fan for multi-shot
-    const varianceRad = weapon.getVariance() * Math.PI / 180; // per-shot inaccuracy
-    const isBeam = weapon.getType() === 'Beam';               // beams fly straight
+    // `spread` fires a simultaneous fan of rounds; a plain weapon fires one.
+    const rounds = Math.max(1, weapon.getSpreadCount());
+    const spacingRad = 8 * Math.PI / 180;
 
-    for (let i = 0; i < shots; i++) {
-      const fan = shots > 1 ? (i / (shots - 1) - 0.5) * spreadRad : 0;
+    for (let i = 0; i < rounds; i++) {
+      const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
       const jitter = varianceRad > 0 ? (Math.random() * 2 - 1) * varianceRad : 0;
       const pShot = new CShot();
-      pShot.initFromTank(
-        muzzlePos,
-        baseAngle + fan + jitter,
-        this.m_power,
-        weapon.getDamage(),
-        weapon.getRadius(),
-        tank
-      );
+      pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, weapon.getDamage(), weapon.getRadius(), tank);
       pShot.setWeaponIndex(this.m_currentWeaponIndex);
       pShot.setSkipGravity(isBeam);
       this.m_shots.push(pShot);
     }
 
-    // Transition to shot flying state (HUD disables Fire while !isPlayerTurn).
     this.m_gameState = EGameState.ShotFlying;
+  }
+
+  /**
+   * Utility items (extType 7/10/11/14) modify the firing tank on use rather than
+   * firing a projectile — port of the FUN_004678b0 "use item" handler. Verified
+   * effects only; 3/15/17 are UNVERIFIED in the decompile and left as no-ops.
+   * Returns true if the weapon was a utility (and consumed the turn).
+   */
+  private applyUtility(tank: CTank, weapon: CWeapon, ext: number): boolean {
+    const v = weapon.getDamage();   // the effect magnitude lives in the damage field
+    switch (ext) {
+      case 7:  tank.addShield(v); return true;          // shield boost
+      case 10: tank.addLife(v);   return true;          // repair
+      case 11: tank.setArmor(v);  return true;          // set armor %
+      case 14: return true;                             // secondary resist (no field yet) — consumes turn
+      case 3: case 15: case 17: return true;            // UNVERIFIED effect — consume turn, no-op
+      default: return false;
+    }
   }
 
 
@@ -739,6 +749,11 @@ export class CGameController {
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
+
+  // Placed entities from special weapons (Mine/Sentry) and Tracer aim markers.
+  private m_mines: { x: number; y: number; owner: CTank | null; weaponIndex: number; armed: number }[] = [];
+  private m_sentries: { x: number; y: number; owner: CTank | null; weaponIndex: number }[] = [];
+  private m_aimMarkers: { x: number; y: number }[] = [];
   
   // Game state machine
   private m_gameState: EGameState = EGameState.Battle;

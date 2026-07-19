@@ -257,23 +257,48 @@ export class CLand {
     this.preBlast(x - nRadiusX, x + nRadiusX);
   }
 
+  /**
+   * Raise terrain — Dirt weapons deposit a mound. The original does this by
+   * throwing debris that settles and lifts each column by 1px (`FUN_004a52b0`);
+   * we approximate the settled result directly as a circular mound of height
+   * `amount` (the weapon's `earth` field) over `nRadius`.
+   */
+  raiseTerrain(x: number, y: number, nRadius: number, amount: number): void {
+    if (!this.m_arrHeights || nRadius <= 0) return;
+
+    const startX = Math.max(0, x - nRadius);
+    const endX = Math.min(this.m_nWidth - 1, x + nRadius);
+
+    for (let dx = startX; dx <= endX; dx++) {
+      const d = Math.abs(dx - x);
+      if (d > nRadius) continue;
+      const arc = Math.sqrt(1 - (d / nRadius) * (d / nRadius));   // 1 at centre → 0 at rim
+      const lift = amount * arc;
+      // Screen-Y down: raising = smaller Y. Mound sits on top of whatever is lower.
+      const top = Math.min(this.m_arrHeights[dx], y) - lift;
+      this.m_arrHeights[dx] = Math.max(0, Math.floor(top));
+    }
+
+    this.preBlast(x - nRadius, x + nRadius);
+  }
+
   blastIradiate(
     x: number,
     y: number,
     nRadius: number,
     fDamagePerSecond: number,
-    fDurationSeconds: number
+    fDurationSeconds: number,
+    rgb?: [number, number, number]
   ): void {
+    const [r, g, b] = rgb && (rgb[0] || rgb[1] || rgb[2]) ? rgb : [255, 128, 0];
     const radParticle: RadParticle = {
       x, y,
       radius: nRadius,
       damagePerSecond: fDamagePerSecond,
       timeRemaining: fDurationSeconds,
-      r: 255,
-      g: 128,
-      b: 0
+      r, g, b,
     };
-    
+
     this.m_radParticles.push(radParticle);
   }
   

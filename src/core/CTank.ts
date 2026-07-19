@@ -505,6 +505,11 @@ export class CTank {
     getVelocity(): Vec2 { return this.m_vVel.clone(); }
     
     getHealth(): STankHealth { return { ...this.m_health }; }
+
+    // Utility-weapon effects (extType 7/10/11): boost shield, repair, set armor.
+    addShield(n: number): void { this.m_health.nShield = Math.max(0, Math.min(1000, this.m_health.nShield + n)); }
+    addLife(n: number): void { this.m_health.nLife = Math.max(0, Math.min(1000, this.m_health.nLife + n)); }
+    setArmor(pct: number): void { this.m_health.nArmor = Math.max(0, Math.min(100, pct)); }
     getTeamId(): number { return this.m_nTeamId; }
 
     /**

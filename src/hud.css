@@ -74,7 +74,7 @@ body { background: #000; color: #cfe; font-family: 'Segoe UI', Arial, sans-serif
 
 /* angle needle drawn over the panel's dial */
 .dial-overlay { pointer-events: none; }
-.needle { stroke: #e01e1e; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(255,40,40,.8)); }
+.needle { stroke: #e01e1e; stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 0 1px rgba(255,40,40,.7)); }
 
 /* side LCD boxes (weapon details / player stats) — black panels with a border */
 .side-lcd {

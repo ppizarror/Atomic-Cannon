@@ -119,8 +119,12 @@ export class CShot {
   update(dt: number, wind: Vec2): void {
     if (this.m_bIsDead) return;
 
+    this.m_prevY = this.m_pos.y;
+
     if (!this.m_skipGravity) {
-      this.m_vel.y += CShot.GRAVITY * dt;
+      // Rebound/jet shots invert gravity once they've dipped below the surface.
+      const g = this.m_antiGrav ? -CShot.GRAVITY : CShot.GRAVITY;
+      this.m_vel.y += g * dt;
     }
     this.m_vel.x += wind.x * CShot.WIND_ACCEL * dt;
     this.m_vel.y += wind.y * CShot.WIND_ACCEL * dt;
@@ -130,6 +134,9 @@ export class CShot {
       this.m_pos.y + this.m_vel.y * dt
     );
 
+    this.m_movingDown = this.m_prevY < this.m_pos.y;
+    this.m_age += dt;
+
     if (this.m_bTrailActive) {
       this.addTrailPoint();
       this.pruneTrailPoints(dt);
@@ -137,6 +144,18 @@ export class CShot {
   }
 
   setSkipGravity(skip: boolean): void { this.m_skipGravity = skip; }
+  setAntiGrav(on: boolean): void { this.m_antiGrav = on; }
+  isAntiGrav(): boolean { return this.m_antiGrav; }
+
+  // Kinematic accessors the weapon behaviours read/write (roller snap, apex test…).
+  getVelocity(): Vec2 { return this.m_vel.clone(); }
+  setVelocity(vx: number, vy: number): void { this.m_vel = new Vec2(vx, vy); }
+  setPosition(x: number, y: number): void { this.m_pos = new Vec2(x, y); }
+  isMovingDown(): boolean { return this.m_movingDown; }
+  getAge(): number { return this.m_age; }
+  getPower(): number { return this.m_power; }
+  setPower(p: number): void { this.m_power = p; }
+  kill(): void { this.m_bIsDead = true; }
 
   private addTrailPoint(): void {
     const pt: TrailPoint = { x: this.m_pos.x, y: this.m_pos.y, age: 0 };
@@ -255,4 +274,13 @@ export class CShot {
   private m_weaponIndex: number = -1;
   private m_generation: number = 0;
   private m_skipGravity: boolean = false;
+  private m_antiGrav: boolean = false;
+  private m_prevY: number = 0;
+  private m_movingDown: boolean = false;
+  private m_age: number = 0;
+  // Behaviour scratch: roller "grounded" latch, beam "fired" latch, battery drop
+  // counter (see weapon_types.md).
+  grounded: boolean = false;
+  fired: boolean = false;
+  batteryDrops: number = 0;
 }
