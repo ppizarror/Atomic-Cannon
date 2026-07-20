@@ -206,14 +206,20 @@ export class CParticleSystem {
     }
 
     /**
-     * The master glow tinted to (r,g,b), cached by colour quantised to 5 bits per
-     * channel so a blast's jittered tints collapse to a handful of cache entries.
-     * `source-in` keeps the glow's alpha shape and swaps in the solid colour.
+     * The master glow tinted to (r,g,b), cached by colour. `source-in` keeps the
+     * glow's alpha shape and swaps in the solid colour.
+     *
+     * Quantise to 4 bits/channel: a preset's jittered tints (e.g. a cluster of
+     * eOrange flares spans ~300 distinct 5-bit buckets) collapse to a handful, while
+     * genuinely different weapon colours stay apart — the coarser step is invisible
+     * on a soft additive glow. At 5 bits the count blew past the cache cap and, with
+     * the old clear()-on-overflow, every colour then MISSED and rebuilt a glow canvas
+     * every frame (a ~55ms/frame rebuild storm on a Porcupine cluster).
      */
     private tintedGlow(r: number, g: number, b: number): HTMLCanvasElement | null {
         const master = this.glowMaster();
         if (!master) return null;
-        const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+        const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
         const hit = this.m_tints.get(key);
         if (hit) return hit;
         const R = CParticleSystem.GLOW_SRC;
@@ -224,7 +230,10 @@ export class CParticleSystem {
         c.globalCompositeOperation = 'source-in';
         c.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
         c.fillRect(0, 0, R * 2, R * 2);
-        if (this.m_tints.size > 256) this.m_tints.clear();   // bound memory on pathological colour spread
+        // Evict the OLDEST entry (Map preserves insertion order), NOT the whole cache:
+        // a full clear() turns an overflow into a per-frame rebuild storm. 4-bit keys
+        // top out at 4096 buckets but real scenes use far fewer, so this rarely fires.
+        if (this.m_tints.size >= 512) this.m_tints.delete(this.m_tints.keys().next().value as number);
         this.m_tints.set(key, cv);
         return cv;
     }
