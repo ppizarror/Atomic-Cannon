@@ -123,6 +123,7 @@ export interface STankHealth {
     nLife: number;        // Current health (0-100 typical)
     nShield: number;      // Shield points (absorbed before health)
     nArmor: number;       // Armor percentage reduction
+    nHazmat: number;      // Hazmat percentage (radiation resistance) — HUD "Hazmat %"
     fRadiation: number;   // Radiation damage over time
 }
 
@@ -160,6 +161,7 @@ export class CTank {
         this.m_health.nLife = 1000;
         this.m_health.nShield = 0;
         this.m_health.nArmor = 0;
+        this.m_health.nHazmat = 0;
         this.m_health.fRadiation = 0;
 
         // State flags
@@ -1034,6 +1036,7 @@ export class CTank {
         nLife: 1000,
         nShield: 0,
         nArmor: 0,
+        nHazmat: 0,
         fRadiation: 0
     };
 

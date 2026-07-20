@@ -6,14 +6,7 @@
  */
 import { showPause, resumeGame, quitToMenu, openSettings } from './store';
 import { BmpText } from './BmpText';
-
-function PauseItem({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button class="pause-item" onClick={onClick}>
-      <BmpText font="bazouk-28" text={label} />
-    </button>
-  );
-}
+import { MenuButton } from './MenuButton';
 
 export function PauseMenu() {
   if (!showPause.value) return null;
@@ -21,9 +14,9 @@ export function PauseMenu() {
     <div class="pause-overlay">
       <div class="pause-title"><BmpText font="beijing-20-out" text="GAME PAUSED" /></div>
       <div class="pause-list">
-        <PauseItem label="Resume" onClick={resumeGame} />
-        <PauseItem label="Settings" onClick={() => openSettings('pause')} />
-        <PauseItem label="Quit" onClick={quitToMenu} />
+        <MenuButton label="Resume" onClick={resumeGame} class="pause-item" />
+        <MenuButton label="Settings" onClick={() => openSettings('pause')} class="pause-item" />
+        <MenuButton label="Quit" onClick={quitToMenu} class="pause-item" />
       </div>
     </div>
   );

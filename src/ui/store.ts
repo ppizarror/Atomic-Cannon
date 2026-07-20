@@ -88,11 +88,28 @@ export function closeHelp(): void {
 // Where the Settings screen returns to when done — the pause menu or the main menu.
 export const settingsOrigin = signal<'pause' | 'menu'>('pause');
 
+// Which Settings page is showing: 'root' (the category list) or a category id
+// ('economy' | 'tank' | 'gameplay' | 'graphics' | 'graphics2' | 'audio' | 'content').
+export const settingsPage = signal<string>('root');
+
 /** Open the Settings screen, remembering where to return (pause vs main menu). */
 export function openSettings(from: 'pause' | 'menu'): void {
     settingsOrigin.value = from;
+    settingsPage.value = 'root';
     showPause.value = false;
     screen.value = 'settings';
+    uiClick();
+}
+
+/** Enter a category's option page (from the Settings root). */
+export function openSettingsPage(id: string): void {
+    settingsPage.value = id;
+    uiClick();
+}
+
+/** Leave an option page back to the Settings root ("Return to the settings menu"). */
+export function settingsPageBack(): void {
+    settingsPage.value = 'root';
     uiClick();
 }
 
@@ -171,8 +188,22 @@ export const weaponIndex = signal(0);
 export const playerName = signal('');
 export const teamColor = signal('#ff4444');
 export const life = signal(1000);
+export const maxLife = signal(1000);
 export const shield = signal(0);
 export const canFire = signal(false);
+
+// Extra per-tank / world readouts for the side LCDs (updated each frame; number
+// signals only re-notify on an actual change, so the bitmap text stays cheap).
+export const teamId = signal(1);
+export const armor = signal(0);        // Armor %  (physical damage reduction)
+export const hazmat = signal(0);       // Hazmat % (radiation resistance)
+export const posX = signal(0);
+export const posY = signal(0);
+// Wind velocity + acceleration, both quantised to 0.01 so they only publish when
+// the displayed "Vel/Acc %.02f %.02f" actually moves.
+export const windVelX = signal(0), windVelY = signal(0);
+export const windAccX = signal(0), windAccY = signal(0);
+export const canMoveNow = signal(false);
 // True whenever the HUD controls should read as "held": the game is paused, or
 // it's not the human's live turn (shot in flight, explosion, a bot playing). The
 // panel greys out and stops responding while this is set.
@@ -253,9 +284,24 @@ export function syncHud(): void {
     }
     playerName.value = c.getCurrentPlayerName();
     teamColor.value = c.getCurrentTeamColor();
-    const h = c.getCurrentTank().getHealth();
+    const tank = c.getCurrentTank();
+    const h = tank.getHealth();
     life.value = Math.max(0, Math.round(h.nLife));
     shield.value = Math.max(0, Math.round(h.nShield));
+    // Side-LCD tank/world readouts (each signal only re-notifies on a real change).
+    teamId.value = tank.getTeamId();
+    armor.value = Math.round(h.nArmor);
+    hazmat.value = Math.round(h.nHazmat);
+    const pos = tank.getPosition();
+    posX.value = Math.round(pos.x);
+    posY.value = Math.round(pos.y);
+    credits.value = c.getCredits();
+    const wv = c.getWindVec(), wa = c.getWindAccel();
+    windVelX.value = Math.round(wv.x * 100) / 100;
+    windVelY.value = Math.round(wv.y * 100) / 100;
+    windAccX.value = Math.round(wa.x * 100) / 100;
+    windAccY.value = Math.round(wa.y * 100) / 100;
+    canMoveNow.value = c.getCurrentTankCanMove();
     canFire.value = c.isPlayerTurn();
     flying.value = c.isFlying();
     jetFuel.value = c.getJetFuel();

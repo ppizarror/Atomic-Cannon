@@ -13,7 +13,7 @@ import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {
     setController, syncHud, canFire, openDepot, triggerHudWave, paused as pausedSignal,
-    openPauseMenu, resumeGame, showPause, goToMenu, playNewGame, openSettings,
+    openPauseMenu, resumeGame, showPause, goToMenu, playNewGame, openSettings, openSettingsPage,
     showHelp, closeHelp, POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
@@ -64,7 +64,13 @@ async function main(): Promise<void> {
     if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1') playNewGame();
     if (q.get('depot') === '1') openDepot();
     if (q.get('pause') === '1') openPauseMenu();
-    if (q.get('settings') === '1') openSettings('menu');
+    // `?settings=1` opens the Settings root; `?settings=<pageId>` (e.g. gameplay) opens
+    // that option page directly.
+    const settingsArg = q.get('settings');
+    if (settingsArg) {
+        openSettings('menu');
+        if (settingsArg !== '1') openSettingsPage(settingsArg);
+    }
 
     // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
     // pause menu, and the DOM FX all read one source. 'P' = a quiet screenshot freeze

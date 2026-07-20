@@ -7,15 +7,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { playNewGame, openSettings, openAbout } from './store';
 import { BmpText } from './BmpText';
+import { MenuButton } from './MenuButton';
 import { MenuTargets } from './MenuTargets';
-
-function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button class="mainmenu-item" onClick={onClick}>
-      <BmpText font="bazouk-28" text={label} />
-    </button>
-  );
-}
 
 // The atom logo bitmap has a black background; knock it out (alpha = luminance) so
 // the metallic atom sits transparently in the corner.
@@ -49,9 +42,9 @@ export function MainMenu() {
     <div class="mainmenu">
       <MenuTargets />
       <div class="mainmenu-list">
-        <MenuItem label="Play" onClick={playNewGame} />
-        <MenuItem label="Settings" onClick={() => openSettings('menu')} />
-        <MenuItem label="About" onClick={openAbout} />
+        <MenuButton label="Play" onClick={playNewGame} class="mainmenu-item" />
+        <MenuButton label="Settings" onClick={() => openSettings('menu')} class="mainmenu-item" />
+        <MenuButton label="About" onClick={openAbout} class="mainmenu-item" />
       </div>
       <AtomLogo />
       <div class="mainmenu-version"><BmpText font="beijing-16-out" text={`v${__APP_VERSION__}`} /></div>

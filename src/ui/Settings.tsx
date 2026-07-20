@@ -1,16 +1,20 @@
 /**
- * Settings / Options root (the original's settings tree over `steel.jpg`). A
- * centered vertical list of category entries in the game's outlined bitmap font;
- * hovering an entry shows its one-line description centered along the bottom edge,
- * exactly like the retail options screen. `Done` returns to whichever menu opened
- * Settings (the pause menu or the main menu).
+ * Settings / Options root (the original's settings tree). Rendered over the same
+ * darkened title backdrop as the main menu — the brushed-steel plate is only used
+ * by the deeper editor sub-screens (weapon / landscape enable lists). A centered
+ * vertical list of category entries in the game's outlined bitmap font; hovering an
+ * entry shows its one-line description centered along the bottom edge, exactly like
+ * the retail options screen. `Done` returns to whichever menu opened Settings (the
+ * pause menu or the main menu).
  *
  * The individual option pages (Audio / Gameplay / …) are the next step; for now the
  * category entries are inert (audible click only) and `Done` is wired.
  */
 import { useState } from 'preact/hooks';
-import { closeSettings, settingsOrigin, uiClick } from './store';
+import { closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick } from './store';
 import { BmpText } from './BmpText';
+import { MenuButton } from './MenuButton';
+import { SettingsPage } from './SettingsPage';
 
 interface Entry {
   label: string;
@@ -21,34 +25,38 @@ interface Entry {
 
 // The nine root categories, with their exact hover subtitles. The Audio "razzle
 // dazzle" line and the "(quits current game)" warnings are the original's own
-// strings — kept verbatim, quirks and all.
+// strings — kept verbatim, quirks and all. Each opens its option page; Customize
+// Controls / Players open dedicated editor screens (not ported yet — inert click).
 const CATEGORIES: Entry[] = [
-  { label: 'Economy Options', sub: 'Adjust economic settings', onClick: uiClick },
-  { label: 'Tank Options', sub: 'Adjust tank settings', onClick: uiClick },
-  { label: 'Gameplay Options', sub: 'Adjust gameplay settings', onClick: uiClick },
-  { label: 'Graphics Options', sub: 'Adjust graphics settings', onClick: uiClick },
-  { label: 'Audio Options', sub: 'In game razzle dazzle soundfecta', onClick: uiClick },
-  { label: 'Game Content', sub: 'Enable specific weapons and landscapes', onClick: uiClick },
+  { label: 'Economy Options', sub: 'Adjust economic settings', onClick: () => openSettingsPage('economy') },
+  { label: 'Tank Options', sub: 'Adjust tank settings', onClick: () => openSettingsPage('tank') },
+  { label: 'Gameplay Options', sub: 'Adjust gameplay settings', onClick: () => openSettingsPage('gameplay') },
+  { label: 'Graphics Options', sub: 'Adjust graphics settings', onClick: () => openSettingsPage('graphics') },
+  { label: 'Audio Options', sub: 'In game razzle dazzle soundfecta', onClick: () => openSettingsPage('audio') },
+  { label: 'Game Content', sub: 'Enable specific weapons and landscapes', onClick: () => openSettingsPage('content') },
   { label: 'Customize Controls', sub: 'Define custom buttons for game actions', onClick: uiClick },
   { label: 'Customize Players', sub: 'Define custom names and colors (quits current game)', onClick: uiClick },
 ];
 
 function SettingsItem({ entry, onHover }: { entry: Entry; onHover: (s: string) => void }) {
   return (
-    <button
-      class="settings-item"
-      onMouseEnter={() => onHover(entry.sub)}
-      onFocus={() => onHover(entry.sub)}
-      onMouseLeave={() => onHover('')}
-      onBlur={() => onHover('')}
+    <MenuButton
+      label={entry.label}
       onClick={entry.onClick}
-    >
-      <BmpText font="beijing-20-out" text={entry.label} />
-    </button>
+      onEnter={() => onHover(entry.sub)}
+      onLeave={() => onHover('')}
+      class="settings-item"
+    />
   );
 }
 
 export function Settings() {
+  // Sub-page open? Render it instead of the category list.
+  if (settingsPage.value !== 'root') return <SettingsPage id={settingsPage.value} />;
+  return <SettingsRoot />;
+}
+
+function SettingsRoot() {
   const [sub, setSub] = useState('');
   // Done closes Settings. The retail subtitle is "Return to the main menu"; when we
   // reached Settings from the in-game pause it returns to the game instead, so the
@@ -60,7 +68,6 @@ export function Settings() {
   };
   return (
     <div class="settings-screen">
-      <div class="settings-title"><BmpText font="bazouk-28" text="ATOMIC CANNON" /></div>
       <div class="settings-list">
         {CATEGORIES.map((e) => (
           <SettingsItem key={e.label} entry={e} onHover={setSub} />

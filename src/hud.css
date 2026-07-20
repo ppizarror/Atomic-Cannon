@@ -956,8 +956,12 @@ img, canvas {
     content: '';
     position: absolute;
     inset: 0;
-    backdrop-filter: invert(1);
-    -webkit-backdrop-filter: invert(1);
+    /* A white layer in `difference` blend = 255 − backdrop = the photographic
+       negative of everything under the box (scene AND the glyphs on top of it),
+       exactly like the original's invert-rect. (More robust than backdrop-filter,
+       which some GPU/headless paths skip.) */
+    background: #fff;
+    mix-blend-mode: difference;
     pointer-events: none;
 }
 .menu-btn canvas {
@@ -1316,5 +1320,4 @@ img, canvas {
     margin-top: 10px;
 }
 /* PREVIEW-TEMP */
-.settings-rows .menu-btn:nth-child(2){background:none;}
-.settings-rows .menu-btn:nth-child(2)::after{content:'';position:absolute;inset:0;backdrop-filter:invert(1);-webkit-backdrop-filter:invert(1);pointer-events:none;}
+.settings-rows .menu-btn:nth-child(2)::after{content:'';position:absolute;inset:0;background:#fff;mix-blend-mode:difference;pointer-events:none;}
