@@ -250,7 +250,10 @@ export class CShot {
         if (sprite) {
             const nw = (sprite as { width: number }).width;
             const nh = (sprite as { height: number }).height;
-            const targetLong = Math.max(14, Math.min(34, size * 1.3));
+            // Normalise the sprite's longest side to a size driven by the weapon's
+            // `size` field. A low floor so tiny rounds (buckshot size 2 → ~3-4px) read
+            // as little dots, not chunky squares; capped so a huge ball/mine stays sane.
+            const targetLong = Math.max(3, Math.min(34, size * 1.6));
             const k = targetLong / Math.max(nw, nh);
             const w = nw * k, h = nh * k;
             const ang = Math.atan2(this.m_vel.y, this.m_vel.x);

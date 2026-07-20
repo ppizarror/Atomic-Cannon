@@ -739,24 +739,36 @@ export class CParticleSystem {
             }
         }
 
-        // Beam flashes — a soft coloured halo line under a thin white-hot core.
+        // Beam flashes — a soft coloured halo line under a thin white-hot core. The
+        // bolt SHOOTS OUT from the muzzle: the tip races to the target over the first
+        // ~35% of the life, then the full line holds and fades (a fired beam, not an
+        // instant pop). A bright head rides the advancing tip while it's extending.
         for (const b of this.m_beams) {
             const t = b.age / b.life;
             if (t >= 1) continue;
             const a = 1 - t;
+            const grow = Math.min(1, t / 0.35);              // 0→1 as the tip advances
+            const ex = b.x0 + (b.x1 - b.x0) * grow, ey = b.y0 + (b.y1 - b.y0) * grow;
             ctx.lineCap = 'round';
             ctx.strokeStyle = `rgba(${b.r | 0},${b.g | 0},${b.b | 0},${a * 0.6})`;
             ctx.lineWidth = 8 * a + 2;
             ctx.beginPath();
             ctx.moveTo(b.x0, b.y0);
-            ctx.lineTo(b.x1, b.y1);
+            ctx.lineTo(ex, ey);
             ctx.stroke();
             ctx.strokeStyle = `rgba(255,255,255,${a})`;
             ctx.lineWidth = 3 * a + 1;
             ctx.beginPath();
             ctx.moveTo(b.x0, b.y0);
-            ctx.lineTo(b.x1, b.y1);
+            ctx.lineTo(ex, ey);
             ctx.stroke();
+            // Bright muzzle-flash head at the advancing tip while extending.
+            if (grow < 1) {
+                ctx.fillStyle = `rgba(255,255,255,${a})`;
+                ctx.beginPath();
+                ctx.arc(ex, ey, 4 * a + 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
 
         ctx.globalCompositeOperation = prev;

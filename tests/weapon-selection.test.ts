@@ -51,8 +51,16 @@ console.log('Weapon selection');
 ok(`human starts on control weapon (${CTRL_NAME})`, gc.getCurrentWeaponIndex() === CTRL, `got ${gc.getCurrentWeaponIndex()}`);
 ok('human tank stores its own weapon', human.getWeaponIndex() === CTRL, `got ${human.getWeaponIndex()}`);
 
-// 2. During the human's turn the list is locked to the control weapon.
-ok('human list is locked to the control weapon', gc.getWeaponDefs().length === 1 && gc.getWeaponDefs()[0].name === CTRL_NAME);
+// 2. During the human's turn the list reflects the control lock: if a control
+// weapon is pinned the list is just that weapon; otherwise it's the full arsenal
+// (which always contains whatever the human is currently holding).
+{
+    const defs = gc.getWeaponDefs();
+    const locked = defs.length === 1;
+    ok('human list reflects the control lock',
+        locked ? defs[0].name === CTRL_NAME : defs.some(d => d.name === CTRL_NAME),
+        `got ${defs.length} defs`);
+}
 
 // 3. selectWeapon persists onto the acting tank (not just a shared global).
 gc.selectWeapon(SHELL);

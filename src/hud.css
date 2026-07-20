@@ -2,6 +2,9 @@
 
 :root {
     --hud-h: 152px;
+    /* Shared width for every menu list (main menu, pause, Settings root + option
+       rows) so their highlight boxes are the same full width — one uniform button. */
+    --menu-w: min(860px, 82vw);
 }
 
 * {
@@ -992,12 +995,16 @@ img, canvas {
 .pause-list {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 16px;
+    align-items: stretch;          /* items fill --menu-w → full-width highlight box */
+    width: var(--menu-w);
+    gap: 2px;
 }
-/* Layout only — the hover box + click-negative come from .menu-btn. */
+/* Layout only — the hover box + click-negative come from .menu-btn. The item fills
+   the list width and centres its label (uniform full-width button everywhere). */
 .pause-item {
-    padding: 3px 22px;
+    display: flex;
+    justify-content: center;
+    padding: 5px 0;
 }
 
 /* ============================ MAIN MENU / ABOUT ============================ */
@@ -1028,12 +1035,15 @@ img, canvas {
 .mainmenu-list {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 4px;
+    align-items: stretch;          /* items fill --menu-w → full-width highlight box */
+    width: var(--menu-w);
+    gap: 2px;
 }
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .mainmenu-item {
-    padding: 3px 22px;
+    display: flex;
+    justify-content: center;
+    padding: 5px 0;
 }
 .mainmenu-logo {
     position: absolute;
@@ -1250,11 +1260,11 @@ img, canvas {
 /* Options list, vertically centred in the gap between title and subtitle. */
 .settings-list {
     margin: auto 0;
-    width: min(860px, 82vw);
+    width: var(--menu-w);
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 1px;
+    gap: 2px;
 }
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-item {
@@ -1278,10 +1288,10 @@ img, canvas {
 /* ---- Settings option pages (two-column widget rows) ---- */
 .settings-rows {
     margin: auto 0;
-    width: min(900px, 90vw);
+    width: var(--menu-w);
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 2px;
 }
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-row {
@@ -1294,8 +1304,9 @@ img, canvas {
 .settings-row canvas {
     display: block;
 }
-/* The two clickable halves of a cyclable/toggle row (label side / value side) and
-   the label/value groups of a nav row. */
+/* The two click targets of a cyclable/toggle row (label side = prev, value side =
+   next) and the label/value groups of a nav row. No per-side box — the whole row
+   gets the one uniform highlight (.menu-btn); the < > arrows show the direction. */
 .srow-half,
 .srow-side {
     display: flex;
@@ -1305,11 +1316,6 @@ img, canvas {
     border: 0;
     cursor: pointer;
     padding: 2px 8px;
-    border-radius: 4px;
-}
-/* Light up just the side the click will act on (prev on the left, next on the right). */
-.srow-half:hover {
-    background: rgba(255, 255, 255, 0.16);
 }
 .srow-arrow {
     opacity: 0.82;
@@ -1319,5 +1325,3 @@ img, canvas {
     justify-content: center;
     margin-top: 10px;
 }
-/* PREVIEW-TEMP */
-.settings-rows .menu-btn:nth-child(2)::after{content:'';position:absolute;inset:0;background:#fff;mix-blend-mode:difference;pointer-events:none;}
