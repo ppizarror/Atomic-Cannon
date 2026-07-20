@@ -5,9 +5,10 @@
  * Battle HUD is built; menu / settings / depot are scaffolded here so they slot
  * in as components without touching the game or the canvas.
  */
-import {useRef} from 'preact/hooks';
+import {useRef, useState, useEffect} from 'preact/hooks';
 import {useSignalEffect} from '@preact/signals';
 import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWaveStrength, paused} from './store';
+import {BmpText} from './BmpText';
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
 import {PauseMenu} from './PauseMenu';
@@ -102,6 +103,42 @@ function FlightHud() {
     );
 }
 
+// Minimum playable window. Below this the layout is too cramped to use, so we cover
+// everything with a brushed-steel notice asking the player to enlarge the window
+// rather than let the HUD/controls collapse.
+const MIN_W = 768;
+const MIN_H = 432;
+
+// Full-screen "resolution too small" gate. Watches the viewport and, while it's under
+// the minimum, covers the game (above every other layer) with a steel-plate notice.
+function TooSmallOverlay() {
+    const tooSmall = () => window.innerWidth < MIN_W || window.innerHeight < MIN_H;
+    const [small, setSmall] = useState(tooSmall);
+    const [size, setSize] = useState(() => ({w: window.innerWidth, h: window.innerHeight}));
+    useEffect(() => {
+        const onResize = () => {
+            setSmall(tooSmall());
+            setSize({w: window.innerWidth, h: window.innerHeight});
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+    if (!small) return null;
+    // All text is the game's bitmap fonts (ASCII 33..126, no wrapping) on the
+    // `atomic/dialog.bmp` panel — same chrome as the Help overlay, no CSS text.
+    return (
+        <div class="too-small">
+            <div class="too-small-card">
+                <div class="too-small-title"><BmpText font="bazouk-28" text="RESOLUTION TOO SMALL"/></div>
+                <div class="too-small-msg"><BmpText font="beijing-16-out" text="Atomic Cannon needs a window of at least"/></div>
+                <div class="too-small-msg"><BmpText font="beijing-16-out" text={`${MIN_W} x ${MIN_H} pixels to play.`}/></div>
+                <div class="too-small-sub"><BmpText font="arial-14-out" text="Enlarge the window to continue."/></div>
+                <div class="too-small-size"><BmpText font="arial-14-out" text={`Current:  ${size.w} x ${size.h}`}/></div>
+            </div>
+        </div>
+    );
+}
+
 function Placeholder({title, backLabel, onBack}: { title: string; backLabel?: string; onBack?: () => void }) {
     return (
         <div class="screen-overlay">
@@ -141,6 +178,7 @@ export function App() {
             <FlightHud/>
             <ScreenFlash/>
             <HudWave/>
+            <TooSmallOverlay/>
         </>
     );
 }
