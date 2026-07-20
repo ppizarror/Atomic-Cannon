@@ -86,7 +86,8 @@ export class CLand {
         this.m_radDeposit = new Float32Array(width);
     }
 
-    initFromArray(heights: Int16Array, scaleX: number = 1, scaleY: number = 1): void {
+    initFromArray(heights: Int16Array, _scaleX: number = 1, scaleY: number = 1): void {
+        if (!this.m_arrHeights) return;
         const len = Math.min(heights.length, this.m_nWidth);
 
         for (let x = 0; x < len; x++) {
@@ -140,6 +141,7 @@ export class CLand {
     // The 6 shape modes. Screen-Y: smaller = higher on screen, so
     // Ymin is the highest peaks can reach, Ymax the lowest valleys.
     private generateProfile(mode: number): void {
+        if (!this.m_arrHeights) return;
         const W = this.m_nWidth;
         this.m_degrass?.fill(0);       // fresh terrain: grass everywhere again
         this.m_radDeposit?.fill(0);    // clear any old fallout pile
@@ -291,12 +293,14 @@ export class CLand {
      * floating tunnel): it takes a slice and the overburden collapses onto it. Returns
      * the thickness removed (0 if the band was entirely in open air here).
      */
-    private sliceColumn(col: number, y: number, half: number, keepCap = false): number {
+    private sliceColumn(col: number, y: number, half: number, keepCap = false, animate = false): number {
         const surf = this.m_arrHeights![col];
         // Earth exists for screen-Y in [surf, height]. Intersect the band with it.
         const removed = Math.min(y + half, this.m_nHeight) - Math.max(surf, y - half);
         if (removed <= 0) return 0;                       // band is above the surface here
-        this.m_arrHeights![col] = Math.min(this.m_nHeight, surf + removed);
+        // animate: leave the surface where it is and let `beginCollapse` sink it under
+        // gravity over the next moments (the earth FALLS in) instead of snapping down.
+        if (!animate) this.m_arrHeights![col] = Math.min(this.m_nHeight, surf + removed);
         // keepCap: the overburden slides DOWN INTACT — it keeps its top surface (grass/
         // snow cap) AND its radiation (a beam takes a void and the capped, possibly
         // irradiated earth falls in; it does not destroy either). Only a true excavation
@@ -337,14 +341,12 @@ export class CLand {
             // noisy, not a clean geometric line. keepCap → the grass/snow surface slides
             // down with the collapse instead of exposing bare dirt.
             const half = Math.max(1, halfWidth * (0.7 + Math.random() * 0.6));
-            const removed = this.sliceColumn(c, beamY, half, true);
-            // The sliced overburden FALLS IN — eject dropping bits from the top of the cut
-            // (sparsely, so a slot remains but the fill piles noisily via the ±2px settle).
-            // Coloured like the SURFACE cap (grass/snow) — it's the capped earth caving in,
-            // not fresh dirt.
-            if (removed > 3 && Math.random() < 0.5) {
-                this.addFallingDebris(c, beamY - half, 1, 1.5, this.capColor());
-            }
+            const removed = this.sliceColumn(c, beamY, half, true, true);   // keepCap + animate
+            // Don't snap the surface down — register a gravity COLLAPSE so the capped
+            // overburden visibly FALLS into the void over the next moments. Per-column
+            // depth jitter (above) makes each column fall to a slightly different level,
+            // so the settled line is ragged/noisy, not a clean slot.
+            if (removed > 0.5) this.beginCollapse(c, removed);
         }
         // Only the fallout specks the ray actually PASSES THROUGH are vaporised — the
         // rest ride the collapse down (their radiation is preserved). Keep a speck unless
@@ -359,6 +361,46 @@ export class CLand {
             });
         }
         this.preBlast(lo, hi);
+    }
+
+    /**
+     * Register a column to sink by `drop` px under gravity (a beam-slice collapse): the
+     * surface stays put, then `update()` accelerates it downward until it has fallen
+     * `drop` px, so the capped overburden visibly FALLS into the void instead of snapping.
+     * Accumulates if the column is already collapsing.
+     */
+    private beginCollapse(col: number, drop: number): void {
+        const W = this.m_nWidth;
+        if (!this.m_collapseTarget) {
+            this.m_collapseTarget = new Float32Array(W).fill(-1);   // -1 = not collapsing
+            this.m_collapseVel = new Float32Array(W);
+        }
+        if (!this.m_collapseActive) { this.m_collapseMinX = W; this.m_collapseMaxX = 0; }
+        const cur = this.m_arrHeights![col];
+        const base = this.m_collapseTarget[col] >= 0 ? this.m_collapseTarget[col] : cur;
+        this.m_collapseTarget[col] = Math.min(this.m_nHeight, base + drop);
+        this.m_collapseActive = true;
+        if (col < this.m_collapseMinX) this.m_collapseMinX = col;
+        if (col > this.m_collapseMaxX) this.m_collapseMaxX = col;
+    }
+
+    /** Advance any in-progress beam-slice collapse: each registered column falls under
+     *  gravity until it reaches its target depth. Called from `update()`. */
+    private stepCollapse(dt: number): void {
+        if (!this.m_collapseActive || !this.m_arrHeights || !this.m_collapseTarget) return;
+        const G = 1400;                              // px/s^2 — the earth accelerates as it caves
+        const tgt = this.m_collapseTarget, vel = this.m_collapseVel!, h = this.m_arrHeights;
+        let anyActive = false;
+        for (let c = this.m_collapseMinX; c <= this.m_collapseMaxX; c++) {
+            if (tgt[c] < 0) continue;
+            vel[c] += G * dt;
+            let s = h[c] + vel[c] * dt;               // screen-Y down → sinking = increasing Y
+            if (s >= tgt[c]) { s = tgt[c]; tgt[c] = -1; vel[c] = 0; }   // landed → stop
+            else anyActive = true;
+            h[c] = s;
+        }
+        this.preBlast(this.m_collapseMinX, this.m_collapseMaxX);
+        if (!anyActive) { this.m_collapseActive = false; this.m_collapseMinX = this.m_nWidth; this.m_collapseMaxX = 0; }
     }
 
     /**
@@ -404,6 +446,7 @@ export class CLand {
     }
 
     blastEllipse(x: number, y: number, nRadiusX: number, nRadiusY: number): void {
+        if (!this.m_arrHeights) return;
         const startX = Math.max(0, x - nRadiusX);
         const endX = Math.min(this.m_nWidth - 1, x + nRadiusX);
 
@@ -648,28 +691,6 @@ export class CLand {
         }
     }
 
-    /** Average colour of the top terrain layer (the grass/snow cap), cached. Used to tint
-     *  the earth that caves in when a beam slices through, so the collapse keeps its
-     *  surface material instead of reading as fresh dirt. */
-    private capColor(): string {
-        if (this.m_capColor) return this.m_capColor;
-        const img = this.m_layers[0]?.image;
-        if (!img || typeof document === 'undefined') return (this.m_capColor = 'rgb(70,104,44)');
-        try {
-            const c = document.createElement('canvas');
-            c.width = 8; c.height = 8;
-            const g = c.getContext('2d')!;
-            g.drawImage(img, 0, 0, 8, 8);
-            const d = g.getImageData(0, 0, 8, 8).data;
-            let r = 0, gg = 0, b = 0, n = 0;
-            for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
-            this.m_capColor = `rgb(${Math.round(r / n)},${Math.round(gg / n)},${Math.round(b / n)})`;
-        } catch {
-            this.m_capColor = 'rgb(70,104,44)';
-        }
-        return this.m_capColor;
-    }
-
     /**
      * Blacken the terrain around a blast — a permanent scorch mark baked into the
      * cached bitmap (a rim-darken + black crater interior). Stored so it
@@ -683,6 +704,8 @@ export class CLand {
 
     update(dt: number): void {
         const GRAVITY = 500;
+
+        this.stepCollapse(dt);   // advance any gravity beam-slice collapse
 
         // Compact-forward removal (a write index), NOT splice(i,1): a nuke flings
         // ~6500 chunks, and hundreds settle per frame — each splice shifts the whole
@@ -955,7 +978,6 @@ export class CLand {
         // columns. Fall back to the deepest stratum (always sub-surface, never the cap).
         this.m_bareImage = bareImage ?? this.m_layers[this.m_layers.length - 1]?.image ?? null;
         this.m_barePattern = null;
-        this.m_capColor = null;                    // re-sample the cap colour for the new layers
         this.m_patterns = [];
         this.m_terrainDirty = true;
     }
@@ -1097,10 +1119,18 @@ export class CLand {
     isAnimating(): boolean {
         return this.m_terrainDirty ||
             this.m_slumpTimer > 0 ||
+            this.m_collapseActive ||
             this.m_particles.length > 0 ||
             this.m_radSpecks.length > 0 ||
             this.m_radParticles.length > 0 ||
             this.m_heat.length > 0;
+    }
+
+    /** Terrain still physically resolving (gravity collapse or falling debris) — the
+     *  round should not hand off the turn until this settles. Narrower than
+     *  `isAnimating()` (which also covers cosmetic redraw/rebuild flags). */
+    isSettling(): boolean {
+        return this.m_collapseActive || this.m_particles.length > 0;
     }
 
     draw(ctx: CanvasRenderingContext2D): void {
@@ -1282,7 +1312,13 @@ export class CLand {
     private m_patterns: (CanvasPattern | null)[] = [];
     private m_bareImage: CanvasImageSource | null = null;   // non-grass earth for de-grassed craters
     private m_barePattern: CanvasPattern | null = null;
-    private m_capColor: string | null = null;               // avg colour of the top (grass/snow) cap
+
+    // Beam-slice gravity collapse: per-column fall target (screen-Y; -1 = idle) + velocity.
+    private m_collapseTarget: Float32Array | null = null;
+    private m_collapseVel: Float32Array | null = null;
+    private m_collapseActive = false;
+    private m_collapseMinX = 0;
+    private m_collapseMaxX = 0;
     private m_terrainCanvas: HTMLCanvasElement | null = null;
     private m_terrainDirty: boolean = true;
 

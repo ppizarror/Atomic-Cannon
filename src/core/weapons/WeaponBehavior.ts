@@ -101,9 +101,13 @@ export function weaponFlyStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt
             return hit ? 'detonate' : 'continue';
 
         case EXT.AIRBURST:
-            // Detonate at the apex (once it starts descending), or on early contact.
+            // Detonate at the apex (once it starts descending) — but ONLY the PRIMARY
+            // (gen 0). Its cluster submunitions are launched DOWNWARD from the apex, so
+            // they're already "moving down"; if they also airburst they'd all pop at the
+            // top instead of raining down. Gen≥1 fly ballistically and burst on impact.
+            // (Decompiled: `extType==13 && shot.gen==0 && movingDown`.)
             if (hit || belowSurface) return 'detonate';
-            return shot.isMovingDown() ? 'detonate' : 'continue';
+            return (shot.getGeneration() === 0 && shot.isMovingDown()) ? 'detonate' : 'continue';
 
         case EXT.DIGGER:
             // Burrow straight down THROUGH the mass to a depth limit, then detonate. We
