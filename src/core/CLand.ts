@@ -24,7 +24,7 @@ interface RadParticle {
     radius: number;
     damagePerSecond: number;
     timeRemaining: number;
-    duration: number;      // original irTime (for the visual fade)
+    duration: number;      // irTime (for the visual fade)
     r: number;
     g: number;
     b: number;
@@ -97,14 +97,14 @@ export class CLand {
         this.computeDirtyRegion();
     }
 
-    // --- RNG: classic MSVC LCG, so a level is reproducible from its seed --------
+    // --- RNG: a linear congruential generator, so a level is reproducible from its seed ---
     private m_rngState: number = 1;
 
     private srand(seed: number): void {
         this.m_rngState = seed >>> 0;
     }
 
-    /** rand() in 0..32767 (MSVC: state = state*0x343FD + 0x269EC3; (state>>16)&0x7FFF). */
+    /** rand() in 0..32767 (LCG: state = state*0x343FD + 0x269EC3; (state>>16)&0x7FFF). */
     private rand(): number {
         this.m_rngState = (Math.imul(this.m_rngState, 0x343FD) + 0x269EC3) >>> 0;
         return (this.m_rngState >>> 16) & 0x7FFF;
@@ -116,8 +116,8 @@ export class CLand {
     }
 
     /**
-     * Generate terrain the way the original does: pick a shape mode (0..5) then
-     * fill a seeded biased random walk. Mode 5 config = "random": 50% mode 5,
+     * Generate terrain: pick a shape mode (0..5) then fill a seeded biased
+     * random walk. Mode 5 config = "random": 50% mode 5,
      * else one of 0..4. All modes share one RNG stream seeded here.
      */
     generateRandomTerrain(seed: number = Date.now()): void {
@@ -146,7 +146,7 @@ export class CLand {
         this.m_radSpecks.length = 0;
         this.m_radParticles.length = 0;
         this.m_heat.length = 0;
-        const A = 15;                                   // walk amplitude (obj +0x4c)
+        const A = 15;                                   // walk amplitude
         const Ymin = Math.floor(this.m_nHeight * 0.30); // top clamp
         const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
         const clamp = (v: number) => Math.min(Math.max(v, Ymin), Ymax);
@@ -251,7 +251,7 @@ export class CLand {
         const startX = Math.max(0, x - nRadius);
         const endX = Math.min(this.m_nWidth - 1, x + nRadius);
 
-        // Heightmap approximation of the original's destructible-bitmap crater:
+        // Heightmap approximation of a destructible-bitmap crater:
         // at each column the surface drops to the bottom edge of the blast circle
         // when that is lower than the current ground (screen-Y larger = lower down).
         for (let dx = startX; dx <= endX; dx++) {
@@ -266,10 +266,10 @@ export class CLand {
                 this.m_arrHeights[dx] = Math.min(this.m_nHeight, Math.floor(craterBottom));
             }
             // Strip the grass cap here — the blast tears through it, exposing bare
-            // dirt (the original's destructible bitmap loses the green pixels).
+            // dirt (the destructible bitmap loses the green pixels).
             if (this.m_degrass) this.m_degrass[dx] = 1;
             // A blast destroys any irradiated-earth deposit here (a normal bomb or a
-            // terrain-clear removes the fallout + its red glow, like the original).
+            // terrain-clear removes the fallout + its red glow).
             if (this.m_radDeposit) this.m_radDeposit[dx] = 0;
         }
 
@@ -327,10 +327,9 @@ export class CLand {
     }
 
     /**
-     * Raise terrain — Dirt weapons deposit a mound. The original does this by
-     * throwing debris that settles and lifts each column by 1px (`FUN_004a52b0`);
-     * we approximate the settled result directly as a circular mound of height
-     * `amount` (the weapon's `earth` field) over `nRadius`.
+     * Raise terrain — Dirt weapons deposit a mound, approximated directly as a
+     * circular mound of height `amount` (the weapon's `earth` field) over
+     * `nRadius`.
      */
     raiseTerrain(x: number, y: number, nRadius: number, amount: number): void {
         if (!this.m_arrHeights || nRadius <= 0) return;
@@ -375,10 +374,9 @@ export class CLand {
             this.m_terrainDirty = true;
         }
 
-        // The fallout lingers longer than the raw irTime and dims GRADUALLY (the
-        // original fades linearly `irRGB·(1−age/life)` over irTime; ours held bright
-        // then vanished, reading as too quick). Stretch the visible life ~1.6× so the
-        // radioactive ground glows for a good while and decays slowly.
+        // The fallout lingers longer than the raw irTime and dims GRADUALLY.
+        // Stretch the visible life ~1.6× so the radioactive ground glows for a
+        // good while and decays slowly.
         const dur = fDurationSeconds * 1.6;
 
         // Gameplay damage zone (queried against tanks each frame) — also drives the
@@ -417,7 +415,7 @@ export class CLand {
 
         // Visual: a cloud of glowing specks thrown out of the crater. They fall, settle,
         // and scatter THROUGH the pile (granular texture) tinted by irRGB fading over
-        // irTime — so the zone conforms to the ground, not floating (port of FUN_004a6c20).
+        // irTime — so the zone conforms to the ground, not floating.
         const n = Math.max(200, Math.min(12000, Math.round(nRadius * 60)));
         const pool = this.m_speckPool;
         for (let i = 0; i < n; i++) {
@@ -445,9 +443,9 @@ export class CLand {
     }
 
     /**
-     * One erosion pass over [x0,x1] (port of the original's per-frame slump
-     * `FUN_004a51d0`): where two adjacent columns differ by more than the angle of
-     * repose, move 1px of dirt from the taller column to the lower one. Repeated,
+     * One erosion pass over [x0,x1]: where two adjacent columns differ by more
+     * than the angle of repose, move 1px of dirt from the taller column to the
+     * lower one. Repeated,
      * this melts the thin spikes debris stacks up into smooth mounds.
      */
     private slump(x0: number, x1: number): void {
@@ -495,7 +493,7 @@ export class CLand {
      * Throw dirt chunks from a blast — launched radially, they arc up, fall, and
      * settle back into the terrain (raising the column where they land, so mounds
      * are emergent). Chunk colour is procedurally-generated brown (R=v, G≈v/2, B=0,
-     * v∈[30,129]) matching the original, not sampled from the ground.
+     * v∈[30,129]), not sampled from the ground.
      */
     /** Dirt-chunk colour string cached by brightness v (0..139) so a 6500-chunk nuke
      *  doesn't allocate 6500 `rgb()` strings per blast (GC churn → fire-time hitch). */
@@ -530,7 +528,7 @@ export class CLand {
 
     /**
      * Blacken the terrain around a blast — a permanent scorch mark baked into the
-     * cached bitmap (port of the rim-darken + black crater interior). Stored so it
+     * cached bitmap (a rim-darken + black crater interior). Stored so it
      * survives terrain re-renders; painted `source-atop` so only ground is darkened.
      */
     scorch(x: number, y: number, radius: number): void {
@@ -558,8 +556,8 @@ export class CLand {
             if (col < 0 || col >= this.m_nWidth) { this.m_particlePool.push(p); continue; }   // left the field → recycle
 
             // A chunk settles when it reaches the surface (only on the way down) and
-            // deposits — raising a column by 1px. The landing column is jittered ±2 (as
-            // the original does) so chunks spread instead of stacking into a thin spike.
+            // deposits — raising a column by 1px. The landing column is jittered ±2
+            // so chunks spread instead of stacking into a thin spike.
             if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
                 const dcol = Math.min(this.m_nWidth - 1, Math.max(0, col + ((Math.random() * 5) | 0) - 2));
                 this.m_arrHeights[dcol] = Math.max(0, this.m_arrHeights[dcol] - 1);
@@ -591,9 +589,9 @@ export class CLand {
 
         // Terrain slump (avalanche): where adjacent columns differ by more than the
         // repose threshold, move 1px of dirt from the taller to the lower — this
-        // erodes the thin spikes debris would otherwise stack up, matching the
-        // original's per-frame slump. Scoped to the recently-disturbed span (+timer)
-        // so it never erodes the natural mountains elsewhere.
+        // erodes the thin spikes debris would otherwise stack up. Scoped to the
+        // recently-disturbed span (+timer) so it never erodes the natural
+        // mountains elsewhere.
         if (this.m_slumpTimer > 0 && this.m_arrHeights) {
             for (let pass = 0; pass < 2; pass++) this.slump(this.m_slumpX0, this.m_slumpX1);
             this.m_slumpTimer -= dt;
@@ -634,7 +632,7 @@ export class CLand {
                     // in the soil (grounded base) up to the pile top, biased low so the crown
                     // thins out. rise = height ABOVE the surface (the grain's pile position).
                     // Settle as a granular CARPET hugging the surface across the WHOLE bowl
-                    // (walls + floor + rim), like the original's fallout dots — a small spread
+                    // (walls + floor + rim) — a small spread
                     // mostly on/just below the ground, a thin fringe above. NOT pooled in the
                     // deposit, so it coats the deep walls, not just the bottom.
                     s.rise = this.rand01() * 4 - this.rand01() * this.rand01() * 30;   // +4 above .. -30 below (thick, grounded)
@@ -803,7 +801,7 @@ export class CLand {
      * the surface cap, larger depths are deeper strata. Rebuilds the cached bitmap.
      */
     setLayers(layers: { image: CanvasImageSource; depth: number }[], bareImage?: CanvasImageSource): void {
-        // land.txt depths are authored for the original ~480px play area; scale them
+        // land.txt depths are authored for a ~480px play area; scale them
         // to our (taller) terrain so the strata bands stay proportional.
         const scale = this.m_nHeight / 480;
         this.m_layers = layers
@@ -882,7 +880,7 @@ export class CLand {
         // (The excavated hollow ABOVE the surface is background sky and is left
         // untouched — the fallout instead RAISES the ground as real terrain, below.)
 
-        // Thin dark edge along the surface — hides any seam, matches the original.
+        // Thin dark edge along the surface — hides any seam.
         g.beginPath();
         this.traceSurface(g, 0);
         g.strokeStyle = 'rgba(22, 38, 12, 0.5)';
@@ -891,7 +889,7 @@ export class CLand {
         g.stroke();
 
         // De-grassed columns: the blast tore off the green cap → paint bare EARTH over
-        // it so craters read as exposed dirt, not grass (destructible-bitmap parity).
+        // it so craters read as exposed dirt, not grass.
         // Uses a guaranteed non-grass texture (m_barePattern), so it never repaints
         // grass on landscapes whose second layer is itself a grass tile.
         if (this.m_degrass && this.m_layers.length > 1) {
@@ -910,9 +908,9 @@ export class CLand {
                 for (let x = 0; x < W; x++) {
                     if (this.m_degrass[x]) g.fillRect(x, heights[x] - 2, 1, bandDepth(x));
                 }
-                // No darkening — the crater exposes the BRIGHT ldirt1 wall texture like the
-                // original's wall-pattern craters (not the black path). A subtle warm ADDITIVE
-                // lift nudges it toward the legacy's rust-brown instead of a muddy dark.
+                // No darkening — the crater exposes the BRIGHT ldirt1 wall texture
+                // (not the black path). A subtle warm ADDITIVE lift nudges it toward
+                // a rust-brown instead of a muddy dark.
                 const prevLift = g.globalCompositeOperation;
                 g.globalCompositeOperation = 'lighter';
                 g.fillStyle = 'rgba(48,26,9,0.18)';
@@ -925,7 +923,7 @@ export class CLand {
 
         // Permanent scorch — `source-atop` darkens only existing terrain pixels so it
         // hugs the surface. Kept SUBTLE + warm (a hint of burn at the very centre) so the
-        // crater stays the bright rust dirt of the legacy, not a dark muddy hole.
+        // crater stays the bright rust dirt, not a dark muddy hole.
         if (this.m_scorches.length) {
             g.save();
             g.globalCompositeOperation = 'source-atop';

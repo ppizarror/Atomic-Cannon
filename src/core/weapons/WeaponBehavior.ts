@@ -27,7 +27,6 @@ const CLUSTER_POWER = 0.5;
 const ROLL_SPEED = 260;
 // Max shot lifetime before it self-detonates (10.0s).
 const MAX_LIFE = 10;
-const TANK_HIT_R = 16;
 
 /** The world a shot behaves against — implemented by the game controller. */
 export interface ShotWorld {
@@ -63,7 +62,7 @@ export type FlyAction = 'continue' | 'detonate' | 'consumed';
 function tankHit(shot: CShot, world: ShotWorld): CTank | null {
     const p = shot.getPosition();
     for (const t of world.tanks) {
-        if (t.isAlive() && t.distanceTo(p.x, p.y) < TANK_HIT_R) return t;
+        if (t.isAlive() && t.distanceTo(p.x, p.y) < t.getHitRadius()) return t;
     }
     return null;
 }

@@ -174,17 +174,6 @@ export class CShot {
         this.m_pos = new Vec2(x, y);
     }
 
-    /** Rescale position + velocity when the world buffer is resized (keeps an in-flight
-     *  shot on its trajectory at the new scale); the stale-scale trail is dropped. */
-    rescale(sx: number, sy: number): void {
-        this.m_pos.x *= sx;
-        this.m_pos.y *= sy;
-        this.m_vel.x *= sx;
-        this.m_vel.y *= sy;
-        this.m_prevY *= sy;
-        this.m_trailPoints = [];
-    }
-
     isMovingDown(): boolean {
         return this.m_movingDown;
     }
@@ -245,7 +234,7 @@ export class CShot {
         if (!tank.isAlive()) return false;
 
         const dist = tank.distanceTo(this.m_pos.x, this.m_pos.y);
-        return (dist < 16);
+        return (dist < tank.getHitRadius());
     }
 
     getPosition(): Vec2 {

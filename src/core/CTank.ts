@@ -174,18 +174,6 @@ export class CTank {
     }
 
     /**
-     * Rescale position/velocity when the world buffer is resized. Grounded tanks
-     * re-seat on the terrain surface on the next update (Y is derived from the land);
-     * scaling Y here keeps airborne/jet tanks at their relative height meanwhile.
-     */
-    rescale(sx: number, sy: number): void {
-        this.m_vPos.x *= sx;
-        this.m_vPos.y *= sy;
-        this.m_vVel.x *= sx;
-        this.m_vVel.y *= sy;
-    }
-
-    /**
      * Initialize tank at position with given player data
      */
     init(x: number, pLand: CLand): void {
@@ -203,6 +191,11 @@ export class CTank {
         return this.m_maxLife;
     }
 
+    /** Shot-collision radius (scales with Player Size). */
+    getHitRadius(): number {
+        return tankRadius();
+    }
+
     /**
      * Compute tank's Y position based on terrain surface (called each frame)
      */
@@ -212,7 +205,7 @@ export class CTank {
         const nTerrainHeight = pLand.getHeightAt(Math.floor(this.m_vPos.x));
 
         // Tank sits on top of terrain
-        this.m_vPos.y = nTerrainHeight - TANK_HEIGHT_PIXELS;
+        this.m_vPos.y = nTerrainHeight - tankHeight();
 
         // Check if tank has fallen underground somehow
         if (this.m_vPos.y > nTerrainHeight) {
@@ -239,7 +232,7 @@ export class CTank {
         if (!pLand) return;
 
         // Where the tank rests when sitting on the current terrain surface.
-        const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+        const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
 
         // Jet flight (extType 17): while fuel remains the player thrusts against
         // gravity. UP = -1.2g vertical (net -0.2g, a gentle rise), L/R = ∓0.1g
@@ -266,10 +259,10 @@ export class CTank {
                     this.m_vPos.y = JET_CEILING;
                     if (this.m_vVel.y < 0) this.m_vVel.y = 0;
                 }
-                this.m_vPos.x = Math.max(TANK_RADIUS, Math.min(pLand.width - TANK_RADIUS, this.m_vPos.x));
+                this.m_vPos.x = Math.max(tankRadius(), Math.min(pLand.width - tankRadius(), this.m_vPos.x));
 
                 // Land when descending onto the surface (keeps fuel for re-lift).
-                const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+                const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
                 if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
                     this.m_vPos.y = fLandY;
                     this.m_vVel = new Vec2(0, 0);
@@ -301,9 +294,9 @@ export class CTank {
             this.m_bFalling = true;
 
             // Keep within the battlefield.
-            this.m_vPos.x = Math.max(TANK_RADIUS, Math.min(pLand.width - TANK_RADIUS, this.m_vPos.x));
+            this.m_vPos.x = Math.max(tankRadius(), Math.min(pLand.width - tankRadius(), this.m_vPos.x));
 
-            const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+            const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
             if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
                 this.m_vPos.y = fLandY;
                 this.m_vVel = new Vec2(0, 0);
@@ -337,7 +330,7 @@ export class CTank {
         const nX = Math.floor(this.m_vPos.x);
 
         // Check bounds
-        if (nX < TANK_RADIUS || nX > 800 - TANK_RADIUS) {
+        if (nX < tankRadius() || nX > 800 - tankRadius()) {
             return false;
         }
 
@@ -345,7 +338,7 @@ export class CTank {
         const nTerrainHeight = pLand.getHeightAt(nX);
 
         // Calculate tank bottom Y
-        const nTankBottom = Math.floor(this.m_vPos.y + TANK_HEIGHT_PIXELS);
+        const nTankBottom = Math.floor(this.m_vPos.y + tankHeight());
 
         // Can't move if would be too far underground
         return (nTankBottom <= nTerrainHeight + 10);
@@ -365,7 +358,7 @@ export class CTank {
 
         // Tank should be on terrain surface
         this.m_vPos.x = nNewX;
-        this.m_vPos.y = nTerrainHeight - TANK_HEIGHT_PIXELS;
+        this.m_vPos.y = nTerrainHeight - tankHeight();
 
         this.m_bIsMoving = true;
 
@@ -410,7 +403,7 @@ export class CTank {
         let newX = this.m_vPos.x + dir * stepPx;
 
         // Stop at the battlefield edge.
-        if (newX < TANK_RADIUS || newX > pLand.width - TANK_RADIUS) { this.endDrive(pLand); return; }
+        if (newX < tankRadius() || newX > pLand.width - tankRadius()) { this.endDrive(pLand); return; }
 
         // Follow the surface, but stop at terrain too steep to cross: a wall it can't
         // climb, or a cliff it won't drive off. (Screen-Y: smaller = higher ground,
@@ -423,7 +416,7 @@ export class CTank {
         if (rise > TANK_DRIVE_MAX_CLIMB * span || -rise > TANK_DRIVE_MAX_DROP * span) { this.endDrive(pLand); return; }
 
         this.m_vPos.x = newX;
-        this.m_vPos.y = newH - TANK_HEIGHT_PIXELS;
+        this.m_vPos.y = newH - tankHeight();
         this.m_bIsMoving = true;
         if (Math.abs(newX - target) < 0.5) this.endDrive(pLand);
     }
@@ -431,7 +424,7 @@ export class CTank {
     private endDrive(pLand: CLand): void {
         this.m_driveTargetX = null;
         this.m_bIsMoving = false;
-        this.m_vPos.y = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
+        this.m_vPos.y = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
     }
 
     // ── Jet flight (extType 17) ──────────────────────────────────────────────
@@ -496,10 +489,13 @@ export class CTank {
     /**
      * Apply damage to tank (called from hit detection)
      */
-    hit(fDamage: number, bShieldOnly: boolean = false): void {
-        if (!this.m_bIsAlive) return;
+    /** Apply damage. Returns the LIFE actually removed (post shield + armor), which is
+     *  what the earning economy credits — shield/armor-absorbed damage counts as 0. */
+    hit(fDamage: number, bShieldOnly: boolean = false): number {
+        if (!this.m_bIsAlive) return 0;
         this.m_nHitCount++;
 
+        const lifeBefore = this.m_health.nLife;
         let dmg = fDamage;
 
         // Shield fully absorbs the hit only if it exceeds the damage; otherwise
@@ -522,13 +518,15 @@ export class CTank {
             this.m_bExploded = true;
             this.m_bIsAlive = false;
         }
+
+        return lifeBefore - this.m_health.nLife;
     }
 
     /**
      * True when the point (cx,cy) is within nRadius of the tank centre.
      */
     isInBlastRadius(cx: number, cy: number, nRadius: number): boolean {
-        return this.distanceTo(cx, cy) <= nRadius + TANK_RADIUS;
+        return this.distanceTo(cx, cy) <= nRadius + tankRadius();
     }
 
     /**
@@ -563,9 +561,9 @@ export class CTank {
         // Uses current position and scale
 
         const dx = Math.abs(point.x - this.m_vPos.x);
-        const dy = Math.abs(point.y - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2));
+        const dy = Math.abs(point.y - (this.m_vPos.y + tankHeight() / 2));
 
-        return (dx < TANK_RADIUS && dy < TANK_HEIGHT_PIXELS);
+        return (dx < tankRadius() && dy < tankHeight());
     }
 
     // ========================================================================
@@ -580,7 +578,7 @@ export class CTank {
         if (!this.m_bIsAlive && !this.m_bExploded) return;
 
         const cx = this.m_vPos.x;
-        const surfaceY = this.m_vPos.y + TANK_HEIGHT_PIXELS;   // ground contact line
+        const surfaceY = this.m_vPos.y + tankHeight();   // ground contact line
 
         const bodyKey = `tanks/${this.m_sTankType} ${this.m_bExploded ? 'wreck' : 'body'}`;
         const sprite = assets?.getSprite(bodyKey) ?? null;
@@ -590,7 +588,7 @@ export class CTank {
         ctx.rotate(this.m_fAngle);   // tilt to terrain slope
 
         if (sprite) {
-            const w = TANK_DRAW_WIDTH;
+            const w = tankWidth();
             const h = (sprite.height / sprite.width) * w;
             // Team-tint the hull (not the wreck), keeping its shading (Tank → Colorize Team).
             const img = (this.m_bExploded || !GameConfig.colorizeTeam) ? sprite.bitmap
@@ -611,7 +609,7 @@ export class CTank {
     /** Simple team-coloured silhouette used until the hull sprite loads. */
     private drawVectorHull(ctx: CanvasRenderingContext2D): void {
         const color = TEAM_COLORS[this.m_nTeamId] ?? '#cccccc';
-        const w = TANK_DRAW_WIDTH;
+        const w = tankWidth();
 
         ctx.fillStyle = this.m_bExploded ? '#333333' : color;
         ctx.beginPath();
@@ -638,7 +636,7 @@ export class CTank {
         // left so the art stays upright. Scaled so its length = the muzzle offset.
         const turret = assets?.getSprite(`tanks/${this.m_sTankType} turret`) ?? null;
         if (turret) {
-            const scale = TANK_TURRET_LENGTH / turret.width;
+            const scale = turretLen() / turret.width;
             const tw = turret.width * scale, th = turret.height * scale;
             const img = GameConfig.colorizeTeam
                 ? tintToHue(turret, hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'),
@@ -672,7 +670,7 @@ export class CTank {
      * green/blue fills over black with a red/grey depleted remainder.
      */
     private drawBadge(ctx: CanvasRenderingContext2D, surfaceY: number, showDetail: boolean, assets?: ISpriteSource): void {
-        const w = Math.round(TANK_DRAW_WIDTH * 0.8);   // bars a little narrower than the hull
+        const w = Math.round(tankWidth() * 0.8);   // bars a little narrower than the hull
         const cx = this.m_vPos.x;
         const team = TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
         const life = Math.max(0, Math.min(1, this.m_health.nLife / this.m_maxLife));
@@ -819,8 +817,8 @@ export class CTank {
      */
     getTurretPivot(): Vec2 {
         const groundX = this.m_vPos.x;
-        const groundY = this.m_vPos.y + TANK_HEIGHT_PIXELS;   // ground-contact line
-        const up = TANK_TURRET_HEIGHT;                        // turret height above ground
+        const groundY = this.m_vPos.y + tankHeight();   // ground-contact line
+        const up = turretHgt();                        // turret height above ground
         const s = Math.sin(this.m_fAngle), c = Math.cos(this.m_fAngle);
         return new Vec2(groundX + up * s, groundY - up * c);  // (0,-up) rotated by body tilt
     }
@@ -831,7 +829,7 @@ export class CTank {
     getMuzzlePosition(): Vec2 {
         const pivot = this.getTurretPivot();
         const aim = this.aimUnit();
-        return new Vec2(pivot.x + aim.x * TANK_TURRET_LENGTH, pivot.y + aim.y * TANK_TURRET_LENGTH);
+        return new Vec2(pivot.x + aim.x * turretLen(), pivot.y + aim.y * turretLen());
     }
 
     /**
@@ -842,7 +840,7 @@ export class CTank {
         const r = (deg * Math.PI) / 180;
         const aim = new Vec2(Math.cos(r), -Math.sin(r));
         const pivot = this.getTurretPivot();
-        return new Vec2(pivot.x + aim.x * TANK_TURRET_LENGTH, pivot.y + aim.y * TANK_TURRET_LENGTH);
+        return new Vec2(pivot.x + aim.x * turretLen(), pivot.y + aim.y * turretLen());
     }
 
     /**
@@ -863,7 +861,7 @@ export class CTank {
     turretEnd(): Vec2 {
         // Returns position of barrel tip for shot spawn
 
-        const fLength = TANK_TURRET_LENGTH;
+        const fLength = turretLen();
 
         return new Vec2(
             this.m_vPos.x + Math.sin(this.m_fTurretAngle) * fLength,
@@ -966,8 +964,8 @@ export class CTank {
 
     /** Screen/world hit-test for hover (badge detail). */
     isPointInside(px: number, py: number): boolean {
-        const dx = px - this.m_vPos.x, dy = py - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2);
-        return dx * dx + dy * dy < (TANK_RADIUS + 8) * (TANK_RADIUS + 8);
+        const dx = px - this.m_vPos.x, dy = py - (this.m_vPos.y + tankHeight() / 2);
+        return dx * dx + dy * dy < (tankRadius() + 8) * (tankRadius() + 8);
     }
 
     isLocalPlayer(): boolean {
@@ -1019,12 +1017,12 @@ export class CTank {
      */
     distFromLand(pLand: CLand): number {
         const nTerrainHeight = pLand.getHeightAt(Math.floor(this.m_vPos.x));
-        return this.m_vPos.y - (nTerrainHeight - TANK_HEIGHT_PIXELS);
+        return this.m_vPos.y - (nTerrainHeight - tankHeight());
     }
 
     distanceTo(x: number, y: number): number {
         const dx = x - this.m_vPos.x;
-        const dy = y - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2);
+        const dy = y - (this.m_vPos.y + tankHeight() / 2);
         return Math.sqrt(dx * dx + dy * dy);
     }
 
@@ -1090,11 +1088,19 @@ export class CTank {
 // CONSTANTS
 // ============================================================================
 
-const TANK_RADIUS = 16;                 // Half-width of tank collision box
-const TANK_HEIGHT_PIXELS = 24;          // Approximate height in pixels
-const TANK_TURRET_LENGTH = 20;          // Turret barrel length for muzzle calc
-const TANK_TURRET_HEIGHT = 15;          // Turret pivot height above the ground line
-const TANK_DRAW_WIDTH = 46;             // On-screen hull width in pixels
+// Base tank geometry (px). Player Size (Settings → Tank) scales all of it uniformly
+// via GameConfig at read time, so a Small/Large tank draws, sits and collides at the
+// chosen size. Accessors below are used everywhere in place of the raw constants.
+const TSZ_R = 16;            // Half-width of tank collision box
+const TSZ_H = 24;            // Approximate height in pixels
+const TSZ_TLEN = 20;         // Turret barrel length for muzzle calc
+const TSZ_THGT = 15;         // Turret pivot height above the ground line
+const TSZ_W = 46;            // On-screen hull width in pixels
+const tankRadius = () => TSZ_R * GameConfig.tankSizeScale;
+const tankHeight = () => TSZ_H * GameConfig.tankSizeScale;
+const turretLen = () => TSZ_TLEN * GameConfig.tankSizeScale;
+const turretHgt = () => TSZ_THGT * GameConfig.tankSizeScale;
+const tankWidth = () => TSZ_W * GameConfig.tankSizeScale;
 const TANK_GRAVITY = 400;               // Fall acceleration when unsupported (px/s^2)
 const TANK_DRIVE_SPEED = 70;            // Ground-drive crawl speed (px/s)
 const TANK_DRIVE_MAX_CLIMB = 2.0;       // Max terrain RISE per px driven before a wall stops it

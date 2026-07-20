@@ -13,9 +13,11 @@ export const GameConfig = {
   kickbackScale: 1,      // Tank → Kickback (Off = 0)
   explosionScale: 1,     // Gameplay → Explosion Size
   powerScale: 1,         // Tank → Power Scale
+  tankSizeScale: 1,      // Tank → Player Size (hull + collision geometry)
   hitpoints: 1000,       // Tank → Hitpoints (tank starting life)
 
   // ── render toggles ──
+  drawSmoke: true,       // Graphics → Draw Smoke (lingering ground plumes)
   colorizeTeam: true,    // Tank → Colorize Team (hull tint)
   showTeamColor: true,   // Graphics → Show Team Color (name label)
   showPowerBars: true,   // Graphics → Show Power (life/shield bars)

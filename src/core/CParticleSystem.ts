@@ -16,6 +16,7 @@
 
 import type {Vec2} from '../math/Vec2';
 import particlesRaw from '../data/particles.json';
+import {GameConfig} from './CGameConfig';
 
 // Per-weapon explosion presets from weapons.txt's ParticleEffectTable: each
 // weapon's `blast`/`trail` names one of these (colour, count, speed, life,
@@ -113,7 +114,7 @@ interface Beam {
 
 // The main explosion fireball — the real `effects/explosion1.bmp` chromatic
 // starburst, blitted additively and scaled up (an "animation" via growth) as it
-// fades, matching the original's expanding explosion-sprite object.
+// fades.
 interface Explosion {
     x: number;
     y: number;
@@ -258,6 +259,7 @@ export class CParticleSystem {
         this.m_maxY = height + 200;
     }
 
+
     // ---------------------------------------------------------------- emitters
 
     private add(
@@ -318,7 +320,7 @@ export class CParticleSystem {
     // ---------------------------------------------------------------- profiles
 
     /**
-     * Weapon detonation, staged like the original's explosion sequence:
+     * Weapon detonation, staged as a multi-phase explosion sequence:
      *   Phase 1 — a brief central fireball (the weapon's own `expBitmap` flare) + a
      *             hot flash; big/nuclear rounds also trigger the full-viewport
      *             white-out (a DOM overlay, driven from the controller — see `explode`).
@@ -330,7 +332,7 @@ export class CParticleSystem {
      * `presetName` (particles.json) drives the fireball's colour/density/speed/spread.
      */
     blast(x: number, y: number, radiusPx: number, color: string, nuclear = false, presetName?: string, expType = 0, expBitmap?: string): void {
-        // `eLlightBlue` is a typo in the original weapon table for `eLightBlue`.
+        // `eLlightBlue` is a typo in the weapon data table for `eLightBlue`.
         const preset = presetName ? (PRESETS[presetName] ?? PRESETS[presetName.replace('Llight', 'Light')]) : undefined;
         const c = preset ? {r: preset.colorr, g: preset.colorg, b: preset.colorb} : parseColor(color);
         const r = Math.max(12, radiusPx);
@@ -458,16 +460,16 @@ export class CParticleSystem {
         // Fill the segment the rocket just travelled this frame so the trail is a
         // CONTINUOUS streak, not blobs spaced one-per-frame. Steps scale with the
         // segment length (≈ speed·dt) → a faster (higher-power) shot lays down a
-        // longer, denser streak (RE: faster ⇒ more visible smoke, via SPEED).
+        // longer, denser streak (faster ⇒ more visible smoke).
         const steps = Math.max(rocket ? 2 : 1, Math.ceil((speed * dt) / 3));
         for (let s = 0; s < steps; s++) {
             const f = s / steps;                             // 0 = head, →1 = last-frame position
             const px = x - vx * dt * f, py = y - vy * dt * f;
             if (rocket) {
-                // ROCKET/MISSILE exhaust — a small bright orange FIRE glow (the RE trail
+                // ROCKET/MISSILE exhaust — a small bright orange FIRE glow (the trail
                 // flare is only ~4px, so small sizes here vs the ×~7.8 draw) trailing
-                // into grey SMOKE. The grey smoke is a rocket-only INTERP (the original
-                // has no lingering smoke — only flare+sparks), so it stays on rockets.
+                // into grey SMOKE. The grey smoke is a rocket-only touch (other trails
+                // have no lingering smoke — only flare+sparks), so it stays on rockets.
                 this.add(
                     px, py,
                     between(-5, 5), between(-5, 2),
@@ -480,12 +482,12 @@ export class CParticleSystem {
                     {r: g, g, b: g}, between(1.0, 1.8) * lenScale, between(1.6, 3.2), 'smoke',
                 );
             } else {
-                // BALLISTIC shell (trailType 1: rail/rail slice/artillery/shell) — the
-                // original emits ONLY a faint WHITE spark puff (flares_04, forced
-                // 0xffffff), never a rocket plume and never a weapon-coloured glow. So
-                // these leave a subtle neutral spark trace, NOT the "rocket fire" a
-                // tinted additive flare produced. The rocket exhaust plume is reserved
-                // for trailType ≥ 2 (missiles/jets) above.
+                // BALLISTIC shell (trailType 1: rail/rail slice/artillery/shell) — emits
+                // ONLY a faint WHITE spark puff (flares_04, forced 0xffffff), never a
+                // rocket plume and never a weapon-coloured glow. So these leave a subtle
+                // neutral spark trace, NOT the "rocket fire" a tinted additive flare
+                // produced. The rocket exhaust plume is reserved for trailType ≥ 2
+                // (missiles/jets) above.
                 this.add(
                     px, py,
                     between(-8, 8), between(-6, 10),
@@ -528,6 +530,7 @@ export class CParticleSystem {
 
     /** A slow column of grey smoke rising from a blast site (lingers after the flash). */
     private emitSmokeColumn(x: number, y: number, count: number, scale: number): void {
+        if (!GameConfig.drawSmoke) return;   // Graphics → Draw Smoke (lingering ground plumes)
         for (let i = 0; i < count; i++) {
             const g = 90 + between(-25, 45);
             this.add(

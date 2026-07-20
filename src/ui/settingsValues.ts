@@ -13,6 +13,7 @@ import { getVal } from './settingsStore';
 const WIND_SCALE = [0, 0.5, 1, 1.6];             // Disabled/Low/Medium(1.0)/High
 const KICKBACK_SCALE = [0, 0.6, 1, 1.5];         // Off/Low/Normal(1.0)/High
 const EXPLOSION_SCALE = [0.7, 1, 1.35, 1.8];     // Small/Normal(1.0)/Large/Massive
+const PLAYER_SIZE_SCALE = [0.72, 1, 1.35];       // Small/Normal(1.0)/Large
 
 export const gameSettings = {
   /** Credits each player starts a match with. */
@@ -41,9 +42,12 @@ export const gameSettings = {
   explosionScale: (): number => EXPLOSION_SCALE[getVal('gp.explosionSize', 1)] ?? 1,
   /** Shot launch-speed scalar (Power Scale %). */
   powerScale: (): number => getVal('tank.powerScale', 100) / 100,
+  /** Tank geometry scalar (Player Size). */
+  tankSizeScale: (): number => PLAYER_SIZE_SCALE[getVal('tank.size', 1)] ?? 1,
   /** Tank starting life. */
   hitpoints: (): number => getVal('tank.hitpoints', 1000),
 
+  drawSmoke: (): boolean => getVal('gfx.smoke', 1) !== 0,
   colorizeTeam: (): boolean => getVal('tank.colorize', 1) !== 0,
   showTeamColor: (): boolean => getVal('gfx.teamColor', 1) !== 0,
   showPowerBars: (): boolean => getVal('gfx.showPower', 1) !== 0,

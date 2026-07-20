@@ -111,5 +111,19 @@ console.log('Settings → game');
     ok('Hitpoints → tank spawns full', tank.getHealth().nLife === 2500, `life=${tank.getHealth().nLife}`);
 }
 
+// 5. Tank Size (geometry scalar → collision radius) + Draw Smoke.
+{
+    setVal('tank.size', 2);   // Large → 1.35
+    setVal('gfx.smoke', 0);   // off
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    ok('Player Size Large → scalar 1.35', GameConfig.tankSizeScale === 1.35, `s=${GameConfig.tankSizeScale}`);
+    ok('Draw Smoke off is applied', GameConfig.drawSmoke === false);
+
+    gc.startGame(2);
+    const tank = (gc as unknown as { m_tanks: { getHitRadius(): number }[] }).m_tanks[0];
+    ok('hit radius scales with size (16 × 1.35)', Math.abs(tank.getHitRadius() - 16 * 1.35) < 1e-9, `r=${tank.getHitRadius()}`);
+}
+
 console.log(`\n${pass}/${pass + fail} settings checks passed`);
 process.exit(fail ? 1 : 0);

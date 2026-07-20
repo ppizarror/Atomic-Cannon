@@ -27,7 +27,9 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.kickbackScale = S.kickbackScale();
   GameConfig.explosionScale = S.explosionScale();
   GameConfig.powerScale = S.powerScale();
+  GameConfig.tankSizeScale = S.tankSizeScale();
   GameConfig.hitpoints = S.hitpoints();
+  GameConfig.drawSmoke = S.drawSmoke();
   GameConfig.colorizeTeam = S.colorizeTeam();
   GameConfig.showTeamColor = S.showTeamColor();
   GameConfig.showPowerBars = S.showPowerBars();
