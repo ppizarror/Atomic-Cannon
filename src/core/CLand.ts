@@ -395,6 +395,31 @@ export class CLand {
   }
 
   /**
+   * Underground blast (digger detonation): remove ONLY the DISC of radius `r` at (x,y) and
+   * let the soil ABOVE it cave IN under gravity to fill the void — so the surface drops by
+   * ~the disc thickness (≤ 2r), NOT all the way down from the surface to the buried blast.
+   * Per-column jitter (±28%) keeps the crater ragged, not a flat/perfect circle.
+   */
+  carveDiscCollapse(x: number, y: number, r: number): void {
+    if (!this.m_arrHeights) return;
+    const lo = Math.max(0, Math.floor(x - r));
+    const hi = Math.min(this.m_nWidth - 1, Math.ceil(x + r));
+    for (let c = lo; c <= hi; c++) {
+      const dx = c - x;
+      const base = Math.sqrt(Math.max(0, r * r - dx * dx)); // disc half-height at this column
+      if (base <= 0.5) continue;
+      // Noise so the crater isn't a clean circle: scale the disc height ±40% and add a
+      // small absolute wobble per column → a ragged, uneven rim/floor.
+      const h = Math.max(1, base * (0.6 + Math.random() * 0.8) + (Math.random() * 2 - 1) * r * 0.12);
+      const removed = this.sliceColumn(c, y, h, true, true); // keepCap (grass rides down) + animate
+      if (removed > 0.5) this.beginCollapse(c, removed); // the overburden falls in (gravity)
+    }
+    if (this.m_radSpecks.length)
+      this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
+    this.preBlast(lo, hi);
+  }
+
+  /**
    * Register a column to sink by `drop` px under gravity (a beam-slice collapse): the
    * surface stays put, then `update()` accelerates it downward until it has fallen
    * `drop` px, so the capped overburden visibly FALLS into the void instead of snapping.
@@ -447,25 +472,6 @@ export class CLand {
     }
   }
 
-  /**
-   * Slice-carve a disc (digger bore): remove the submerged part of a circle of radius
-   * `r` at (x,y) and let the earth above fall in per column (see `sliceColumn`), so the
-   * digger tunnels *through* the mass and the dirt collapses behind it, rather than
-   * gouging a clean trench open to the sky from the surface down to the shot.
-   */
-  carveDiscSlice(x: number, y: number, r: number): void {
-    if (!this.m_arrHeights) return;
-    const lo = Math.max(0, Math.floor(x - r));
-    const hi = Math.min(this.m_nWidth - 1, Math.ceil(x + r));
-    for (let c = lo; c <= hi; c++) {
-      const dx = c - x;
-      const h = Math.sqrt(Math.max(0, r * r - dx * dx)); // disc half-height at this column
-      this.sliceColumn(c, y, h);
-    }
-    if (this.m_radSpecks.length)
-      this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
-    this.preBlast(lo, hi);
-  }
 
   private preBlast(nX1: number, nX2: number): void {
     this.m_dirtyMin = Math.max(0, nX1);

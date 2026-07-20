@@ -135,21 +135,27 @@ export function weaponFlyStep(
       return shot.getGeneration() === 0 && shot.isMovingDown() ? 'detonate' : 'continue';
 
     case EXT.DIGGER:
-      // Burrow straight down THROUGH the mass to a depth limit, then detonate. We
-      // do NOT carve a trench on the way down — the shot sprite is drawn over the
-      // terrain so it reads as tunnelling in, and the overburden stays put (the
-      // dirt fills behind it). The detonation cuts the actual bounded crater. A
-      // per-frame carve would drop the surface to track the shot all the way down =
-      // the "cut from position to the top" gash we're removing.
+      // PENETRATES terrain along its full ballistic arc (no straight-down override) —
+      // it can tunnel through a mountain and come out the far side. It detonates:
+      //   (b) on a tank, (c) if it's buried but NOT descending (entered while rising, or
+      //   its arc bottomed out inside the mass) → blow up right there, or (a) once it has
+      //   burrowed within a random margin of the WORLD FLOOR. Emerging into open air does
+      //   NOT detonate — it keeps flying (and detonates when it re-impacts the far side).
       if (hit) return 'detonate';
-      if (belowSurface && shot.isMovingDown()) {
-        return p.y < surfaceY + DIG_DEPTH ? 'continue' : 'detonate';
+      if (belowSurface) {
+        if (!shot.isMovingDown()) return 'detonate'; // (c) buried, not descending
+        // Descending through the mass: keep tunnelling (its sprite draws over the terrain
+        // so you SEE it bore through) until within the random floor margin. The descent
+        // does NOT cut terrain — a heightmap can't hold a real tunnel (a void with soil
+        // above), so only the detonation crater changes the ground.
+        if (p.y < diggerDetonateY(shot, land, surfaceY)) return 'continue';
+        return 'detonate'; // (a) reached the deep floor margin
       }
-      return 'continue';
+      return 'continue'; // open air: before entry OR emerged on the far side — keep arcing
 
     case EXT.ESCAPE:
-      // Mirror of Digger: tunnel UP while rising (no trench carved); detonate once
-      // it starts falling.
+      // Mirror of Digger: penetrates the mass while RISING (tunnels up and out); detonate
+      // once it starts falling. Descent doesn't cut terrain (see Digger).
       if (hit) return 'detonate';
       if (belowSurface) return shot.isMovingDown() ? 'detonate' : 'continue';
       return 'continue';
@@ -183,8 +189,14 @@ export function weaponFlyStep(
   }
 }
 
-// Digger/Escape bore depth limit (px below the entry surface) before it detonates.
-const DIG_DEPTH = 90;
+/** The screen-Y a digger detonates at: it burrows until it's within a per-shot random
+ *  margin of the WORLD FLOOR (matching the original's "floor − rand" depth), so the
+ *  tunnel is DEEP and varies per shot. Guarded to always dig at least a little past the
+ *  entry surface and never below the floor itself. */
+function diggerDetonateY(shot: CShot, land: CLand, surfaceY: number): number {
+  if (shot.digDepth < 0) shot.digDepth = 40 + Math.random() * 220; // margin above the floor
+  return Math.min(land.height - 12, Math.max(surfaceY + 60, land.height - shot.digDepth));
+}
 
 function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank | null): FlyAction {
   if (hit) return 'detonate';
@@ -258,10 +270,13 @@ function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number
  */
 export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): void {
   shot.kill();
-  const pos = shot.getPosition();
   const land = world.land;
-  const isPrimary = shot.getGeneration() === 0;
   const ext = weapon.getExtType();
+  // The blast happens exactly where the shot is — for a Digger that's its BURIED position
+  // inside the mass (it detonates deep after tunnelling through, or wherever it re-impacts
+  // on the far side). It is NOT relocated to the surface.
+  const pos = shot.getPosition();
+  const isPrimary = shot.getGeneration() === 0;
   const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
   // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
   // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
@@ -299,11 +314,14 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // scorch (it isn't a burn) and no ejecta (it clears dirt, doesn't throw it).
     land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
   } else if (ext === EXT.DIGGER || ext === EXT.ESCAPE) {
-    // Digger/Escape detonate deep INSIDE the mass. Cut a BOUNDED slice there — the
-    // overburden falls in to fill it (surface drops by ~the crater size), rather
-    // than a crater open to the sky from the surface all the way down to the shot.
+    // Digger/Escape explode where the shot IS — deep in the mass (or wherever they
+    // re-impacted after crossing to the far side). The blast removes only its DISC of
+    // soil and the ground ABOVE caves IN under gravity to fill it — so the surface sags
+    // by ~the crater size, it does NOT strip the whole column from the blast up to the
+    // surface. Per-column noise keeps the collapse ragged, not flat/circular.
     const craterR = Math.round(radiusPx);
-    land.carveDiscSlice(Math.floor(pos.x), Math.floor(pos.y), craterR);
+    land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), craterR);
+    land.scorch(Math.floor(pos.x), Math.floor(surfaceY), craterR); // darken the surface rim
     land.addShowerParticles(
       Math.floor(pos.x),
       Math.floor(surfaceY),
