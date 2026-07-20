@@ -55,6 +55,12 @@ const LAND_DATA = landData as LandConfig[];
 // weapon so it can be spammed to review effects. Set to null to restore the
 // full arsenal.
 const CONTROL_WEAPON: string | null = null;
+
+// A beam holds on screen for ~this long, then the earth collapses (the removed dirt
+// falls/settles over the following ~second). Keep it just under the beam's on-screen
+// life so the ground drops as the ray fades — "beam holds → earth falls".
+const BEAM_COLLAPSE_DELAY = 1;
+
 const controlWeaponIndex = (): number =>
     CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
 
@@ -107,9 +113,6 @@ export class CGameController implements ShotWorld {
         this.m_sentries = [];
         this.m_aimMarkers = [];
 
-        // Fresh economy for the match — start credits come from Settings → Economy.
-        this.m_economy.reset(this.m_startCredits);
-
         // Generate terrain: a forced landscape shape (Settings → Land Type) or, for
         // "Random", the usual random landscape.
         if (this.m_landMode >= 0 && this.m_landMode <= 4) {
@@ -139,9 +142,15 @@ export class CGameController implements ShotWorld {
             pTank.init(xPos, this.m_land);
             pTank.setHuman(i === 0); // Only first player is human
             pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
+            pTank.setCredits(this.m_startCredits);   // per-tank starting credits (Economy → Credit Start)
 
             this.m_tanks.push(pTank);
         }
+
+        // Credits are per-tank; the human's depot spends against the human tank's
+        // balance. Reset the shared inventory (owned rounds) for the fresh match.
+        this.m_economy.bindCredits(this.m_tanks[0]);
+        this.m_economy.reset(this.m_startCredits);
 
         // Preload hull sprites for the tanks in play (fire-and-forget; the renderer
         // falls back to vector hulls until they are ready).
@@ -151,8 +160,10 @@ export class CGameController implements ShotWorld {
             }
         }
 
-        // Preload projectile sprites (each weapon's `bitmap` under assets/weapons/).
-        // They all use a magenta (255,0,255) background, same as the hull sprites.
+        // Preload projectile sprites (each weapon's `bitmap` under assets/weapons/) —
+        // this includes the beam weapons' colour textures (magma.bmp, grate.bmp, …), which
+        // the beam draw stretches along the ray. They use a magenta (255,0,255) background,
+        // same as the hull sprites.
         const bitmaps = new Set(WEAPON_DATABASE.map(w => w.bitmap).filter(Boolean));
         for (const bmp of bitmaps) {
             this.m_assets.loadSprite(`weapons/${bmp}`, `/assets/weapons/${bmp}`);
@@ -325,6 +336,7 @@ export class CGameController implements ShotWorld {
     markDirty(): void {
         this.m_renderGate.markDirty(performance.now());
     }
+
 
     /**
      * Whether any GAMEPLAY motion is on screen this frame (as opposed to the purely
@@ -1008,7 +1020,9 @@ export class CGameController implements ShotWorld {
             const w = getWeapon(m.weaponIndex);
             this.m_mines.splice(i, 1);
             this.explode(m.x, m.y, 1.3, w.getColor(), w.getRadius(), w.isNuclear(), w.getBlastParticle(), w.getExpType(), w.getExpBitmap());
-            this.shake(8, 0.3);
+            // Only big mines shake the camera (see weaponDetonate — shake is reserved for
+            // bomb/nuke-scale blasts; a small proximity charge just pops).
+            if (w.isNuclear() || w.getExpType() === 4 || w.getRadius() >= 45) this.shake(8, 0.3);
             this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
             this.m_land.scorch(Math.floor(m.x), Math.floor(m.y), w.getRadius());
             this.applyBlast(new Vec2(m.x, m.y), w.getRadius(), w.getDamage(), m.owner, false);
@@ -1057,6 +1071,15 @@ export class CGameController implements ShotWorld {
         this.m_audio?.tankExplode(pos.x);   // tank explode.wav
     }
 
+    /** Pool credits within a team: after an award, copy the awarded tank's balance to
+     *  every same-team tank (credits are shared per team). */
+    private poolTeamCredits(tank: CTank): void {
+        const credits = tank.getCredits(), team = tank.getTeamId();
+        for (const t of this.m_tanks) {
+            if (t !== tank && t.getTeamId() === team) t.setCredits(credits);
+        }
+    }
+
 
     /**
      * Advance to next living player's turn
@@ -1064,7 +1087,7 @@ export class CGameController implements ShotWorld {
     private advanceToNextPlayer(): void {
         const nPlayers = this.m_tanks.length;
 
-        // Weapon-test mode (?weapontest=1): never hand the turn to the AI — keep it on
+        // Weapon-test mode (?weapon_test=1): never hand the turn to the AI — keep it on
         // the (living) human so weapons can be fired back-to-back indefinitely.
         if (this.m_weaponTest) {
             const human = this.m_tanks.findIndex(t => t.isHuman() && t.isAlive());
@@ -1334,26 +1357,29 @@ export class CGameController implements ShotWorld {
             if (!t.isAlive()) this.handleTankDestroyed(t);
         }
 
-        // Carve the channel the ray cuts. Conceptually a beam slices a slot through
-        // every hill it pierces along the WHOLE line in one frame (which is why it
-        // reaches tanks buried behind them). Our terrain is a heightmap — it can't hold
-        // a floating tunnel — so "cut" means dropping the surface down to the ray
-        // wherever the ray runs at/below it; open-air spans (the ray flying above a
-        // hill) leave no mark.
-        const channelR = Math.max(4, Math.min(10, r * 0.3));
-        const beamLen = Math.hypot(end.x - muzzle.x, end.y - muzzle.y);
-        for (let d = 0; d <= beamLen; d += Math.max(2, channelR * 0.7)) {
-            const px = muzzle.x + dir.x * d, py = muzzle.y + dir.y * d;
-            if (px < 0 || px >= W) continue;
-            if (py < this.m_land.getHeightAt(Math.floor(px)) - channelR) continue;   // ray in open air
-            this.m_land.blastCircle(Math.floor(px), Math.floor(py), channelR);
-        }
-
-        // The beam itself: a straight ray drawn OVER the terrain (so it reads as
-        // penetrating), sweeping out from the muzzle. A through-beam has no single
-        // impact point — no crater/explosion/ripple, just a light discharge shake.
-        this.m_particles.beam(muzzle.x, muzzle.y, end.x, end.y, weapon.getColor());
+        // The beam itself: the weapon's own colour texture (`bitmap` — red magma, striped
+        // yellow grate, blue …) rotated to the aim and stretched along the line at `size`
+        // thickness. It holds on screen for a beat, THEN the earth collapses — a through-
+        // beam has no single impact point, no crater/explosion/ripple, just a light shake.
+        this.m_particles.beam(
+            muzzle.x, muzzle.y, end.x, end.y, weapon.getColor(),
+            `weapons/${weapon.getBitmap()}`, weapon.getSize(), BEAM_COLLAPSE_DELAY,
+        );
         this.shake(3, 0.18);
+
+        // The earth falls AFTER the beam, not with it: the original cuts once but the
+        // removed dirt drops and settles over the following ~second, so it reads as
+        // "beam holds → ground collapses". We schedule the slice to fire as the beam
+        // fades. It cuts a SLICE the width of the beam (the overburden falls in — never
+        // planing off everything from the ray up to the surface) with a per-fire width
+        // jitter + ragged per-column depth + falling debris, so the collapsed line is
+        // noisy, not a clean geometric slot. Our heightmap can't hold a floating tunnel,
+        // so the slice drops each crossed column by ~the beam thickness.
+        const jitter = 0.85 + Math.random() * 0.3;                          // per-fire size wobble
+        const carveHalf = Math.max(3, Math.min(24, weapon.getSize() * 0.5 * jitter));
+        this.schedule(BEAM_COLLAPSE_DELAY, () => {
+            this.m_land.carveBeamSlice(muzzle.x, muzzle.y, end.x, end.y, carveHalf);
+        });
 
         const rad = weapon.getRadiation();
         if (rad.time > 0 && rad.dmg > 0) {
@@ -1671,6 +1697,16 @@ export class CGameController implements ShotWorld {
         }
     }
 
+    /** Dev (?weapon_sel=<id>): grant weapon <id> unlimited ammo and select it on every
+     *  tank so it stays picked across the turn cycle (pairs with ?weapon_test=1). */
+    forceWeapon(index: number): void {
+        if (index < 0 || index >= WEAPON_DATABASE.length) return;
+        this.m_economy.setUnlimited(index);
+        this.m_currentWeaponIndex = index;
+        for (const t of this.m_tanks) t.setWeaponIndex(index);
+        this.markDirty();
+    }
+
     // --- HUD accessors ---------------------------------------------------------
     getWeaponDefs() {
         // The control-weapon lock only restricts the HUMAN's own list. During a bot's
@@ -1763,7 +1799,7 @@ export class CGameController implements ShotWorld {
         this.m_onImpact = cb;
     }
 
-    /** Weapon-test mode (?weapontest=1): the AI never takes a turn and the human's
+    /** Weapon-test mode (?weapon_test=1): the AI never takes a turn and the human's
      *  shot timer is disabled, so weapons can be fired back-to-back indefinitely. */
     setWeaponTest(on: boolean): void {
         this.m_weaponTest = on;
@@ -1814,7 +1850,7 @@ export class CGameController implements ShotWorld {
     private m_tanks: CTank[] = [];
     private m_shots: CShot[];
     private m_pendingSalvos = 0;   // succession salvos still scheduled to fire this shot
-    private m_weaponTest = false;  // ?weapontest=1: AI never takes a turn (endless firing)
+    private m_weaponTest = false;  // ?weapon_test=1: AI never takes a turn (endless firing)
 
     private m_particles: CParticleSystem;
     private m_weather: CWeather;

@@ -27,6 +27,10 @@ const CLUSTER_POWER = 0.5;
 const ROLL_SPEED = 260;
 // Max shot lifetime before it self-detonates (10.0s).
 const MAX_LIFE = 10;
+// Blast radius (px) at/above which a detonation shakes the camera. Below it (machine
+// gun r8, shell/cannon r≈20) the impact is silent-camera; bombs/rockets (r≈50) and
+// nukes shake. See weaponDetonate.
+const BIG_BLAST_RADIUS = 45;
 
 /** The world a shot behaves against — implemented by the game controller. */
 export interface ShotWorld {
@@ -104,27 +108,23 @@ export function weaponFlyStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt
             return shot.isMovingDown() ? 'detonate' : 'continue';
 
         case EXT.DIGGER:
-            // Burrow straight down carving craters until a depth limit, then detonate.
+            // Burrow straight down THROUGH the mass to a depth limit, then detonate. We
+            // do NOT carve a trench on the way down — the shot sprite is drawn over the
+            // terrain so it reads as tunnelling in, and the overburden stays put (the
+            // dirt fills behind it). The detonation cuts the actual bounded crater. A
+            // per-frame carve would drop the surface to track the shot all the way down =
+            // the "cut from position to the top" gash we're removing.
             if (hit) return 'detonate';
             if (belowSurface && shot.isMovingDown()) {
-                if (p.y < surfaceY + DIG_DEPTH) {
-                    land.blastCircle(Math.floor(p.x), Math.floor(p.y), diggerBore(shot));
-                    return 'continue';
-                }
-                return 'detonate';
+                return p.y < surfaceY + DIG_DEPTH ? 'continue' : 'detonate';
             }
             return 'continue';
 
         case EXT.ESCAPE:
-            // Mirror of Digger: tunnel UP while rising; detonate once it starts falling.
+            // Mirror of Digger: tunnel UP while rising (no trench carved); detonate once
+            // it starts falling.
             if (hit) return 'detonate';
-            if (belowSurface) {
-                if (!shot.isMovingDown()) {
-                    land.blastCircle(Math.floor(p.x), Math.floor(p.y), diggerBore(shot));
-                    return 'continue';
-                }
-                return 'detonate';
-            }
+            if (belowSurface) return shot.isMovingDown() ? 'detonate' : 'continue';
             return 'continue';
 
         case EXT.ROLLER:
@@ -156,12 +156,8 @@ export function weaponFlyStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt
     }
 }
 
-// Digger/Escape bore depth limit (px below the entry surface) and per-step bore radius.
+// Digger/Escape bore depth limit (px below the entry surface) before it detonates.
 const DIG_DEPTH = 90;
-
-function diggerBore(shot: CShot): number {
-    return Math.max(6, Math.floor(shot.getRadius() * 0.5));
-}
 
 function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank | null): FlyAction {
     if (hit) return 'detonate';
@@ -228,7 +224,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
 
     world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9, weapon.getColor(), radiusPx, weapon.isNuclear(), weapon.getBlastParticle(), weapon.getExpType(), weapon.getExpBitmap());
     world.hitSound(weapon.getHitSound(), pos.x);   // soundHit, panned to the blast
-    if (!isCleaner) world.shake(isPrimary ? 8 : 3, 0.3);
+    // Camera shake is a port embellishment — the original never shakes on impact (it
+    // only warps the screen for nukes). So reserve it for genuinely BIG blasts: nukes
+    // and bomb/rocket-scale craters (radius ≥ 45). Small rounds — machine gun, shells,
+    // cannon — land with no shake, matching how they read in the original.
+    const bigBlast = weapon.isNuclear() || weapon.getExpType() === 4 || radiusPx >= BIG_BLAST_RADIUS;
+    if (!isCleaner && bigBlast) world.shake(isPrimary ? 8 : 4, 0.3);
 
     // Terrain effect.
     const earth = weapon.getEarth();
@@ -239,6 +240,13 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
         // Cleaner: carve out its (large) radius — remove terrain, nothing else. No
         // scorch (it isn't a burn) and no ejecta (it clears dirt, doesn't throw it).
         land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
+    } else if (ext === EXT.DIGGER || ext === EXT.ESCAPE) {
+        // Digger/Escape detonate deep INSIDE the mass. Cut a BOUNDED slice there — the
+        // overburden falls in to fill it (surface drops by ~the crater size), rather
+        // than a crater open to the sky from the surface all the way down to the shot.
+        const craterR = Math.round(radiusPx);
+        land.carveDiscSlice(Math.floor(pos.x), Math.floor(pos.y), craterR);
+        land.addShowerParticles(Math.floor(pos.x), Math.floor(surfaceY), Math.min(400, craterR * 6 + 20), craterR);
     } else if (!isBeam) {
         // Nukes (expType 4) blow a much wider crater than their base radius.
         const heavy = weapon.getExpType() === 4 || weapon.isNuclear();

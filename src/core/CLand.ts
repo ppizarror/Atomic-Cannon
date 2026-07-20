@@ -283,6 +283,103 @@ export class CLand {
         this.preBlast(x - nRadius, x + nRadius);
     }
 
+    /**
+     * Slice-carve at a column: remove only the part of the [y-half, y+half] band that
+     * is BELOW the current surface, then let all the earth above it FALL DOWN to fill
+     * the gap — so the surface drops by the removed slice, NOT down to the cut. This is
+     * how a ray/digger cuts *through* a mass on our heightmap (which can't hold a
+     * floating tunnel): it takes a slice and the overburden collapses onto it. Returns
+     * the thickness removed (0 if the band was entirely in open air here).
+     */
+    private sliceColumn(col: number, y: number, half: number, keepCap = false): number {
+        const surf = this.m_arrHeights![col];
+        // Earth exists for screen-Y in [surf, height]. Intersect the band with it.
+        const removed = Math.min(y + half, this.m_nHeight) - Math.max(surf, y - half);
+        if (removed <= 0) return 0;                       // band is above the surface here
+        this.m_arrHeights![col] = Math.min(this.m_nHeight, surf + removed);
+        // keepCap: the overburden slides DOWN INTACT — it keeps its top surface (grass/
+        // snow cap) AND its radiation (a beam takes a void and the capped, possibly
+        // irradiated earth falls in; it does not destroy either). Only a true excavation
+        // (digger underground, blast) strips the cap and wipes the fallout.
+        if (!keepCap) {
+            if (this.m_degrass) this.m_degrass[col] = 1;      // tore through the grass cap
+            if (this.m_radDeposit) this.m_radDeposit[col] = 0; // blast wipes the fallout
+        } else if (this.m_radDeposit && this.m_radDeposit[col] > 0) {
+            // Irradiated earth survives the collapse EXCEPT the part the ray band cuts
+            // directly through: the fallout sits in [surf, surf+dep], so remove only its
+            // overlap with the removed band and let the rest fall back with its radiation.
+            const dep = this.m_radDeposit[col];
+            const hit = Math.min(surf + dep, y + half) - Math.max(surf, y - half);
+            if (hit > 0) this.m_radDeposit[col] = Math.max(0, dep - hit);
+        }
+        return removed;
+    }
+
+    /**
+     * Carve the slice a beam cuts along its whole line: for each column the ray crosses
+     * at/below the surface, remove a band of ~`halfWidth` above+below the ray. The cut is
+     * NOT a razor-clean slot — the per-column depth is jittered (ragged edge) and the
+     * removed earth is ejected as FALLING debris that drops and re-piles noisily (the
+     * overburden collapses in). So after the beam the surface sags along the line with
+     * random patterns, matching the original (per-fire size jitter + ±2px debris settle),
+     * rather than planing off everything from the ray up to the surface.
+     */
+    carveBeamSlice(x0: number, y0: number, x1: number, y1: number, halfWidth: number): void {
+        if (!this.m_arrHeights) return;
+        const lo = Math.max(0, Math.floor(Math.min(x0, x1)));
+        const hi = Math.min(this.m_nWidth - 1, Math.ceil(Math.max(x0, x1)));
+        const dx = x1 - x0;
+        for (let c = lo; c <= hi; c++) {
+            const t = Math.abs(dx) < 1e-3 ? 0 : (c - x0) / dx;
+            if (t < 0 || t > 1) continue;
+            const beamY = y0 + (y1 - y0) * t;
+            // Ragged cut: jitter the removed depth per column (±30%) so the slot edge is
+            // noisy, not a clean geometric line. keepCap → the grass/snow surface slides
+            // down with the collapse instead of exposing bare dirt.
+            const half = Math.max(1, halfWidth * (0.7 + Math.random() * 0.6));
+            const removed = this.sliceColumn(c, beamY, half, true);
+            // The sliced overburden FALLS IN — eject dropping bits from the top of the cut
+            // (sparsely, so a slot remains but the fill piles noisily via the ±2px settle).
+            // Coloured like the SURFACE cap (grass/snow) — it's the capped earth caving in,
+            // not fresh dirt.
+            if (removed > 3 && Math.random() < 0.5) {
+                this.addFallingDebris(c, beamY - half, 1, 1.5, this.capColor());
+            }
+        }
+        // Only the fallout specks the ray actually PASSES THROUGH are vaporised — the
+        // rest ride the collapse down (their radiation is preserved). Keep a speck unless
+        // it lies within the beam's half-width of the ray line.
+        if (this.m_radSpecks.length) {
+            const len2 = dx * dx + (y1 - y0) * (y1 - y0);
+            this.m_radSpecks = this.m_radSpecks.filter(s => {
+                if (s.x < lo || s.x > hi) return true;
+                const tt = len2 > 0 ? Math.max(0, Math.min(1, ((s.x - x0) * dx + (s.y - y0) * (y1 - y0)) / len2)) : 0;
+                const cx = x0 + tt * dx, cy = y0 + tt * (y1 - y0);
+                return Math.hypot(s.x - cx, s.y - cy) > halfWidth + 4;   // outside the ray → survives
+            });
+        }
+        this.preBlast(lo, hi);
+    }
+
+    /**
+     * Slice-carve a disc (digger bore): remove the submerged part of a circle of radius
+     * `r` at (x,y) and let the earth above fall in per column (see `sliceColumn`), so the
+     * digger tunnels *through* the mass and the dirt collapses behind it, rather than
+     * gouging a clean trench open to the sky from the surface down to the shot.
+     */
+    carveDiscSlice(x: number, y: number, r: number): void {
+        if (!this.m_arrHeights) return;
+        const lo = Math.max(0, Math.floor(x - r));
+        const hi = Math.min(this.m_nWidth - 1, Math.ceil(x + r));
+        for (let c = lo; c <= hi; c++) {
+            const dx = c - x;
+            const h = Math.sqrt(Math.max(0, r * r - dx * dx));   // disc half-height at this column
+            this.sliceColumn(c, y, h);
+        }
+        if (this.m_radSpecks.length) this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
+        this.preBlast(lo, hi);
+    }
+
     private preBlast(nX1: number, nX2: number): void {
         this.m_dirtyMin = Math.max(0, nX1);
         this.m_dirtyMax = Math.min(this.m_nWidth - 1, nX2);
@@ -524,6 +621,53 @@ export class CLand {
             p.spin = 0;
             this.m_particles.push(p);
         }
+    }
+
+    /**
+     * Spawn dirt chunks that FALL from a cut rather than being flung out — near-zero
+     * launch (they just drop under gravity) and settle into ±2px-scattered piles via
+     * the same deposit path as blast ejecta. This is the "the earth falls in after the
+     * beam" collapse: the sliced overburden drops and re-piles noisily, so the cut never
+     * reads as a clean geometric slot. (The original ejects the carved earth as
+     * zero-velocity debris that settles over the next ~1 s — see the RE notes.)
+     */
+    addFallingDebris(x: number, y: number, count: number, spread: number, color?: string): void {
+        const pool = this.m_particlePool;
+        for (let i = 0; i < count; i++) {
+            let v = 24 + Math.floor(Math.random() * 116);       // dirt brown [24,139]
+            if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark clods
+            const p: LandParticle = pool.pop() ?? { x: 0, y: 0, vx: 0, vy: 0, color: '', size: 0, spin: 0 };
+            p.x = x + (Math.random() * 2 - 1) * spread;
+            p.y = y + (Math.random() * 2 - 1) * spread * 0.5;
+            p.vx = (Math.random() * 2 - 1) * 22;                // slight sideways drift
+            p.vy = Math.random() * 34;                          // starts falling — no upward launch
+            p.color = color ?? this.dirtColor(v);               // caller can match the surface cap
+            p.size = Math.random() < 0.82 ? 1 : 2;
+            p.spin = 0;
+            this.m_particles.push(p);
+        }
+    }
+
+    /** Average colour of the top terrain layer (the grass/snow cap), cached. Used to tint
+     *  the earth that caves in when a beam slices through, so the collapse keeps its
+     *  surface material instead of reading as fresh dirt. */
+    private capColor(): string {
+        if (this.m_capColor) return this.m_capColor;
+        const img = this.m_layers[0]?.image;
+        if (!img || typeof document === 'undefined') return (this.m_capColor = 'rgb(70,104,44)');
+        try {
+            const c = document.createElement('canvas');
+            c.width = 8; c.height = 8;
+            const g = c.getContext('2d')!;
+            g.drawImage(img, 0, 0, 8, 8);
+            const d = g.getImageData(0, 0, 8, 8).data;
+            let r = 0, gg = 0, b = 0, n = 0;
+            for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
+            this.m_capColor = `rgb(${Math.round(r / n)},${Math.round(gg / n)},${Math.round(b / n)})`;
+        } catch {
+            this.m_capColor = 'rgb(70,104,44)';
+        }
+        return this.m_capColor;
     }
 
     /**
@@ -811,6 +955,7 @@ export class CLand {
         // columns. Fall back to the deepest stratum (always sub-surface, never the cap).
         this.m_bareImage = bareImage ?? this.m_layers[this.m_layers.length - 1]?.image ?? null;
         this.m_barePattern = null;
+        this.m_capColor = null;                    // re-sample the cap colour for the new layers
         this.m_patterns = [];
         this.m_terrainDirty = true;
     }
@@ -1137,6 +1282,7 @@ export class CLand {
     private m_patterns: (CanvasPattern | null)[] = [];
     private m_bareImage: CanvasImageSource | null = null;   // non-grass earth for de-grassed craters
     private m_barePattern: CanvasPattern | null = null;
+    private m_capColor: string | null = null;               // avg colour of the top (grass/snow) cap
     private m_terrainCanvas: HTMLCanvasElement | null = null;
     private m_terrainDirty: boolean = true;
 
