@@ -32,6 +32,7 @@ export class CMusicPlayer {
     private m_enabled = true;
     private m_volume = 100;                   // 0..100 (options slider `+0x9f8`)
     private m_current: string | null = null;  // filename currently requested
+    private m_loop = false;                    // whether the current track loops
     private m_onEnded: (() => void) | null = null;
     private m_buffers = new Map<string, ArrayBuffer>();
 
@@ -106,6 +107,7 @@ export class CMusicPlayer {
         if (!this.m_enabled || !file) return;
         if (loop && this.m_current === file) return;   // already looping this bed
         this.m_current = file;
+        this.m_loop = loop;
 
         await this.m_ready;
         if (!this.m_node) return;
@@ -116,6 +118,18 @@ export class CMusicPlayer {
         this.m_node.port.postMessage({cmd: 'repeatCount', val: loop ? LOOP_FOREVER : PLAY_ONCE});
         // The worklet takes ownership of the buffer; hand it a copy so our cache stays intact.
         this.m_node.port.postMessage({cmd: 'play', val: data.slice(0)});
+    }
+
+    /**
+     * Re-post the current track. Used after the AudioContext is unlocked: a track
+     * requested while the context was still suspended (e.g. menu music at boot)
+     * doesn't reliably auto-start on resume, so we replay it on a live context.
+     */
+    replay(): void {
+        const file = this.m_current;
+        if (!file) return;
+        this.m_current = null;                 // bypass the "already playing" guard
+        void this.play(file, this.m_loop);
     }
 
     stop(): void {

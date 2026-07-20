@@ -275,27 +275,28 @@ img, canvas {
     cursor: not-allowed;
 }
 
-/* shot-time bar below FIRE: red end-cap + a draining green track */
+/* shot-time bar below FIRE: a small red end-marker + a thin, black-outlined
+   green track that drains right→left (matches the original's thin gauge). */
 .turn-timer {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     pointer-events: none;
 }
 
 .turn-timer .tt-cap {
     height: 100%;
     aspect-ratio: 1;
-    background: #ff0000;
-    border: 1px solid #1a0000;
+    background: #c81c1c;
+    border: 1px solid #000;
     box-sizing: border-box;
 }
 
 .turn-timer .tt-track {
     flex: 1;
     height: 100%;
-    background: rgba(0, 0, 0, 0.65);
-    border: 1px solid #0a1a0a;
+    background: #0a0f0a;
+    border: 1px solid #000;
     box-sizing: border-box;
     overflow: hidden;
 }
@@ -895,16 +896,16 @@ img, canvas {
     background: none;
     border: 0;
     cursor: pointer;
-    padding: 2px 26px;
-    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85));
-    transition: transform 0.08s ease, filter 0.08s ease;
+    padding: 3px 22px;
+    border-radius: 4px;
+    transition: background 0.1s ease;
 }
+/* Hover = a light highlight behind the text; click = its negative (dark). */
 .pause-item:hover {
-    transform: scale(1.08);
-    filter: brightness(1.2) drop-shadow(0 0 10px rgba(255, 215, 120, 0.75));
+    background: rgba(255, 255, 255, 0.22);
 }
 .pause-item:active {
-    transform: scale(0.97);
+    background: rgba(0, 0, 0, 0.5);
 }
 
 /* ============================ MAIN MENU / ABOUT ============================ */
@@ -912,12 +913,17 @@ img, canvas {
     position: fixed;
     inset: 0;
     z-index: 25;
-    /* Fit by HEIGHT (not cover) so the title at the top of the image is always
-       visible; a wide window crops the sides, never the title. */
-    background: #10141a url('/assets/panels/title.webp') center / auto 100% no-repeat;
+    /* Fill the width, anchored to the TOP so the title is always visible; only the
+       bottom of the image (desert) is cropped on wide windows — never the title,
+       and no letterbox bars. */
+    background: #10141a url('/assets/panels/title.webp') top center / cover no-repeat;
+    /* Centre the nav list with flexbox (NOT a translate transform) so the bitmap-font
+       canvases land on whole pixels — a fractional transform renders them fragmented.
+       Centred on both axes of the viewport. */
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
 }
 .mainmenu-title {
     margin-top: 3vh;
@@ -928,29 +934,29 @@ img, canvas {
     display: block;
 }
 .mainmenu-list {
-    position: absolute;
-    left: 50%;
-    top: 44%;
-    transform: translate(-50%, -50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 4px;
 }
 .mainmenu-item {
     background: none;
     border: 0;
     cursor: pointer;
-    padding: 2px 26px;
-    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85));
-    transition: transform 0.08s ease, filter 0.08s ease;
+    padding: 3px 22px;
+    border-radius: 4px;
+    /* Own GPU layer (no filter — a filter caches the async font <canvas>'s initial
+       0×0 raster): promotes each item to a layer so the bitmap font rasterises
+       crisply always, the way it does when a hover transform promotes it. */
+    transform: translateZ(0);
+    transition: background 0.1s ease;
 }
+/* Hover = a light highlight behind the text; click = its negative (dark). */
 .mainmenu-item:hover {
-    transform: scale(1.09);
-    filter: brightness(1.2) drop-shadow(0 0 10px rgba(255, 215, 120, 0.75));
+    background: rgba(255, 255, 255, 0.22);
 }
 .mainmenu-item:active {
-    transform: scale(0.97);
+    background: rgba(0, 0, 0, 0.5);
 }
 .mainmenu-logo {
     position: absolute;
@@ -1030,14 +1036,13 @@ img, canvas {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 5%;
-    height: 46%;
+    top: 75%;
+    height: 108px;                      /* two 40px rows + gap */
     overflow: hidden;
     pointer-events: none;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
-    gap: 22px;
+    gap: 24px;
     z-index: 0;
 }
 .tgt-row {
@@ -1063,4 +1068,17 @@ img, canvas {
 @keyframes tgt-scroll-r {
     from { background-position-x: 0; }
     to { background-position-x: 84px; }
+}
+
+/* Version tag, bottom-left of the main menu. */
+.mainmenu-version {
+    position: absolute;
+    left: 12px;
+    bottom: 10px;
+    transform: translateZ(0);   /* own layer → the bitmap font stays crisp */
+    opacity: 0.85;
+    pointer-events: none;
+}
+.mainmenu-version canvas {
+    display: block;
 }

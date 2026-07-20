@@ -107,6 +107,9 @@ export class CAudio {
             } catch { /* ignore */
             }
         }
+        // A track requested before this gesture (menu music at boot) was posted to a
+        // suspended context and won't reliably auto-start on resume — replay it now.
+        this.m_music.replay();
     }
 
     isUnlocked(): boolean {

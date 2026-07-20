@@ -14,7 +14,7 @@ import { useEffect, useState } from 'preact/hooks';
 
 const SPRITE = 40;   // reticle size (px)
 const TILE_W = 84;   // sprite + gap → spacing between reticles
-const ROWS = 6;
+const ROWS = 2;      // the original has two rows (scrolling opposite ways)
 
 // Build the repeating tile: white reticle (from the grey sprite's luminance) at the
 // left of a TILE_W-wide transparent strip. Returns a data URL, or '' on failure.

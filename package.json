@@ -1,6 +1,6 @@
 {
   "name": "atomic-cannon",
-  "version": "0.1.0-dev",
+  "version": "3.0.0",
   "description": "Atomic Cannon - Web port of classic turn-based tank combat game",
   "type": "module",
   "packageManager": "pnpm@11.5.2",

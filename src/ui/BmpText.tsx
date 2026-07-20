@@ -21,11 +21,6 @@ export function BmpText({font, text, height, scale, tint, spacing, class: cls}: 
     class?: string;
 }) {
     const ref = useRef<HTMLCanvasElement>(null);
-
-    // Layout effect (not useEffect): size + draw the canvas BEFORE the browser
-    // paints. A <canvas> with no dimensions defaults to 300x150, so drawing after
-    // paint would flash a big empty box on every (re)mount — very visible behind a
-    // coloured background like the active battle-status line.
     useLayoutEffect(() => {
         const cv = ref.current;
         if (!cv) return;

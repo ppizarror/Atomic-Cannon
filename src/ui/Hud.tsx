@@ -30,7 +30,7 @@ const R = {
     meter: [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
     fire: [54.8, 16.5, 15, 29.5],
-    timer: [55.6, 48.5, 13.6, 5.5],    // shot-time bar, just below FIRE
+    timer: [54.7, 50, 14.6, 3.4],    // shot-time bar (thin), just below FIRE
     buy: [55, 64.6, 3.2, 18], reset: [60.8, 64, 3.2, 18], help: [66.8, 64, 3.2, 18],
     aleft: [75.5, 64, 2.7, 17], aright: [84.0, 64, 2.7, 17],
     anglen: [76.1, 66, 10, 11],          // number box, lower-centre of the dial
@@ -271,7 +271,9 @@ function ControlPanel() {
             <FireButton/>
             <TurnTimerBar/>
             <Hotspot r={R.buy} title="Weapons depot" onClick={openDepot}/>
-            <Hotspot r={R.reset} title="Reset" onClick={() => {
+            <Hotspot r={R.reset} title="Reset power" onClick={() => {
+                uiClick();
+                game().resetPower();
             }}/>
             <Hotspot r={R.help} title="Help" onClick={() => {
             }}/>
