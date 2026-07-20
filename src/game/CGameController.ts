@@ -18,7 +18,7 @@ import {CParticleSystem} from '../core/CParticleSystem';
 import {ScreenShake} from '../core/rendering/ScreenShake';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
-import {CEconomy, START_CREDITS} from '../core/CEconomy';
+import {CEconomy, START_CREDITS, CREDIT_PER_DAMAGE} from '../core/CEconomy';
 import {AI_DEFAULT_LEVEL, aimProbability, angleError, bestAim, pickMoveWeapon, pickTarget, pickWeapon} from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {EXT, type ShotWorld, weaponDetonate, weaponFlyStep} from '../core/weapons/WeaponBehavior';
@@ -302,9 +302,11 @@ export class CGameController implements ShotWorld {
                 break;
 
             case EGameState.Explosion:
-                // Wait for explosion effects to complete
+                // Wait for explosion effects to complete — including a beam-slice
+                // collapse still falling / debris still settling (m_land.isSettling).
                 if (!this.m_particles.hasActiveExplosions() &&
-                    !this.m_screenShake.isActive()) {
+                    !this.m_screenShake.isActive() &&
+                    !this.m_land.isSettling()) {
                     this.checkBattleEnd();
                 }
                 break;
@@ -1032,7 +1034,7 @@ export class CGameController implements ShotWorld {
      * Falloff blast damage + kick, applied through the tank's shield/armor model.
      * `full` = beam direct hit: no distance falloff.
      */
-    applyBlast(pos: Vec2, radius: number, damage: number, _owner: CTank | null, full: boolean): void {
+    applyBlast(pos: Vec2, radius: number, damage: number, owner: CTank | null, full: boolean): void {
         for (const tank of this.m_tanks) {
             if (!tank.isAlive()) continue;
             const dist = tank.distanceTo(pos.x, pos.y);
@@ -1043,7 +1045,8 @@ export class CGameController implements ShotWorld {
             const dmg = damage * falloff;
             if (dmg <= 0) continue;
 
-            tank.hit(dmg);                               // shield/armor applied by the tank
+            const removed = tank.hit(dmg);               // shield/armor applied by the tank
+            this.creditDamage(owner, tank, removed);     // shooter earns per life removed
 
             const dx = tank.getPosition().x - pos.x;     // kick up and away from the blast
             const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
@@ -1077,6 +1080,16 @@ export class CGameController implements ShotWorld {
         for (const t of this.m_tanks) {
             if (t !== tank && t.getTeamId() === team) t.setCredits(credits);
         }
+    }
+
+    /** Credit the shooter for damage dealt to an ENEMY tank: `lifeRemoved × CreditDamage`
+     *  (self/friendly earns nothing), then pool across the shooter's team. Records the
+     *  shooter as the victim's last-damager for kill attribution. */
+    private creditDamage(shooter: CTank | null, victim: CTank, lifeRemoved: number): void {
+        victim.setLastDamager(shooter);
+        if (!shooter || lifeRemoved <= 0 || shooter.getTeamId() === victim.getTeamId()) return;
+        shooter.addCredits(lifeRemoved * this.m_creditDamage);
+        this.poolTeamCredits(shooter);
     }
 
 
@@ -1116,7 +1129,6 @@ export class CGameController implements ShotWorld {
         this.m_power = tank.getPower();
         if (tank.isHuman()) tank.setTurretAngle(this.m_angle);
         this.m_gameState = EGameState.Battle;
-        this.m_turnStartPos = tank.getPosition();   // faded "initial" marker anchor
         this.m_turnStartAngle = this.m_angle;
         this.m_turnStartPower = this.m_power;
 
@@ -1350,7 +1362,8 @@ export class CGameController implements ShotWorld {
             if (!t.isAlive()) continue;
             const tp = t.getPosition();
             if (CGameController.pointSegDist(tp.x, tp.y, muzzle.x, muzzle.y, end.x, end.y) > halfWidth) continue;
-            t.hit(weapon.getDamage());
+            const removed = t.hit(weapon.getDamage());
+            this.creditDamage(owner, t, removed);        // shooter earns per life removed
             const dx = tp.x - muzzle.x;
             t.kick(new Vec2(dx >= 0 ? 0.5 : -0.5, -1).normalize(), Math.min(1, weapon.getDamage() / 400) * 260 * GameConfig.kickbackScale);
             if (!t.isAlive()) this.handleTankDestroyed(t);
@@ -1604,6 +1617,11 @@ export class CGameController implements ShotWorld {
     /** Per-shot variance (inaccuracy) on/off, live. */
     setVariance(on: boolean): void {
         this.m_variance = on;
+    }
+
+    /** Credits earned per point of life removed (Economy → Credit Damage), live. */
+    setCreditDamage(n: number): void {
+        this.m_creditDamage = Math.max(0, n);
     }
 
     /** Game-speed multiplier (1 = normal), live. */
@@ -1903,6 +1921,7 @@ export class CGameController implements ShotWorld {
     private m_windScale = 1;        // 0 disables wind
     private m_variance = true;      // per-shot inaccuracy on/off
     private m_speedScale = 1;       // game-speed multiplier (Update Scale / 10)
+    private m_creditDamage = CREDIT_PER_DAMAGE;   // credits earned per point of life removed
 
     getShotCount(): number {
         return this.m_shotsFired;
@@ -1928,8 +1947,6 @@ export class CGameController implements ShotWorld {
         }));
     }
 
-    // Where the active tank sat at the start of its turn (the faded "initial" marker).
-    private m_turnStartPos: Vec2 = new Vec2(0, 0);
     // The aim (angle, power) at turn start — anchors the faded "initial" target cross.
     private m_turnStartAngle: number = 45;
     private m_turnStartPower: number = 500;

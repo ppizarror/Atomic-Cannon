@@ -15,6 +15,7 @@ export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.
   c.setStartCredits(S.creditStart());
   c.setSellRate(S.sellRate());
+  c.setCreditDamage(S.creditDamage());
   c.setTotalBattles(S.battles());
   c.setVariance(S.variance());
   c.setGameSpeed(S.gameSpeed());

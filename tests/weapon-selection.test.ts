@@ -29,14 +29,20 @@ function ok(name: string, cond: boolean, extra = ''): void {
 
 const SHELL = WEAPON_DATABASE.findIndex(w => w.name === 'Shell');
 
-type GC = CGameController & {
+// Standalone accessor view (see ai-integration.test.ts): intersecting the class,
+// which has private members, would collapse the type to `never`.
+type GC = {
+    startGame(numTanks: number): void;
+    getCurrentWeaponIndex(): number;
+    getWeaponDefs(): { name: string }[];
+    selectWeapon(index: number): void;
     m_tanks: { getWeaponIndex(): number; isHuman(): boolean; isBot(): boolean }[];
     m_currentPlayerIndex: number;
     beginTurn(): void;
     executeBotTurn(): void;
 };
 
-const gc = new CGameController(makeCanvas()) as GC;
+const gc = new CGameController(makeCanvas()) as unknown as GC;
 gc.startGame(2);                       // player 0 = human, player 1 = bot
 const human = gc.m_tanks[0], bot = gc.m_tanks[1];
 

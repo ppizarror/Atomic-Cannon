@@ -20,6 +20,8 @@ export const gameSettings = {
   creditStart: (): number => getVal('eco.creditStart', 3000),
   /** Depot sell-back refund as a fraction (0..1). */
   sellRate: (): number => getVal('eco.sellBack', 50) / 100,
+  /** Credits earned per point of life removed. */
+  creditDamage: (): number => getVal('eco.creditDamage', 1),
   /** Battles per match. */
   battles: (): number => getVal('gp.battles', 5),
   /** Per-shot inaccuracy on/off. */

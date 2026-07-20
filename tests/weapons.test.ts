@@ -4,7 +4,7 @@
  */
 import {CLand} from '../src/core/CLand';
 import {CShot} from '../src/core/CShot';
-import {CWeapon, WEAPON_DATABASE, getWeapon} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, getWeapon} from '../src/core/CWeapon';
 import {Vec2} from '../src/math/Vec2';
 import {weaponFlyStep, weaponDetonate, spawnCluster, type ShotWorld} from '../src/core/weapons/WeaponBehavior';
 

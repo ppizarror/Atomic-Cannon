@@ -25,7 +25,14 @@ type Tank = {
   getPosition(): Vec2;
   muzzleForAngle(deg: number): Vec2;
 };
-type GC = CGameController & {
+// Accessor view over CGameController's soft-private (`m_`) internals plus the few
+// public methods the test drives. Kept standalone (not `CGameController & …`) because
+// intersecting a class that has private members collapses the type to `never`.
+type GC = {
+  startGame(numTanks: number): void;
+  setDifficulty(level: number): void;
+  getPower(): number;
+  getAngle(): number;
   m_tanks: Tank[];
   m_currentPlayerIndex: number;
   m_land: { getHeightAt(x: number): number; width: number; height: number };
@@ -42,7 +49,7 @@ const RUNS = 6;
 let sawFullPower = false;
 
 for (let run = 0; run < RUNS; run++) {
-  const gc = new CGameController(makeCanvas(900, 600)) as GC;
+  const gc = new CGameController(makeCanvas(900, 600)) as unknown as GC;
   gc.startGame(2);                 // tank 0 = human (left), tank 1 = bot (right)  [random terrain]
   gc.setDifficulty(AI_LEVEL_MAX);  // sharpest aim → ~zero added error
   gc.m_currentPlayerIndex = 1;     // hand the turn to the bot

@@ -88,7 +88,7 @@ console.log('Settings → game');
     ok('wind is seeded within the scaled bound', Math.abs(gc.getWindValue()) <= 5 * 1.6 + 1e-9, `w=${gc.getWindValue()}`);
 }
 
-// 4. Batch 2: GameConfig scalars + render toggles, and Hitpoints on the spawned tank.
+// 4. GameConfig scalars + render toggles, and Hitpoints on the spawned tank.
 {
     setVal('tank.hitpoints', 2500);
     setVal('tank.kickback', 0);      // Off → scalar 0

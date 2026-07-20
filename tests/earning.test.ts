@@ -1,7 +1,7 @@
 /**
- * Credit-earning economy — Phase 1 foundation: hit() reports actual life removed,
- * per-tank last-damager, per-tank credits, depot bound to the human tank, and
- * per-team credit pooling.
+ * Credit-earning economy: hit() reports actual life removed, per-tank last-damager,
+ * per-tank credits, depot bound to the human tank, per-team credit pooling, and the
+ * damage-credit award.
  * Run: pnpm tsx tests/earning.test.ts   (or `pnpm test`)
  */
 import {installDomMocks, makeCanvas} from './_dom';
@@ -27,7 +27,7 @@ function ok(name: string, cond: boolean, extra = ''): void {
 
 type Tanks = { m_tanks: CTank[] };
 
-console.log('Earning economy — Phase 1');
+console.log('Earning economy');
 
 // 1. hit() returns the LIFE actually removed (post shield + armor) — the credited qty.
 {
@@ -85,6 +85,40 @@ console.log('Earning economy — Phase 1');
     (gc as unknown as { poolTeamCredits(tk: CTank): void }).poolTeamCredits(t[0]);
     ok('pooling copies to the same-team tank', t[2].getCredits() === 1777, `t2=${t[2].getCredits()}`);
     ok('pooling leaves the other team alone', t[1].getCredits() === 1000 && t[3].getCredits() === 1000, `t1=${t[1].getCredits()} t3=${t[3].getCredits()}`);
+}
+
+// 6. Damage credit: shooter earns `lifeRemoved × CreditDamage` for ENEMY
+//    hits only; self/friendly earns nothing; last-damager is always recorded.
+{
+    const gc = new CGameController(makeCanvas());
+    gc.setStartCredits(0);
+    gc.setCreditDamage(2);
+    gc.startGame(2);
+    const tanks = (gc as unknown as Tanks).m_tanks;
+    const human = tanks[0], bot = tanks[1];   // teams 0 and 1
+    const priv = gc as unknown as { creditDamage(s: CTank | null, v: CTank, r: number): void };
+
+    human.setCredits(0);
+    priv.creditDamage(human, bot, 100);       // enemy, 100 life removed
+    ok('enemy damage credits removed × CreditDamage', human.getCredits() === 200, `c=${human.getCredits()}`);
+    ok('damage records the victim last-damager', bot.getLastDamager() === human);
+
+    const ally = new CTank('Ally', human.getTeamId());
+    human.setCredits(0);
+    priv.creditDamage(human, ally, 100);      // same team
+    ok('friendly-fire earns no credit', human.getCredits() === 0);
+    ok('friendly-fire still records last-damager', ally.getLastDamager() === human);
+
+    human.setCredits(0);
+    priv.creditDamage(human, bot, 0);         // e.g. shield-absorbed
+    ok('zero life removed earns nothing', human.getCredits() === 0);
+
+    // End-to-end through applyBlast (owner threaded, life delta captured & credited).
+    human.setCredits(0);
+    const lifeBefore = bot.getHealth().nLife;
+    gc.applyBlast(bot.getPosition(), 50, 100, human, false);
+    const removed = lifeBefore - bot.getHealth().nLife;
+    ok('applyBlast credits damage end-to-end', removed > 0 && human.getCredits() === removed * 2, `rm=${removed} c=${human.getCredits()}`);
 }
 
 console.log(`\n${pass}/${pass + fail} earning checks passed`);

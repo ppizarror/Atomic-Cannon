@@ -87,10 +87,20 @@ console.log('Tank ground-drive');
 //    drives the tank and ends the turn WITHOUT firing; otherwise it fires and does
 //    not move. (Random maps: a bot can spawn boxed in, so "moved" is a majority.)
 {
-  type GC = CGameController & { m_tanks: CTank[]; m_currentPlayerIndex: number; executeBotTurn(): void; };
+  // Standalone accessor view (see ai-integration.test.ts): intersecting the class,
+  // which has private members, would collapse the type to `never`.
+  type GC = {
+    startGame(numTanks: number): void;
+    setDifficulty(level: number): void;
+    getShotCount(): number;
+    update(dt: number): void;
+    m_tanks: CTank[];
+    m_currentPlayerIndex: number;
+    executeBotTurn(): void;
+  };
   const RUNS = 6;
   const run = (roll: number) => {
-    const gc = new CGameController(makeCanvas(900, 600)) as GC;
+    const gc = new CGameController(makeCanvas(900, 600)) as unknown as GC;
     gc.startGame(2);
     gc.setDifficulty(5);
     gc.m_currentPlayerIndex = 1;
