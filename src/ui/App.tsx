@@ -5,7 +5,9 @@
  * Battle HUD is built; menu / settings / depot are scaffolded here so they slot
  * in as components without touching the game or the canvas.
  */
-import {screen, screenFlash, screenFlashColor, flying, jetFuel} from './store';
+import {useRef} from 'preact/hooks';
+import {useSignalEffect} from '@preact/signals';
+import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWaveStrength, paused} from './store';
 import {Hud} from './Hud';
 import {SettingsPanel} from './SettingsPanel';
 import {DepotPanel} from './DepotPanel';
@@ -34,6 +36,54 @@ function ScreenFlash() {
             class="screen-flash"
             style={{background: `rgb(${mix(cr)},${mix(cg)},${mix(cb)})`, opacity: Math.min(1, a * 1.15)}}
         />
+    );
+}
+
+/**
+ * HUD shockwave ripple. The WebGL wave filter only warps the game scene sprite —
+ * it can't reach the DOM HUD — so we mirror it here with an SVG displacement filter
+ * applied to #ui-root, its scale animated from a strength-scaled peak down to 0 as a
+ * damped ripple (~0.85s), fired in sync with each `compositor.shockwave`.
+ */
+function HudWave() {
+    const disp = useRef<SVGFEDisplacementMapElement>(null);
+
+    useSignalEffect(() => {
+        const n = hudWave.value;        // subscribe; bumped once per impact
+        if (n === 0) return;            // no impulse yet
+        const el = disp.current;
+        // Target the HUD elements themselves (NOT #ui-root): a filter on an ancestor
+        // of a position:fixed panel changes its containing block and breaks its layout;
+        // a filter on the fixed element itself leaves its own position untouched.
+        const els = ['hud', 'battle-status']
+            .map(id => document.getElementById(id))
+            .filter((e): e is HTMLElement => !!e);
+        if (!el || !els.length) return;
+        const peak = Math.min(34, 10 + hudWaveStrength.peek() * 6);   // px of displacement
+        const dur = 1200;                                            // ms — ~matches the game wave lifetime
+        let last = performance.now(), elapsed = 0;
+        for (const e of els) e.style.filter = 'url(#hud-wave)';
+        let raf = requestAnimationFrame(function tick(now) {
+            const fdt = now - last; last = now;
+            if (!paused.peek()) elapsed += fdt;    // freeze the ripple while the sim is paused
+            const t = Math.min(1, elapsed / dur);
+            const env = 1 - t;
+            const s = peak * env * env * Math.cos(t * Math.PI * 3.5);   // damped ripple → 0
+            el.setAttribute('scale', s.toFixed(2));
+            if (t < 1) raf = requestAnimationFrame(tick);
+            else { el.setAttribute('scale', '0'); for (const e of els) e.style.filter = ''; }
+        });
+        return () => { cancelAnimationFrame(raf); el.setAttribute('scale', '0'); for (const e of els) e.style.filter = ''; };
+    });
+
+    return (
+        <svg width="0" height="0" style={{position: 'absolute'}} aria-hidden="true">
+            <filter id="hud-wave" x="-15%" y="-15%" width="130%" height="130%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.012 0.028" numOctaves="2" seed="7" result="noise"/>
+                <feDisplacementMap ref={disp} in="SourceGraphic" in2="noise" scale="0"
+                                   xChannelSelector="R" yChannelSelector="G"/>
+            </filter>
+        </svg>
     );
 }
 
@@ -83,6 +133,7 @@ export function App() {
             <DepotPanel/>
             <FlightHud/>
             <ScreenFlash/>
+            <HudWave/>
         </>
     );
 }

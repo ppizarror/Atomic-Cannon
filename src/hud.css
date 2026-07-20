@@ -653,26 +653,39 @@ img, canvas {
     color: #14171a;
 }
 
-/* Green tooltip — the `zeon` dialog look: pure #00ff00 fill, a uniform black
- * rounded border, and a small down-pointer. Sits ABOVE the cursor (translated up
- * by its own height) so the pointer aims down at the hovered row.
- *   NB: rebuilt in plain CSS. The 33px dialog.bmp has thick rounded corners but
- *   hairline straight edges, which border-image stretches into jagged corners +
- *   1px edges — the "broken" frame. A CSS border+radius reproduces it cleanly. */
+/* Green tooltip — the real zeon dialog.bmp frame, 9-sliced onto a <canvas> by
+ * <ZeonFrame> (beveled green box + black rounded corners). The frame fills the
+ * box; the text rides above it in .dep-tt-body. Sits ABOVE the cursor (translated
+ * up by its own height) so the pointer aims down at the hovered row. drop-shadow
+ * (not box-shadow) follows the frame's rounded alpha, not a rectangle. */
 .dep-tooltip {
     position: fixed;
     z-index: 22;
     max-width: 340px;
     pointer-events: none;
     transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
-    padding: 5px 9px 7px;
-    background: #00ff00;
-    border: 2px solid #000;
-    border-radius: 5px;
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55);
+    padding: 6px 11px 8px;
+    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
 }
 
-.dep-tooltip > canvas {
+/* The 9-sliced dialog.bmp frame, filling the box behind the text. */
+.zeon-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    image-rendering: pixelated;
+    pointer-events: none;
+}
+
+/* Text rides above the frame canvas. */
+.dep-tt-body {
+    position: relative;
+    z-index: 1;
+}
+
+.dep-tt-body > canvas {
     display: block;
 }
 

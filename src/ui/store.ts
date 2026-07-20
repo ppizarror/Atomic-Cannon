@@ -87,6 +87,19 @@ export const winner = signal('');
 export const screenFlash = signal(0);   // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff');   // flash tint (the bomb's colour)
 
+// HUD shockwave ripple: the WebGL wave filter can't reach the DOM HUD, so we mirror
+// it with a DOM (SVG-displacement) pulse. `hudWave` is a nonce bumped per impact;
+// `hudWaveStrength` scales the ripple (beam ~1, nuke ~2.6+).
+export const hudWave = signal(0);
+export const hudWaveStrength = signal(1);
+export function triggerHudWave(strength: number): void {
+    hudWaveStrength.value = strength;
+    hudWave.value = hudWave.value + 1;
+}
+// True while the sim is paused (P key). DOM FX (the HUD ripple) freeze on it so a
+// paused frame holds the effect for inspection, like the frozen game wave.
+export const paused = signal(false);
+
 export const weapons = signal<WeaponDef[]>([]);
 
 // Top-left status overlay: per-tank life lines (team-coloured) + the battle/shot

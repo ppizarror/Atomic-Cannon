@@ -8,6 +8,7 @@
  */
 import {useEffect, useMemo, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
+import {ZeonFrame} from './ZeonFrame';
 import {
     showDepot, credits, ownedCounts, playerName, weaponIndex,
     closeDepot, depotBuy, depotSell, depotAutoBuy, loadWeaponIcon, loadUiBmp, game, uiClick,
@@ -106,16 +107,20 @@ function Header({k, label, cls, activeKey, dir, onSort}: {
     );
 }
 
-// Green weapon tooltip (the `zeon` dialog look) — pure-green fill, uniform black
-// rounded border (plain CSS, see .dep-tooltip) with a CSS down-pointer, floating
-// ABOVE the cursor so the pointer aims at the hovered row.
+// Green weapon tooltip (the `zeon` dialog look) — the real dialog.bmp frame
+// (9-sliced by <ZeonFrame>: beveled green box, black rounded corners) behind the
+// text, with a down-pointer. Floats ABOVE the cursor so the pointer aims at the
+// hovered row.
 function Tooltip({w, x, y}: { w: WeaponDef; x: number; y: number }) {
     const lines = wrap(w.desc || 'No description available.', 44);
     return (
         <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
-            <BmpText font={ROW_FONT} text={w.name} tint="#06210a"/>
-            <div class="dep-tt-desc">
-                {lines.map((l, i) => <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c"/>)}
+            <ZeonFrame/>
+            <div class="dep-tt-body">
+                <BmpText font={ROW_FONT} text={w.name} tint="#06210a"/>
+                <div class="dep-tt-desc">
+                    {lines.map((l, i) => <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c"/>)}
+                </div>
             </div>
             <div class="dep-tt-arrow"/>
         </div>

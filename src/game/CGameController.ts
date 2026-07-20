@@ -17,6 +17,7 @@ import {CParticleSystem, ScreenShake} from '../core/CParticleSystem';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
 import {CEconomy} from '../core/CEconomy';
+import {AI_DEFAULT_LEVEL, aimProbability, angleError, bestAim, pickTarget, pickWeapon} from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {EXT, type ShotWorld, weaponDetonate, weaponFlyStep} from '../core/weapons/WeaponBehavior';
 import {CAudio} from '../audio/CAudio';
@@ -52,7 +53,7 @@ const LAND_DATA = landData as LandConfig[];
 // TEMPORARY (explosion-FX testing): lock the weapon selection to one control
 // weapon so it can be spammed to review effects. Set to null to restore the
 // full arsenal.
-const CONTROL_WEAPON: string | null = 'Uranium Nuke';
+const CONTROL_WEAPON: string | null = 'Tomcat';
 const controlWeaponIndex = (): number =>
     CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
 
@@ -1220,51 +1221,114 @@ export class CGameController implements ShotWorld {
 
         if (!botTank.isAlive() || !botTank.isBot()) return;
 
-        console.log(`${botTank.getName()} is thinking...`);
+        if (this.m_tanks.filter(t => t !== botTank && t.isAlive()).length === 0) {
+            this.endTurn();
+            return;
+        }
 
-        // Simple AI: pick a target (random enemy)
+        // Optionally reposition first (a randomized shuffle, like the original's move
+        // queue), then aim & fire once the tank has settled.
+        if (Math.random() < CGameController.BOT_MOVE_CHANCE) {
+            const botX = botTank.getPosition().x;
+            const range = CGameController.BOT_MOVE_RANGE;
+            const destX = Math.max(20, Math.min(this.m_land.width - 20, botX + (Math.random() * 2 - 1) * range));
+            botTank.startDrive(destX);
+            this.waitForBotRest(botTank, 0);
+        } else {
+            this.botAimAndFire(botTank);
+        }
+    }
+
+    // Chance a bot repositions before firing, and how far (px) it may shuffle.
+    private static readonly BOT_MOVE_CHANCE = 0.3;
+    private static readonly BOT_MOVE_RANGE = 150;
+
+    /** Poll until the repositioning bot has settled (or a safety timeout), then fire. */
+    private waitForBotRest(botTank: CTank, elapsed: number): void {
+        if (!botTank.isMoving() || elapsed > 4) {
+            this.botAimAndFire(botTank);
+            return;
+        }
+        this.schedule(0.15, () => this.waitForBotRest(botTank, elapsed + 0.15));
+    }
+
+    /** Pick a target + weapon, solve the firing arc, degrade by difficulty, and fire. */
+    private botAimAndFire(botTank: CTank): void {
+        if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
         const enemies = this.m_tanks.filter(t => t !== botTank && t.isAlive());
         if (enemies.length === 0) {
             this.endTurn();
             return;
         }
 
-        // Pick a random straightforward ballistic weapon (bots can't use exotics yet).
-        const usable = WEAPON_DATABASE.filter(w => w.type === 'Shell' || w.type === 'Bomb' || w.type === 'Rocket');
-        const pick = usable[Math.floor(Math.random() * usable.length)];
-        const botWeapon = pick ? pick.index : getDefaultWeaponIndex();
-        botTank.setWeaponIndex(botWeapon);            // store on the bot, not shared
-        this.m_currentWeaponIndex = botWeapon;
-
-        // Calculate firing angle to hit target (simplified trajectory)
-        const target = enemies[Math.floor(Math.random() * enemies.length)];
-        const targetPos = target.getPosition();
+        const level = this.m_difficulty;
         const botPos = botTank.getPosition();
 
-        // Simple aim: aim slightly above target based on distance
-        const dx = targetPos.x - botPos.x;
-        const dy = targetPos.y - botPos.y;
-        const distance = Math.abs(dx);
+        // Pick a target — weakest/nearest at high difficulty, random at low.
+        const ti = pickTarget(
+            enemies.map(e => {
+                const p = e.getPosition();
+                return {x: p.x, y: p.y, healthFrac: Math.max(0, Math.min(1, e.getHealth().nLife / 1000))};
+            }),
+            botPos.x, level,
+        );
+        const target = enemies[Math.max(0, ti)];
 
-        // Estimate angle (simplified - not true ballistics)
-        let angle = 45 + (Math.random() - 0.5) * 20; // Aim around 45 degrees with variance
-        if (dx < 0) {
-            // Target is to the left, aim leftward
-            angle = 180 - angle;
+        // Pick a weapon — stronger rounds favoured at high difficulty.
+        const weaponIndex = pickWeapon(level);
+        botTank.setWeaponIndex(weaponIndex);          // store on the bot, not shared
+        this.m_currentWeaponIndex = weaponIndex;
+
+        // Whether the bot computes a FRESH solution this turn. Low-skill bots often
+        // don't (they fire with their stale aim); a first-round ranging shot is
+        // forced for any half-decent bot. Either way a difficulty-scaled angle
+        // scatter is added below.
+        const willAim = Math.random() < aimProbability(level) || (this.getBattleNum() === 1 && level > 3);
+
+        let angleDeg: number;
+        let power: number;
+        if (willAim) {
+            // Solve the firing arc against the target (real ballistics: gravity +
+            // wind + any terrain in the way).
+            const tp = target.getPosition();
+            const field = {
+                heightAt: (x: number) => this.m_land.getHeightAt(x),
+                width: this.m_land.width,
+                height: this.m_land.height,
+            };
+            const aim = bestAim(deg => botTank.muzzleForAngle(deg), {x: tp.x, y: tp.y}, this.m_wind, field);
+            angleDeg = aim.angleDeg;
+            power = aim.power;
+        } else {
+            // Reuse the bot's stale aim from a previous turn (never recomputed).
+            angleDeg = botTank.getAimAngle();
+            power = botTank.getPower();
         }
 
-        // Set firing parameters (also persisted on the bot so its aim carries over).
-        this.m_angle = angle;
-        this.m_power = Math.min(100, Math.max(30, distance / 8 + Math.random() * 20));
+        // Difficulty scatter — angle only, shrinking to 0 at the top level.
+        angleDeg += angleError(level);
+
+        // Fold into the HUD's 0..359 range; persist on the bot so its aim carries over.
+        angleDeg = ((Math.round(angleDeg) % 360) + 360) % 360;
+        this.m_angle = angleDeg;
+        this.m_power = Math.round(power);
         botTank.setAimAngle(this.m_angle);
         botTank.setPower(this.m_power);
-
-        botTank.setTurretAngle(angle);
+        botTank.setTurretAngle(angleDeg);
         // The HUD (Preact) shows the bot's angle/power via getAngle()/getPower().
 
         // Execute fire after a brief "thinking" delay. The turn ends automatically
         // once the shot resolves (updateShotInFlight → endTurn).
         this.schedule(0.8, () => this.fire());
+    }
+
+    // Computer-player difficulty (AI_LEVEL_MIN..AI_LEVEL_MAX; higher = sharper aim).
+    getDifficulty(): number {
+        return this.m_difficulty;
+    }
+
+    setDifficulty(level: number): void {
+        this.m_difficulty = level;
     }
 
 
@@ -1547,6 +1611,7 @@ export class CGameController implements ShotWorld {
     private m_wind: Vec2 = new Vec2(0, 0);
     private m_windAccel: Vec2 = new Vec2(0, 0);
     private m_windTimer: number = 0;
+    private m_difficulty: number = AI_DEFAULT_LEVEL;   // computer-player skill
 
     private m_winnerName: string = '';
 }

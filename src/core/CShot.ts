@@ -6,6 +6,13 @@ import {Vec2} from '../math/Vec2';
 import {CLand} from './CLand';
 import {CTank} from './CTank';
 
+// Trajectory constants — the single source of truth, shared with the aim AI so a
+// simulated shot matches a real one exactly. Calibrated to our px/second space;
+// the original's ratios (gravity vs launch speed vs wind) are preserved.
+export const SHOT_GRAVITY = 500;       // px/s^2 downward
+export const SHOT_WIND_ACCEL = 15;     // wind display units -> px/s^2 of sideways drift
+export const SHOT_SPEED_SCALE = 0.9;   // launch speed per unit power
+
 interface TrailPoint {
     x: number;
     y: number;
@@ -14,10 +21,8 @@ interface TrailPoint {
 
 export class CShot {
 
-    // Calibrated to our pixel/second space; the original's ratios (gravity vs
-    // launch speed) are preserved so trajectories match.
-    private static GRAVITY = 500;
-    private static WIND_ACCEL = 15;   // wind display units -> px/s^2 of drift
+    private static GRAVITY = SHOT_GRAVITY;
+    private static WIND_ACCEL = SHOT_WIND_ACCEL;   // wind display units -> px/s^2 of drift
 
     constructor() {
         this.m_pos = new Vec2(0, 0);
@@ -49,8 +54,7 @@ export class CShot {
 
         const fRadAngle = -((angleDegrees / 180) * Math.PI);
 
-        const SPEED_SCALE = 0.9;
-        const speed = power * SPEED_SCALE;
+        const speed = power * SHOT_SPEED_SCALE;
 
         this.m_vel.x = Math.cos(fRadAngle) * speed;
         this.m_vel.y = Math.sin(fRadAngle) * speed;
@@ -74,8 +78,7 @@ export class CShot {
         this.m_radius = radius;
         this.m_power = power;
 
-        const SPEED_SCALE = 0.9;
-        const speed = power * SPEED_SCALE;
+        const speed = power * SHOT_SPEED_SCALE;
 
         // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
         // Works for every direction, including below-horizon (negative) angles.

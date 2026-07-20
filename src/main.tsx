@@ -12,7 +12,7 @@ import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {
-    setController, syncHud, canFire, openDepot,
+    setController, syncHud, canFire, openDepot, triggerHudWave, paused as pausedSignal,
     POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
@@ -35,7 +35,10 @@ async function main(): Promise<void> {
     container.appendChild(compositor.app.canvas);
 
     const gameController = new CGameController(scene);
-    gameController.setImpactListener((x, y, s) => compositor.shockwave(x, y, s));
+    gameController.setImpactListener((x, y, s) => {
+        compositor.shockwave(x, y, s);   // warp the game scene (WebGL)
+        triggerHudWave(s);               // and ripple the DOM HUD in sync (SVG displacement)
+    });
 
     // Audio: one shared AudioContext (SFX + libopenmpt .it music), unlocked on the
     // first user gesture per the browser autoplay policy. Wired before startGame so
@@ -73,6 +76,7 @@ async function main(): Promise<void> {
             e.preventDefault();
             paused = !paused;
             gameController.setPaused(paused);
+            pausedSignal.value = paused;   // freeze DOM FX (HUD ripple) too
             return;
         }
 

@@ -50,7 +50,7 @@ interface RadSpeck {
 
 // A faint warm plume rising off the radioactive carpet — it lifts, widens, spins
 // and fades, so the hot fallout SHIMMERS with heat. Purely visual, transient.
-interface HeatWisp { x: number; y: number; age: number; life: number; size: number; vx: number; rot: number; spin: number; }
+interface HeatWisp { x: number; y: number; age: number; life: number; size: number; vx: number; rot: number; spin: number; r: number; g: number; b: number; }
 
 // A permanent blackened blast mark baked into the terrain bitmap.
 interface Scorch {
@@ -643,6 +643,11 @@ export class CLand {
                 const cool = z.timeRemaining / Math.max(0.5, z.duration);   // 1 hot → 0 cold
                 const rr = z.radius;
                 const spawn = this.rand01() < cool * 0.7 ? 1 : 0;           // sparse — a wisp here and there
+                // Tint the wisp with the weapon's radiation colour (irRGB), brightened
+                // so hydrogen puffs BLUE / plutonium GREEN / uranium RED — matching the
+                // carpet, not a fixed red.
+                const mx = Math.max(z.r, z.g, z.b, 1), k2 = 230 / mx;
+                const tr = Math.round(z.r * k2), tg = Math.round(z.g * k2), tb = Math.round(z.b * k2);
                 for (let k = 0; k < spawn; k++) {
                     const col = Math.floor(z.x - rr + this.rand01() * rr * 2);
                     if (col < 0 || col >= this.m_nWidth || this.m_radDeposit[col] <= 0) continue;
@@ -655,6 +660,7 @@ export class CLand {
                         vx: (this.rand01() - 0.5) * 12,
                         rot: this.rand01() * Math.PI * 2,
                         spin: (this.rand01() - 0.5) * 1.6,
+                        r: tr, g: tg, b: tb,
                     });
                 }
             }
@@ -691,27 +697,30 @@ export class CLand {
         this.m_smokeSrc = img;
         this.m_smokeW = w;
         this.m_smokeH = h;
-        this.m_smokeTint = null;
+        this.m_smokeTints.clear();
     }
 
-    /** Lazily build a warm-tinted copy of the smoke sprite (grey → radioactive red,
-     *  keeping the smoke's texture + alpha). Null until the sprite is provided. */
-    private smokeTint(): HTMLCanvasElement | null {
-        if (this.m_smokeTint) return this.m_smokeTint;
+    /** Lazily build (and cache per colour) a copy of the smoke sprite tinted to the
+     *  weapon's radiation hue — keeping the smoke's texture + alpha. So hydrogen puffs
+     *  blue, plutonium green, uranium red. Null until the sprite is provided. */
+    private smokeTint(r: number, g: number, b: number): HTMLCanvasElement | null {
         if (!this.m_smokeSrc || !this.m_smokeW || !this.m_smokeH) return null;
+        const key = `${r},${g},${b}`;
+        const cached = this.m_smokeTints.get(key);
+        if (cached) return cached;
         const w = this.m_smokeW, h = this.m_smokeH;
         const c = document.createElement('canvas');
         c.width = w; c.height = h;
-        const g = c.getContext('2d')!;
-        g.drawImage(this.m_smokeSrc, 0, 0, w, h);
-        g.globalCompositeOperation = 'multiply';        // colour the grey smoke warm-red, keep its texture
-        g.fillStyle = 'rgb(255,95,55)';
-        g.fillRect(0, 0, w, h);
-        g.globalCompositeOperation = 'destination-in';  // re-mask to the smoke's own alpha
-        g.drawImage(this.m_smokeSrc, 0, 0, w, h);
-        g.globalCompositeOperation = 'source-over';
-        this.m_smokeTint = c;
-        return this.m_smokeTint;
+        const gx = c.getContext('2d')!;
+        gx.drawImage(this.m_smokeSrc, 0, 0, w, h);
+        gx.globalCompositeOperation = 'multiply';        // colour the grey smoke, keep its texture
+        gx.fillStyle = `rgb(${r},${g},${b})`;
+        gx.fillRect(0, 0, w, h);
+        gx.globalCompositeOperation = 'destination-in';  // re-mask to the smoke's own alpha
+        gx.drawImage(this.m_smokeSrc, 0, 0, w, h);
+        gx.globalCompositeOperation = 'source-over';
+        this.m_smokeTints.set(key, c);
+        return c;
     }
 
     getRadiationZones(): RadParticle[] {
@@ -1032,16 +1041,17 @@ export class CLand {
         // the sprite is provided), widening + tumbling + fading as it lifts, so it
         // matches the pixel-art rather than reading as a clean CGI gradient.
         if (this.m_heat.length) {
-            const spr = this.smokeTint() ?? this.heatSprite();
+            const fallback = this.heatSprite();
             const prevOp = ctx.globalCompositeOperation;
             // Additive so the tinted smoke reads as a warm GLOWING radioactive haze
             // and stays visible over any backdrop (dark sky or bright sand).
             ctx.globalCompositeOperation = 'lighter';
             for (const h of this.m_heat) {
                 const t = h.age / h.life;
-                const a = Math.sin(Math.PI * t) * 0.09;   // ease in, ease out — a faint hint, not a cloud
+                const a = Math.sin(Math.PI * t) * 0.1;   // ease in, ease out — a faint hint, not a cloud
                 if (a <= 0.005) continue;
-                const d = h.size * (1 + t * 1.8);         // widen as it rises
+                const d = h.size * (1 + t * 1.8);        // widen as it rises
+                const spr = this.smokeTint(h.r, h.g, h.b) ?? fallback;   // tinted to THIS wisp's weapon hue
                 ctx.globalAlpha = a;
                 ctx.save();
                 ctx.translate(h.x, h.y);
@@ -1082,7 +1092,7 @@ export class CLand {
     private m_smokeSrc: CanvasImageSource | null = null;     // the game's smoke.bmp (for heat wisps)
     private m_smokeW: number = 0;
     private m_smokeH: number = 0;
-    private m_smokeTint: HTMLCanvasElement | null = null;    // cached warm-tinted smoke
+    private m_smokeTints: Map<string, HTMLCanvasElement> = new Map();   // per-colour tinted smoke cache
     private m_scorches: Scorch[] = [];
     private m_degrass: Uint8Array | null = null;   // per-column: 1 = grass torn off by a blast
     private m_radDeposit: Float32Array | null = null;   // per-column: accumulated fallout PILE height (px above surface)

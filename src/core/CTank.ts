@@ -289,6 +289,11 @@ export class CTank {
                 this.m_bFalling = false;
                 this.m_bIsMoving = false;   // settled — clears the motion loop / flight exit
             }
+        } else if (this.m_driveTargetX !== null) {
+            // Driving along the surface toward a queued destination (bot reposition).
+            this.stepDrive(pLand, dt);
+            const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
+            this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);
         } else {
             // Resting on the surface: stay glued to it as the terrain deforms,
             // and tilt the body to match the local slope.
@@ -354,6 +359,53 @@ export class CTank {
     stopMoving(): void {
         this.m_bIsMoving = false;
         this.m_vVel = new Vec2(0, 0);
+        this.m_driveTargetX = null;
+    }
+
+    // ── Ground drive (repositioning along the terrain surface) ───────────────
+
+    /**
+     * Begin driving toward `targetX`, crawling along the terrain surface. Stops on
+     * arrival, at the map edge, or against a wall too steep to climb. `update()`
+     * advances it while grounded; `isMoving()` stays true until it settles.
+     */
+    startDrive(targetX: number): void {
+        if (!this.m_bIsAlive) return;
+        this.m_driveTargetX = targetX;
+        this.m_bIsMoving = true;
+    }
+
+    isDriving(): boolean {
+        return this.m_driveTargetX !== null;
+    }
+
+    /** One step of a ground drive: crawl toward the target, hugging the surface. */
+    private stepDrive(pLand: CLand, dt: number): void {
+        const target = this.m_driveTargetX as number;
+        const dir = Math.sign(target - this.m_vPos.x);
+        if (dir === 0) { this.endDrive(pLand); return; }
+
+        const stepPx = Math.min(Math.abs(target - this.m_vPos.x), TANK_DRIVE_SPEED * dt);
+        let newX = this.m_vPos.x + dir * stepPx;
+
+        // Stop at the battlefield edge.
+        if (newX < TANK_RADIUS || newX > pLand.width - TANK_RADIUS) { this.endDrive(pLand); return; }
+
+        // Refuse to climb (or drop off) a wall steeper than the tank can manage.
+        const curH = pLand.getHeightAt(Math.floor(this.m_vPos.x));
+        const newH = pLand.getHeightAt(Math.floor(newX));
+        if (Math.abs(newH - curH) > TANK_DRIVE_MAX_CLIMB * Math.max(1, stepPx)) { this.endDrive(pLand); return; }
+
+        this.m_vPos.x = newX;
+        this.m_vPos.y = newH - TANK_HEIGHT_PIXELS;
+        this.m_bIsMoving = true;
+        if (Math.abs(newX - target) < 0.5) this.endDrive(pLand);
+    }
+
+    private endDrive(pLand: CLand): void {
+        this.m_driveTargetX = null;
+        this.m_bIsMoving = false;
+        this.m_vPos.y = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
     }
 
     // ── Jet flight (extType 17) ──────────────────────────────────────────────
@@ -750,6 +802,17 @@ export class CTank {
     }
 
     /**
+     * Muzzle position the barrel WOULD have if aimed at `deg` (UI degrees), without
+     * moving the turret. Lets the AI evaluate a candidate shot's true spawn point.
+     */
+    muzzleForAngle(deg: number): Vec2 {
+        const r = (deg * Math.PI) / 180;
+        const aim = new Vec2(Math.cos(r), -Math.sin(r));
+        const pivot = this.getTurretPivot();
+        return new Vec2(pivot.x + aim.x * TANK_TURRET_LENGTH, pivot.y + aim.y * TANK_TURRET_LENGTH);
+    }
+
+    /**
      * Set turret aim direction (called from player input or AI)
      */
     setRelativeTurret(fDelta: number): void {
@@ -959,6 +1022,7 @@ export class CTank {
     public m_bIsAlive: boolean = true;
     public m_bIsMoving: boolean = false;
     private m_bFalling: boolean = false;
+    private m_driveTargetX: number | null = null;   // ground-drive destination, or null
     public m_bExploded: boolean = false;
     private m_bUnderground: boolean = false;
 
@@ -976,6 +1040,8 @@ const TANK_TURRET_LENGTH = 20;          // Turret barrel length for muzzle calc
 const TANK_TURRET_HEIGHT = 15;          // Turret pivot height above the ground line
 const TANK_DRAW_WIDTH = 46;             // On-screen hull width in pixels
 const TANK_GRAVITY = 400;               // Fall acceleration when unsupported (px/s^2)
+const TANK_DRIVE_SPEED = 70;            // Ground-drive crawl speed (px/s)
+const TANK_DRIVE_MAX_CLIMB = 1.4;       // Max terrain rise/drop per px driven before a wall stops it
 
 // Jet thrust as multiples of gravity (RE: FUN_00460d60 force constants).
 // UP = -1.2g (net -0.2g up while held); L/R = ∓0.1g. Ceiling at the map top.
