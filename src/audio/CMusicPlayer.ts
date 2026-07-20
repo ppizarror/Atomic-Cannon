@@ -1,16 +1,16 @@
 /**
  * CMusicPlayer — Impulse Tracker (.it) module playback via libopenmpt (WASM).
  *
- * The original played its 6 `.it` modules through FMOD's FMUSIC tracker engine
- * (never as PCM). Browsers can't play `.it` natively, so we drive libopenmpt
- * compiled to WebAssembly inside an AudioWorklet (the vendored chiptune3 worklet
- * under /audio/). This reproduces authentic tracker playback of the real module
- * files rather than a pre-rendered approximation.
+ * The game's 6 `.it` modules are tracker modules, not PCM. Browsers can't play
+ * `.it` natively, so we drive libopenmpt compiled to WebAssembly inside an
+ * AudioWorklet (the vendored chiptune3 worklet under /audio/). This gives
+ * true tracker playback of the module files rather than a pre-rendered
+ * approximation.
  *
- * Track-selection policy (see CAudio) is the original's:
+ * Track-selection policy (see CAudio):
  *   menu   → "Four Ages.it" looped
- *   battle → ONE random pick of 3 tracks, looped   (FUN_00445160)
- *   win    → "Airborne.it" once;  lose → "Well.it" once   (FUN_0047d2d0)
+ *   battle → ONE random pick of 3 tracks, looped
+ *   win    → "Airborne.it" once;  lose → "Well.it" once
  *
  * Message protocol matches the vendored worklet (registerProcessor
  * 'libopenmpt-processor'): post {cmd:'config'|'play'|'stop'|'repeatCount'};
@@ -30,7 +30,7 @@ export class CMusicPlayer {
     private m_node: AudioWorkletNode | null = null;
     private m_ready: Promise<void>;
     private m_enabled = true;
-    private m_volume = 100;                   // 0..100 (options slider `+0x9f8`)
+    private m_volume = 100;                   // 0..100 (options slider)
     private m_current: string | null = null;  // filename currently requested
     private m_loop = false;                    // whether the current track loops
     private m_onEnded: (() => void) | null = null;

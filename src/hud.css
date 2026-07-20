@@ -129,8 +129,7 @@ img, canvas {
 
 /* "Held" controls (paused / not the player's turn): each button greys out on its
    own — a translucent grey face over its rect — and stops taking pointer input,
-   so nothing hovers or clicks. Per-control (not one panel-wide veil), matching
-   the original's individually-disabled buttons. */
+   so nothing hovers or clicks. Per-control, not one panel-wide veil. */
 .ov-hotspot.blocked {
     background: rgba(70, 74, 70, 0.5);
     border-radius: 3px;
@@ -184,19 +183,19 @@ img, canvas {
     background: rgba(0, 0, 0, 0.2);
 }
 
-/* weapon list (over the panel's black box) — rows flush, like the original.
+/* weapon list (over the panel's black box) — rows flush.
    No scrollbar here: the ▲/▼ arrows step through weapons and scrollIntoView keeps
-   the active row visible, so the overflow just clips (matches the original). */
+   the active row visible, so the overflow just clips. */
 .wlist {
     overflow: hidden;
     padding: 0;
 }
 
 /* ---- Classic scrollbar (see ClassicScrollbar.tsx) --------------------------
-   The original game's bar: a flat black groove with a solid white rectangular
-   control — hard corners, no border, no inset margin. macOS can't square off the
-   native ::-webkit-scrollbar thumb (it stays a rounded, edge-inset pill), so the
-   native bar is hidden and this is drawn while the view scrolls underneath. */
+   A flat black groove with a solid white rectangular control — hard corners, no
+   border, no inset margin. macOS can't square off the native ::-webkit-scrollbar
+   thumb (it stays a rounded, edge-inset pill), so the native bar is hidden and
+   this is drawn while the view scrolls underneath. */
 .cscroll-host {
     position: relative;
 }
@@ -332,7 +331,7 @@ img, canvas {
 }
 
 /* shot-time bar below FIRE: a small red end-marker + a thin, black-outlined
-   green track that drains right→left (matches the original's thin gauge). */
+   green track that drains right→left. */
 .turn-timer {
     display: flex;
     align-items: center;
@@ -382,9 +381,9 @@ img, canvas {
 }
 
 /* side LCD boxes (weapon details / player stats) — black panels with a double
-   border, like the original. They HUG their content (the legacy boxes are
-   compact, not the full bar height) and top-align to where the weapon-list
-   ("Select Weapon") box starts inside the panel — 11.7% down the 138px panel. */
+   border. They HUG their content (these boxes are compact, not the full bar
+   height) and top-align to where the weapon-list ("Select Weapon") box starts
+   inside the panel — 11.7% down the 138px panel. */
 .side-lcd {
     position: relative;
     align-self: flex-start;
@@ -403,7 +402,7 @@ img, canvas {
     overflow: hidden;
 }
 
-/* Engraved inner frame — the original's inset double-border LCD look. */
+/* Engraved inner frame — an inset double-border LCD look. */
 .side-lcd::before {
     content: '';
     position: absolute;
@@ -421,9 +420,9 @@ img, canvas {
     margin-bottom: 2px;
 }
 
-/* Width-gated boxes, matching the original: the panel keeps its innermost box on
-   each side (Weapon Details / tank stats), and the OUTER boxes are revealed only
-   as the screen widens — outermost first to disappear. Order out from the panel:
+/* Width-gated boxes: the panel keeps its innermost box on each side (Weapon
+   Details / tank stats), and the OUTER boxes are revealed only as the screen
+   widens — outermost first to disappear. Order out from the panel:
    left  = weapon-details → weapon-details-2, right = player-stats → wind-measurements. */
 @media (max-width: 1580px) {
     #weapon-details-2, #wind-measurements {
@@ -934,7 +933,7 @@ img, canvas {
 /* One highlight treatment for every menu list — main menu, the "Game Menu" pause
    list, the Settings root, and the option rows. HOVER paints a light box behind the
    entry; CLICK replaces it with the photographic NEGATIVE of whatever's behind the
-   box (the legacy invert-rect selection), drawn by an overlay whose backdrop-filter
+   box (an invert-rect selection), drawn by an overlay whose backdrop-filter
    inverts the scene *and* the glyphs on top of it.
    NB: the button must NOT carry `transform`/`filter` — those would isolate its
    backdrop so the overlay could only invert the button's own interior, not the scene
@@ -960,9 +959,8 @@ img, canvas {
     position: absolute;
     inset: 0;
     /* A white layer in `difference` blend = 255 − backdrop = the photographic
-       negative of everything under the box (scene AND the glyphs on top of it),
-       exactly like the original's invert-rect. (More robust than backdrop-filter,
-       which some GPU/headless paths skip.) */
+       negative of everything under the box (scene AND the glyphs on top of it).
+       (More robust than backdrop-filter, which some GPU/headless paths skip.) */
     background: #fff;
     mix-blend-mode: difference;
     pointer-events: none;
@@ -1096,6 +1094,46 @@ img, canvas {
 .about-back {
     align-self: center;
     margin-top: 16px;
+}
+
+/* =================== RESOLUTION-TOO-SMALL GATE =================== */
+/* Covers the whole viewport (above every other layer) when the window drops below
+   the minimum playable size — the brushed-steel plate backdrop with the game's
+   `atomic/dialog.bmp` panel and bitmap-font text (no CSS chrome/text). */
+.too-small {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;                   /* above the screen-flash (9999) and every screen */
+    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.too-small-card {
+    max-width: min(560px, 92vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* the dialog sprite: 12px beveled frame kept crisp, dark-metal centre filled */
+    border: 12px solid transparent;
+    border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
+    image-rendering: pixelated;
+    padding: 24px 34px 26px;
+}
+/* Layout/spacing only — colour and size come from the bitmap fonts themselves. */
+.too-small-title {
+    margin-bottom: 16px;
+}
+.too-small-msg {
+    margin-top: 3px;
+}
+.too-small-sub {
+    margin-top: 16px;
+}
+.too-small-size {
+    margin-top: 14px;
+    opacity: 0.8;
 }
 
 /* ============================ HELP OVERLAY ============================ */

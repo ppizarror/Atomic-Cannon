@@ -9,8 +9,8 @@
  *
  * Layering: ALL weather is drawn BEHIND the terrain (between the backdrop and the
  * ground), so precipitation only shows against the sky and is naturally occluded
- * by hills — the same look as the original. The per-band `hover` flag selects
- * MOTION only: dust hovers and drifts sideways; snow / rain / hail fall.
+ * by hills. The per-band `hover` flag selects MOTION only: dust hovers and drifts
+ * sideways; snow / rain / hail fall.
  */
 
 import type {Vec2} from '../math/Vec2';
@@ -22,7 +22,7 @@ export interface WeatherSpec {
     intensity: number
 }
 
-// Weather draws as small crisp dots (like the original), NOT soft gradient blobs.
+// Weather draws as small crisp dots, NOT soft gradient blobs.
 // `size` is the dot radius in px — kept tiny so the field reads as flecks, not smudges.
 const TUNING = {
     // Small slow flakes that sway side to side and drift on the wind.
@@ -90,10 +90,10 @@ const TUNING = {
 
 type Tuning = typeof TUNING[WeatherType];
 
-// The 5 sand tints the original cycles for dust specks (alpha-blended tan, not glow).
+// The 5 sand tints cycled for dust specks (alpha-blended tan, not glow).
 const DUST_TANS = ['#a37d3b', '#937137', '#896a33', '#7f642f', '#785f2d'];
 
-/** The original's fixed field size: sqrt(screenArea) · K · 300 · typeMult, where
+/** Fixed field size: sqrt(screenArea) · K · 300 · typeMult, where
  * K = 1/900 above 800px wide, else 1/600. Independent of intensity. */
 function computeCount(w: number, h: number, mult: number): number {
     if (w <= 0 || h <= 0) return 0;
@@ -148,14 +148,14 @@ export class CWeather {
     }
 
     /**
-     * Set the active weather from a map's declared bands. Following the original,
-     * `intensity` is a one-time probability GATE (not a density scale): each band
-     * rolls `rand(0..99) <= intensity` at map load and, if it passes, appears at a
-     * FIXED per-type density. Unknown types and intensity ≤ 0 are dropped.
+     * Set the active weather from a map's declared bands. `intensity` is a one-time
+     * probability GATE (not a density scale): each band rolls `rand(0..99) <= intensity`
+     * at map load and, if it passes, appears at a FIXED per-type density. Unknown types
+     * and intensity ≤ 0 are dropped.
      *
-     * Deviation from the original: it also has a parse-order quirk that suppresses
-     * hail whenever snow is declared first — and every hail map declares snow first,
-     * so hail would never show. We honour the data's intent and let both appear.
+     * Note: a parse-order quirk in the map data suppresses hail whenever snow is
+     * declared first — and every hail map declares snow first, so hail would never
+     * show. We honour the data's intent and let both appear.
      */
     configure(specs: readonly WeatherSpec[] | undefined): void {
         this.m_layers = [];
@@ -192,8 +192,8 @@ export class CWeather {
             size: between(t.sizeMin, t.sizeMax),
             seed: rnd() * TWO_PI,
             speedMul: between(0.75, 1.25),
-            // Dust seeds a leftward "blowing" bias (like the original) so it drifts even
-            // in calm air; falling types get a small symmetric jitter (unused by them).
+            // Dust seeds a leftward "blowing" bias so it drifts even in calm air;
+            // falling types get a small symmetric jitter (unused by them).
             drift: t.hover ? between(-55, -20) : between(-18, 18),
             alpha: between(t.alphaMin, t.alphaMax),
             ci: Math.floor(rnd() * DUST_TANS.length),

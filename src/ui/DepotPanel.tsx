@@ -1,6 +1,6 @@
 /**
  * Weapons Depot — the buy/sell screen. Shown above the battle HUD (via the
- * `showDepot` signal), styled to match the original: a brushed-metal panel, the
+ * `showDepot` signal): a brushed-metal panel, the
  * game's own bitmap fonts, a sortable Qty / Name / Type / Power / Cost table with
  * green affordability rows, a green tooltip (the `zeon` UI kit) describing the
  * weapon under the cursor, and Buy / Sell / Auto Buy / Stats / Close controls
@@ -29,7 +29,7 @@ const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native ou
 
 // The depot's "Power" figure is the weapon's derived Power stat (base damage ×
 // effective impact count, +200 for radioactive weapons, raw stat for utilities) —
-// see `weaponPower` in CWeapon.ts, reversed byte-for-byte from FUN_004036e0.
+// see `weaponPower` in CWeapon.ts.
 const powerOf = weaponPower;
 
 const UNLIMITED = Number.POSITIVE_INFINITY;

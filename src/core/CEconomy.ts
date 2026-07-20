@@ -5,16 +5,16 @@
  * Some staple weapons are UNLIMITED (never deplete) so a player is never left
  * unable to fire. Quantities are kept per weapon index into WEAPON_DATABASE.
  *
- * Tunable constants live at the top so they can be matched to the original.
+ * Tunable constants live at the top so they are easy to adjust in one place.
  */
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
 
-// Economy defaults, matching the original's documented settings. Credits are
-// awarded between turns/rounds by these rates (earning is a future gameplay hook —
-// the constants live here so it's one place to wire).
-/** Credits a player starts a match with (original default: 3000 per tank). */
+// Economy defaults. Credits are awarded between turns/rounds by these rates
+// (earning is a future gameplay hook — the constants live here so it's one place
+// to wire).
+/** Credits a player starts a match with (default: 3000 per tank). */
 export const START_CREDITS = 3000;
-/** Fraction of a weapon's cost refunded when sold (original: 50% sell-back rate). */
+/** Fraction of a weapon's cost refunded when sold (default: 50% sell-back rate). */
 export const SELL_REFUND = 0.5;
 /** Credits earned per point of damage dealt (default 1). */
 export const CREDIT_PER_DAMAGE = 1;
@@ -119,11 +119,10 @@ export class CEconomy {
     }
 
     /**
-     * Auto Buy: a "drain loop" like the original — repeatedly pick a random
-     * affordable weapon and buy it until nothing is left affordable, spending nearly
-     * all credits on a varied, semi-random assortment (the Shell staple is excluded).
-     * The original also front-loads a few support weapons scaled to AI difficulty;
-     * that difficulty-gated pass isn't modelled here.
+     * Auto Buy: a "drain loop" — repeatedly pick a random affordable weapon and buy it
+     * until nothing is left affordable, spending nearly all credits on a varied,
+     * semi-random assortment (the Shell staple is excluded). A difficulty-gated pass
+     * that front-loads a few support weapons scaled to AI difficulty isn't modelled here.
      */
     autoBuy(): void {
         // Guard against pathological loops (every buy removes at least the cheapest cost).

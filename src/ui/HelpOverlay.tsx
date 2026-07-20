@@ -1,10 +1,8 @@
 /**
- * Help overlay — the "?" control-panel button. The original opens an interactive
- * help/tutorial that highlights each panel control with its description (RE:
- * flag this+0x97f drives tutorial state this+0xa1c, whose text comes from the
- * per-control tooltip table FUN_0048a4f0). Our port presents that same reference
- * as a single modal, rendered on the game's `atomic/dialog.bmp` panel with the
- * game's bitmap fonts. Freezes the sim while open (see openHelp).
+ * Help overlay — the "?" control-panel button. Opens a help reference that lists
+ * each panel control with its description, presented as a single modal rendered on
+ * the game's `atomic/dialog.bmp` panel with the game's bitmap fonts. Freezes the
+ * sim while open (see openHelp).
  *
  * Text is ASCII-only and one line per field: the bitmap fonts cover ASCII 33..126
  * (no arrows / en-dash / middle-dot) and BmpText does not wrap.
@@ -12,9 +10,7 @@
 import {showHelp, closeHelp} from './store';
 import {BmpText} from './BmpText';
 
-// One row per panel control. Descriptions follow the original's tooltip table
-// (FUN_0048a4f0) and confirmed behaviour; the reset line mirrors the binary's
-// verbatim text ("set power and angle to your last shot").
+// One row per panel control, each with a short description of what the control does.
 const CONTROLS: { name: string; desc: string }[] = [
     {name: 'Select Weapon', desc: 'Choose from the list, or step with the arrows.'},
     {name: 'Power', desc: 'How hard you fire, 10 to 1000. Drag or +/-.'},

@@ -1,13 +1,13 @@
 /**
  * CAudio — the game's audio facade.
  *
- * Mirrors the original's single audio funnel: gameplay code calls **semantic**
- * events here (fire / hit / tankExplode / battleWon…), and this class maps them
- * to the SFX manager and music player. It also owns the one shared AudioContext
- * and the master gain, and handles the browser's autoplay policy (the context
+ * A single audio funnel: gameplay code calls **semantic** events here
+ * (fire / hit / tankExplode / battleWon…), and this class maps them to the
+ * SFX manager and music player. It also owns the one shared AudioContext and
+ * the master gain, and handles the browser's autoplay policy (the context
  * starts suspended and is resumed on the first user gesture).
  *
- * Track-selection policy is straight from the RE (see CMusicPlayer):
+ * Track-selection policy (see CMusicPlayer):
  *   menu → "Four Ages.it" (loop);  battle → random of 3 (loop);
  *   win → "Airborne.it" (once);    lose → "Well.it" (once).
  */
@@ -16,7 +16,7 @@ import {CSoundManager} from './CSoundManager';
 import {CMusicPlayer} from './CMusicPlayer';
 
 // Hardcoded (non-weapon) event sounds — the files present in assets/sound/ that
-// no weapon references. Mapped to game events per the decompiled trigger sites.
+// no weapon references. Mapped to game events at their trigger sites.
 export const SFX = {
     TANK_EXPLODE: 'tank explode.wav',
     TANK_MOVING: 'tank moving.wav',
@@ -37,15 +37,15 @@ interface AudioSettings {
     musicOn: boolean;
 }
 
-// Music policy (RE: FUN_00445160 battle-start, FUN_0047d2d0 end jingles).
+// Music policy.
 const MENU_MUSIC = 'Four Ages.it';
 const BATTLE_TRACKS = ['Into the Wild Blue Monster.it', 'Anubis Claws.it', 'Rust.it'];
 const VICTORY_MUSIC = 'Airborne.it';
 const DEFEAT_MUSIC = 'Well.it';
 
-// Combat-set effects to warm up front (the original's FUN_0044c4b0 preload). The
-// weapon fire/hit samples load lazily on first use; these are the guaranteed
-// event sounds plus the most common shared weapon hits.
+// Combat-set effects to warm up front. The weapon fire/hit samples load lazily
+// on first use; these are the guaranteed event sounds plus the most common
+// shared weapon hits.
 const COMBAT_PRELOAD = [
     SFX.TANK_EXPLODE, SFX.TANK_MOVING, SFX.JET, SFX.BATTLE_WON, SFX.BATTLE_LOST,
     SFX.CLICK, SFX.JET, 'fire.wav', 'cannon.wav', 'hit.wav', 'hit high.wav', 'bomb.wav',
@@ -149,7 +149,7 @@ export class CAudio {
         void this.m_sfx.preload(COMBAT_PRELOAD);
     }
 
-    // ── Semantic game events (the PlaySound funnel) ─────────────────────────────
+    // ── Semantic game events (the play funnel) ──────────────────────────────────
 
     /** Weapon fire — the weapon's `soundFire` string, panned to the muzzle. */
     fire(soundFire: string, worldX: number): void {
@@ -199,7 +199,7 @@ export class CAudio {
         void this.m_music.play(MENU_MUSIC, true);
     }
 
-    /** Start a battle: one random looped track, exactly like the original. */
+    /** Start a battle: one random looped track. */
     battleMusic(): void {
         const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
         void this.m_music.play(pick, true);

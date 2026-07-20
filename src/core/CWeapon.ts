@@ -1,9 +1,9 @@
 /**
- * CWeapon - weapon definitions, loaded from the extracted game data.
+ * CWeapon - weapon definitions, loaded from the bundled game data.
  *
- * Source of truth is `data/weapons.json` (104 weapons parsed from the original
- * weapons.txt) — NOT a hardcoded list. Colors come from `data/particles.json`
- * (each weapon's blast/trail particle effect).
+ * Source of truth is `data/weapons.json` (104 weapons parsed from weapons.txt) —
+ * NOT a hardcoded list. Colors come from `data/particles.json` (each weapon's
+ * blast/trail particle effect).
  */
 
 import weaponsRaw from '../data/weapons.json';
@@ -174,7 +174,7 @@ export class CWeapon {
     }
 
     // --- mechanics for CShot (Phase 3) -----------------------------------------
-    // extType (weapon+0x70) is the behaviour dispatcher — see symbols/notes/weapon_types.md.
+    // extType is the behaviour dispatcher — see weapon_types.md.
     getExtType(): number {
         return this.m_def.extType || 0;
     }
@@ -198,11 +198,11 @@ export class CWeapon {
         return this.m_def.batSec || 0;
     }
 
-    // Multi-fire (from the disassembly `impactMultiplier`): `spawn` (+0x1c) = the
-    // number of SIMULTANEOUS rounds fired in a fan; `spread` (+0x24) = degrees BETWEEN
-    // those rounds; `sucNum` (+0x40) = SUCCESSION — the shot fires `sucNum+1` times in
-    // a row (`sucSec` apart). So a Cannon (spawn 5) sprays 5 pellets; a Machine Gun
-    // (sucNum 11) fires ~12 times. (The weapons.txt column NAMES are misleading.)
+    // Multi-fire fields: `spawn` = the number of SIMULTANEOUS rounds fired in a fan;
+    // `spread` = degrees BETWEEN those rounds; `sucNum` = SUCCESSION — the shot fires
+    // `sucNum+1` times in a row (`sucSec` apart). So a Cannon (spawn 5) sprays 5
+    // pellets; a Machine Gun (sucNum 11) fires ~12 times. (The weapons.txt column
+    // NAMES are misleading.)
     getSpawnCount(): number {
         return this.m_def.spawn || 1;                 // simultaneous fan count
     }
@@ -269,7 +269,7 @@ export class CWeapon {
         return this.m_def.expBitmap || '';
     }
 
-    // --- trail / muzzle / in-flight flare (weapons.txt legacy fields) ----------
+    // --- trail / muzzle / in-flight flare (weapons.txt fields) ----------
     /** 0 = no trail, 1 = basic flare+smoke, 2–6 = rocket-plume exhaust. */
     getTrailType(): number {
         return this.m_def.trailType || 0;
@@ -301,10 +301,9 @@ export class CWeapon {
 // ---------------------------------------------------------------------------
 // Derived weapon stats shown in the weapon-details LCD / depot.
 //
-// These are NOT columns in weapons.txt — the original computes them once at
-// weapon-load (CWeapon post-parse, FUN_004036e0 @ 0x4036e0) and stores them in
-// the runtime struct (+0x98 Power, +0x9c Damage-per-area). Verified byte-for-byte
-// from the disassembly; reproduces the shipped anchors exactly:
+// These are NOT columns in weapons.txt — they're computed once at weapon-load
+// (CWeapon post-parse) and stored as Power and Damage-per-area. Reference stat
+// anchors:
 //   Shell 50 · Rocket 100 · Earth Destroy 25 · Plutonium Nuke 650 · Toxic Cow 700.
 // ---------------------------------------------------------------------------
 
@@ -314,26 +313,26 @@ export class CWeapon {
  *  `cluNum^cluRecurse`, except cluNum==1 which sets m = cluRecurse outright. */
 function impactMultiplier(w: RawWeapon): number {
     let m = 1;
-    if ((w.spawn ?? 0) > 0) m = w.spawn;                     // +0x1c: m = spawn (assign)
-    if ((w.batSec ?? 0) > 0) m = m * w.batSec * 3;           // +0x3c: × batSec × 3
-    if ((w.sucNum ?? 0) > 0) m = m * (w.sucNum + 1);         // +0x40: × (sucNum + 1)
-    if (w.cluNum === 1) m = w.cluRecurse;                    // +0x28==1: m = cluRecurse
+    if ((w.spawn ?? 0) > 0) m = w.spawn;                     // m = spawn (assign)
+    if ((w.batSec ?? 0) > 0) m = m * w.batSec * 3;           // × batSec × 3
+    if ((w.sucNum ?? 0) > 0) m = m * (w.sucNum + 1);         // × (sucNum + 1)
+    if (w.cluNum === 1) m = w.cluRecurse;                    // cluNum==1: m = cluRecurse
     else if ((w.cluNum ?? 0) > 0)                            // else: × cluNum^cluRecurse (int)
         m = m * Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse ?? 0));
     return m;
 }
 
-/** Post-override Power (+0x98): `m × damage`, `+200` if the weapon irradiates,
+/** Post-override Power: `m × damage`, `+200` if the weapon irradiates,
  *  or just `damage` for Utility weapons (a heal/move amount, not an attack). */
 export function weaponPower(w: RawWeapon): number {
     const m = impactMultiplier(w);
     let power = m * w.damage;
-    if ((w.iradiate ?? 0) > 0) power += 200;                 // +0x58 (iradiate) > 0
+    if ((w.iradiate ?? 0) > 0) power += 200;                 // iradiate > 0
     if (w.type === 'Utility') power = w.damage;              // type == "Utility"
     return Math.round(power);
 }
 
-/** Damage-per-area (+0x9c): `Power·10000 / (radius² · m · 6.28)` — power density
+/** Damage-per-area: `Power·10000 / (radius² · m · 6.28)` — power density
  *  over the blast footprint. Zero when the weapon has no radius or no impact. */
 export function weaponDamagePerArea(w: RawWeapon): number {
     const m = impactMultiplier(w);

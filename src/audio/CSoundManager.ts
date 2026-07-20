@@ -1,24 +1,23 @@
 /**
  * CSoundManager — Web Audio sound-effects engine.
  *
- * Port of the original FMOD 3.x SFX path (the `PlaySound(name)` funnel at
- * FUN_00410fa0 → the name-keyed sample manager at 0x5055a8). Faithful details:
+ * Routes every effect through a single `play(name)` funnel backed by a
+ * name-keyed sample cache. Details:
  *
  *  - Sounds are keyed by their **filename** ("cannon.wav", "hit high.wav"), not a
  *    numeric enum — exactly how the weapon `soundFire`/`soundHit` strings map.
- *  - A per-name **retrigger throttle** (the original's GetTickCount dedup) stops the
- *    same effect from machine-gunning every frame.
- *  - Per-shot **stereo pan** from the source's world-X (the original's
- *    `FSOUND_SetPan`), and a master SFX **gain** ((vol*255)/100 there → vol/100 here).
- *  - Looping named sounds (`tank moving.wav`, `jet.wav`) start/stop by name, mirroring
- *    the manager's start-loop / StopNamedSound used by the movement state machine.
+ *  - A per-name **retrigger throttle** stops the same effect from
+ *    machine-gunning every frame.
+ *  - Per-shot **stereo pan** from the source's world-X, and a master SFX
+ *    **gain** (vol/100).
+ *  - Looping named sounds (`tank moving.wav`, `jet.wav`) start/stop by name,
+ *    driven by the movement state machine.
  */
 
 const SOUND_BASE = '/assets/sound/';
 
-// Minimum gap before the same-named effect may retrigger (the original throttled
-// via GetTickCount against _DAT_004efc24/28). ~45ms ≈ 3 frames at 60fps: enough to
-// stop per-frame spam without swallowing distinct rapid shots.
+// Minimum gap before the same-named effect may retrigger. ~45ms ≈ 3 frames at
+// 60fps: enough to stop per-frame spam without swallowing distinct rapid shots.
 const RETRIGGER_MS = 45;
 
 interface LoopHandle {
@@ -59,7 +58,7 @@ export class CSoundManager {
         return this.m_enabled;
     }
 
-    /** Options-slider volume, 0..100 (original `+0x9fc`). */
+    /** Options-slider volume, 0..100. */
     setVolume(v: number): void {
         this.m_volume = Math.max(0, Math.min(100, v));
         this.m_sfxGain.gain.value = this.m_volume / 100;
@@ -70,7 +69,7 @@ export class CSoundManager {
     }
 
     /**
-     * Preload a set of effects (the original preloads a menu set and a combat set).
+     * Preload a set of effects (a menu set and a combat set).
      * Failures are swallowed — a missing effect must never break gameplay.
      */
     async preload(names: Iterable<string>): Promise<void> {
@@ -103,7 +102,7 @@ export class CSoundManager {
         return job;
     }
 
-    /** world-X → stereo pan in [-1, 1]. Centre-screen = 0, matching FSOUND_SetPan. */
+    /** world-X → stereo pan in [-1, 1]. Centre-screen = 0. */
     private panFor(worldX: number | undefined): number {
         if (worldX === undefined) return 0;
         return Math.max(-1, Math.min(1, (worldX / this.m_worldWidth) * 2 - 1));
@@ -161,8 +160,8 @@ export class CSoundManager {
     // ── Looping named sounds (tank moving / jet) ───────────────────────────────
 
     /** Start (or keep) a looping sound keyed by name. Idempotent — a second call
-     *  while it's already playing just repans it (mirrors the movement dedup check
-     *  `FUN_0049fa20` "is this named sound already playing?"). */
+     *  while it's already playing just repans it (the movement dedup check:
+     *  "is this named sound already playing?"). */
     startLoop(name: string, worldX?: number): void {
         if (!this.m_enabled || !name) return;
         const existing = this.m_loops.get(name);
@@ -201,7 +200,7 @@ export class CSoundManager {
         if (h) h.panner.pan.value = this.panFor(worldX);
     }
 
-    /** Stop a named loop (the movement machine's StopNamedSound `FUN_0049fb90`). */
+    /** Stop a named loop (the movement machine's stop-named-sound). */
     stopLoop(name: string): void {
         const h = this.m_loops.get(name);
         if (!h) return;

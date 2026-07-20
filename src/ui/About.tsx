@@ -1,5 +1,5 @@
 /**
- * About / credits screen (the original's mode-8). Shows the game's `about.txt` story
+ * About / credits screen. Shows the game's `about.txt` story
  * over the `steel.jpg` backdrop, with a Back button. Reuses the metal card styling.
  */
 import { useEffect, useState } from 'preact/hooks';

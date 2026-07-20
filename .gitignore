@@ -5,5 +5,8 @@
 dist/
 node_modules
 
+# Inner dev
+AGENTS.md
+
 # Public assets
 public/

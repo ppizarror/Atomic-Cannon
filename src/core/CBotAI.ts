@@ -13,16 +13,16 @@
  * target/weapon choice from "random" (easy) toward "best" (hard).
  */
 import { SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_SPEED_SCALE } from './CShot';
+import { GameConfig } from './CGameConfig';
 import { WEAPON_DATABASE } from './CWeapon';
 
 // Difficulty is a single 0..10 skill level (0 = "Dummy": never aims; 10 =
-// "Einstein": perfect aim). The default isn't recoverable from the binary; 5 is a
-// reasonable mid setting (interpretation).
+// "Einstein": perfect aim). 5 is a reasonable mid default.
 export const AI_LEVEL_MIN = 0;
 export const AI_LEVEL_MAX = 10;
 export const AI_DEFAULT_LEVEL = 5;
 
-// Aim search bounds (power in the game's 10..1000 scale; the original sweeps 100+).
+// Aim search bounds (power in the game's 10..1000 scale; the sweep covers 100+).
 const P_MIN = 100;
 const P_MAX = 1000;
 const COARSE_A = 5;    // deg
@@ -44,7 +44,7 @@ export function levelFrac(level: number): number {
 
 /**
  * Probability that the bot computes a FRESH firing solution this turn (vs. firing
- * with its stale aim). The original rolls `rand%10 < level` twice and ORs them:
+ * with its stale aim). Rolls `rand%10 < level` twice and ORs them:
  * P = 1 − (1 − level/10)². L0→0%, L5→75%, L10→100%.
  */
 export function aimProbability(level: number): number {
@@ -55,7 +55,7 @@ export function aimProbability(level: number): number {
 /**
  * Random angle scatter (degrees) added to the aim, scaling with how far the level
  * is below max. Magnitude is uniform in [0.2·(10−L), 0.8·(10−L)] with a random
- * sign; 0 at level ≥ 10. Power is never perturbed (matches the original).
+ * sign; 0 at level ≥ 10. Power is never perturbed.
  */
 export function angleError(level: number, rnd: () => number = Math.random): number {
   const span = Math.max(0, 10 - level);
@@ -75,7 +75,8 @@ export function simulateMiss(
   origin: Pt, angleDeg: number, power: number, wind: Pt, field: AimField, target: Pt,
 ): number {
   const r = angleDeg * DEG;
-  const speed = power * SHOT_SPEED_SCALE;
+  // Match the real launch speed (Power Scale) so the solver's prediction is accurate.
+  const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
   let vx = Math.cos(r) * speed;
   let vy = -Math.sin(r) * speed;
   let x = origin.x, y = origin.y;
@@ -133,7 +134,7 @@ export function bestAim(
 /**
  * Choose whom to shoot. Only high-skill bots (level > 7) target deliberately: a
  * 40% / 40% / 20% split between the weakest enemy, the nearest enemy, and a random
- * one. Every other level picks a uniformly random enemy (matches the original).
+ * one. Every other level picks a uniformly random enemy.
  */
 export function pickTarget(
   enemies: { x: number; y: number; healthFrac: number }[], botX: number, level: number, rnd: () => number = Math.random,
@@ -182,7 +183,7 @@ export function ballisticWeaponIndices(): number[] {
 
 /**
  * Choose a weapon to fire: a random ballistic round, except a level-8+ bot has a
- * 70% chance to grab its highest-"power" (damage) weapon instead (the original's
+ * 70% chance to grab its highest-"power" (damage) weapon instead (the
  * `level>8 && rand%100<70` upgrade).
  */
 export function pickWeapon(level: number, rnd: () => number = Math.random): number {

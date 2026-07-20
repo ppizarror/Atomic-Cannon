@@ -1,6 +1,6 @@
 /**
  * ClassicScrollbar — a scroll container whose native scrollbar is hidden and
- * replaced by the original game's bar: a flat black track with a solid white
+ * replaced by a custom bar: a flat black track with a solid white
  * rectangular "control" (hard corners, no border, no inset margin).
  *
  * macOS renders the native ::-webkit-scrollbar thumb as a rounded, edge-inset

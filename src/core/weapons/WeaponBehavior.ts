@@ -1,20 +1,19 @@
 /**
  * Weapon behaviours — one dispatcher over `extType`, the weapon's behaviour selector.
  *
- * Ported from the original's per-frame shot dispatch and detonation path. The
- * mechanics (which extType does what, cluster fan, battery drop, roller/digger
- * motion, radiation fields) are documented in the RE notes; the pieces whose
- * applicator sits outside the decompiled subset (radiation damage-over-time,
- * the `earth` deposit amount) are faithful interpretations driven by the real
- * data fields, marked INTERP below.
+ * Covers per-frame shot dispatch and the detonation path. The mechanics (which
+ * extType does what, cluster fan, battery drop, roller/digger motion, radiation
+ * fields) are documented in the notes; a couple of pieces (radiation
+ * damage-over-time, the `earth` deposit amount) are derived from the data fields.
  */
 import {Vec2} from '../../math/Vec2';
 import {CShot} from '../CShot';
 import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
+import {GameConfig} from '../CGameConfig';
 
-/** extType values (weapon+0x70). 0 and unlisted = plain ballistic. */
+/** extType values. 0 and unlisted = plain ballistic. */
 export const EXT = {
     BALLISTIC: 0, DIGGER: 1, ROLLER: 2, TRACER: 4, BEAM: 5, BEAM2: 6,
     ESCAPE: 8, REBOUND: 9, DEATH: 12, AIRBURST: 13, MINE: 16, JET: 17, SENTRY: 18,
@@ -22,11 +21,11 @@ export const EXT = {
 
 // Shot speed per unit power — same scaling the launch path uses.
 const SPEED_SCALE = 0.9;
-// Submunition launch power = 0.5 x firing power (_DAT_004ef3cc).
+// Submunition launch power = 0.5x firing power.
 const CLUSTER_POWER = 0.5;
-// Roller surface speed (px/s in our space; the original uses a fixed ±10 units).
+// Roller surface speed (px/s in our space).
 const ROLL_SPEED = 260;
-// Max shot lifetime before it self-detonates (_DAT_004efc20 = 10.0s).
+// Max shot lifetime before it self-detonates (10.0s).
 const MAX_LIFE = 10;
 const TANK_HIT_R = 16;
 
@@ -46,7 +45,7 @@ export interface ShotWorld {
 
     ripple(x: number, y: number, strength: number): void;
 
-    /** Falloff blast damage + kick + shield/armor (FUN_00404670). `full` skips falloff (beams). */
+    /** Falloff blast damage + kick + shield/armor. `full` skips falloff (beams). */
     applyBlast(pos: Vec2, radius: number, damage: number, owner: CTank | null, full: boolean): void;
 
     aimMarker(x: number, y: number): void;
@@ -224,17 +223,18 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
     // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
     const isCleaner = weapon.getType() === 'Cleaner';
-    const radiusPx = shot.getRadius();
+    // Explosion Size (Gameplay) scales the blast radius → crater, damage reach and FX.
+    const radiusPx = shot.getRadius() * GameConfig.explosionScale;
     const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
     world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9, weapon.getColor(), radiusPx, weapon.isNuclear(), weapon.getBlastParticle(), weapon.getExpType(), weapon.getExpBitmap());
-    world.hitSound(weapon.getHitSound(), pos.x);   // soundHit, panned to the blast (RE: shot field +0xC4)
+    world.hitSound(weapon.getHitSound(), pos.x);   // soundHit, panned to the blast
     if (!isCleaner) world.shake(isPrimary ? 8 : 3, 0.3);
 
     // Terrain effect.
     const earth = weapon.getEarth();
     if (earth > 0) {
-        // Dirt: deposit a mound instead of a crater (INTERP of the debris-settle deposit).
+        // Dirt: deposit a mound instead of a crater (debris settles into a deposit).
         land.raiseTerrain(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
     } else if (isCleaner) {
         // Cleaner: carve out its (large) radius — remove terrain, nothing else. No
@@ -254,7 +254,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
         land.addShowerParticles(Math.floor(pos.x), Math.floor(Math.min(pos.y, surfaceY)), chunks, Math.round(radiusPx * (heavy ? 1.6 : 1)));
     }
 
-    // The screen refraction / shockwave warp is a NUKE-only effect in the original.
+    // The screen refraction / shockwave warp is a NUKE-only effect.
     if (isPrimary && (weapon.isNuclear() || weapon.getExpType() === 4)) {
         world.ripple(pos.x, pos.y, 2.6 + radiusPx / 120);
     }
@@ -266,11 +266,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     if (!isCleaner) world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam);
 
     // Radiation zone (NUKE/DOT/Organic/…): irDmg/sec for irTime s, tinted irRGB.
-    // The original throws the fallout as a speck cloud out of the crater — each speck
-    // lands at `dist = rand01 * radius` and the density is ∝ radius (RE notes:
-    // FUN_004a6c20 / terrain_and_beam_fx.md). So the zone spreads within the BLAST
-    // RADIUS, never a separate scale. `iradiate` is only the on/off gate the original
-    // tests as `threshold < iradiate` (already covered by rad.time/rad.dmg > 0 here) —
+    // The fallout scatters as a speck cloud out of the crater — each speck lands at
+    // `dist = rand01 * radius` and the density is ∝ radius. So the zone spreads within
+    // the BLAST RADIUS, never a separate scale. `iradiate` is only the on/off gate
+    // (tested as `threshold < iradiate`, already covered by rad.time/rad.dmg > 0 here) —
     // it is NOT a spatial radius, so it must not size the zone. Nukes throw a slightly
     // wider field, tracking their heavier (×1.35) crater.
     const rad = weapon.getRadiation();
@@ -297,10 +296,10 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
     const [startDeg, endDeg] = weapon.getClusterSpread();
     const step = (endDeg - startDeg) / cluNum;
     const childPower = Math.max(1, parent.getPower() * CLUSTER_POWER);
-    const speed = childPower * SPEED_SCALE;
+    const speed = childPower * SPEED_SCALE * GameConfig.powerScale;
 
     for (let k = 0; k < cluNum; k++) {
-        const aDeg = startDeg - k * step;            // fan (matches the original's subtraction)
+        const aDeg = startDeg - k * step;            // fan angle by subtraction
         const a = (aDeg * Math.PI) / 180;
         const vx = Math.cos(a) * speed;
         const vy = Math.sin(a) * speed;              // screen-Y down: 90°→down, 270°→up

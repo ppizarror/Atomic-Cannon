@@ -11,6 +11,7 @@
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS} from '../core/CTank';
 import {CShot} from '../core/CShot';
+import {GameConfig} from '../core/CGameConfig';
 import {CWeapon, getDefaultWeaponIndex, getWeapon, WEAPON_DATABASE} from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem, ScreenShake} from '../core/CParticleSystem';
@@ -161,11 +162,11 @@ export class CGameController implements ShotWorld {
         // Shield icon shown on a tank's badge when it has shields (magenta-keyed).
         this.m_assets.loadSprite('gui/shield', '/assets/gui/shield.bmp');
         // The aim crosshair (magenta-keyed white "+" with a black outline) that marks
-        // the (angle, power) aim point — the original's "target turret" reticle.
+        // the (angle, power) aim point — the "target turret" reticle.
         this.m_assets.loadSprite('gui/target', '/assets/gui/target turret.bmp');
-        // Off-screen shot notches (RE: FUN_00472fc0, gated on the "Tracking" option):
-        // top arrows (up while rising, down while falling) + left/right edge brackets
-        // pointing at a projectile that has left the view.
+        // Off-screen shot notches (gated on the "Tracking" option): top arrows (up
+        // while rising, down while falling) + left/right edge brackets pointing at a
+        // projectile that has left the view.
         this.m_assets.loadSprite('gui/notch-center', '/assets/gui/notch center.bmp');
         this.m_assets.loadSprite('gui/notch-decent', '/assets/gui/notch center decent.bmp');
         this.m_assets.loadSprite('gui/notch-left', '/assets/gui/notch left.bmp');
@@ -202,7 +203,7 @@ export class CGameController implements ShotWorld {
         this.m_currentPlayerIndex = 0;
         this.beginTurn();
 
-        // Warm the combat SFX set and start a random battle track (RE: FUN_00445160).
+        // Warm the combat SFX set and start a random battle track.
         this.m_audio?.preloadCombat();
         this.m_audio?.battleMusic();
     }
@@ -237,10 +238,10 @@ export class CGameController implements ShotWorld {
             })
             .filter((x): x is { image: CanvasImageSource; depth: number } => x !== null);
 
-        // Bare-earth texture for de-grassed craters + the raised radiation deposit: the
-        // legacy uses a single dirt bitmap (`ldirt1.bmp`), so load it explicitly and use
-        // it everywhere craters expose / fallout deposits earth — a consistent brown
-        // dirt regardless of the landscape (which may be mossy rock, marble, …).
+        // Bare-earth texture for de-grassed craters + the raised radiation deposit: a
+        // single dirt bitmap (`ldirt1.bmp`), loaded explicitly and used everywhere
+        // craters expose / fallout deposits earth — a consistent brown dirt regardless
+        // of the landscape (which may be mossy rock, marble, …).
         await this.m_assets.loadImage('tile:land/ldirt1.bmp', '/assets/land/ldirt1.bmp');
         const bareTile =
             cfg.layers.find(l => /dirt|sand|mud|clay/i.test(l.tile)) ??
@@ -397,9 +398,9 @@ export class CGameController implements ShotWorld {
     }
 
     /**
-     * Drive the looping `tank moving.wav` from tank motion state (RE: the movement
-     * sound machine FUN_00460d60 — start the named loop while a unit moves, stop it
-     * when none do, repan to the mover). Idempotent starts are handled downstream.
+     * Drive the looping `tank moving.wav` from tank motion state: start the named
+     * loop while a unit moves, stop it when none do, repan to the mover. Idempotent
+     * starts are handled downstream.
      */
     private updateMoveSound(): void {
         if (!this.m_audio) return;
@@ -415,7 +416,7 @@ export class CGameController implements ShotWorld {
             this.m_tanksMoving = false;
         }
 
-        // jet.wav loops only while the up-thrust is firing (RE: local_179), layered
+        // jet.wav loops only while the up-thrust is firing, layered
         // under tank moving.wav. Stops the instant thrust releases or fuel runs out.
         const jet = this.m_tanks.find(t => t.isAlive() && t.isThrustingUp());
         if (jet) {
@@ -432,9 +433,9 @@ export class CGameController implements ShotWorld {
 
     /**
      * Jet flight (extType 17): the active tank thrusts against gravity until its
-     * fuel runs out and it settles. Port of FUN_00460d60 — flight repositions the
-     * tank but does NOT end the turn; the player still fires afterwards. Other
-     * tanks keep falling/settling passively.
+     * fuel runs out and it settles. Flight repositions the tank but does NOT end
+     * the turn; the player still fires afterwards. Other tanks keep falling/settling
+     * passively.
      */
     private updateFlying(dt: number): void {
         const tank = this.getCurrentTank();
@@ -459,7 +460,7 @@ export class CGameController implements ShotWorld {
     }
 
     // ========================================================================
-    // DRAG-TO-AIM (the primary control — port of FUN_0048aee0)
+    // DRAG-TO-AIM (the primary control)
     // ========================================================================
 
     /** Longest drag (px) = full power (also the arrow's max length). */
@@ -497,7 +498,7 @@ export class CGameController implements ShotWorld {
         this.setPower(Math.round(power));
     }
 
-    /** Release the drag. If it was a real aim, fire (the authentic AC control). */
+    /** Release the drag. If it was a real aim, fire. */
     endAim(fire: boolean): void {
         this.markDirty();               // the aim arrow disappears this frame
         const wasActive = this.m_aim.active;
@@ -549,8 +550,8 @@ export class CGameController implements ShotWorld {
                 const hover = tank.isPointInside(this.m_mouse.x, this.m_mouse.y);
                 tank.draw(ctx, this.m_assets, hover);
 
-                // Highlight current player's tank with indicator
-                if (this.getCurrentTank() === tank &&
+                // Highlight current player's tank with indicator (Graphics → Show Turn)
+                if (GameConfig.showTurn && this.getCurrentTank() === tank &&
                     this.m_gameState !== EGameState.ShotFlying &&
                     this.m_gameState !== EGameState.Explosion) {
                     this.drawTurnIndicator(ctx, tank);
@@ -581,19 +582,19 @@ export class CGameController implements ShotWorld {
             }
         }
 
-        // Edge notches pointing at any projectile that has left the view.
-        this.drawShotNotches(ctx);
+        // Edge notches pointing at any projectile that has left the view (Tracking).
+        if (GameConfig.tracking) this.drawShotNotches(ctx);
 
         ctx.restore();
     }
 
     /**
-     * Off-screen shot indicators — the original's "notch" markers (RE: FUN_00472fc0,
-     * gated on the "Tracking" graphics option). For every live projectile outside the
-     * view we draw an edge marker: a top arrow at the shot's X when it's above the
-     * ceiling (pointing up while it rises, down once it's descending), and a left/
-     * right bracket at the shot's Y when it's off that side. With no camera scroll yet
-     * (large maps come later) the view is the whole canvas, so screen = world coords.
+     * Off-screen shot indicators — the "notch" markers (gated on the "Tracking"
+     * graphics option). For every live projectile outside the view we draw an edge
+     * marker: a top arrow at the shot's X when it's above the ceiling (pointing up
+     * while it rises, down once it's descending), and a left/right bracket at the
+     * shot's Y when it's off that side. With no camera scroll yet (large maps come
+     * later) the view is the whole canvas, so screen = world coords.
      */
     private drawShotNotches(ctx: CanvasRenderingContext2D): void {
         const live = this.m_shots.filter(s => !s.isDead());
@@ -657,8 +658,8 @@ export class CGameController implements ShotWorld {
 
     /**
      * The drag-aim indicator: a hollow green block-arrow from the tank toward the
-     * cursor (no fill, like the original). Its length is capped at full power, and
-     * its thickness + head grow with power. A target crosshair sits at the tip.
+     * cursor (no fill). Its length is capped at full power, and its thickness + head
+     * grow with power. A target crosshair sits at the tip.
      */
     private drawAim(ctx: CanvasRenderingContext2D): void {
         if (!this.m_aim.active) return;
@@ -672,8 +673,8 @@ export class CGameController implements ShotWorld {
         // (until full power). The whole shape scales with length (thickness too).
         const L = Math.min(Math.hypot(dx, dy), CGameController.AIM_MAX_DRAG);
 
-        // Exact original block-arrow shape (FUN_0048aee0): base half 1, shaft-junction
-        // half 1.5, head half 4, junction at 10/15, tip at 15 — all in units of L/15.
+        // Block-arrow shape: base half 1, shaft-junction half 1.5, head half 4,
+        // junction at 10/15, tip at 15 — all in units of L/15.
         const sh0 = L * (1 / 15);                           // base half-width
         const sh1 = L * (1.5 / 15);                         // shaft-junction half-width
         const hw = L * (4 / 15);                            // head half-width
@@ -691,7 +692,7 @@ export class CGameController implements ShotWorld {
         for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
         ctx.closePath();
         ctx.lineJoin = 'round';
-        // Pure-green line (0x00ff00) over a black backing, no fill — like the original.
+        // Pure-green line (0x00ff00) over a black backing, no fill.
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 3.5;
         ctx.stroke();
@@ -718,7 +719,7 @@ export class CGameController implements ShotWorld {
     private drawAimTarget(ctx: CanvasRenderingContext2D): void {
         if (this.m_gameState !== EGameState.Battle || !this.isPlayerTurn()) return;
 
-        // The original's "target turret" reticle sprite, centred on the aim point.
+        // The "target turret" reticle sprite, centred on the aim point.
         // Falls back to a drawn white/grey "+" until the sprite has loaded.
         const sprite = this.m_assets.getSprite('gui/target');
         const cross = (p: Vec2, alpha: number) => {
@@ -754,7 +755,8 @@ export class CGameController implements ShotWorld {
             ctx.restore();
         };
 
-        cross(this.aimPoint(this.m_turnStartAngle, this.m_turnStartPower), 0.35);  // initial (faded)
+        // Faded marker at the turn's initial power/angle (Graphics → Show Last Aim).
+        if (GameConfig.showLastAim) cross(this.aimPoint(this.m_turnStartAngle, this.m_turnStartPower), 0.35);
         // While dragging, the arrow's tip already marks the current aim — hide the
         // active cross and show it again on release.
         if (!this.m_aim.active) cross(this.aimPoint(this.m_angle, this.m_power), 1);
@@ -881,18 +883,26 @@ export class CGameController implements ShotWorld {
             const weapon = getWeapon(shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex);
             const sp = shot.getPosition();
             const sv = shot.getVelocity();
-            // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume).
-            // The engine burns to the APEX only — smoke/fire is emitted while rising;
-            // on the way down the rocket coasts with just its nose flare (matches the
-            // original: the trail stops at max height, no smoke on descent).
-            if (!shot.isMovingDown()) {
-                this.m_particles.trail(sp.x, sp.y, weapon.getColor(), sv.x, sv.y, weapon.getTrailType(), weapon.getTrailLength(), dt);
+            // Trail emission gate — the exhaust/plume AND the nose flare come from ONE
+            // test: the shot's "moving down" flag is clear (still rising, motor burning
+            // to apex) OR it's a Tracer (extType 4, which streaks its whole path). At
+            // apex the flag sets and the WHOLE trail — smoke and fire alike — stops; the
+            // rocket then coasts down as just its sprite. Both the smoke and the nose
+            // flare must share this gate, or the fire outlives the smoke on the way down.
+            const emitTrail = !shot.isMovingDown() || weapon.getExtType() === EXT.TRACER;
+            if (emitTrail) {
+                // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume).
+                // Emitted from the missile's REAR (exhaust), not its centre — the trail
+                // is offset back along the heading by half the sprite length so
+                // smoke/fire pours from the tail.
+                const ex = shot.getExhaustPoint(weapon.getSize());
+                this.m_particles.trail(ex.x, ex.y, weapon.getColor(), sv.x, sv.y, weapon.getTrailType(), weapon.getTrailLength(), dt);
+                // In-flight glowing flare on the projectile (rockets: flareType/flareBmp).
+                // Kept SMALL — a tight bright nose point, not a big bloom (the ×~7.8 plume
+                // draw multiplier means a small size here reads at ~14-18px).
+                const iff = weapon.getInFlightFlare();
+                if (iff) this.m_particles.inflightFlare(sp.x, sp.y, `fx:${iff}`, 1.5 + weapon.getFlareSize() * 2.5);
             }
-            // In-flight glowing flare on the projectile (rockets: flareType/flareBmp).
-            // Kept SMALL — a tight bright nose point, not a big bloom (the ×~7.8 plume
-            // draw multiplier means a small size here reads at ~14-18px).
-            const iff = weapon.getInFlightFlare();
-            if (iff) this.m_particles.inflightFlare(sp.x, sp.y, `fx:${iff}`, 1.5 + weapon.getFlareSize() * 2.5);
             const action = weaponFlyStep(shot, weapon, this, dt);
             if (action === 'detonate') weaponDetonate(shot, weapon, this);
             else if (action === 'consumed') shot.kill();
@@ -964,6 +974,7 @@ export class CGameController implements ShotWorld {
     }
 
     ripple(x: number, y: number, strength: number): void {
+        if (!GameConfig.explosionWaves) return;   // Graphics → Explosion Waves (nuke wave)
         this.m_onImpact?.(x, y, strength);
     }
 
@@ -1005,8 +1016,8 @@ export class CGameController implements ShotWorld {
     }
 
     /**
-     * Falloff blast damage + kick, applied through the tank's shield/armor model
-     * (port of FUN_00404670). `full` = beam direct hit: no distance falloff.
+     * Falloff blast damage + kick, applied through the tank's shield/armor model.
+     * `full` = beam direct hit: no distance falloff.
      */
     applyBlast(pos: Vec2, radius: number, damage: number, _owner: CTank | null, full: boolean): void {
         for (const tank of this.m_tanks) {
@@ -1023,7 +1034,7 @@ export class CGameController implements ShotWorld {
 
             const dx = tank.getPosition().x - pos.x;     // kick up and away from the blast
             const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
-            tank.kick(kickDir, Math.min(1, dmg / 400) * 320);
+            tank.kick(kickDir, Math.min(1, dmg / 400) * 320 * GameConfig.kickbackScale);   // Tank → Kickback
 
             if (!tank.isAlive()) this.handleTankDestroyed(tank);
         }
@@ -1043,7 +1054,7 @@ export class CGameController implements ShotWorld {
         // Create explosion at tank position
         this.m_particles.tankDeath(pos.x, pos.y + 12);
         this.m_screenShake.trigger(15, 0.5);
-        this.m_audio?.tankExplode(pos.x);   // tank explode.wav (RE: FUN_00488910)
+        this.m_audio?.tankExplode(pos.x);   // tank explode.wav
     }
 
 
@@ -1106,7 +1117,7 @@ export class CGameController implements ShotWorld {
             this.m_gameState = EGameState.BattleEnd;
             this.m_winnerName = alive.length === 1 ? alive[0].getName() : '';
             this.m_audio?.stopTankMove();
-            // Win/lose jingle (RE: FUN_0047d2d0) — victory if the human survived.
+            // Win/lose jingle — victory if the human survived.
             if (alive.length === 1 && alive[0].isHuman()) this.m_audio?.battleWon();
             else this.m_audio?.battleLost();
             return;
@@ -1134,7 +1145,7 @@ export class CGameController implements ShotWorld {
      * Shot-timer state for the panel bar below FIRE, or null when it shouldn't
      * show (shot-time disabled, or not a human waiting to fire). `frac` is the
      * fraction of time REMAINING (1 = full); colour goes green→yellow→red as it
-     * drains (RE: FUN_00474ff0:1342-1348).
+     * drains.
      */
     getTurnTimer(): { frac: number; color: string } | null {
         if (!this.m_turnTimerRunning || this.m_shotTime <= 0) return null;
@@ -1169,13 +1180,13 @@ export class CGameController implements ShotWorld {
         const weapon = getWeapon(this.m_currentWeaponIndex);
         const ext = weapon.getExtType();
 
-        // soundFire, panned to the firing tank (RE: weapon field +0xbc, FUN_00458c20:313).
+        // soundFire, panned to the firing tank.
         this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
 
         // Jet (extType 17): light the jet with fuel = damage (5s/15s) and enter the
         // Flying state. Flight repositions the tank but does NOT end the turn — the
-        // player still fires afterwards (RE: FUN_00458c20:498). Bots don't fly, so
-        // for them it just consumes the turn.
+        // player still fires afterwards. Bots don't fly, so for them it just consumes
+        // the turn.
         if (ext === EXT.JET) {
             if (tank.isHuman()) {
                 tank.igniteJet(weapon.getDamage());
@@ -1206,7 +1217,7 @@ export class CGameController implements ShotWorld {
 
         this.m_shotsFired++;   // a real projectile is launched (utilities don't count)
         // Remember this aim as the tank's "last shot" so the reset (↺) button can
-        // restore power+angle to it (RE: FUN_00458c20:307-308, non-utility only).
+        // restore power+angle to it (non-utility only).
         tank.saveLastShot(this.m_angle, this.m_power);
 
         // Death: a self-targeting round that drops straight down onto the firer.
@@ -1226,10 +1237,10 @@ export class CGameController implements ShotWorld {
         // Per-shot inaccuracy — gated by Settings → Gameplay → Variance.
         const varianceRad = this.m_variance ? weapon.getVariance() * Math.PI / 180 : 0;
 
-        // Multi-fire (disassembly `impactMultiplier`): `spawn` = SIMULTANEOUS rounds in
-        // a fan, `spread` = degrees between them, `sucNum` = SUCCESSION (fires sucNum+1
-        // times in a row). So a Cannon (spawn 5) sprays 5 pellets, a Machine Gun
-        // (sucNum 11) rattles off ~12, a Tomcat (spawn 3, spread 3) fans 3 rockets.
+        // Multi-fire: `spawn` = SIMULTANEOUS rounds in a fan, `spread` = degrees
+        // between them, `sucNum` = SUCCESSION (fires sucNum+1 times in a row). So a
+        // Cannon (spawn 5) sprays 5 pellets, a Machine Gun (sucNum 11) rattles off
+        // ~12, a Tomcat (spawn 3, spread 3) fans 3 rockets.
         const rounds = Math.max(1, weapon.getSpawnCount());
         const spacingRad = weapon.getFanSpacingDeg() * Math.PI / 180;
 
@@ -1272,12 +1283,11 @@ export class CGameController implements ShotWorld {
         const gap = salvos > 1 ? Math.min(0.14, Math.max(0.05, weapon.getSuccessionSec() / salvos)) : 0;
         this.m_pendingSalvos = salvos;
         for (let sv = 0; sv < salvos; sv++) {
-            // Each succession salvo is a fresh weapon dispatch in the original and
-            // replays soundFire (RE: FUN_00467410:59 re-enters FUN_00458c20 → the
-            // fire sound at :313). Salvo 0's sound is the one played above at fire();
-            // scheduled salvos play their own so a Strikers/Machine-Gun burst is heard
-            // once per salvo, not once total. (The ~50–140ms salvo gap clears the SFX
-            // retrigger throttle, so each is audible.)
+            // Each succession salvo is a fresh weapon dispatch and replays soundFire.
+            // Salvo 0's sound is the one played above at fire(); scheduled salvos play
+            // their own so a Strikers/Machine-Gun burst is heard once per salvo, not
+            // once total. (The ~50–140ms salvo gap clears the SFX retrigger throttle,
+            // so each is audible.)
             if (sv === 0) fireSalvo();
             else this.schedule(gap * sv, () => {
                 this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
@@ -1289,9 +1299,9 @@ export class CGameController implements ShotWorld {
     }
 
     /**
-     * Resolve a beam weapon as an instantaneous ray (port of the beam raycast):
-     * march muzzle → first terrain/edge, damage every tank the line crosses (once,
-     * full damage — beams ignore falloff), carve + scorch the impact, flash a line.
+     * Resolve a beam weapon as an instantaneous ray: march muzzle → first
+     * terrain/edge, damage every tank the line crosses (once, full damage — beams
+     * ignore falloff), carve + scorch the impact, flash a line.
      */
     private fireBeam(muzzle: Vec2, angleRad: number, weapon: CWeapon, owner: CTank): void {
         // Aim unit vector — same unified convention as the projectile velocity so the
@@ -1300,7 +1310,7 @@ export class CGameController implements ShotWorld {
 
         // A beam PENETRATES terrain — it does NOT stop at the first hill. March to the
         // far edge of the world so the ray cuts clean across the map (through mountains,
-        // reaching tanks buried behind them), like the original.
+        // reaching tanks buried behind them).
         const W = this.m_land.width, H = this.m_land.height;
         const maxLen = Math.hypot(W, H) + 200;
         let end = muzzle.clone();
@@ -1320,16 +1330,16 @@ export class CGameController implements ShotWorld {
             if (CGameController.pointSegDist(tp.x, tp.y, muzzle.x, muzzle.y, end.x, end.y) > halfWidth) continue;
             t.hit(weapon.getDamage());
             const dx = tp.x - muzzle.x;
-            t.kick(new Vec2(dx >= 0 ? 0.5 : -0.5, -1).normalize(), Math.min(1, weapon.getDamage() / 400) * 260);
+            t.kick(new Vec2(dx >= 0 ? 0.5 : -0.5, -1).normalize(), Math.min(1, weapon.getDamage() / 400) * 260 * GameConfig.kickbackScale);
             if (!t.isAlive()) this.handleTankDestroyed(t);
         }
 
-        // Carve the channel the ray cuts. The original stamps the beam sprite into the
-        // terrain bitmap along the WHOLE line in one frame, slicing a slot through every
-        // hill it pierces (which is why it reaches tanks buried behind them). Our terrain
-        // is a heightmap — it can't hold a floating tunnel — so "cut" means dropping the
-        // surface down to the ray wherever the ray runs at/below it; open-air spans (the
-        // ray flying above a hill) leave no mark.
+        // Carve the channel the ray cuts. Conceptually a beam slices a slot through
+        // every hill it pierces along the WHOLE line in one frame (which is why it
+        // reaches tanks buried behind them). Our terrain is a heightmap — it can't hold
+        // a floating tunnel — so "cut" means dropping the surface down to the ray
+        // wherever the ray runs at/below it; open-air spans (the ray flying above a
+        // hill) leave no mark.
         const channelR = Math.max(4, Math.min(10, r * 0.3));
         const beamLen = Math.hypot(end.x - muzzle.x, end.y - muzzle.y);
         for (let d = 0; d <= beamLen; d += Math.max(2, channelR * 0.7)) {
@@ -1366,8 +1376,8 @@ export class CGameController implements ShotWorld {
 
     /**
      * Utility items (extType 7/10/11/14) modify the firing tank on use rather than
-     * firing a projectile — port of the FUN_004678b0 "use item" handler. Verified
-     * effects only; 3/15/17 are UNVERIFIED in the decompile and left as no-ops.
+     * firing a projectile — the "use item" handler. Handles the known effects;
+     * 3/15/17 are left as no-ops.
      * Returns true if the weapon was a utility (and consumed the turn).
      */
     private applyUtility(tank: CTank, weapon: CWeapon, ext: number): boolean {
@@ -1410,9 +1420,9 @@ export class CGameController implements ShotWorld {
             return;
         }
 
-        // A bot's turn is ONE action: MOVE or FIRE (mutually exclusive), like the
-        // original — spending the turn on a Move Near/Mid/Far utility drives the
-        // tank and ends the turn (no shot). Otherwise it aims and fires.
+        // A bot's turn is ONE action: MOVE or FIRE (mutually exclusive) — spending
+        // the turn on a Move Near/Mid/Far utility drives the tank and ends the turn
+        // (no shot). Otherwise it aims and fires.
         if (Math.random() < CGameController.BOT_MOVE_CHANCE && this.botMove(botTank)) return;
         this.botAimAndFire(botTank);
     }
@@ -1476,7 +1486,7 @@ export class CGameController implements ShotWorld {
         const ti = pickTarget(
             enemies.map(e => {
                 const p = e.getPosition();
-                return {x: p.x, y: p.y, healthFrac: Math.max(0, Math.min(1, e.getHealth().nLife / 1000))};
+                return {x: p.x, y: p.y, healthFrac: Math.max(0, Math.min(1, e.getHealth().nLife / e.getMaxLife()))};
             }),
             botPos.x, level,
         );
@@ -1594,8 +1604,8 @@ export class CGameController implements ShotWorld {
     }
 
     /**
-     * Drift the wind vector slowly and re-randomise its acceleration on a timer
-     * (mirrors the original's wind model). Called every frame.
+     * Drift the wind vector slowly and re-randomise its acceleration on a timer.
+     * Called every frame.
      */
     private updateWindDrift(dt: number): void {
         const MAX = CGameController.MAX_WIND * this.m_windScale;   // 0 when wind is Disabled
@@ -1640,9 +1650,9 @@ export class CGameController implements ShotWorld {
 
     /**
      * Restore the current tank's power AND angle to its last real shot — the "↺"
-     * panel button. Original tooltip (verbatim from the binary): "Use the reset
-     * button to set power and angle to your last shot." (last-shot fields
-     * tank+0x7c / +0x80, seeded to the starting aim before the first shot).
+     * panel button. Tooltip: "Use the reset button to set power and angle to your
+     * last shot." (The last-shot fields are seeded to the starting aim before the
+     * first shot.)
      */
     resetAim(): void {
         if (this.m_paused) return;
@@ -1814,7 +1824,7 @@ export class CGameController implements ShotWorld {
     private m_assets: CAssetManager;
     private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
     private m_audio: CAudio | null = null;
-    private m_tanksMoving = false;   // tracks the tank-moving loop state (RE: FUN_00460d60)
+    private m_tanksMoving = false;   // tracks the tank-moving loop state
     private m_jetSounding = false;   // tracks the jet.wav loop state
 
     // Placed entities from special weapons (Mine/Sentry) and Tracer aim markers.
@@ -1846,7 +1856,7 @@ export class CGameController implements ShotWorld {
         this.markDirty();
     }
 
-    // Top-left status counters (RE: FUN_0048c480 "Battle %d of %d - Shot %d").
+    // Top-left status counters ("Battle %d of %d - Shot %d").
     private m_shotsFired = 0;
     private m_currentBattle = 1;
     private m_totalBattles = 5;
@@ -1876,7 +1886,7 @@ export class CGameController implements ShotWorld {
         const cur = this.m_tanks[this.m_currentPlayerIndex];
         return this.m_tanks.map(t => ({
             name: t.getName(),
-            lifePct: Math.max(0, Math.round(t.getHealth().nLife / 10)),   // 0..1000 → 0..100
+            lifePct: Math.max(0, Math.round(t.getHealth().nLife / t.getMaxLife() * 100)),   // → 0..100
             color: t.getTeamColor(),
             alive: t.isAlive(),
             active: t === cur,
@@ -1889,10 +1899,9 @@ export class CGameController implements ShotWorld {
     private m_turnStartAngle: number = 45;
     private m_turnStartPower: number = 500;
 
-    // Shot-time countdown (RE: elapsed this+0x17f4, limit this+0x17f8 from the
-    // "Shot Time" setting this+0x1870). The human has this many seconds to aim +
-    // fire; the panel bar below FIRE drains green→yellow→red and, on expiry, the
-    // turn is forfeited. 0 = disabled (no limit, bar hidden).
+    // Shot-time countdown (from the "Shot Time" setting). The human has this many
+    // seconds to aim + fire; the panel bar below FIRE drains green→yellow→red and,
+    // on expiry, the turn is forfeited. 0 = disabled (no limit, bar hidden).
     private m_shotTime: number = 30;
     private m_turnElapsed: number = 0;
     // Only counts while awaiting the human's shot: true from beginTurn (human,
