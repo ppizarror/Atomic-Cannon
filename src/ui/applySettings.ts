@@ -9,7 +9,9 @@
  */
 import type {CGameController} from '../game/CGameController';
 import {GameConfig} from '../core/CGameConfig';
+import {GameContent} from '../core/CGameContent';
 import {gameSettings as S} from './settingsValues';
+import {weaponsOff, landsOff} from './contentStore';
 
 export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.
@@ -42,4 +44,8 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.showTurn = S.showTurn();
   GameConfig.showLastAim = S.showLastAim();
   GameConfig.explosionWaves = S.explosionWaves();
+
+  // Active weapon/landscape selection for the NEXT match (Game Content editors).
+  GameContent.weaponsOff = new Set(weaponsOff.value);
+  GameContent.landsOff = new Set(landsOff.value);
 }

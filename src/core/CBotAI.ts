@@ -14,6 +14,7 @@
  */
 import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_SPEED_SCALE} from './CShot';
 import {GameConfig} from './CGameConfig';
+import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE} from './CWeapon';
 import {clamp, deg2rad} from '../math/num';
 
@@ -207,7 +208,9 @@ export function pickMoveWeapon(rnd: () => number = Math.random): number {
 /** Indices of weapons a bot can aim as a simple ballistic arc (damage on impact). */
 export function ballisticWeaponIndices(): number[] {
   const ok = new Set(['Shell', 'Bomb', 'Rocket', 'Missile', 'NUKE', 'Organic', 'DOT']);
-  return WEAPON_DATABASE.filter(w => ok.has(String(w.type)) && w.damage > 0).map(w => w.index);
+  return WEAPON_DATABASE.filter(
+    w => ok.has(String(w.type)) && w.damage > 0 && weaponEnabled(w.index),
+  ).map(w => w.index);
 }
 
 /**

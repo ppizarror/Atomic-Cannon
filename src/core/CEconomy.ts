@@ -8,6 +8,7 @@
  * Tunable constants live at the top so they are easy to adjust in one place.
  */
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
+import {weaponEnabled} from './CGameContent';
 import {clamp01} from '../math/num';
 
 // Economy defaults. Credits are awarded between turns/rounds by these rates
@@ -165,6 +166,7 @@ export class CEconomy {
       for (let i = 0; i < WEAPON_DATABASE.length; i++) {
         if (
           !this.isUnlimited(i) &&
+          weaponEnabled(i) &&
           WEAPON_DATABASE[i].cost > 0 &&
           WEAPON_DATABASE[i].cost <= this.creditsGet()
         ) {

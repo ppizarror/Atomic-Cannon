@@ -12,6 +12,7 @@ import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS} from '../core/CTank';
 import {CShot} from '../core/CShot';
 import {GameConfig} from '../core/CGameConfig';
+import {landEnabled, weaponEnabled} from '../core/CGameContent';
 import {CWeapon, getDefaultWeaponIndex, getWeapon, WEAPON_DATABASE} from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem} from '../core/CParticleSystem';
@@ -309,7 +310,11 @@ export class CGameController implements ShotWorld {
         if (Number.isInteger(i) && i >= 0 && i < LAND_DATA.length) return i;
       }
     }
-    return Math.floor(Math.random() * LAND_DATA.length);
+    // Choose only among enabled landscapes (Game Content); if all are disabled,
+    // degrade to the full set rather than blocking.
+    const enabled = LAND_DATA.map((_, i) => i).filter(landEnabled);
+    const pool = enabled.length ? enabled : LAND_DATA.map((_, i) => i);
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   // ========================================================================
@@ -1951,7 +1956,10 @@ export class CGameController implements ShotWorld {
     // turn (or normal play) the full arsenal is shown, so the HUD reflects the
     // weapon the active player is actually using rather than the locked one.
     const ci = controlWeaponIndex();
-    return ci >= 0 && this.isPlayerTurn() ? [WEAPON_DATABASE[ci]] : WEAPON_DATABASE;
+    if (ci >= 0 && this.isPlayerTurn()) return [WEAPON_DATABASE[ci]];
+    // Hide weapons disabled in Game Content; the staple (Shell) is always available.
+    const staple = getDefaultWeaponIndex();
+    return WEAPON_DATABASE.filter(w => w.index === staple || weaponEnabled(w.index));
   }
 
   getCurrentWeaponIndex(): number {

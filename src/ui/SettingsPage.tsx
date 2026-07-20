@@ -8,7 +8,7 @@
  * description centered along the bottom edge; with nothing hovered the page's own
  * header line shows there instead.
  */
-import {useState} from 'preact/hooks';
+import {useEffect, useState} from 'preact/hooks';
 import {settingsPageBack} from './store';
 import {BmpText} from './BmpText';
 import {getSettingsPage, type Widget} from './settingsPages';
@@ -102,6 +102,14 @@ export function SettingsPage({id}: {id: string}) {
   const [, setTick] = useState(0);
   const bump = () => setTick(v => v + 1);
   const [sub, setSub] = useState<string | null>(null);
+
+  // Re-render when fullscreen changes (e.g. Esc leaves it) so the Full Screen toggle
+  // reflects the live state even without a click.
+  useEffect(() => {
+    const onFs = () => setTick(v => v + 1);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
 
   const page = getSettingsPage(id);
   if (!page) return null;

@@ -14,6 +14,7 @@ import {closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick} 
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {SettingsPage} from './SettingsPage';
+import {WeaponsEditor, LandscapesEditor} from './EnableListEditor';
 
 interface Entry {
   label: string;
@@ -73,8 +74,11 @@ function SettingsItem({entry, onHover}: {entry: Entry; onHover: (s: string) => v
 }
 
 export function Settings() {
-  // Sub-page open? Render it instead of the category list.
-  if (settingsPage.value !== 'root') return <SettingsPage id={settingsPage.value} />;
+  // Sub-page open? Render the matching screen instead of the category list.
+  const p = settingsPage.value;
+  if (p === 'content.weapons') return <WeaponsEditor />;
+  if (p === 'content.landscapes') return <LandscapesEditor />;
+  if (p !== 'root') return <SettingsPage id={p} />;
   return <SettingsRoot />;
 }
 

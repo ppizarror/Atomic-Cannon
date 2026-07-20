@@ -26,7 +26,8 @@ import {
   game,
   uiClick,
 } from './store';
-import {WEAPON_DATABASE, weaponPower, type WeaponDef} from '../core/CWeapon';
+import {WEAPON_DATABASE, getDefaultWeaponIndex, weaponPower, type WeaponDef} from '../core/CWeapon';
+import {weaponEnabled} from '../core/CGameContent';
 import {UNLIMITED} from '../core/CEconomy';
 
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
@@ -177,13 +178,16 @@ export function DepotPanel() {
           return 0;
       }
     };
-    return WEAPON_DATABASE.slice().sort((a, b) => {
-      const va = val(a),
-        vb = val(b);
-      if (va < vb) return -sort.dir;
-      if (va > vb) return sort.dir;
-      return a.index - b.index;
-    });
+    const staple = getDefaultWeaponIndex();
+    return WEAPON_DATABASE.slice()
+      .filter(w => w.index === staple || weaponEnabled(w.index)) // hide disabled (Game Content)
+      .sort((a, b) => {
+        const va = val(a),
+          vb = val(b);
+        if (va < vb) return -sort.dir;
+        if (va > vb) return sort.dir;
+        return a.index - b.index;
+      });
   }, [sort.key, sort.dir, owned]);
 
   const clickHeader = (key: SortKey) => {

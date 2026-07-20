@@ -52,21 +52,11 @@ const DIFFICULTY = [
 ];
 const CHANGE_WIND = ['Per game', 'After round', 'After shot', 'Anytime'];
 const LAND_TYPE = ['Flat', 'Hill', 'Gulley', 'Plateau', 'Slope', 'Random'];
-const PLAYBACK_RATE = ['8000', '11025', '16000', '22050', '32000', '44100'];
 const WIND = ['Disabled', 'Low', 'Medium', 'High'];
 const KICKBACK = ['Off', 'Low', 'Normal', 'High'];
 const PLAYER_SIZE = ['Small', 'Normal', 'Large'];
 const EXPLOSION_SIZE = ['Small', 'Normal', 'Large', 'Massive'];
-const DETAIL = ['Old School', 'Simple', 'High', 'Wargame'];
 const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
-// The web canvas has no enumerable display modes, so Resolution is presented as the
-// common sizes formatted "%dx%dx%d %dHz", a remembered (cosmetic) preference.
-const RESOLUTION = [
-  '800x600x32 60Hz',
-  '1024x768x32 60Hz',
-  '1280x1024x32 60Hz',
-  '1920x1080x32 60Hz',
-];
 
 const pct = (v: number) => `${v}%`;
 
@@ -238,22 +228,26 @@ function gameplayRows(): Widget[] {
 
 function graphicsRows(): Widget[] {
   return [
-    enumW('Resolution', 'Window size or monitor size (requires restart)', 'gfx.res', 1, RESOLUTION),
-    toggle(
-      'Full Screen',
-      'Toggle the game between full screen and windowed modes',
-      'gfx.fullscreen',
-      0,
-    ),
+    {
+      // Real fullscreen via the Fullscreen API; reads the live document state so it
+      // stays reactive (leaving fullscreen with Esc flips it back to OFF on its own).
+      label: 'Full Screen',
+      tip: 'Toggle the game between full screen and windowed modes',
+      kind: 'toggle',
+      get: () => (typeof document !== 'undefined' && document.fullscreenElement ? 1 : 0),
+      set: (v: number) => {
+        if (typeof document === 'undefined') return;
+        if (v) void document.documentElement.requestFullscreen?.();
+        else void document.exitFullscreen?.();
+      },
+    },
     toggle('Tracking', 'Draws a notch for off screen shots', 'gfx.tracking', 1),
     toggle('Draw Smoke', 'Draws smoking plumes on ground', 'gfx.smoke', 1),
-    enumW('Detail', 'Lower detail for smoother gameplay', 'gfx.detail', 2, DETAIL),
     toggle('High Contrast', 'Outlines objects with white', 'gfx.highContrast', 0),
     enumW('Land Type', 'Select different landscapes', 'gfx.landType', 5, LAND_TYPE),
     toggle('Show AI Stats', "Show the computer's stats", 'gfx.aiStats', 0),
     toggle('Show Team Color', 'Display each tanks name and team color', 'gfx.teamColor', 1),
     toggle('Small Buy Fonts', 'Use a smaller font on the buy menu', 'gfx.smallBuy', 0),
-    toggle('Power Save', 'The game idles to lower power usage', 'gfx.powerSave', 0),
     {
       label: 'More Graphics Options',
       tip: 'Adjust graphics settings',
@@ -320,27 +314,25 @@ function audioRows(): Widget[] {
       set: (v: number) => a?.setMusicVolume(v),
     },
     toggle('Stereo', 'Enable stereo sound', 'aud.stereo', 1),
-    enumW('Playback Rate', 'Sound playback sampling frequency rate', 'aud.rate', 5, PLAYBACK_RATE),
   ];
 }
 
 function contentRows(): Widget[] {
-  // Weapons / Landscapes open dedicated enable-list editors (over the steel plate);
-  // those screens aren't built yet, so the rows click but don't navigate.
+  // Weapons / Landscapes open dedicated enable-list editors (over the steel plate).
   return [
     {
       label: 'Weapons',
       tip: 'Enable only the weapons you want (quits current game)',
       kind: 'nav',
       get: () => 0,
-      onClick: uiClick,
+      onClick: () => openSettingsPage('content.weapons'),
     },
     {
       label: 'Landscapes',
       tip: 'Enable only the landscapes you want (quits current game)',
       kind: 'nav',
       get: () => 0,
-      onClick: uiClick,
+      onClick: () => openSettingsPage('content.landscapes'),
     },
   ];
 }

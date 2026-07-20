@@ -1,0 +1,145 @@
+/**
+ * The "Define Weapons" / "Define Landscapes" enable-list editors (the Game Content
+ * sub-screens). A paged, single-column toggle list over the brushed-steel
+ * plate: each row shows an icon/thumbnail + label and a right-aligned Enabled/Disabled
+ * state; disabled rows are tinted red. Click a row to toggle it. Prev / Next page the
+ * list; Exit returns to the Game Content page. The selection persists (contentStore)
+ * and applies to the NEXT game, so editing never disturbs the running match.
+ */
+import {useEffect, useState} from 'preact/hooks';
+import {BmpText} from './BmpText';
+import {loadWeaponIcon, openSettingsPage, uiClick} from './store';
+import {WEAPON_DATABASE} from '../core/CWeapon';
+import landData from '../data/land.json';
+import {isWeaponOff, toggleWeapon, isLandOff, toggleLand, weaponsOff, landsOff} from './contentStore';
+
+const LANDS = landData as {bg: string}[];
+
+function WeaponIcon({name}: {name: string}) {
+  const [src, setSrc] = useState('');
+  useEffect(() => {
+    let ok = true;
+    loadWeaponIcon(name, 16).then(s => {
+      if (ok && s) setSrc(s);
+    });
+    return () => {
+      ok = false;
+    };
+  }, [name]);
+  return <span class="editor-icon">{src ? <img src={src} alt="" /> : null}</span>;
+}
+
+function EditorRow({off, onToggle, children}: {off: boolean; onToggle: () => void; children: unknown}) {
+  return (
+    <button class={`editor-row ${off ? 'off' : 'on'}`} onClick={onToggle}>
+      <span class="editor-body">{children}</span>
+      <span class="editor-state">
+        <BmpText font="msans-14" text={off ? 'Disabled' : 'Enabled'} tint={off ? '#ffb0b0' : '#bfe9b0'} />
+      </span>
+    </button>
+  );
+}
+
+function Editor({
+  title,
+  footer,
+  count,
+  perPage,
+  layout,
+  row,
+}: {
+  title: string;
+  footer: string;
+  count: number;
+  perPage: number;
+  layout: 'weapons' | 'lands';
+  row: (i: number) => {off: boolean; toggle: () => void; body: unknown};
+}) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(count / perPage));
+  const p = Math.min(page, pages - 1);
+  const start = p * perPage;
+
+  const items = [];
+  for (let i = start; i < Math.min(start + perPage, count); i++) {
+    const r = row(i);
+    items.push(
+      <EditorRow key={i} off={r.off} onToggle={r.toggle}>
+        {r.body}
+      </EditorRow>,
+    );
+  }
+
+  return (
+    <div class="editor-screen">
+      <div class="editor-title">
+        <BmpText font="bazouk-28" text={title} />
+      </div>
+      <div class={`editor-list editor-${layout}`}>{items}</div>
+      <div class="editor-footer">
+        <BmpText font="msans-14" text={footer} tint="#eef2f6" />
+        <BmpText font="msans-14" text={`Page ${p + 1} of ${pages}`} tint="#c9d2da" />
+      </div>
+      <div class="editor-buttons">
+        <button class="metal-btn" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))}>
+          Prev
+        </button>
+        <button class="metal-btn" onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))}>
+          Next
+        </button>
+        <button class="metal-btn editor-exit" onClick={() => openSettingsPage('content')}>
+          Exit
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function WeaponsEditor() {
+  weaponsOff.value; // subscribe so toggles re-render
+  return (
+    <Editor
+      title="Define Weapons"
+      footer="Click a weapon to enable or disable it"
+      count={WEAPON_DATABASE.length}
+      perPage={15}
+      layout="weapons"
+      row={i => {
+        const w = WEAPON_DATABASE[i];
+        return {
+          off: isWeaponOff(i),
+          toggle: () => (toggleWeapon(i), uiClick()),
+          body: (
+            <>
+              <WeaponIcon name={w.name} />
+              <BmpText font="msans-14" text={`${w.name} (${w.type})`} tint="#eef2f6" />
+            </>
+          ),
+        };
+      }}
+    />
+  );
+}
+
+export function LandscapesEditor() {
+  landsOff.value; // subscribe so toggles re-render
+  return (
+    <Editor
+      title="Define Landscapes"
+      footer="Click a landscape to enable or disable it"
+      count={LANDS.length}
+      perPage={6}
+      layout="lands"
+      row={i => ({
+        off: isLandOff(i),
+        toggle: () => (toggleLand(i), uiClick()),
+        body: (
+          <>
+            <img class="editor-thumb" src={`/assets/${LANDS[i].bg}`} alt="" />
+            <BmpText font="msans-14" text={`${i + 1}`} tint="#eef2f6" />
+          </>
+        ),
+      })}
+    />
+  );
+}
