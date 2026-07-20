@@ -124,7 +124,7 @@ interface Beam {
   b: number;
   age: number;
   life: number;
-  spr?: string; // ray sprite key (weapon rayMask) — drawn stretched along the line
+  spr?: string; // beam colour-texture key — TILED end-to-end along the line
   width: number; // beam thickness (px), the weapon's `size`
 }
 
@@ -961,15 +961,23 @@ export class CParticleSystem {
       const len = Math.hypot(ex - b.x0, ey - b.y0);
       const spr = b.spr ? this.m_assets?.getSprite(b.spr) : null;
       if (spr) {
-        // The weapon's own ray sprite (rayMask) rotated to the aim and stretched
-        // along the bolt at `width` px, drawn additively → it reads as glowing
-        // energy with the sprite's colour/pattern (red magma, striped grate…).
+        // The weapon's colour texture TILED along the bolt — pasted end-to-end at its
+        // native aspect (thickness = `width`), NOT stretched to the full length. A
+        // patterned beam (wave, grate) therefore shows a repeating train of its motif
+        // instead of one smeared streak. Drawn additively → glowing energy in the
+        // sprite's colour. Each blit steps one tile-length (sprite width × fit-scale).
+        const nw = spr.width, nh = spr.height;
+        const scale = b.width / nh; // fit the sprite's height to the beam thickness
+        const tileW = Math.max(2, nw * scale); // one tile's length along the beam
         ctx.save();
         ctx.globalAlpha = a;
         ctx.translate(b.x0, b.y0);
         ctx.rotate(ang);
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(spr.bitmap, 0, -b.width / 2, len, b.width);
+        ctx.imageSmoothingEnabled = false; // crisp tiles, no seam bleed
+        for (let d = 0; d < len; d += tileW) {
+          const w = Math.min(tileW, len - d); // clip the final partial tile
+          ctx.drawImage(spr.bitmap, 0, 0, (w / tileW) * nw, nh, d, -b.width / 2, w, b.width);
+        }
         ctx.restore();
         ctx.globalAlpha = 1;
       } else {
@@ -982,11 +990,11 @@ export class CParticleSystem {
         ctx.lineTo(ex, ey);
         ctx.stroke();
       }
-      // Thin white-hot core down the middle (dimmer over a textured beam so the
-      // sprite's colour still reads).
+      // Thin white-hot core down the middle. Kept FAINT over a textured beam so the
+      // tiled motif (wave/grate) reads through it; full strength on the fallback line.
       ctx.lineCap = 'round';
-      ctx.strokeStyle = `rgba(255,255,255,${a * (spr ? 0.45 : 1)})`;
-      ctx.lineWidth = Math.max(1, b.width * 0.12) * a + 1;
+      ctx.strokeStyle = `rgba(255,255,255,${a * (spr ? 0.18 : 1)})`;
+      ctx.lineWidth = Math.max(1, b.width * (spr ? 0.06 : 0.12)) * a + 1;
       ctx.beginPath();
       ctx.moveTo(b.x0, b.y0);
       ctx.lineTo(ex, ey);

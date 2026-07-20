@@ -313,12 +313,6 @@ export class CWeapon {
   getFlareSize(): number {
     return this.m_def.flareSize || 0;
   }
-
-  /** Beam weapons' ray sprite (`rayMask`, e.g. "magma hit.bmp") — the texture drawn
-   *  stretched along the beam. Empty for non-beam weapons. */
-  getRayMask(): string {
-    return (this.m_def.rayMask as string) || '';
-  }
 }
 
 // ---------------------------------------------------------------------------
