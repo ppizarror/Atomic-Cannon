@@ -61,9 +61,13 @@ async function main(): Promise<void> {
     // `?pause=1` do that and then open the depot / pause menu; `?settings=1` opens the
     // Settings screen from the main menu.
     const q = new URLSearchParams(location.search);
-    if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1') playNewGame();
+    const weaponTest = q.get('weapontest') === '1';
+    if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1' || weaponTest) playNewGame();
     if (q.get('depot') === '1') openDepot();
     if (q.get('pause') === '1') openPauseMenu();
+    // `?weapontest=1`: start a battle and keep the turn on the human forever (the AI
+    // never fires, the shot timer is off) so weapons can be tried back-to-back.
+    if (weaponTest) gameController.setWeaponTest(true);
     // `?settings=1` opens the Settings root; `?settings=<pageId>` (e.g. gameplay) opens
     // that option page directly.
     const settingsArg = q.get('settings');
