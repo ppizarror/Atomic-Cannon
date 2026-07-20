@@ -460,26 +460,41 @@ export class CParticleSystem {
         // segment length (≈ speed·dt) → a faster (higher-power) shot lays down a
         // longer, denser streak (RE: faster ⇒ more visible smoke, via SPEED).
         const steps = Math.max(rocket ? 2 : 1, Math.ceil((speed * dt) / 3));
+        const spark = toward255(parseColor(color), 0.55);   // weapon-tinted, brightened
         for (let s = 0; s < steps; s++) {
             const f = s / steps;                             // 0 = head, →1 = last-frame position
             const px = x - vx * dt * f, py = y - vy * dt * f;
-            // FIRE — the hot exhaust: a SMALL bright orange-white glow (the RE trail
-            // flare is only ~4px), brief, so it stays a tight point at the head, not a
-            // big bloom. The ×~7.8 draw multiplier means small sizes here.
-            this.add(
-                px, py,
-                between(-5, 5), between(-5, 2),
-                {r: 255, g: 200, b: 110}, between(0.14, 0.28) * lenScale, between(0.9, 1.6), 'plume',
-            );
-            // Smoke — starts small, SWELLS as it ages (see draw), drifts up. Emitted
-            // grey; the draw tints it WARM while young (near the exhaust) and lets it
-            // cool to grey as it ages back down the trail.
-            const g = 150 + between(-20, 20);
-            this.add(
-                px + between(-2, 2), py + between(-2, 2),
-                between(-4, 4), -between(3, 10),
-                {r: g, g, b: g}, between(1.0, 1.8) * lenScale, between(1.6, 3.2), 'smoke',
-            );
+            if (rocket) {
+                // ROCKET/MISSILE exhaust — a small bright orange FIRE glow (the RE trail
+                // flare is only ~4px, so small sizes here vs the ×~7.8 draw) trailing
+                // into grey SMOKE. The grey smoke is a rocket-only INTERP (the original
+                // has no lingering smoke — only flare+sparks), so it stays on rockets.
+                this.add(
+                    px, py,
+                    between(-5, 5), between(-5, 2),
+                    {r: 255, g: 200, b: 110}, between(0.14, 0.28) * lenScale, between(0.9, 1.6), 'plume',
+                );
+                const g = 150 + between(-20, 20);
+                this.add(
+                    px + between(-2, 2), py + between(-2, 2),
+                    between(-4, 4), -between(3, 10),
+                    {r: g, g, b: g}, between(1.0, 1.8) * lenScale, between(1.6, 3.2), 'smoke',
+                );
+            } else {
+                // BALLISTIC shell (trailType 1) — RE: only a flare puff + sparks, NO
+                // smoke. Tinted toward the weapon's colour so rails read light-blue,
+                // shells white, etc. (fixes shells/rails wrongly puffing grey smoke).
+                this.add(
+                    px, py,
+                    between(-3, 3), between(-3, 2),
+                    spark, between(0.12, 0.26) * lenScale, between(0.7, 1.3), 'plume',
+                );
+                this.add(
+                    px, py,
+                    between(-16, 16), between(-8, 18),
+                    spark, between(0.12, 0.3), between(0.6, 1.1), 'disc',
+                );
+            }
         }
     }
 
