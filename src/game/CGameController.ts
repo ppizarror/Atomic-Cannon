@@ -154,7 +154,12 @@ export class CGameController implements ShotWorld {
 
         // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
         // and the additive starburst flare used for trail plumes / fireballs.
-        this.m_assets.loadSprite('fx:smoke', '/assets/gui/smoke.bmp');
+        this.m_assets.loadSprite('fx:smoke', '/assets/gui/smoke.bmp').then(() => {
+            // Hand the smoke sprite to the terrain so radiation heat plumes use the
+            // real (tinted) smoke art instead of a procedural blob.
+            const s = this.m_assets.getSprite('fx:smoke');
+            if (s) this.m_land.setSmokeSprite(s.bitmap, s.width, s.height);
+        });
         this.m_assets.loadImage('fx:flare', '/assets/flares/04.bmp');
         // The generic fallback fireball, keyed on its light blue-purple bg.
         this.m_assets.loadSprite('fx:explosion', '/assets/effects/explosion1.bmp', [127, 127, 255]);

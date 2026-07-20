@@ -48,9 +48,9 @@ interface RadSpeck {
     b: number;   // tint (from the weapon's irRGB, per zone)
 }
 
-// A faint warm plume rising off the radioactive carpet — it lifts, widens and
-// fades, so the hot fallout SHIMMERS with heat. Purely visual, transient.
-interface HeatWisp { x: number; y: number; age: number; life: number; size: number; vx: number; }
+// A faint warm plume rising off the radioactive carpet — it lifts, widens, spins
+// and fades, so the hot fallout SHIMMERS with heat. Purely visual, transient.
+interface HeatWisp { x: number; y: number; age: number; life: number; size: number; vx: number; rot: number; spin: number; }
 
 // A permanent blackened blast mark baked into the terrain bitmap.
 interface Scorch {
@@ -638,11 +638,11 @@ export class CLand {
         // active deposit (fewer as the zone cools), they lift, widen and fade so the
         // radioactive ground reads as HOT. Gated on the deposit, so a bomb that clears
         // the fallout stops new heat there too.
-        if (this.m_radParticles.length && this.m_radDeposit && this.m_heat.length < 240) {
+        if (this.m_radParticles.length && this.m_radDeposit && this.m_heat.length < 90) {
             for (const z of this.m_radParticles) {
                 const cool = z.timeRemaining / Math.max(0.5, z.duration);   // 1 hot → 0 cold
                 const rr = z.radius;
-                const spawn = Math.round(3 * cool);
+                const spawn = this.rand01() < cool * 0.7 ? 1 : 0;           // sparse — a wisp here and there
                 for (let k = 0; k < spawn; k++) {
                     const col = Math.floor(z.x - rr + this.rand01() * rr * 2);
                     if (col < 0 || col >= this.m_nWidth || this.m_radDeposit[col] <= 0) continue;
@@ -653,6 +653,8 @@ export class CLand {
                         life: 0.7 + this.rand01() * 0.8,
                         size: 5 + this.rand01() * 7,
                         vx: (this.rand01() - 0.5) * 12,
+                        rot: this.rand01() * Math.PI * 2,
+                        spin: (this.rand01() - 0.5) * 1.6,
                     });
                 }
             }
@@ -663,6 +665,7 @@ export class CLand {
             if (h.age >= h.life) { this.m_heat.splice(i, 1); continue; }
             h.y -= (26 + h.size) * dt;    // rise, bigger plumes lift faster
             h.x += h.vx * dt;
+            h.rot += h.spin * dt;         // slow tumble
         }
     }
 
@@ -680,6 +683,35 @@ export class CLand {
         g.fillRect(0, 0, S, S);
         this.m_heatSprite = c;
         return this.m_heatSprite;
+    }
+
+    /** Give CLand the game's smoke sprite so heat plumes use the real pixel-art
+     *  smoke (tinted warm/red) instead of a procedural blob — matching the art. */
+    setSmokeSprite(img: CanvasImageSource, w: number, h: number): void {
+        this.m_smokeSrc = img;
+        this.m_smokeW = w;
+        this.m_smokeH = h;
+        this.m_smokeTint = null;
+    }
+
+    /** Lazily build a warm-tinted copy of the smoke sprite (grey → radioactive red,
+     *  keeping the smoke's texture + alpha). Null until the sprite is provided. */
+    private smokeTint(): HTMLCanvasElement | null {
+        if (this.m_smokeTint) return this.m_smokeTint;
+        if (!this.m_smokeSrc || !this.m_smokeW || !this.m_smokeH) return null;
+        const w = this.m_smokeW, h = this.m_smokeH;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const g = c.getContext('2d')!;
+        g.drawImage(this.m_smokeSrc, 0, 0, w, h);
+        g.globalCompositeOperation = 'multiply';        // colour the grey smoke warm-red, keep its texture
+        g.fillStyle = 'rgb(255,95,55)';
+        g.fillRect(0, 0, w, h);
+        g.globalCompositeOperation = 'destination-in';  // re-mask to the smoke's own alpha
+        g.drawImage(this.m_smokeSrc, 0, 0, w, h);
+        g.globalCompositeOperation = 'source-over';
+        this.m_smokeTint = c;
+        return this.m_smokeTint;
     }
 
     getRadiationZones(): RadParticle[] {
@@ -995,19 +1027,27 @@ export class CLand {
             ctx.globalCompositeOperation = prevOp;
         }
 
-        // Heat haze — faint warm plumes rising off the hot fallout (additive, soft,
-        // widening + fading as they lift), so the radioactive carpet SHIMMERS.
+        // Heat haze — faint warm plumes rising off the hot fallout: the game's real
+        // smoke sprite tinted radioactive red (falls back to a soft glow blob until
+        // the sprite is provided), widening + tumbling + fading as it lifts, so it
+        // matches the pixel-art rather than reading as a clean CGI gradient.
         if (this.m_heat.length) {
-            const spr = this.heatSprite();
+            const spr = this.smokeTint() ?? this.heatSprite();
             const prevOp = ctx.globalCompositeOperation;
+            // Additive so the tinted smoke reads as a warm GLOWING radioactive haze
+            // and stays visible over any backdrop (dark sky or bright sand).
             ctx.globalCompositeOperation = 'lighter';
             for (const h of this.m_heat) {
                 const t = h.age / h.life;
-                const a = Math.sin(Math.PI * t) * 0.17;   // ease in, ease out
-                if (a <= 0.01) continue;
-                const d = h.size * (1 + t * 1.6);         // widen as it rises
+                const a = Math.sin(Math.PI * t) * 0.09;   // ease in, ease out — a faint hint, not a cloud
+                if (a <= 0.005) continue;
+                const d = h.size * (1 + t * 1.8);         // widen as it rises
                 ctx.globalAlpha = a;
-                ctx.drawImage(spr, h.x - d, h.y - d, d * 2, d * 2);
+                ctx.save();
+                ctx.translate(h.x, h.y);
+                ctx.rotate(h.rot);
+                ctx.drawImage(spr, -d, -d, d * 2, d * 2);
+                ctx.restore();
             }
             ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = prevOp;
@@ -1038,7 +1078,11 @@ export class CLand {
     private m_radParticles: RadParticle[] = [];
     private m_radSpecks: RadSpeck[] = [];
     private m_heat: HeatWisp[] = [];                // rising heat-haze plumes off the fallout
-    private m_heatSprite: HTMLCanvasElement | null = null;   // cached soft warm glow sprite
+    private m_heatSprite: HTMLCanvasElement | null = null;   // cached soft warm glow sprite (fallback)
+    private m_smokeSrc: CanvasImageSource | null = null;     // the game's smoke.bmp (for heat wisps)
+    private m_smokeW: number = 0;
+    private m_smokeH: number = 0;
+    private m_smokeTint: HTMLCanvasElement | null = null;    // cached warm-tinted smoke
     private m_scorches: Scorch[] = [];
     private m_degrass: Uint8Array | null = null;   // per-column: 1 = grass torn off by a blast
     private m_radDeposit: Float32Array | null = null;   // per-column: accumulated fallout PILE height (px above surface)
