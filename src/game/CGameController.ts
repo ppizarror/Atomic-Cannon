@@ -16,7 +16,7 @@ import {Vec2} from '../math/Vec2';
 import {CParticleSystem, ScreenShake} from '../core/CParticleSystem';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
-import {CEconomy} from '../core/CEconomy';
+import {CEconomy, START_CREDITS} from '../core/CEconomy';
 import {AI_DEFAULT_LEVEL, aimProbability, angleError, bestAim, pickMoveWeapon, pickTarget, pickWeapon} from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {EXT, type ShotWorld, weaponDetonate, weaponFlyStep} from '../core/weapons/WeaponBehavior';
@@ -106,8 +106,16 @@ export class CGameController implements ShotWorld {
         this.m_sentries = [];
         this.m_aimMarkers = [];
 
-        // Generate terrain
-        this.m_land.generateRandomTerrain();
+        // Fresh economy for the match — start credits come from Settings → Economy.
+        this.m_economy.reset(this.m_startCredits);
+
+        // Generate terrain: a forced landscape shape (Settings → Land Type) or, for
+        // "Random", the usual random landscape.
+        if (this.m_landMode >= 0 && this.m_landMode <= 4) {
+            this.m_land.generateTerrainMode(this.m_landMode);
+        } else {
+            this.m_land.generateRandomTerrain();
+        }
 
         // Create tanks for each player (alternating teams)
         for (let i = 0; i < nPlayers; i++) {
@@ -155,6 +163,13 @@ export class CGameController implements ShotWorld {
         // The aim crosshair (magenta-keyed white "+" with a black outline) that marks
         // the (angle, power) aim point — the original's "target turret" reticle.
         this.m_assets.loadSprite('gui/target', '/assets/gui/target turret.bmp');
+        // Off-screen shot notches (RE: FUN_00472fc0, gated on the "Tracking" option):
+        // top arrows (up while rising, down while falling) + left/right edge brackets
+        // pointing at a projectile that has left the view.
+        this.m_assets.loadSprite('gui/notch-center', '/assets/gui/notch center.bmp');
+        this.m_assets.loadSprite('gui/notch-decent', '/assets/gui/notch center decent.bmp');
+        this.m_assets.loadSprite('gui/notch-left', '/assets/gui/notch left.bmp');
+        this.m_assets.loadSprite('gui/notch-right', '/assets/gui/notch right.bmp');
 
         // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
         // and the additive starburst flare used for trail plumes / fireballs.
@@ -260,6 +275,8 @@ export class CGameController implements ShotWorld {
      * Main update tick - called every frame via requestAnimationFrame
      */
     update(dt: number): void {
+        // Game-speed multiplier (Settings → Gameplay → Update Scale; 1 = normal).
+        dt *= this.m_speedScale;
         switch (this.m_gameState) {
             case EGameState.Battle:
                 this.updateBattle(dt);
@@ -564,6 +581,49 @@ export class CGameController implements ShotWorld {
             }
         }
 
+        // Edge notches pointing at any projectile that has left the view.
+        this.drawShotNotches(ctx);
+
+        ctx.restore();
+    }
+
+    /**
+     * Off-screen shot indicators — the original's "notch" markers (RE: FUN_00472fc0,
+     * gated on the "Tracking" graphics option). For every live projectile outside the
+     * view we draw an edge marker: a top arrow at the shot's X when it's above the
+     * ceiling (pointing up while it rises, down once it's descending), and a left/
+     * right bracket at the shot's Y when it's off that side. With no camera scroll yet
+     * (large maps come later) the view is the whole canvas, so screen = world coords.
+     */
+    private drawShotNotches(ctx: CanvasRenderingContext2D): void {
+        const live = this.m_shots.filter(s => !s.isDead());
+        if (live.length === 0) return;
+        const W = this.m_canvas.width, H = this.m_canvas.height;
+        const up = this.m_assets.getSprite('gui/notch-center');    // rising  → arrow up
+        const down = this.m_assets.getSprite('gui/notch-decent');  // falling → arrow down
+        const left = this.m_assets.getSprite('gui/notch-left');
+        const right = this.m_assets.getSprite('gui/notch-right');
+        const clampY = (y: number, h: number) => Math.max(0, Math.min(H - h, y));
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        for (const shot of live) {
+            const p = shot.getPosition();
+            const v = shot.getVelocity();
+            // Above the ceiling: top arrow at the shot's X (+y is downward, so v.y >= 0
+            // means it's on the way down → the "descent" arrow).
+            if (p.y < 0) {
+                const s = v.y >= 0 ? down : up;
+                if (s) ctx.drawImage(s.bitmap, Math.round(p.x - s.width / 2), 0);
+            }
+            // Off the left / right edge: a bracket at the shot's Y, clamped into the view.
+            if (p.x < 0 && left) {
+                ctx.drawImage(left.bitmap, 0, clampY(Math.round(p.y - left.height / 2), left.height));
+            }
+            if (p.x > W && right) {
+                ctx.drawImage(right.bitmap, W - right.width, clampY(Math.round(p.y - right.height / 2), right.height));
+            }
+        }
         ctx.restore();
     }
 
@@ -1163,7 +1223,8 @@ export class CGameController implements ShotWorld {
         const muzzlePos = tank.getMuzzlePosition();
         const baseAngle = tank.getTurretAngle();
         const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
-        const varianceRad = weapon.getVariance() * Math.PI / 180;   // per-shot inaccuracy
+        // Per-shot inaccuracy — gated by Settings → Gameplay → Variance.
+        const varianceRad = this.m_variance ? weapon.getVariance() * Math.PI / 180 : 0;
 
         // Multi-fire (disassembly `impactMultiplier`): `spawn` = SIMULTANEOUS rounds in
         // a fan, `spread` = degrees between them, `sucNum` = SUCCESSION (fires sucNum+1
@@ -1211,8 +1272,17 @@ export class CGameController implements ShotWorld {
         const gap = salvos > 1 ? Math.min(0.14, Math.max(0.05, weapon.getSuccessionSec() / salvos)) : 0;
         this.m_pendingSalvos = salvos;
         for (let sv = 0; sv < salvos; sv++) {
+            // Each succession salvo is a fresh weapon dispatch in the original and
+            // replays soundFire (RE: FUN_00467410:59 re-enters FUN_00458c20 → the
+            // fire sound at :313). Salvo 0's sound is the one played above at fire();
+            // scheduled salvos play their own so a Strikers/Machine-Gun burst is heard
+            // once per salvo, not once total. (The ~50–140ms salvo gap clears the SFX
+            // retrigger throttle, so each is audible.)
             if (sv === 0) fireSalvo();
-            else this.schedule(gap * sv, fireSalvo);
+            else this.schedule(gap * sv, () => {
+                this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
+                fireSalvo();
+            });
         }
 
         this.m_gameState = EGameState.ShotFlying;
@@ -1254,6 +1324,21 @@ export class CGameController implements ShotWorld {
             if (!t.isAlive()) this.handleTankDestroyed(t);
         }
 
+        // Carve the channel the ray cuts. The original stamps the beam sprite into the
+        // terrain bitmap along the WHOLE line in one frame, slicing a slot through every
+        // hill it pierces (which is why it reaches tanks buried behind them). Our terrain
+        // is a heightmap — it can't hold a floating tunnel — so "cut" means dropping the
+        // surface down to the ray wherever the ray runs at/below it; open-air spans (the
+        // ray flying above a hill) leave no mark.
+        const channelR = Math.max(4, Math.min(10, r * 0.3));
+        const beamLen = Math.hypot(end.x - muzzle.x, end.y - muzzle.y);
+        for (let d = 0; d <= beamLen; d += Math.max(2, channelR * 0.7)) {
+            const px = muzzle.x + dir.x * d, py = muzzle.y + dir.y * d;
+            if (px < 0 || px >= W) continue;
+            if (py < this.m_land.getHeightAt(Math.floor(px)) - channelR) continue;   // ray in open air
+            this.m_land.blastCircle(Math.floor(px), Math.floor(py), channelR);
+        }
+
         // The beam itself: a straight ray drawn OVER the terrain (so it reads as
         // penetrating), sweeping out from the muzzle. A through-beam has no single
         // impact point — no crater/explosion/ripple, just a light discharge shake.
@@ -1262,7 +1347,9 @@ export class CGameController implements ShotWorld {
 
         const rad = weapon.getRadiation();
         if (rad.time > 0 && rad.dmg > 0) {
-            const zoneR = Math.max(r, Math.round(rad.amount * 800));
+            // Fallout spreads within the blast radius, not by `iradiate` — iradiate is
+            // only the on/off gate, never a spatial scale (see WeaponBehavior.weaponDetonate).
+            const zoneR = r;
             this.m_land.blastIradiate(Math.floor(end.x), Math.floor(this.m_land.getHeightAt(end.x)), zoneR, rad.dmg * 60, rad.time, rad.rgb);
         }
         void owner;
@@ -1452,6 +1539,43 @@ export class CGameController implements ShotWorld {
         this.m_difficulty = level;
     }
 
+    // ── Settings pushed from the options menu (see ui/applySettings). Start-time
+    // setters take effect on the next startGame; the rest are live. ──────────────
+    /** Credits each player starts a match with (applied on the next startGame). */
+    setStartCredits(n: number): void {
+        this.m_startCredits = Math.max(0, Math.round(n));
+    }
+
+    /** Depot sell-back refund fraction (0..1), live. */
+    setSellRate(fraction: number): void {
+        this.m_economy.setSellRate(fraction);
+    }
+
+    /** Number of battles in the match (feeds "Battle X of Y"). */
+    setTotalBattles(n: number): void {
+        this.m_totalBattles = Math.max(1, Math.round(n));
+    }
+
+    /** Forced landscape shape 0..4, or -1 for a random landscape (next startGame). */
+    setLandMode(mode: number): void {
+        this.m_landMode = mode;
+    }
+
+    /** Wind-strength scalar (0 = disabled). Live for drift; reseeds next game. */
+    setWindScale(scale: number): void {
+        this.m_windScale = Math.max(0, scale);
+    }
+
+    /** Per-shot variance (inaccuracy) on/off, live. */
+    setVariance(on: boolean): void {
+        this.m_variance = on;
+    }
+
+    /** Game-speed multiplier (1 = normal), live. */
+    setGameSpeed(scale: number): void {
+        this.m_speedScale = Math.max(0.1, scale);
+    }
+
 
     // ========================================================================
     // WIND & PHYSICS
@@ -1459,11 +1583,12 @@ export class CGameController implements ShotWorld {
 
     private static readonly MAX_WIND = 5;
 
-    /** Seed a fresh random wind at the start of a game. */
+    /** Seed a fresh random wind at the start of a game (scaled by Settings → Wind). */
     private updateWind(): void {
+        const max = CGameController.MAX_WIND * this.m_windScale;
         this.m_wind = new Vec2(
-            (Math.random() * 2 - 1) * CGameController.MAX_WIND,
-            (Math.random() * 2 - 1) * CGameController.MAX_WIND * 0.3,
+            (Math.random() * 2 - 1) * max,
+            (Math.random() * 2 - 1) * max * 0.3,
         );
         this.m_windTimer = 0;
     }
@@ -1473,7 +1598,7 @@ export class CGameController implements ShotWorld {
      * (mirrors the original's wind model). Called every frame.
      */
     private updateWindDrift(dt: number): void {
-        const MAX = CGameController.MAX_WIND;
+        const MAX = CGameController.MAX_WIND * this.m_windScale;   // 0 when wind is Disabled
         this.m_wind.x = Math.max(-MAX, Math.min(MAX, this.m_wind.x + this.m_windAccel.x * dt));
         this.m_wind.y = Math.max(-MAX * 0.3, Math.min(MAX * 0.3, this.m_wind.y + this.m_windAccel.y * dt));
 
@@ -1725,6 +1850,14 @@ export class CGameController implements ShotWorld {
     private m_shotsFired = 0;
     private m_currentBattle = 1;
     private m_totalBattles = 5;
+
+    // Gameplay config pushed from the Settings menu (see ui/applySettings). Start-time
+    // values (credits, land shape) are read in startGame; the rest are read live.
+    private m_startCredits = START_CREDITS;
+    private m_landMode = -1;        // -1 = random landscape; 0..4 = a forced shape
+    private m_windScale = 1;        // 0 disables wind
+    private m_variance = true;      // per-shot inaccuracy on/off
+    private m_speedScale = 1;       // game-speed multiplier (Update Scale / 10)
 
     getShotCount(): number {
         return this.m_shotsFired;

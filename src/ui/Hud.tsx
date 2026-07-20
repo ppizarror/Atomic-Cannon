@@ -8,7 +8,7 @@
  * (not every frame) — keeps it cheap and lets async icons stick.
  */
 import {useEffect, useRef, useState} from 'preact/hooks';
-import type {JSX, ComponentChildren} from 'preact';
+import type {JSX, ComponentChildren, TargetedWheelEvent} from 'preact';
 import {BmpText} from './BmpText';
 import {
     power, angle, wind, weaponIndex, playerName, teamColor, life, maxLife, shield,
@@ -221,14 +221,47 @@ function WeaponPreview() {
         <WeaponIcon name={wp.name} size={32} cls="wbig"/>}</div>;
 }
 
+// Step the weapon selection by ±1 with wrap-around — shared by the ▲/▼ buttons and
+// the list's mouse-wheel. +1 = next (▼), −1 = previous (▲); wraps past either end.
+function stepWeapon(d: number): void {
+    const list = weapons.value;
+    if (!list.length) return;
+    uiClick();
+    const g = game();
+    const cur = Math.max(0, list.findIndex(w => w.index === g.getCurrentWeaponIndex()));
+    const next = (((cur + d) % list.length) + list.length) % list.length;
+    g.selectWeapon(list[next].index);
+}
+
 function WeaponList() {
     const listRef = useRef<HTMLDivElement>(null);
+    const wheelAcc = useRef(0);
+    const lastStep = useRef(0);
     const idx = weaponIndex.value;
     useEffect(() => {
         (listRef.current?.querySelector('.wrow.active') as HTMLElement | null)?.scrollIntoView({block: 'nearest'});
     }, [idx]);
+    // Mouse-wheel over the list steps the selection like the ▲/▼ arrows (no visible
+    // scrollbar). Delta is accumulated (normalised from line/page modes to px) so
+    // sub-notch scrolls add up, and stepping is rate-limited: at most one step per
+    // MIN_MS, dropping the leftover so a fast flick can't burst through the list —
+    // a hard cap on scroll velocity, no matter how hard you spin the wheel.
+    const onWheel = (e: TargetedWheelEvent<HTMLDivElement>) => {
+        if (blocked.value || !e.deltaY) return;
+        e.preventDefault();
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientHeight : 1;
+        wheelAcc.current += e.deltaY * unit;
+        const STEP = 50;     // px of scroll needed to move one weapon
+        const MIN_MS = 90;   // min gap between steps → max ~11 weapons/second
+        const now = performance.now();
+        if (Math.abs(wheelAcc.current) >= STEP && now - lastStep.current >= MIN_MS) {
+            stepWeapon(wheelAcc.current > 0 ? 1 : -1);
+            lastStep.current = now;
+            wheelAcc.current = 0;   // drop the remainder so speed can't outrun MIN_MS
+        }
+    };
     return (
-        <div class={`ov wlist${blocked.value ? ' blocked' : ''}`} style={pos(R.list)} ref={listRef}>
+        <div class={`ov wlist${blocked.value ? ' blocked' : ''}`} style={pos(R.list)} ref={listRef} onWheel={onWheel}>
             {weapons.value.map((wp, i) => {
                 const active = wp.index === idx;
                 return (
@@ -250,17 +283,9 @@ function ControlPanel() {
     const g = () => game();
     const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
     const dA = (d: number) => g().setAngle(wrapAngle(g().getAngle() + d));
-    // ▲/▼ step through the displayed list (by list position), then select that
-    // row's real weapon index — works whether the list is full or filtered. Wraps
-    // around: ▼ off the last row jumps to the first, ▲ off the first to the last.
-    const dW = (d: number) => {
-        const list = weapons.value;
-        if (!list.length) return;
-        uiClick();
-        const cur = Math.max(0, list.findIndex(w => w.index === g().getCurrentWeaponIndex()));
-        const next = (((cur + d) % list.length) + list.length) % list.length;
-        g().selectWeapon(list[next].index);
-    };
+    // ▲/▼ step through the displayed list with wrap-around (see stepWeapon), the
+    // same path the list's mouse-wheel uses.
+    const dW = stepWeapon;
 
     return (
         <div id="hud-panel">

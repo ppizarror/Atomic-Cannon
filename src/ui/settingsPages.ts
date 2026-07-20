@@ -12,6 +12,7 @@
  */
 import { getVal, setVal } from './settingsStore';
 import { game, openSettingsPage, uiClick } from './store';
+import { applyGameSettings } from './applySettings';
 
 export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';
 
@@ -52,13 +53,15 @@ const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
 // common sizes in that same format as a remembered (cosmetic) preference.
 const RESOLUTION = ['800x600x32 60Hz', '1024x768x32 60Hz', '1280x1024x32 60Hz', '1920x1080x32 60Hz'];
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const pct = (v: number) => `${v}%`;
 
 // ── stored-preference widget builders ────────────────────────────────────────
+// Every stored change persists AND re-applies live, so wired options (difficulty,
+// wind, variance, …) take effect immediately and start-time ones are ready for the
+// next game.
 const bind = (id: string, dflt: number) => ({
   get: () => getVal(id, dflt),
-  set: (v: number) => setVal(id, v),
+  set: (v: number) => { setVal(id, v); applyGameSettings(game()); },
 });
 const toggle = (label: string, tip: string, id: string, dflt: number): Widget =>
   ({ label, tip, kind: 'toggle', ...bind(id, dflt) });
@@ -95,15 +98,12 @@ function tankRows(): Widget[] {
 }
 
 function gameplayRows(): Widget[] {
-  const gc = game();
   return [
     stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 5, 1, 50, 1),
     stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 10, 1, 100, 1),
-    {
-      label: 'Difficulty', tip: 'How badly the computer will dominate you', kind: 'enum', options: DIFFICULTY,
-      get: () => clamp(gc.getDifficulty(), 1, 10) - 1,
-      set: (v: number) => gc.setDifficulty(v + 1),
-    },
+    // Difficulty is a stored preference (persisted + applied via applyGameSettings →
+    // controller.setDifficulty); index 0..9 maps to AI level 1..10.
+    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty', 4, DIFFICULTY),
     enumW('Wind', 'How the wind affects the trajectories', 'gp.wind', 2, WIND),
     enumW('Change Wind', 'Defines when the wind changes direction', 'gp.changeWind', 0, CHANGE_WIND),
     enumW('Explosion Size', 'How big the explosions are.', 'gp.explosionSize', 1, EXPLOSION_SIZE),

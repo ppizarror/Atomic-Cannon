@@ -7,6 +7,7 @@
 import {signal} from '@preact/signals';
 import type {CGameController} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
+import {applyGameSettings} from './applySettings';
 
 export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about';
 
@@ -139,6 +140,7 @@ export function goToMenu(): void {
 /** Play → start a fresh battle. */
 export function playNewGame(): void {
     uiClick();
+    applyGameSettings(game());    // honour the saved options for this match
     game().startGame(2);          // also starts the battle music
     screen.value = 'battle';
     game().setPaused(false);

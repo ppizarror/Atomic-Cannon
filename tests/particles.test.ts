@@ -121,8 +121,8 @@ console.log('Particle system');
 {
     const ps = new CParticleSystem();
     ps.setBounds(800, 600);
-    ps.trail(100, 100, '#00ffff');          // trailType 1 (ballistic): flare + spark, NO smoke
-    ok('shell trail adds a flare + spark (no smoke)', ps.count() === 2, `count=${ps.count()}`);
+    ps.trail(100, 100, '#00ffff');          // trailType 1 (ballistic): one faint white spark, NO smoke/glow
+    ok('shell trail adds a single faint spark (no smoke, no fire glow)', ps.count() === 1, `count=${ps.count()}`);
     stepN(ps, 130, 1 / 60);                 // ~2.2 s — past the puff/spark life
     ok('trail puff fades', ps.count() === 0, `left=${ps.count()}`);
 }

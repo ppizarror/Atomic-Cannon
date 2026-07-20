@@ -36,11 +36,24 @@ function defaultUnlimited(): number[] {
 export class CEconomy {
     private m_credits: number;
     private readonly m_owned: number[];   // per weapon index; UNLIMITED for staples
+    private m_sellRate = SELL_REFUND;     // fraction refunded on sell (Economy → Sell Back Rate)
 
     constructor(startCredits = START_CREDITS, unlimited: number[] = defaultUnlimited()) {
         this.m_credits = startCredits;
         this.m_owned = new Array(WEAPON_DATABASE.length).fill(0);
         for (const i of unlimited) if (i >= 0 && i < this.m_owned.length) this.m_owned[i] = UNLIMITED;
+    }
+
+    /** Reset to a fresh match: `startCredits` on hand, only the staples in stock. */
+    reset(startCredits = START_CREDITS, unlimited: number[] = defaultUnlimited()): void {
+        this.m_credits = startCredits;
+        this.m_owned.fill(0);
+        for (const i of unlimited) if (i >= 0 && i < this.m_owned.length) this.m_owned[i] = UNLIMITED;
+    }
+
+    /** Set the sell-back refund fraction (0..1). */
+    setSellRate(fraction: number): void {
+        this.m_sellRate = Math.max(0, Math.min(1, fraction));
     }
 
     getCredits(): number {
@@ -92,7 +105,7 @@ export class CEconomy {
     sell(index: number): boolean {
         if (!this.canSell(index)) return false;
         this.m_owned[index] = this.getOwned(index) - 1;
-        this.m_credits += Math.round(this.cost(index) * SELL_REFUND);
+        this.m_credits += Math.round(this.cost(index) * this.m_sellRate);
         return true;
     }
 

@@ -11,6 +11,7 @@ import {CGameController} from './game/CGameController';
 import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
+import {applyGameSettings} from './ui/applySettings';
 import {
     setController, syncHud, canFire, openDepot, triggerHudWave, paused as pausedSignal,
     openPauseMenu, resumeGame, showPause, goToMenu, playNewGame, openSettings, openSettingsPage,
@@ -48,6 +49,10 @@ async function main(): Promise<void> {
     audio.loadSettings();
     audio.attachUnlock(window);
     gameController.setAudio(audio);
+
+    // Push the saved Settings into the controller so the boot match — and everything
+    // after — honours them (difficulty, wind, land shape, credits, …).
+    applyGameSettings(gameController);
 
     // Initialise a battle up front (land + tanks) so the sim is ready, then open the
     // main menu over it — Play starts a fresh round.
