@@ -13,6 +13,7 @@ import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {
     setController, syncHud, canFire, openDepot, triggerHudWave, paused as pausedSignal,
+    openPauseMenu, resumeGame, showPause,
     POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
@@ -53,12 +54,14 @@ async function main(): Promise<void> {
     setController(gameController);
     render(<App/>, uiRoot);
 
-    // Dev/review affordance: `?depot=1` opens the Weapons Depot on load.
-    if (new URLSearchParams(location.search).get('depot') === '1') openDepot();
+    // Dev/review affordance: `?depot=1` opens the Weapons Depot, `?pause=1` the pause menu.
+    const q = new URLSearchParams(location.search);
+    if (q.get('depot') === '1') openDepot();
+    if (q.get('pause') === '1') openPauseMenu();
 
-    // Pause: 'P' freezes the sim so a clean screenshot can be taken; 'P' resumes.
-    // The frame keeps rendering while paused (only the simulation clock stops).
-    let paused = false;
+    // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
+    // pause menu, and the DOM FX all read one source. 'P' = a quiet screenshot freeze
+    // (no menu); ESC = the pause menu (Resume / Settings / Quit).
 
     // Jet-flight steering: held-key state (arrows / WASD), pushed to the controller
     // each event. Only acts while the game is in the Flying state.
@@ -74,9 +77,16 @@ async function main(): Promise<void> {
     document.addEventListener('keydown', (e) => {
         if (e.code === 'KeyP') {
             e.preventDefault();
-            paused = !paused;
-            gameController.setPaused(paused);
-            pausedSignal.value = paused;   // freeze DOM FX (HUD ripple) too
+            const p = !pausedSignal.value;
+            gameController.setPaused(p);
+            pausedSignal.value = p;        // freeze DOM FX (HUD ripple) too
+            return;
+        }
+
+        // ESC toggles the pause menu (and freezes the sim while it's up).
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            if (showPause.value) resumeGame(); else openPauseMenu();
             return;
         }
 
@@ -191,14 +201,14 @@ async function main(): Promise<void> {
     // GPU texture retains it, so a screenshot still works).
     compositor.app.ticker.add((ticker) => {
         const dt = Math.min(ticker.deltaMS / 1000, 0.1);
-        if (!paused) gameController.update(dt);
+        if (!pausedSignal.value) gameController.update(dt);
         // Present-on-demand: the loop always ticks (so the sim keeps advancing), but the
         // full 2D redraw + GPU texture upload are skipped on frames where nothing visible
         // changed. The shockwave still advances every call (it warps the already-uploaded
         // texture on the GPU), so it animates over a static scene without a re-upload.
         const redraw = gameController.shouldRedraw();
         if (redraw) gameController.draw();
-        compositor.update(paused ? 0 : dt, redraw);
+        compositor.update(pausedSignal.value ? 0 : dt, redraw);
         syncHud();
     });
 

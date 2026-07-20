@@ -11,6 +11,7 @@ import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWave
 import {Hud} from './Hud';
 import {SettingsPanel} from './SettingsPanel';
 import {DepotPanel} from './DepotPanel';
+import {PauseMenu} from './PauseMenu';
 
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
@@ -129,6 +130,7 @@ export function App() {
     return (
         <>
             <CurrentScreen/>
+            <PauseMenu/>
             <SettingsPanel/>
             <DepotPanel/>
             <FlightHud/>

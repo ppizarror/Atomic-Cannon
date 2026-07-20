@@ -108,21 +108,25 @@ function Header({k, label, cls, activeKey, dir, onSort}: {
 }
 
 // Green weapon tooltip (the `zeon` dialog look) — the real dialog.bmp frame
-// (9-sliced by <ZeonFrame>: beveled green box, black rounded corners) behind the
-// text, with a down-pointer. Floats ABOVE the cursor so the pointer aims at the
-// hovered row.
+// (9-sliced by <ZeonFrame>: beveled green box) plus a down-pointer, floating ABOVE
+// the cursor so the pointer aims at the hovered row. The frame + pointer share one
+// translucency group (.dep-tt-frame) so they composite opaquely THEN fade together
+// — never transparency-over-transparency where the pointer overlaps the box. The
+// text rides above in .dep-tt-body at full opacity.
 function Tooltip({w, x, y}: { w: WeaponDef; x: number; y: number }) {
     const lines = wrap(w.desc || 'No description available.', 44);
     return (
         <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
-            <ZeonFrame/>
+            <div class="dep-tt-frame">
+                <ZeonFrame/>
+                <div class="dep-tt-arrow"/>
+            </div>
             <div class="dep-tt-body">
                 <BmpText font={ROW_FONT} text={w.name} tint="#06210a"/>
                 <div class="dep-tt-desc">
                     {lines.map((l, i) => <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c"/>)}
                 </div>
             </div>
-            <div class="dep-tt-arrow"/>
         </div>
     );
 }

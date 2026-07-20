@@ -161,6 +161,19 @@ export function pickTarget(
   return Math.floor(rnd() * enemies.length);
 }
 
+/** Indices of the Move utilities (Move Near/Mid/Far), in range order. */
+export function moveWeaponIndices(): number[] {
+  return ['Move Near', 'Move Mid', 'Move Far']
+    .map(n => WEAPON_DATABASE.findIndex(w => w.name === n))
+    .filter(i => i >= 0);
+}
+
+/** Pick a random Move utility to spend a turn moving, or -1 if none exist. */
+export function pickMoveWeapon(rnd: () => number = Math.random): number {
+  const idxs = moveWeaponIndices();
+  return idxs.length ? idxs[Math.floor(rnd() * idxs.length)] : -1;
+}
+
 /** Indices of weapons a bot can aim as a simple ballistic arc (damage on impact). */
 export function ballisticWeaponIndices(): number[] {
   const ok = new Set(['Shell', 'Bomb', 'Rocket', 'Missile', 'NUKE', 'Organic', 'DOT']);

@@ -6,9 +6,10 @@
  */
 import {
   bestAim, aimProbability, angleError, pickTarget, pickWeapon,
-  ballisticWeaponIndices, simulateMiss,
+  ballisticWeaponIndices, moveWeaponIndices, pickMoveWeapon, simulateMiss,
   AI_LEVEL_MIN, AI_LEVEL_MAX, type AimField,
 } from '../src/core/CBotAI';
+import { WEAPON_DATABASE } from '../src/core/CWeapon';
 
 let pass = 0, fail = 0;
 function ok(name: string, cond: boolean, extra = '') {
@@ -95,6 +96,14 @@ console.log('Bot AI');
     if (!pool.has(w)) allValid = false;
   }
   ok('picked weapons are always in the ballistic pool', allValid);
+}
+
+// 8. Move utilities resolve (bot movement spends a turn on one of these).
+{
+  const moves = moveWeaponIndices();
+  ok('the three Move utilities resolve', moves.length === 3, `found=${moves.length}`);
+  ok('Move utilities are extType-3 Utility weapons', moves.every(i => WEAPON_DATABASE[i].extType === 3 && WEAPON_DATABASE[i].type === 'Utility'));
+  ok('pickMoveWeapon returns one of them', moves.includes(pickMoveWeapon(() => 0.5)));
 }
 
 console.log(`\n${pass}/${pass + fail} AI checks passed`);

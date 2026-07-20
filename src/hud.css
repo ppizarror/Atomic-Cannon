@@ -668,13 +668,22 @@ img, canvas {
     filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
 }
 
+/* Frame + pointer share ONE translucency group: they composite opaquely here,
+   then this group's opacity fades them together — so the pointer overlapping the
+   box never doubles up the alpha (the "transparency over transparency" glitch). */
+.dep-tt-frame {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.82;
+}
+
 /* The 9-sliced dialog.bmp frame, filling the box behind the text. */
 .zeon-frame {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    z-index: 0;
     image-rendering: pixelated;
     pointer-events: none;
 }
@@ -689,30 +698,18 @@ img, canvas {
     display: block;
 }
 
-/* Down-pointer: a black outer triangle with a green inner triangle laid over it,
-   so only the two slanted black edges show and the green merges with the box. */
+/* Down-pointer: a plain green triangle merging with the box's green fill (no
+   black, no own opacity — the .dep-tt-frame group provides the translucency). */
 .dep-tt-arrow {
     position: absolute;
     top: 100%;
-    left: 15px;
+    left: 14px;
     width: 0;
     height: 0;
-    margin-top: -2px; /* overlap the box's bottom border */
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-top: 9px solid #000;
-}
-
-.dep-tt-arrow::after {
-    content: '';
-    position: absolute;
-    top: -10px;
-    left: -6px;
-    width: 0;
-    height: 0;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 7px solid #00ff00;
+    margin-top: -2px; /* overlap into the box so it reads as one shape */
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 8px solid #00ff00;
 }
 
 .dep-tt-desc {
@@ -834,4 +831,47 @@ img, canvas {
 .dep-btn:disabled {
     filter: grayscale(0.35) brightness(0.86);
     cursor: default;
+}
+
+/* ============================ PAUSE MENU ============================ */
+/* A centered bitmap-font item list over the darkened, frozen battle. */
+.pause-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.5);
+}
+.pause-title {
+    margin-bottom: 24px;
+    opacity: 0.92;
+}
+.pause-title canvas,
+.pause-item canvas {
+    display: block;
+}
+.pause-list {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+.pause-item {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 2px 26px;
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85));
+    transition: transform 0.08s ease, filter 0.08s ease;
+}
+.pause-item:hover {
+    transform: scale(1.08);
+    filter: brightness(1.2) drop-shadow(0 0 10px rgba(255, 215, 120, 0.75));
+}
+.pause-item:active {
+    transform: scale(0.97);
 }

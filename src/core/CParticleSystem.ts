@@ -131,9 +131,33 @@ export class CParticleSystem {
     // Real sprites (looked up lazily each frame; falls back to procedural draws
     // until they finish loading). 'fx:smoke' = gui/smoke.bmp, 'fx:flare' = flares/04.bmp.
     private m_assets: SpriteSrc | null = null;
+    private m_warmSmoke: HTMLCanvasElement | null = null;   // fire-tinted smoke (young trail puffs)
 
     setAssets(a: SpriteSrc): void {
         this.m_assets = a;
+        this.m_warmSmoke = null;
+    }
+
+    /** Lazily build a warm-tinted copy of the smoke sprite (keeps its texture+alpha).
+     *  Blitted additively over young trail smoke so fresh puffs near the exhaust glow
+     *  like fire, cooling to plain grey as they age. Null until the sprite exists. */
+    private warmSmoke(): HTMLCanvasElement | null {
+        if (this.m_warmSmoke) return this.m_warmSmoke;
+        const spr = this.m_assets?.getSprite('fx:smoke');
+        if (!spr) return null;
+        const w = spr.width, h = spr.height;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const g = c.getContext('2d')!;
+        g.drawImage(spr.bitmap, 0, 0, w, h);
+        g.globalCompositeOperation = 'multiply';        // fire-orange tint, keep the puff texture
+        g.fillStyle = 'rgb(255,140,55)';
+        g.fillRect(0, 0, w, h);
+        g.globalCompositeOperation = 'destination-in';  // re-mask to the smoke's own alpha
+        g.drawImage(spr.bitmap, 0, 0, w, h);
+        g.globalCompositeOperation = 'source-over';
+        this.m_warmSmoke = c;
+        return this.m_warmSmoke;
     }
 
     // Pre-baked soft radial glow. The old draw path allocated a fresh
@@ -592,8 +616,23 @@ export class CParticleSystem {
                 if (alpha <= 0.01) continue;
                 const d = p.size * (0.9 + t * 5.5) * 2;      // small at birth → large as it ages
                 if (smokeSpr) {
-                    ctx.globalAlpha = alpha;
+                    // Warm while YOUNG (fresh puffs near the exhaust glow orange),
+                    // cooling to plain grey as it ages back down the trail. Warmth is
+                    // aimed at the EARLY-VISIBLE phase (the smoke is transparent at
+                    // birth), and the grey base is dimmed while warm so the fresh puff
+                    // reads orange rather than grey-with-a-hint.
+                    const warmth = Math.max(0, 1.15 - t * 2.2);
+                    // Grey base — full grey once cooled, dimmed while warm.
+                    ctx.globalAlpha = alpha * (0.45 + 0.55 * (1 - warmth));
                     ctx.drawImage(smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
+                    const warm = warmth > 0.02 ? this.warmSmoke() : null;
+                    if (warm) {
+                        const op = ctx.globalCompositeOperation;
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.globalAlpha = alpha * warmth * 1.3;
+                        ctx.drawImage(warm, p.x - d / 2, p.y - d / 2, d, d);
+                        ctx.globalCompositeOperation = op;
+                    }
                     ctx.globalAlpha = 1;
                 } else if (!this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, alpha)) {
                     const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, d / 2);

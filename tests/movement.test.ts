@@ -83,34 +83,40 @@ console.log('Tank ground-drive');
   ok('stopMoving cancels the drive', !t.isDriving() && !t.isMoving());
 }
 
-// 6. In-game: the bot repositions, then aims & fires (full move→aim→fire flow).
-//    Runs several random maps — it always fires; it moves on most (a bot can spawn
-//    boxed in by terrain on rare maps, which is legitimate).
+// 6. In-game: a bot's turn is MOVE or FIRE (mutually exclusive). A Move utility
+//    drives the tank and ends the turn WITHOUT firing; otherwise it fires and does
+//    not move. (Random maps: a bot can spawn boxed in, so "moved" is a majority.)
 {
   type GC = CGameController & { m_tanks: CTank[]; m_currentPlayerIndex: number; executeBotTurn(): void; };
   const RUNS = 6;
-  let started = 0, moved = 0, fired = 0;
-  for (let r = 0; r < RUNS; r++) {
+  const run = (roll: number) => {
     const gc = new CGameController(makeCanvas(900, 600)) as GC;
     gc.startGame(2);
     gc.setDifficulty(5);
-    gc.m_currentPlayerIndex = 1;                 // the bot's turn
+    gc.m_currentPlayerIndex = 1;
     const bot = gc.m_tanks[1];
     const x0 = bot.getPosition().x;
-
     const realRandom = Math.random;
-    Math.random = () => 0.1;                      // < BOT_MOVE_CHANCE → reposition; then aim
+    Math.random = () => roll;
     gc.executeBotTurn();
-    if (bot.isDriving() || bot.isMoving()) started++;
-    for (let i = 0; i < 400 && gc.getShotCount() === 0; i++) gc.update(1 / 30);   // ≤13s
+    // Pump the sim: a firing bot resolves quickly (breaks on the shot); a moving bot
+    // never fires, so it runs the full window (plenty for the drive to settle).
+    for (let i = 0; i < 240 && gc.getShotCount() === 0; i++) gc.update(1 / 30);
     Math.random = realRandom;
+    return { moved: Math.abs(bot.getPosition().x - x0) > 5, fired: gc.getShotCount() > 0 };
+  };
 
-    if (Math.abs(bot.getPosition().x - x0) > 5) moved++;
-    if (gc.getShotCount() > 0) fired++;
-  }
-  ok('bot always starts a reposition', started === RUNS, `${started}/${RUNS}`);
-  ok('bot always fires after repositioning', fired === RUNS, `${fired}/${RUNS}`);
-  ok('bot actually moves on most maps', moved >= RUNS - 2, `${moved}/${RUNS}`);
+  // Forced MOVE (roll < BOT_MOVE_CHANCE): drives, ends the turn, never fires.
+  let moved = 0, movedFired = 0;
+  for (let r = 0; r < RUNS; r++) { const o = run(0.1); if (o.moved) moved++; if (o.fired) movedFired++; }
+  ok('a moving bot actually moves', moved >= RUNS - 2, `${moved}/${RUNS}`);
+  ok('a moving bot does NOT fire', movedFired === 0, `fired=${movedFired}/${RUNS}`);
+
+  // Forced FIRE (roll > BOT_MOVE_CHANCE): fires, never drives.
+  let fired = 0, firedMoved = 0;
+  for (let r = 0; r < RUNS; r++) { const o = run(0.99); if (o.fired) fired++; if (o.moved) firedMoved++; }
+  ok('a firing bot fires', fired === RUNS, `${fired}/${RUNS}`);
+  ok('a firing bot does NOT move', firedMoved === 0, `moved=${firedMoved}/${RUNS}`);
 }
 
 console.log(`\n${pass}/${pass + fail} movement checks passed`);

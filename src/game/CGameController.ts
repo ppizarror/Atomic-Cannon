@@ -17,7 +17,7 @@ import {CParticleSystem, ScreenShake} from '../core/CParticleSystem';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
 import {CEconomy} from '../core/CEconomy';
-import {AI_DEFAULT_LEVEL, aimProbability, angleError, bestAim, pickTarget, pickWeapon} from '../core/CBotAI';
+import {AI_DEFAULT_LEVEL, aimProbability, angleError, bestAim, pickMoveWeapon, pickTarget, pickWeapon} from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {EXT, type ShotWorld, weaponDetonate, weaponFlyStep} from '../core/weapons/WeaponBehavior';
 import {CAudio} from '../audio/CAudio';
@@ -1044,6 +1044,7 @@ export class CGameController implements ShotWorld {
         if (this.m_paused) return;                 // debug freeze rejects all input
         const tank = this.getCurrentTank();
         if (!tank.isAlive()) return;
+        if (tank.isMoving()) return;               // can't act while a move is under way
 
         const weapon = getWeapon(this.m_currentWeaponIndex);
         const ext = weapon.getExtType();
@@ -1063,6 +1064,16 @@ export class CGameController implements ShotWorld {
                 this.m_gameState = EGameState.Battle;
                 this.schedule(0.4, () => this.endTurn());
             }
+            return;
+        }
+
+        // Move utilities (extType 3 — Move Near/Mid/Far): drive the tank in the aim
+        // direction, using the power bar as the distance (up to the weapon's max
+        // range = width × power/100). Consumes the turn like any utility; no shot.
+        if (ext === 3) {
+            const frac = Math.max(0.15, this.m_power / 1000);          // power bar → how far
+            const dir = Math.cos(tank.getTurretAngle()) >= 0 ? 1 : -1;  // aim right → move right
+            this.startTankMove(tank, tank.getPosition().x + dir * frac * this.moveRange(weapon));
             return;
         }
 
@@ -1207,9 +1218,8 @@ export class CGameController implements ShotWorld {
                 return true;          // set armor %
             case 14:
                 return true;                             // secondary resist (no field yet) — consumes turn
-            case 3:
             case 15:
-                return true;                     // UNVERIFIED effect — consume turn, no-op
+                return true;                     // wall/bunker — consumes turn (effect TODO)
             // extType 17 (jet) is handled in fire() before this — flight, not a no-op.
             default:
                 return false;
@@ -1234,30 +1244,54 @@ export class CGameController implements ShotWorld {
             return;
         }
 
-        // Optionally reposition first (a randomized shuffle, like the original's move
-        // queue), then aim & fire once the tank has settled.
-        if (Math.random() < CGameController.BOT_MOVE_CHANCE) {
-            const botX = botTank.getPosition().x;
-            const range = CGameController.BOT_MOVE_RANGE;
-            const destX = Math.max(20, Math.min(this.m_land.width - 20, botX + (Math.random() * 2 - 1) * range));
-            botTank.startDrive(destX);
-            this.waitForBotRest(botTank, 0);
-        } else {
-            this.botAimAndFire(botTank);
-        }
+        // A bot's turn is ONE action: MOVE or FIRE (mutually exclusive), like the
+        // original — spending the turn on a Move Near/Mid/Far utility drives the
+        // tank and ends the turn (no shot). Otherwise it aims and fires.
+        if (Math.random() < CGameController.BOT_MOVE_CHANCE && this.botMove(botTank)) return;
+        this.botAimAndFire(botTank);
     }
 
-    // Chance a bot repositions before firing, and how far (px) it may shuffle.
-    private static readonly BOT_MOVE_CHANCE = 0.3;
-    private static readonly BOT_MOVE_RANGE = 150;
+    // Chance a bot spends its whole turn moving instead of firing.
+    private static readonly BOT_MOVE_CHANCE = 0.25;
 
-    /** Poll until the repositioning bot has settled (or a safety timeout), then fire. */
-    private waitForBotRest(botTank: CTank, elapsed: number): void {
-        if (!botTank.isMoving() || elapsed > 4) {
-            this.botAimAndFire(botTank);
+    /**
+     * Bot move action: pick a Move utility, drive to a random spot within its range,
+     * and end the turn. Returns false if no move weapon exists (→ fall back to fire).
+     */
+    private botMove(botTank: CTank): boolean {
+        const wi = pickMoveWeapon();
+        if (wi < 0) return false;
+        const weapon = getWeapon(wi);
+        botTank.setWeaponIndex(wi);
+        this.m_currentWeaponIndex = wi;
+
+        const maxDist = this.moveRange(weapon);
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const dist = (0.4 + Math.random() * 0.6) * maxDist;
+        this.startTankMove(botTank, botTank.getPosition().x + dir * dist);
+        return true;
+    }
+
+    /** Max move distance for a Move utility: landscape width × (move power / 100). */
+    private moveRange(weapon: CWeapon): number {
+        return this.m_land.width * (weapon.getDamage() / 100);
+    }
+
+    /** Drive a tank to `destX` (a Move utility action), then end the turn once settled. */
+    private startTankMove(tank: CTank, destX: number): void {
+        const clamped = Math.max(20, Math.min(this.m_land.width - 20, destX));
+        tank.startDrive(clamped);
+        this.m_gameState = EGameState.Battle;
+        this.waitForRest(tank, 0);
+    }
+
+    /** Poll until a moving tank has settled (or a safety timeout), then end the turn. */
+    private waitForRest(tank: CTank, elapsed: number): void {
+        if (!tank.isMoving() || elapsed > 5) {
+            this.endTurn();
             return;
         }
-        this.schedule(0.15, () => this.waitForBotRest(botTank, elapsed + 0.15));
+        this.schedule(0.15, () => this.waitForRest(tank, elapsed + 0.15));
     }
 
     /** Pick a target + weapon, solve the firing arc, degrade by difficulty, and fire. */

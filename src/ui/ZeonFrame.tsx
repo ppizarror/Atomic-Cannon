@@ -22,7 +22,7 @@ const C = 11;     // corner slice (33 = 11+11+11) — captures the rounded corne
 let framePromise: Promise<HTMLImageElement | null> | null = null;
 function frameImage(): Promise<HTMLImageElement | null> {
     if (!framePromise) {
-        framePromise = loadUiBmp('gui/zeon/dialog.bmp', 'grey').then(url =>
+        framePromise = loadUiBmp('gui/zeon/dialog.bmp', 'greyblack').then(url =>
             url
                 ? new Promise<HTMLImageElement | null>(res => {
                       const img = new Image();

@@ -44,6 +44,36 @@ export function closeDepot(): void {
     uiClick();
 }
 
+// Pause menu — an overlay over the frozen battle (Resume / Settings / Quit).
+export const showPause = signal(false);
+
+/** Open the pause menu and freeze the sim (ESC during battle). */
+export function openPauseMenu(): void {
+    if (screen.value !== 'battle') return;
+    game().setPaused(true);
+    paused.value = true;
+    showPause.value = true;
+    uiClick();
+}
+
+/** Resume: close the pause menu and unfreeze the sim. */
+export function resumeGame(): void {
+    showPause.value = false;
+    game().setPaused(false);
+    paused.value = false;
+    uiClick();
+}
+
+/** Quit the current battle back to the main menu (UI). */
+export function quitToMenu(): void {
+    showPause.value = false;
+    showSettings.value = false;
+    game().setPaused(false);
+    paused.value = false;
+    screen.value = 'menu';
+    uiClick();
+}
+
 /** Depot actions — mutate the controller's economy, then re-sync + click. */
 export function depotBuy(i: number): void {
     if (controller?.buyWeapon(i)) {
@@ -188,11 +218,16 @@ const bmpCache = new Map<string, Promise<string | null>>();
 
 // Colour-key predicates. The zeon dialog art keys grey (64,64,64) as its outside
 // (so the rounded corners cut out), while its arrows key pure green (0,255,0).
-export type BmpKey = 'magenta' | 'green' | 'grey';
+export type BmpKey = 'magenta' | 'green' | 'grey' | 'greyblack';
+const isGrey = (p: Uint8ClampedArray, i: number) =>
+    Math.abs(p[i] - 64) < 26 && Math.abs(p[i + 1] - 64) < 26 && Math.abs(p[i + 2] - 64) < 26;
 const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
     magenta: (p, i) => p[i] > 200 && p[i + 1] < 70 && p[i + 2] > 200,
     green: (p, i) => p[i] < 70 && p[i + 1] > 200 && p[i + 2] < 70,
-    grey: (p, i) => Math.abs(p[i] - 64) < 26 && Math.abs(p[i + 1] - 64) < 26 && Math.abs(p[i + 2] - 64) < 26,
+    grey: isGrey,
+    // grey outside + black corner outline both keyed — the zeon dialog with its
+    // black rounded-corner border stripped (legacy tooltips have no black border).
+    greyblack: (p, i) => isGrey(p, i) || (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40),
 };
 
 /** Load an /assets BMP, knock out the `key` colour as transparency, cache it.

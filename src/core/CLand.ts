@@ -531,7 +531,12 @@ export class CLand {
     update(dt: number): void {
         const GRAVITY = 500;
 
-        for (let i = this.m_particles.length - 1; i >= 0; i--) {
+        // Compact-forward removal (a write index), NOT splice(i,1): a nuke flings
+        // ~6500 chunks, and hundreds settle per frame — each splice shifts the whole
+        // tail (O(n)), so settling was O(n²) per frame. That is the hitch on impact and
+        // the sluggish earth settle. Copying survivors forward and truncating once is O(n).
+        let dw = 0;
+        for (let i = 0; i < this.m_particles.length; i++) {
             const p = this.m_particles[i];
 
             p.vy += GRAVITY * dt;
@@ -539,16 +544,12 @@ export class CLand {
             p.y += p.vy * dt;
 
             const col = Math.floor(p.x);
-            if (col < 0 || col >= this.m_nWidth) {
-                this.m_particles.splice(i, 1);
-                continue;
-            }
+            if (col < 0 || col >= this.m_nWidth) continue;   // left the field → drop
 
             // A chunk settles when it reaches the surface (only on the way down) and
             // deposits — raising a column by 1px. The landing column is jittered ±2 (as
             // the original does) so chunks spread instead of stacking into a thin spike.
             if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
-                this.m_particles.splice(i, 1);
                 const dcol = Math.min(this.m_nWidth - 1, Math.max(0, col + ((Math.random() * 5) | 0) - 2));
                 this.m_arrHeights[dcol] = Math.max(0, this.m_arrHeights[dcol] - 1);
                 if (this.m_baseHeights) this.m_baseHeights[dcol] = Math.min(this.m_baseHeights[dcol], this.m_arrHeights[dcol]);
@@ -569,8 +570,12 @@ export class CLand {
                 this.m_slumpTimer = 3;
                 this.m_slumpX0 = Math.min(this.m_slumpX0, dcol - 3);
                 this.m_slumpX1 = Math.max(this.m_slumpX1, dcol + 3);
+                continue;   // settled → deposited → drop
             }
+
+            this.m_particles[dw++] = p;   // still airborne → keep
         }
+        this.m_particles.length = dw;
 
         // Terrain slump (avalanche): where adjacent columns differ by more than the
         // repose threshold, move 1px of dirt from the taller to the lower — this
@@ -586,34 +591,30 @@ export class CLand {
             }
         }
 
-        for (let i = this.m_radParticles.length - 1; i >= 0; i--) {
+        let rw = 0;
+        for (let i = 0; i < this.m_radParticles.length; i++) {
             const r = this.m_radParticles[i];
             r.timeRemaining -= dt;
-
-            if (r.timeRemaining <= 0) {
-                this.m_radParticles.splice(i, 1);
-            }
+            if (r.timeRemaining <= 0) continue;   // zone expired → drop
+            this.m_radParticles[rw++] = r;
         }
+        this.m_radParticles.length = rw;
 
         // Radiation specks: fall until they hit the surface, then settle and glow.
+        // Compact-forward too — up to ~12000 specks meant splice(i,1) was O(n²).
         const RAD_GRAV = 320;
-        for (let i = this.m_radSpecks.length - 1; i >= 0; i--) {
+        let sw = 0;
+        for (let i = 0; i < this.m_radSpecks.length; i++) {
             const s = this.m_radSpecks[i];
             s.age += dt;
-            if (s.age >= s.life) {
-                this.m_radSpecks.splice(i, 1);
-                continue;
-            }
+            if (s.age >= s.life) continue;   // faded out → drop
 
             if (!s.settled) {
                 s.vy += RAD_GRAV * dt;
                 s.x += s.vx * dt;
                 s.y += s.vy * dt;
                 const col = Math.floor(s.x);
-                if (col < 0 || col >= this.m_nWidth) {
-                    this.m_radSpecks.splice(i, 1);
-                    continue;
-                }
+                if (col < 0 || col >= this.m_nWidth) continue;   // left the field → drop
                 if (s.vy > 0 && s.y >= this.getHeightAt(col)) {
                     s.settled = true;
                     s.vx = s.vy = 0;
@@ -632,7 +633,9 @@ export class CLand {
                 const col = Math.floor(s.x);
                 if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col) - s.rise;
             }
+            this.m_radSpecks[sw++] = s;   // still live → keep
         }
+        this.m_radSpecks.length = sw;
 
         // Heat haze: faint warm plumes rise off the live fallout — spawned across the
         // active deposit (fewer as the zone cools), they lift, widen and fade so the
@@ -665,14 +668,17 @@ export class CLand {
                 }
             }
         }
-        for (let i = this.m_heat.length - 1; i >= 0; i--) {
+        let hw = 0;
+        for (let i = 0; i < this.m_heat.length; i++) {
             const h = this.m_heat[i];
             h.age += dt;
-            if (h.age >= h.life) { this.m_heat.splice(i, 1); continue; }
+            if (h.age >= h.life) continue;   // faded → drop
             h.y -= (26 + h.size) * dt;    // rise, bigger plumes lift faster
             h.x += h.vx * dt;
             h.rot += h.spin * dt;         // slow tumble
+            this.m_heat[hw++] = h;
         }
+        this.m_heat.length = hw;
     }
 
     /** Lazily build the soft warm radial glow blitted per heat wisp (additive). */
