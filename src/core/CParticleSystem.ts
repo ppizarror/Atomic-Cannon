@@ -450,7 +450,7 @@ export class CParticleSystem {
 
     /** In-flight trail — call each frame while a shot flies. A hot leading glow
      * plus a grey smoke puff that lingers and drifts downwind. */
-    trail(x: number, y: number, color: string, vx = 0, vy = 0, trailType = 1, trailLength = 0, dt = 0.016): void {
+    trail(x: number, y: number, _color: string, vx = 0, vy = 0, trailType = 1, trailLength = 0, dt = 0.016): void {
         if (trailType <= 0) return;   // no trail (nukes / beams / diggers)
         const speed = Math.hypot(vx, vy);
         const rocket = trailType >= 2;                       // rocket/missile exhaust
@@ -460,7 +460,6 @@ export class CParticleSystem {
         // segment length (≈ speed·dt) → a faster (higher-power) shot lays down a
         // longer, denser streak (RE: faster ⇒ more visible smoke, via SPEED).
         const steps = Math.max(rocket ? 2 : 1, Math.ceil((speed * dt) / 3));
-        const spark = toward255(parseColor(color), 0.55);   // weapon-tinted, brightened
         for (let s = 0; s < steps; s++) {
             const f = s / steps;                             // 0 = head, →1 = last-frame position
             const px = x - vx * dt * f, py = y - vy * dt * f;
@@ -481,18 +480,16 @@ export class CParticleSystem {
                     {r: g, g, b: g}, between(1.0, 1.8) * lenScale, between(1.6, 3.2), 'smoke',
                 );
             } else {
-                // BALLISTIC shell (trailType 1) — RE: only a flare puff + sparks, NO
-                // smoke. Tinted toward the weapon's colour so rails read light-blue,
-                // shells white, etc. (fixes shells/rails wrongly puffing grey smoke).
+                // BALLISTIC shell (trailType 1: rail/rail slice/artillery/shell) — the
+                // original emits ONLY a faint WHITE spark puff (flares_04, forced
+                // 0xffffff), never a rocket plume and never a weapon-coloured glow. So
+                // these leave a subtle neutral spark trace, NOT the "rocket fire" a
+                // tinted additive flare produced. The rocket exhaust plume is reserved
+                // for trailType ≥ 2 (missiles/jets) above.
                 this.add(
                     px, py,
-                    between(-3, 3), between(-3, 2),
-                    spark, between(0.12, 0.26) * lenScale, between(0.7, 1.3), 'plume',
-                );
-                this.add(
-                    px, py,
-                    between(-16, 16), between(-8, 18),
-                    spark, between(0.12, 0.3), between(0.6, 1.1), 'disc',
+                    between(-8, 8), between(-6, 10),
+                    {r: 230, g: 230, b: 232}, between(0.06, 0.14), between(0.5, 0.9), 'disc',
                 );
             }
         }

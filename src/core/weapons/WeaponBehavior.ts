@@ -266,12 +266,17 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     if (!isCleaner) world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam);
 
     // Radiation zone (NUKE/DOT/Organic/…): irDmg/sec for irTime s, tinted irRGB.
-    // INTERP — the DOT applicator is outside the decompiled subset; driven by real fields.
+    // The original throws the fallout as a speck cloud out of the crater — each speck
+    // lands at `dist = rand01 * radius` and the density is ∝ radius (RE notes:
+    // FUN_004a6c20 / terrain_and_beam_fx.md). So the zone spreads within the BLAST
+    // RADIUS, never a separate scale. `iradiate` is only the on/off gate the original
+    // tests as `threshold < iradiate` (already covered by rad.time/rad.dmg > 0 here) —
+    // it is NOT a spatial radius, so it must not size the zone. Nukes throw a slightly
+    // wider field, tracking their heavier (×1.35) crater.
     const rad = weapon.getRadiation();
     if (rad.time > 0 && rad.dmg > 0) {
-        // Nukes spread a much wider fallout field than their crater.
         const big = weapon.getExpType() === 4 || weapon.isNuclear();
-        const zoneR = Math.max(Math.round(radiusPx * (big ? 1.4 : 1)), Math.round(rad.amount * 800));
+        const zoneR = Math.round(radiusPx * (big ? 1.4 : 1));
         land.blastIradiate(Math.floor(pos.x), Math.floor(surfaceY), zoneR, rad.dmg * 60, rad.time, rad.rgb);
     }
 
