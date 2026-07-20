@@ -9,9 +9,16 @@
  * different (plain dark, rounded) card — which is the visual inconsistency this fixes:
  * every dialog now wears the same dialog.bmp frame.
  */
-import type { ComponentChildren, JSX } from 'preact';
+import type {ComponentChildren, JSX} from 'preact';
 
-export function Modal({ backdrop = 'scrim', onClose, width, maxHeight, class: cls, children }: {
+export function Modal({
+  backdrop = 'scrim',
+  onClose,
+  width,
+  maxHeight,
+  class: cls,
+  children,
+}: {
   /** `scrim` dims the current screen; `steel` fills the viewport with the steel plate. */
   backdrop?: 'scrim' | 'steel';
   /** Backdrop-click handler. Omit for a full-screen modal that closes via its own button. */
@@ -27,7 +34,11 @@ export function Modal({ backdrop = 'scrim', onClose, width, maxHeight, class: cl
   if (maxHeight) style.maxHeight = maxHeight;
   return (
     <div class={`overlay modal-overlay modal-${backdrop}`} onClick={onClose}>
-      <div class={`modal-card dialog-frame ${cls ?? ''}`} style={style} onClick={e => e.stopPropagation()}>
+      <div
+        class={`modal-card dialog-frame ${cls ?? ''}`}
+        style={style}
+        onClick={e => e.stopPropagation()}
+      >
         {children}
       </div>
     </div>

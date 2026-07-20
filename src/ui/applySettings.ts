@@ -7,9 +7,9 @@
  * Called at boot and before each new game (so a fresh match honours the options),
  * and again whenever an option changes (so live settings update at once).
  */
-import type { CGameController } from '../game/CGameController';
-import { GameConfig } from '../core/CGameConfig';
-import { gameSettings as S } from './settingsValues';
+import type {CGameController} from '../game/CGameController';
+import {GameConfig} from '../core/CGameConfig';
+import {gameSettings as S} from './settingsValues';
 
 export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.

@@ -9,9 +9,9 @@
  * possible; the rest are persisted UI whose hooks land as the matching
  * systems come online.
  */
-import { getVal, setVal } from './settingsStore';
-import { game, openSettingsPage, uiClick } from './store';
-import { applyGameSettings } from './applySettings';
+import {getVal, setVal} from './settingsStore';
+import {game, openSettingsPage, uiClick} from './store';
+import {applyGameSettings} from './applySettings';
 
 export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';
 
@@ -20,11 +20,14 @@ export interface Widget {
   /** Hover subtitle (the option's description). */
   tip: string;
   kind: WidgetKind;
-  get: () => number;                 // current value (enum index / raw stepper / 0-1 toggle)
+  get: () => number; // current value (enum index / raw stepper / 0-1 toggle)
   set?: (v: number) => void;
-  options?: string[];                // enum labels
-  min?: number; max?: number; step?: number; fmt?: (v: number) => string;   // stepper
-  onClick?: () => void;              // nav
+  options?: string[]; // enum labels
+  min?: number;
+  max?: number;
+  step?: number;
+  fmt?: (v: number) => string; // stepper
+  onClick?: () => void; // nav
 }
 
 export interface PageSpec {
@@ -35,8 +38,18 @@ export interface PageSpec {
 }
 
 // ── enum option pools, in the game's own index-0 (value = min) first order. ──
-const DIFFICULTY = ['1. Easiest', '2. Very Easy', '3. Easy', '4. Moderate', '5. Fun',
-  '6. Challenging', '7. Hard', '8. Very Hard', '9. Mastery', '10. Elite'];
+const DIFFICULTY = [
+  '1. Easiest',
+  '2. Very Easy',
+  '3. Easy',
+  '4. Moderate',
+  '5. Fun',
+  '6. Challenging',
+  '7. Hard',
+  '8. Very Hard',
+  '9. Mastery',
+  '10. Elite',
+];
 const CHANGE_WIND = ['Per game', 'After round', 'After shot', 'Anytime'];
 const LAND_TYPE = ['Flat', 'Hill', 'Gulley', 'Plateau', 'Slope', 'Random'];
 const PLAYBACK_RATE = ['8000', '11025', '16000', '22050', '32000', '44100'];
@@ -48,7 +61,12 @@ const DETAIL = ['Old School', 'Simple', 'High', 'Wargame'];
 const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
 // The web canvas has no enumerable display modes, so Resolution is presented as the
 // common sizes formatted "%dx%dx%d %dHz", a remembered (cosmetic) preference.
-const RESOLUTION = ['800x600x32 60Hz', '1024x768x32 60Hz', '1280x1024x32 60Hz', '1920x1080x32 60Hz'];
+const RESOLUTION = [
+  '800x600x32 60Hz',
+  '1024x768x32 60Hz',
+  '1280x1024x32 60Hz',
+  '1920x1080x32 60Hz',
+];
 
 const pct = (v: number) => `${v}%`;
 
@@ -58,26 +76,100 @@ const pct = (v: number) => `${v}%`;
 // next game.
 const bind = (id: string, dflt: number) => ({
   get: () => getVal(id, dflt),
-  set: (v: number) => { setVal(id, v); applyGameSettings(game()); },
+  set: (v: number) => {
+    setVal(id, v);
+    applyGameSettings(game());
+  },
 });
-const toggle = (label: string, tip: string, id: string, dflt: number): Widget =>
-  ({ label, tip, kind: 'toggle', ...bind(id, dflt) });
-const enumW = (label: string, tip: string, id: string, dflt: number, options: string[]): Widget =>
-  ({ label, tip, kind: 'enum', options, ...bind(id, dflt) });
-const stepper = (label: string, tip: string, id: string, dflt: number,
-  min: number, max: number, step: number, fmt?: (v: number) => string): Widget =>
-  ({ label, tip, kind: 'stepper', min, max, step, fmt, ...bind(id, dflt) });
+const toggle = (label: string, tip: string, id: string, dflt: number): Widget => ({
+  label,
+  tip,
+  kind: 'toggle',
+  ...bind(id, dflt),
+});
+const enumW = (
+  label: string,
+  tip: string,
+  id: string,
+  dflt: number,
+  options: string[],
+): Widget => ({label, tip, kind: 'enum', options, ...bind(id, dflt)});
+const stepper = (
+  label: string,
+  tip: string,
+  id: string,
+  dflt: number,
+  min: number,
+  max: number,
+  step: number,
+  fmt?: (v: number) => string,
+): Widget => ({label, tip, kind: 'stepper', min, max, step, fmt, ...bind(id, dflt)});
 
 // ── pages ────────────────────────────────────────────────────────────────────
 function economyRows(): Widget[] {
   return [
-    enumW('Buy Time', 'When players are allowed to buy, set to automatic for randomly assigned weapons', 'eco.buyTime', 0, BUY_TIME),
-    stepper('Credit Start', 'Credits given to each player at match start (default 3000)', 'eco.creditStart', 3000, 0, 20000, 500),
-    stepper('Credit Round', 'Credits given to each player each round (default 1000)', 'eco.creditRound', 1000, 0, 10000, 250),
-    stepper('Credit Turn', 'Credits given to each player per turn (default 0)', 'eco.creditTurn', 0, 0, 5000, 100),
-    stepper('Credit Kill', 'Credits given to each player per kill (default 500)', 'eco.creditKill', 500, 0, 5000, 100),
-    stepper('Credit Damage', 'Credits given to each player per damage done (default 1)', 'eco.creditDamage', 1, 0, 100, 1),
-    stepper('Sell Back Rate', 'Rate at which weapons are sold back to depot (default 50%)', 'eco.sellBack', 50, 0, 100, 5, pct),
+    enumW(
+      'Buy Time',
+      'When players are allowed to buy, set to automatic for randomly assigned weapons',
+      'eco.buyTime',
+      0,
+      BUY_TIME,
+    ),
+    stepper(
+      'Credit Start',
+      'Credits given to each player at match start (default 3000)',
+      'eco.creditStart',
+      3000,
+      0,
+      20000,
+      500,
+    ),
+    stepper(
+      'Credit Round',
+      'Credits given to each player each round (default 1000)',
+      'eco.creditRound',
+      1000,
+      0,
+      10000,
+      250,
+    ),
+    stepper(
+      'Credit Turn',
+      'Credits given to each player per turn (default 0)',
+      'eco.creditTurn',
+      0,
+      0,
+      5000,
+      100,
+    ),
+    stepper(
+      'Credit Kill',
+      'Credits given to each player per kill (default 500)',
+      'eco.creditKill',
+      500,
+      0,
+      5000,
+      100,
+    ),
+    stepper(
+      'Credit Damage',
+      'Credits given to each player per damage done (default 1)',
+      'eco.creditDamage',
+      1,
+      0,
+      100,
+      1,
+    ),
+    stepper(
+      'Sell Back Rate',
+      'Rate at which weapons are sold back to depot (default 50%)',
+      'eco.sellBack',
+      50,
+      0,
+      100,
+      5,
+      pct,
+    ),
   ];
 }
 
@@ -87,8 +179,25 @@ function tankRows(): Widget[] {
     enumW('Player Size', 'How big the tanks are.', 'tank.size', 1, PLAYER_SIZE),
     toggle('Relative Turrets', 'Aiming it relative to the tank', 'tank.relTurrets', 0),
     toggle('Bury Tanks', 'Tanks can be underground', 'tank.bury', 0),
-    stepper('Power Scale', 'This affects how far a shot will go based on power', 'tank.powerScale', 100, 10, 300, 10, pct),
-    stepper('Hitpoints', 'Number of points tank starts with', 'tank.hitpoints', 1000, 100, 5000, 100),
+    stepper(
+      'Power Scale',
+      'This affects how far a shot will go based on power',
+      'tank.powerScale',
+      100,
+      10,
+      300,
+      10,
+      pct,
+    ),
+    stepper(
+      'Hitpoints',
+      'Number of points tank starts with',
+      'tank.hitpoints',
+      1000,
+      100,
+      5000,
+      100,
+    ),
     toggle('Chatter', 'Tanks talk to each other', 'tank.chatter', 1),
     toggle('Colorize Team', 'Tanks are team color', 'tank.colorize', 1),
   ];
@@ -102,13 +211,27 @@ function gameplayRows(): Widget[] {
     // controller.setDifficulty); index 0..9 maps to AI level 1..10.
     enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty', 4, DIFFICULTY),
     enumW('Wind', 'How the wind affects the trajectories', 'gp.wind', 2, WIND),
-    enumW('Change Wind', 'Defines when the wind changes direction', 'gp.changeWind', 0, CHANGE_WIND),
+    enumW(
+      'Change Wind',
+      'Defines when the wind changes direction',
+      'gp.changeWind',
+      0,
+      CHANGE_WIND,
+    ),
     enumW('Explosion Size', 'How big the explosions are.', 'gp.explosionSize', 1, EXPLOSION_SIZE),
     toggle('Variance', 'All weapons have a different random variance when shot', 'gp.variance', 1),
     toggle('Utility Turn', 'If a utility item use counts as turn', 'gp.utilTurn', 0),
     toggle('Randomize Turns', 'Randomly assings the turn order each battle', 'gp.randTurns', 0),
     stepper('Crates', 'Chance to drop a crate each round', 'gp.crates', 20, 0, 100, 5, pct),
-    stepper('Update Scale', 'The speed at which the game is animated (default 10)', 'gp.updateScale', 10, 1, 30, 1),
+    stepper(
+      'Update Scale',
+      'The speed at which the game is animated (default 10)',
+      'gp.updateScale',
+      10,
+      1,
+      30,
+      1,
+    ),
     toggle('Right Click Fires', 'If you are accidentally firing disable this', 'gp.rcFires', 1),
   ];
 }
@@ -116,7 +239,12 @@ function gameplayRows(): Widget[] {
 function graphicsRows(): Widget[] {
   return [
     enumW('Resolution', 'Window size or monitor size (requires restart)', 'gfx.res', 1, RESOLUTION),
-    toggle('Full Screen', 'Toggle the game between full screen and windowed modes', 'gfx.fullscreen', 0),
+    toggle(
+      'Full Screen',
+      'Toggle the game between full screen and windowed modes',
+      'gfx.fullscreen',
+      0,
+    ),
     toggle('Tracking', 'Draws a notch for off screen shots', 'gfx.tracking', 1),
     toggle('Draw Smoke', 'Draws smoking plumes on ground', 'gfx.smoke', 1),
     enumW('Detail', 'Lower detail for smoother gameplay', 'gfx.detail', 2, DETAIL),
@@ -126,7 +254,13 @@ function graphicsRows(): Widget[] {
     toggle('Show Team Color', 'Display each tanks name and team color', 'gfx.teamColor', 1),
     toggle('Small Buy Fonts', 'Use a smaller font on the buy menu', 'gfx.smallBuy', 0),
     toggle('Power Save', 'The game idles to lower power usage', 'gfx.powerSave', 0),
-    { label: 'More Graphics Options', tip: 'Adjust graphics settings', kind: 'nav', get: () => 0, onClick: () => openSettingsPage('graphics2') },
+    {
+      label: 'More Graphics Options',
+      tip: 'Adjust graphics settings',
+      kind: 'nav',
+      get: () => 0,
+      onClick: () => openSettingsPage('graphics2'),
+    },
   ];
 }
 
@@ -149,21 +283,41 @@ function audioRows(): Widget[] {
   const a = game().getAudio();
   return [
     {
-      label: 'Sound', tip: 'Toggle sound effects on and off', kind: 'toggle',
-      get: () => (a?.isSfxEnabled() ? 1 : 0), set: (v: number) => a?.setSfxEnabled(!!v),
+      label: 'Sound',
+      tip: 'Toggle sound effects on and off',
+      kind: 'toggle',
+      get: () => (a?.isSfxEnabled() ? 1 : 0),
+      set: (v: number) => a?.setSfxEnabled(!!v),
     },
     {
-      label: 'Music', tip: 'Toggle music on and off', kind: 'toggle',
-      get: () => (a?.isMusicEnabled() ? 1 : 0), set: (v: number) => a?.setMusicEnabled(!!v),
+      label: 'Music',
+      tip: 'Toggle music on and off',
+      kind: 'toggle',
+      get: () => (a?.isMusicEnabled() ? 1 : 0),
+      set: (v: number) => a?.setMusicEnabled(!!v),
     },
     {
       // CAudio volumes are already 0..100 (percent) — pass through, don't rescale.
-      label: 'Sound Volume', tip: 'Sound effects volume', kind: 'stepper', min: 0, max: 100, step: 10, fmt: pct,
-      get: () => Math.round(a?.getSfxVolume() ?? 100), set: (v: number) => a?.setSfxVolume(v),
+      label: 'Sound Volume',
+      tip: 'Sound effects volume',
+      kind: 'stepper',
+      min: 0,
+      max: 100,
+      step: 10,
+      fmt: pct,
+      get: () => Math.round(a?.getSfxVolume() ?? 100),
+      set: (v: number) => a?.setSfxVolume(v),
     },
     {
-      label: 'Music Volume', tip: 'Music soundtrack volume', kind: 'stepper', min: 0, max: 100, step: 10, fmt: pct,
-      get: () => Math.round(a?.getMusicVolume() ?? 100), set: (v: number) => a?.setMusicVolume(v),
+      label: 'Music Volume',
+      tip: 'Music soundtrack volume',
+      kind: 'stepper',
+      min: 0,
+      max: 100,
+      step: 10,
+      fmt: pct,
+      get: () => Math.round(a?.getMusicVolume() ?? 100),
+      set: (v: number) => a?.setMusicVolume(v),
     },
     toggle('Stereo', 'Enable stereo sound', 'aud.stereo', 1),
     enumW('Playback Rate', 'Sound playback sampling frequency rate', 'aud.rate', 5, PLAYBACK_RATE),
@@ -174,20 +328,40 @@ function contentRows(): Widget[] {
   // Weapons / Landscapes open dedicated enable-list editors (over the steel plate);
   // those screens aren't built yet, so the rows click but don't navigate.
   return [
-    { label: 'Weapons', tip: 'Enable only the weapons you want (quits current game)', kind: 'nav', get: () => 0, onClick: uiClick },
-    { label: 'Landscapes', tip: 'Enable only the landscapes you want (quits current game)', kind: 'nav', get: () => 0, onClick: uiClick },
+    {
+      label: 'Weapons',
+      tip: 'Enable only the weapons you want (quits current game)',
+      kind: 'nav',
+      get: () => 0,
+      onClick: uiClick,
+    },
+    {
+      label: 'Landscapes',
+      tip: 'Enable only the landscapes you want (quits current game)',
+      kind: 'nav',
+      get: () => 0,
+      onClick: uiClick,
+    },
   ];
 }
 
 export function getSettingsPage(id: string): PageSpec | null {
   switch (id) {
-    case 'economy': return { id, header: 'Adjust economic settings', rows: economyRows() };
-    case 'tank': return { id, header: 'Adjust tank settings', rows: tankRows() };
-    case 'gameplay': return { id, header: 'Adjust gameplay settings', rows: gameplayRows() };
-    case 'graphics': return { id, header: 'Adjust graphics settings', rows: graphicsRows() };
-    case 'graphics2': return { id, header: 'Adjust graphics settings', rows: graphics2Rows() };
-    case 'audio': return { id, header: 'Adjust sound and music settings', rows: audioRows() };
-    case 'content': return { id, header: 'Enable specific weapons and landscapes', rows: contentRows() };
-    default: return null;
+    case 'economy':
+      return {id, header: 'Adjust economic settings', rows: economyRows()};
+    case 'tank':
+      return {id, header: 'Adjust tank settings', rows: tankRows()};
+    case 'gameplay':
+      return {id, header: 'Adjust gameplay settings', rows: gameplayRows()};
+    case 'graphics':
+      return {id, header: 'Adjust graphics settings', rows: graphicsRows()};
+    case 'graphics2':
+      return {id, header: 'Adjust graphics settings', rows: graphics2Rows()};
+    case 'audio':
+      return {id, header: 'Adjust sound and music settings', rows: audioRows()};
+    case 'content':
+      return {id, header: 'Enable specific weapons and landscapes', rows: contentRows()};
+    default:
+      return null;
   }
 }

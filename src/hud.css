@@ -1,63 +1,65 @@
 /* Atomic Cannon HUD — real gui.bmp control panel with live overlays. */
 
 :root {
-    --hud-h: 152px;
-    /* Shared width for every menu list (main menu, pause, Settings root + option
-       rows) so their highlight boxes are the same full width — one uniform button. */
-    --menu-w: min(860px, 82vw);
+  --hud-h: 152px;
+  /* Shared width for every menu list (main menu, pause, Settings root + option
+     rows) so their highlight boxes are the same full width — one uniform button. */
+  --menu-w: min(860px, 82vw);
 
-    /* z-index ladder — one ordered scale instead of ad-hoc values sprinkled around.
-       Everything that stacks reads from here so the ordering is legible in one place. */
-    --z-hud: 10;              /* HUD bar, battle status, turn indicator */
-    --z-flight: 15;           /* jet-flight indicator */
-    --z-overlay: 20;          /* generic full-screen overlays (placeholder) */
-    --z-depot: 21;            /* weapons depot */
-    --z-depot-tip: 22;        /* depot tooltip */
-    --z-depot-stats: 23;      /* depot stats popup */
-    --z-screen: 25;           /* main menu / settings root */
-    --z-modal: 30;            /* dialog modals (help / about) — above the screens */
-    --z-flash: 9999;          /* nuke white-out */
-    --z-gate: 10000;          /* resolution-too-small gate — above everything */
+  /* z-index ladder — one ordered scale instead of ad-hoc values sprinkled around.
+     Everything that stacks reads from here so the ordering is legible in one place. */
+  --z-hud: 10; /* HUD bar, battle status, turn indicator */
+  --z-flight: 15; /* jet-flight indicator */
+  --z-overlay: 20; /* generic full-screen overlays (placeholder) */
+  --z-depot: 21; /* weapons depot */
+  --z-depot-tip: 22; /* depot tooltip */
+  --z-depot-stats: 23; /* depot stats popup */
+  --z-screen: 25; /* main menu / settings root */
+  --z-modal: 30; /* dialog modals (help / about) — above the screens */
+  --z-flash: 9999; /* nuke white-out */
+  --z-gate: 10000; /* resolution-too-small gate — above everything */
 
-    /* One dim wash behind every scrim overlay (was 0.5 / 0.55 / 0.72 — now uniform). */
-    --overlay-scrim: rgba(0, 0, 0, 0.6);
+  /* One dim wash behind every scrim overlay (was 0.5 / 0.55 / 0.72 — now uniform). */
+  --overlay-scrim: rgba(0, 0, 0, 0.6);
 
-    /* Shared brushed-metal button/panel gradients (bright + standard + deep). */
-    --metal-grad-hi: linear-gradient(#d3d8df, #9aa0a8);
-    --metal-grad: linear-gradient(#c3c8cf, #8b9198);
-    --metal-grad-deep: linear-gradient(#9aa0a8, #626870);
+  /* Shared brushed-metal button/panel gradients (bright + standard + deep). */
+  --metal-grad-hi: linear-gradient(#d3d8df, #9aa0a8);
+  --metal-grad: linear-gradient(#c3c8cf, #8b9198);
+  --metal-grad-deep: linear-gradient(#9aa0a8, #626870);
 }
 
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-html, body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-    background: #000;
-    color: #cfe;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    /* No text/element selection or image dragging anywhere in the game UI. */
-    user-select: none;
-    -webkit-user-select: none;
+  background: #000;
+  color: #cfe;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  /* No text/element selection or image dragging anywhere in the game UI. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-img, canvas {
-    -webkit-user-drag: none;
-    user-select: none;
+img,
+canvas {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 /* Every BmpText / ZeonFrame / Pixi canvas renders as a block — kills the inline
    baseline gap. BmpText also sets this inline. */
 canvas {
-    display: block;
+  display: block;
 }
 
 /* ---- shared building blocks -------------------------------------------------
@@ -66,184 +68,185 @@ canvas {
    .menu-list    the shared vertical menu column (main menu / pause / settings)
    .menu-item    one centered menu entry (paired with .menu-btn in <MenuButton>) */
 .overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dialog-frame {
-    border: 12px solid transparent;
-    border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
-    image-rendering: pixelated;
+  border: 12px solid transparent;
+  border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
+  image-rendering: pixelated;
 }
 
 .menu-list {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;          /* items fill --menu-w → full-width highlight box */
-    width: var(--menu-w);
-    gap: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch; /* items fill --menu-w → full-width highlight box */
+  width: var(--menu-w);
+  gap: 2px;
 }
 
 .menu-item {
-    display: flex;
-    justify-content: center;
-    padding: 1px 0;
+  display: flex;
+  justify-content: center;
+  padding: 1px 0;
 }
 
 /* World renders here, ABOVE the HUD (not behind it). */
 #game-container {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: calc(100vh - var(--hud-h));
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(100vh - var(--hud-h));
 }
 
 #game-container canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* ---- top-left status text (life per tank, battle + shot) ---- */
 #battle-status {
-    position: absolute;
-    top: 6px;
-    left: 8px;
-    z-index: var(--z-hud);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
-    pointer-events: none;
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  pointer-events: none;
 }
 
 .bstat-line {
-    border: 1px solid transparent;
-    padding: 0 4px;
+  border: 1px solid transparent;
+  padding: 0 4px;
 }
 
 /* square box, no radius */
 /* only the active line is boxed — team border + semi-transparent team fill (inline) */
 .bstat-line.dead {
-    opacity: 0.55;
+  opacity: 0.55;
 }
 
 #turn-indicator {
-    position: absolute;
-    top: 34%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: var(--z-hud);
-    font-size: clamp(22px, 4vw, 40px);
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 0 0 20px rgba(255, 200, 0, .85);
-    opacity: 0;
-    transition: opacity .3s;
-    pointer-events: none;
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--z-hud);
+  font-size: clamp(22px, 4vw, 40px);
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(255, 200, 0, 0.85);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
 }
 
 #turn-indicator.visible {
-    opacity: 1;
+  opacity: 1;
 }
 
 /* ============ HUD bar ============ */
 #hud {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: var(--hud-h);
-    z-index: var(--z-hud);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 6px 10px;
-    /* the real HUD filler metal */
-    background: url('/assets/gui/gui empty.bmp') repeat-x;
-    background-size: auto 100%;
-    image-rendering: pixelated;
-    border-top: 2px solid #4a4f55;
-    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12);
-    font-size: 12px;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--hud-h);
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 10px;
+  /* the real HUD filler metal */
+  background: url('/assets/gui/gui empty.bmp') repeat-x;
+  background-size: auto 100%;
+  image-rendering: pixelated;
+  border-top: 2px solid #4a4f55;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.12);
+  font-size: 12px;
 }
 
 /* the gui.bmp panel; its height fills the bar, width follows the image aspect */
 #hud-panel {
-    position: relative;
-    height: calc(var(--hud-h) - 14px);
-    flex: 0 0 auto;
+  position: relative;
+  height: calc(var(--hud-h) - 14px);
+  flex: 0 0 auto;
 }
 
 /* "Held" controls (paused / not the player's turn): each button greys out on its
    own — a translucent grey face over its rect — and stops taking pointer input,
    so nothing hovers or clicks. Per-control, not one panel-wide veil. */
 .ov-hotspot.blocked {
-    background: rgba(70, 74, 70, 0.5);
-    border-radius: 3px;
-    cursor: not-allowed;
-    pointer-events: none;
+  background: rgba(70, 74, 70, 0.5);
+  border-radius: 3px;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Weapon list greys as a block (it's one scrolling control, not a button grid). */
 .wlist.blocked {
-    pointer-events: none;
+  pointer-events: none;
 }
 
 .wlist.blocked::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: rgba(70, 74, 70, 0.5);
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(70, 74, 70, 0.5);
 }
 
 /* Invisible drag layers just stop responding — their readouts stay visible. */
-.meter-drag.blocked, .dial-drag.blocked {
-    pointer-events: none;
+.meter-drag.blocked,
+.dial-drag.blocked {
+  pointer-events: none;
 }
 
 .panel-bg {
-    height: 100%;
-    width: auto;
-    display: block;
-    image-rendering: pixelated;
+  height: 100%;
+  width: auto;
+  display: block;
+  image-rendering: pixelated;
 }
 
 /* generic overlay + transparent click hotspot */
 .ov {
-    position: absolute;
+  position: absolute;
 }
 
 .ov-hotspot {
-    position: absolute;
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-    padding: 0;
+  position: absolute;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
 }
 
 .ov-hotspot:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
 }
 
 .ov-hotspot:active {
-    background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 /* weapon list (over the panel's black box) — rows flush.
    No scrollbar here: the ▲/▼ arrows step through weapons and scrollIntoView keeps
    the active row visible, so the overflow just clips. */
 .wlist {
-    overflow: hidden;
-    padding: 0;
+  overflow: hidden;
+  padding: 0;
 }
 
 /* ---- Classic scrollbar (see ClassicScrollbar.tsx) --------------------------
@@ -252,187 +255,187 @@ canvas {
    thumb (it stays a rounded, edge-inset pill), so the native bar is hidden and
    this is drawn while the view scrolls underneath. */
 .cscroll-host {
-    position: relative;
+  position: relative;
 }
 
 .cscroll-view {
-    position: absolute;
-    inset: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-right: 12px;              /* reserve the track's column so rows clear it */
-    scrollbar-width: none;            /* Firefox: hide native bar */
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 12px; /* reserve the track's column so rows clear it */
+  scrollbar-width: none; /* Firefox: hide native bar */
 }
 
 .cscroll-view::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-    display: none;                    /* WebKit/Blink: hide native bar */
+  width: 0;
+  height: 0;
+  display: none; /* WebKit/Blink: hide native bar */
 }
 
 .cscroll-bar {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 12px;
-    background: #050605;              /* black groove */
-    pointer-events: none;               /* only the grip is grabbable */
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  background: #050605; /* black groove */
+  pointer-events: none; /* only the grip is grabbable */
 }
 
 .cscroll-grip {
-    position: absolute;
-    right: 0;
-    width: 12px;
-    background: #d8dce0;              /* solid white control — hard rectangle */
-    pointer-events: auto;
-    cursor: default;
+  position: absolute;
+  right: 0;
+  width: 12px;
+  background: #d8dce0; /* solid white control — hard rectangle */
+  pointer-events: auto;
+  cursor: default;
 }
 
 .cscroll-grip:hover {
-    background: #eef1f4;
+  background: #eef1f4;
 }
 
 .cscroll-grip:active {
-    background: #b7bcc1;
+  background: #b7bcc1;
 }
 
 .wrow {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0 2px;
-    height: 19.5px;
-    overflow: hidden;
-    cursor: pointer;
-    white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+  height: 19.5px;
+  overflow: hidden;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .wrow:hover {
-    background: rgba(120, 220, 120, 0.12);
+  background: rgba(120, 220, 120, 0.12);
 }
 
 .wrow.active {
-    background: rgba(60, 170, 70, 0.16);
-    outline: 1px solid #46cc46;
-    outline-offset: -1px;
+  background: rgba(60, 170, 70, 0.16);
+  outline: 1px solid #46cc46;
+  outline-offset: -1px;
 }
 
 .wicon {
-    width: 18px;
-    height: 18px;
-    display: block;
-    image-rendering: pixelated;
-    flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: block;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
 }
 
 .wtext {
-    flex: 0 1 auto;
-    min-width: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* 32x32 preview of the current weapon (box between the ▲/▼ arrows) */
 .weapon-preview {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .wbig {
-    width: 32px;
-    height: 32px;
-    image-rendering: pixelated;
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
 }
 
 /* live readouts (bitmap-font text, centred in their box) */
 .readout-box {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .meter-empty {
-    background: #090b09;
+  background: #090b09;
 }
 
 /* invisible grab layer over the power column — drag vertically to set power */
 .meter-drag {
-    cursor: ns-resize;
-    touch-action: none;
+  cursor: ns-resize;
+  touch-action: none;
 }
 
 /* FIRE (bitmap "fire" font over the silver panel box) */
 .fire-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 0;
-    cursor: pointer;
-    padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
 }
 
 .fire-btn:hover {
-    filter: brightness(1.12);
+  filter: brightness(1.12);
 }
 
 .fire-btn.disabled {
-    filter: grayscale(1) brightness(0.65);
-    cursor: not-allowed;
+  filter: grayscale(1) brightness(0.65);
+  cursor: not-allowed;
 }
 
 /* shot-time bar below FIRE: a small red end-marker + a thin, black-outlined
    green track that drains right→left. */
 .turn-timer {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
 }
 
 .turn-timer .tt-cap {
-    height: 100%;
-    aspect-ratio: 1;
-    background: #c81c1c;
-    border: 1px solid #000;
-    box-sizing: border-box;
+  height: 100%;
+  aspect-ratio: 1;
+  background: #c81c1c;
+  border: 1px solid #000;
+  box-sizing: border-box;
 }
 
 .turn-timer .tt-track {
-    flex: 1;
-    height: 100%;
-    background: #0a0f0a;
-    border: 1px solid #000;
-    box-sizing: border-box;
-    overflow: hidden;
+  flex: 1;
+  height: 100%;
+  background: #0a0f0a;
+  border: 1px solid #000;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .turn-timer .tt-fill {
-    height: 100%;
-    /* smooth the ~1%-quantised width steps into a continuous drain */
-    transition: width 0.12s linear;
+  height: 100%;
+  /* smooth the ~1%-quantised width steps into a continuous drain */
+  transition: width 0.12s linear;
 }
 
 /* angle needle drawn over the panel's dial */
 .dial-overlay {
-    pointer-events: none;
+  pointer-events: none;
 }
 
 /* invisible grab layer over the dial — drag horizontally to aim */
 .dial-drag {
-    cursor: ew-resize;
-    touch-action: none;
+  cursor: ew-resize;
+  touch-action: none;
 }
 
 .needle {
-    stroke: #e01e1e;
-    stroke-width: 2;
-    stroke-linecap: round;
-    filter: drop-shadow(0 0 1px rgba(255, 40, 40, .7));
+  stroke: #e01e1e;
+  stroke-width: 2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 1px rgba(255, 40, 40, 0.7));
 }
 
 /* side LCD boxes (weapon details / player stats) — black panels with a double
@@ -440,39 +443,39 @@ canvas {
    height) and top-align to where the weapon-list ("Select Weapon") box starts
    inside the panel — 11.7% down the 138px panel. */
 .side-lcd {
-    position: relative;
-    align-self: flex-start;
-    margin-top: 7px;
-    width: 155px;
-    flex: 0 0 auto;
-    background: #050705;
-    border: 2px solid;
-    border-color: #1a1d1a #000 #000 #1a1d1a;
-    border-radius: 2px;
-    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
-    padding: 6px 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    overflow: hidden;
+  position: relative;
+  align-self: flex-start;
+  margin-top: 7px;
+  width: 155px;
+  flex: 0 0 auto;
+  background: #050705;
+  border: 2px solid;
+  border-color: #1a1d1a #000 #000 #1a1d1a;
+  border-radius: 2px;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
 }
 
 /* Engraved inner frame — an inset double-border LCD look. */
 .side-lcd::before {
-    content: '';
-    position: absolute;
-    inset: 1px;
-    border: 1px solid rgba(150, 168, 150, 0.34);
-    border-radius: 1px;
-    pointer-events: none;
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border: 1px solid rgba(150, 168, 150, 0.34);
+  border-radius: 1px;
+  pointer-events: none;
 }
 
 .lcd-line {
-    flex: 0 0 auto;
+  flex: 0 0 auto;
 }
 
 .lcd-line:first-child {
-    margin-bottom: 2px;
+  margin-bottom: 2px;
 }
 
 /* Width-gated boxes: the panel keeps its innermost box on each side (Weapon
@@ -480,243 +483,251 @@ canvas {
    widens — outermost first to disappear. Order out from the panel:
    left  = weapon-details → weapon-details-2, right = player-stats → wind-measurements. */
 @media (max-width: 1580px) {
-    #weapon-details-2, #wind-measurements {
-        display: none;
-    }
+  #weapon-details-2,
+  #wind-measurements {
+    display: none;
+  }
 }
 
 @media (max-width: 1200px) {
-    #player-stats {
-        display: none;
-    }
+  #player-stats {
+    display: none;
+  }
 }
 
 @media (max-width: 1000px) {
-    #weapon-details {
-        display: none;
-    }
+  #weapon-details {
+    display: none;
+  }
 }
 
 /* ---- full-screen overlays (menu / settings / depot) — layout from .overlay ---- */
 .screen-overlay {
-    z-index: var(--z-overlay);
-    background: var(--overlay-scrim);
+  z-index: var(--z-overlay);
+  background: var(--overlay-scrim);
 }
 
 .screen-card {
-    background: var(--metal-grad-deep);
-    border: 2px solid #3a3f45;
-    border-radius: 10px;
-    padding: 30px 44px;
-    text-align: center;
-    color: #14171a;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  background: var(--metal-grad-deep);
+  border: 2px solid #3a3f45;
+  border-radius: 10px;
+  padding: 30px 44px;
+  text-align: center;
+  color: #14171a;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
 }
 
 .screen-card h1 {
-    margin-bottom: 8px;
+  margin-bottom: 8px;
 }
 
 .screen-card p {
-    margin-bottom: 18px;
-    color: #2a2f34;
+  margin-bottom: 18px;
+  color: #2a2f34;
 }
 
 /* Jet-flight indicator (top-centre while airborne) */
 .flight-hud {
-    position: fixed;
-    top: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: var(--z-flight);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    pointer-events: none;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-flight);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .flight-fuel {
-    font-size: 22px;
-    font-weight: 800;
-    color: #ffd23f;
-    letter-spacing: 1px;
-    font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 800;
+  color: #ffd23f;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
 }
 
 .flight-hint {
-    font-size: 13px;
-    color: #dfe8ef;
-    opacity: 0.9;
+  font-size: 13px;
+  color: #dfe8ef;
+  opacity: 0.9;
 }
 
 /* Full-viewport white-out for big blasts (nuke flash) — above everything. */
 .screen-flash {
-    position: fixed;
-    inset: 0;
-    background: #fff;
-    pointer-events: none;
-    z-index: var(--z-flash);
-    will-change: opacity;
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  z-index: var(--z-flash);
+  will-change: opacity;
 }
 
 /* ============================ WEAPONS DEPOT ============================ */
 .dep-overlay {
-    z-index: var(--z-depot);
-    background: var(--overlay-scrim);
+  z-index: var(--z-depot);
+  background: var(--overlay-scrim);
 }
 
 /* Brushed-metal panel (real depot texture) with a bevelled frame. */
 .dep-card {
-    position: relative;
-    width: min(700px, 94vw);
-    height: min(680px, 90vh);
-    display: flex;
-    flex-direction: column;
-    background: #4a4d55 url('/assets/gui/weapons depot.jpg') center/cover;
-    border: 2px solid #24262b;
-    border-radius: 6px;
-    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7), inset 0 0 0 2px rgba(255, 255, 255, 0.12), inset 0 0 60px rgba(0, 0, 0, 0.5);
-    padding: 14px 16px 12px;
-    color: #eef2f6;
-    font-variant-numeric: tabular-nums;
+  position: relative;
+  width: min(700px, 94vw);
+  height: min(680px, 90vh);
+  display: flex;
+  flex-direction: column;
+  background: #4a4d55 url('/assets/gui/weapons depot.jpg') center/cover;
+  border: 2px solid #24262b;
+  border-radius: 6px;
+  box-shadow:
+    0 8px 26px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.12),
+    inset 0 0 60px rgba(0, 0, 0, 0.5);
+  padding: 14px 16px 12px;
+  color: #eef2f6;
+  font-variant-numeric: tabular-nums;
 }
 
 .dep-head {
-    text-align: left;
-    margin-bottom: 6px;
+  text-align: left;
+  margin-bottom: 6px;
 }
 
 .dep-sub {
-    margin-top: 1px;
+  margin-top: 1px;
 }
 
 /* Column header + rows share one grid so cells line up. */
-.dep-cols, .dep-row {
-    display: grid;
-    grid-template-columns: 46px 1fr 92px 62px 74px;
-    align-items: center;
-    column-gap: 6px;
+.dep-cols,
+.dep-row {
+  display: grid;
+  grid-template-columns: 46px 1fr 92px 62px 74px;
+  align-items: center;
+  column-gap: 6px;
 }
 
 .dep-cols {
-    padding: 0 8px 4px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
-    margin-bottom: 3px;
+  padding: 0 8px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  margin-bottom: 3px;
 }
 
 .dep-th {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    background: none;
-    border: 0;
-    padding: 2px 0;
-    cursor: pointer;
-    opacity: 0.9;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  opacity: 0.9;
 }
 
 .dep-th.c-num {
-    justify-content: flex-end;
+  justify-content: flex-end;
 }
 
 .dep-th:hover {
-    opacity: 1;
+  opacity: 1;
 }
 
 .dep-sort {
-    width: 10px;
-    height: 8px;
-    image-rendering: pixelated;
+  width: 10px;
+  height: 8px;
+  image-rendering: pixelated;
 }
 
 .dep-list {
-    flex: 1;
-    overflow: hidden;                 /* clips the ClassicScrollbar view + track */
-    border: 1px solid rgba(0, 0, 0, 0.4);
-    border-radius: 3px;
-    background: rgba(0, 0, 0, 0.28);
+  flex: 1;
+  overflow: hidden; /* clips the ClassicScrollbar view + track */
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .dep-row {
-    padding: 3px 8px;
-    cursor: pointer;
+  padding: 3px 8px;
+  cursor: pointer;
 }
 
 .dep-row.afford {
-    background: rgba(34, 104, 40, 0.5);
+  background: rgba(34, 104, 40, 0.5);
 }
 
 /* green = affordable */
 .dep-row.broke {
-    background: rgba(122, 38, 38, 0.5);
+  background: rgba(122, 38, 38, 0.5);
 }
 
 /* red = too costly */
 .dep-row:hover {
-    filter: brightness(1.22);
+  filter: brightness(1.22);
 }
 
 .dep-row.sel {
-    background: #d8dde2;
-    box-shadow: inset 0 0 0 1px #fff;
+  background: #d8dde2;
+  box-shadow: inset 0 0 0 1px #fff;
 }
 
-.dep-row > span, .dep-th {
-    min-width: 0;
+.dep-row > span,
+.dep-th {
+  min-width: 0;
 }
 
 .c-qty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .c-name {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
 }
 
 .c-name canvas {
-    overflow: hidden;
+  overflow: hidden;
 }
 
 .c-type {
-    display: flex;
-    align-items: center;
+  display: flex;
+  align-items: center;
 }
 
 .c-num {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .dep-icon {
-    width: 16px;
-    height: 16px;
-    image-rendering: pixelated;
-    flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  flex: 0 0 16px;
 }
 
 .dep-inf {
-    font: 700 15px 'Segoe UI', sans-serif;
-    line-height: 1;
+  font:
+    700 15px 'Segoe UI',
+    sans-serif;
+  line-height: 1;
 }
 
 .dep-row.afford .dep-inf {
-    color: #eafff0;
+  color: #eafff0;
 }
 
 .dep-row.broke .dep-inf {
-    color: #f0d2d2;
+  color: #f0d2d2;
 }
 
 .dep-row.sel .dep-inf {
-    color: #14171a;
+  color: #14171a;
 }
 
 /* Green tooltip — the real zeon dialog.bmp frame, 9-sliced onto a <canvas> by
@@ -725,165 +736,165 @@ canvas {
  * up by its own height) so the pointer aims down at the hovered row. drop-shadow
  * (not box-shadow) follows the frame's rounded alpha, not a rectangle. */
 .dep-tooltip {
-    position: fixed;
-    z-index: var(--z-depot-tip);
-    max-width: 340px;
-    pointer-events: none;
-    transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
-    padding: 6px 11px 8px;
-    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+  position: fixed;
+  z-index: var(--z-depot-tip);
+  max-width: 340px;
+  pointer-events: none;
+  transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
+  padding: 6px 11px 8px;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
 }
 
 /* Frame + pointer share ONE translucency group: they composite opaquely here,
    then this group's opacity fades them together — so the pointer overlapping the
    box never doubles up the alpha (the "transparency over transparency" glitch). */
 .dep-tt-frame {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    opacity: 0.82;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.82;
 }
 
 /* The 9-sliced dialog.bmp frame, filling the box behind the text. */
 .zeon-frame {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    image-rendering: pixelated;
-    pointer-events: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
 /* Text rides above the frame canvas. */
 .dep-tt-body {
-    position: relative;
-    z-index: 1;
+  position: relative;
+  z-index: 1;
 }
 
 /* Down-pointer: a plain green triangle merging with the box's green fill (no
    black, no own opacity — the .dep-tt-frame group provides the translucency). */
 .dep-tt-arrow {
-    position: absolute;
-    top: 100%;
-    left: 14px;
-    width: 0;
-    height: 0;
-    margin-top: -2px; /* overlap into the box so it reads as one shape */
-    border-left: 7px solid transparent;
-    border-right: 7px solid transparent;
-    border-top: 8px solid #00ff00;
+  position: absolute;
+  top: 100%;
+  left: 14px;
+  width: 0;
+  height: 0;
+  margin-top: -2px; /* overlap into the box so it reads as one shape */
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid #00ff00;
 }
 
 .dep-tt-desc {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    margin-top: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 3px;
 }
 
 /* Selected-weapon stats popup (the "Stats" button). */
 .dep-stats {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: var(--z-depot-stats);
-    min-width: 240px;
-    padding: 14px 18px;
-    cursor: pointer;
-    background: var(--metal-grad);
-    border: 2px solid #2a2f34;
-    border-radius: 8px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--z-depot-stats);
+  min-width: 240px;
+  padding: 14px 18px;
+  cursor: pointer;
+  background: var(--metal-grad);
+  border: 2px solid #2a2f34;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
 }
 
 .dep-stats > canvas {
-    margin: 0 auto;
+  margin: 0 auto;
 }
 
 .dep-stat-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
 }
 
 .dep-stat-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
 }
 
 .dep-hint {
-    display: flex;
-    justify-content: center;
-    margin-top: 10px;
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
 }
 
 /* Footer: credits/map on the left, action buttons on the right. */
 .dep-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
 }
 
 .dep-money > div {
-    display: flex;
+  display: flex;
 }
 
 /* Action buttons in two clusters: Buy|Sell over a full-width Auto Buy (left),
    Stats over Close (right). */
 .dep-btns {
-    display: flex;
-    align-items: start;
-    gap: 12px;
+  display: flex;
+  align-items: start;
+  gap: 12px;
 }
 
 .dep-btn-col {
-    display: grid;
-    gap: 6px;
+  display: grid;
+  gap: 6px;
 }
 
 .dep-btn-col.left {
-    grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
 }
 
 .dep-btn-col.right {
-    grid-template-columns: 1fr;
+  grid-template-columns: 1fr;
 }
 
 .dep-btn.span {
-    grid-column: 1 / -1;
+  grid-column: 1 / -1;
 }
 
 /* Auto Buy spans the Buy|Sell width */
 /* Metal action buttons — the game's `buy button.bmp` art with a bitmap label. */
 .dep-btn {
-    min-width: 62px;
-    height: 34px;
-    padding: 0 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: url('/assets/gui/buy button.bmp') center / 100% 100% no-repeat;
-    border: 0;
+  min-width: 62px;
+  height: 34px;
+  padding: 0 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: url('/assets/gui/buy button.bmp') center / 100% 100% no-repeat;
+  border: 0;
 }
 
 .dep-btn:hover:not(:disabled) {
-    filter: brightness(1.09);
+  filter: brightness(1.09);
 }
 
 .dep-btn:active:not(:disabled) {
-    filter: brightness(0.9);
+  filter: brightness(0.9);
 }
 
 .dep-btn:disabled {
-    filter: grayscale(0.35) brightness(0.86);
-    cursor: default;
+  filter: grayscale(0.35) brightness(0.86);
+  cursor: default;
 }
 
 /* ======================= SHARED MENU BUTTON (.menu-btn) ==================== */
@@ -897,99 +908,111 @@ canvas {
    behind it. `:active` also applies to a pressed element's ancestors, so pressing a
    row's half inverts the whole row. */
 .menu-btn {
-    position: relative;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    transition: background 0.08s ease;
+  position: relative;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: background 0.08s ease;
 }
+
 .menu-btn:hover {
-    background: linear-gradient(rgba(233, 224, 199, 0.34), rgba(198, 187, 160, 0.20));
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+  background: linear-gradient(rgba(233, 224, 199, 0.34), rgba(198, 187, 160, 0.2));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
 }
+
 .menu-btn:active {
-    background: none;
-    box-shadow: none;
+  background: none;
+  box-shadow: none;
 }
+
 .menu-btn:active::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    /* A white layer in `difference` blend = 255 − backdrop = the photographic
-       negative of everything under the box (scene AND the glyphs on top of it).
-       (More robust than backdrop-filter, which some GPU/headless paths skip.) */
-    background: #fff;
-    mix-blend-mode: difference;
-    pointer-events: none;
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* A white layer in `difference` blend = 255 − backdrop = the photographic
+     negative of everything under the box (scene AND the glyphs on top of it).
+     (More robust than backdrop-filter, which some GPU/headless paths skip.) */
+  background: #fff;
+  mix-blend-mode: difference;
+  pointer-events: none;
 }
+
 /* ============================ PAUSE MENU ============================ */
 /* A centered bitmap-font item list over the darkened, frozen battle. */
 .pause-overlay {
-    z-index: var(--z-overlay);
-    flex-direction: column;
-    gap: 8px;
-    background: var(--overlay-scrim);
+  z-index: var(--z-overlay);
+  flex-direction: column;
+  gap: 8px;
+  background: var(--overlay-scrim);
 }
+
 .pause-title {
-    margin-bottom: 24px;
-    opacity: 0.92;
+  margin-bottom: 24px;
+  opacity: 0.92;
 }
 
 /* ============================ MAIN MENU / ABOUT ============================ */
 .mainmenu {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-screen);
-    /* Fill the width, anchored to the TOP so the title is always visible; only the
-       bottom of the image (desert) is cropped on wide windows — never the title,
-       and no letterbox bars. */
-    background: #10141a url('/assets/panels/title.webp') top center / cover no-repeat;
-    /* Centre the nav list with flexbox (NOT a translate transform) so the bitmap-font
-       canvases land on whole pixels — a fractional transform renders them fragmented.
-       Centred on both axes of the viewport. */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-screen);
+  /* Fill the width, anchored to the TOP so the title is always visible; only the
+     bottom of the image (desert) is cropped on wide windows — never the title,
+     and no letterbox bars. */
+  background: #10141a url('/assets/panels/title.webp') top center / cover no-repeat;
+  /* Centre the nav list with flexbox (NOT a translate transform) so the bitmap-font
+     canvases land on whole pixels — a fractional transform renders them fragmented.
+     Centred on both axes of the viewport. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
+
 .mainmenu-title {
-    margin-top: 3vh;
-    filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
+  margin-top: 3vh;
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
 }
+
 .mainmenu-logo {
-    position: absolute;
-    right: 16px;
-    bottom: 14px;
-    width: 38px;
-    height: 40px;
-    image-rendering: pixelated;
-    opacity: 0.85;
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: 38px;
+  height: 40px;
+  image-rendering: pixelated;
+  opacity: 0.85;
 }
 
 /* About / credits — a steel-backed <Modal> (frame + layout shared with Help). */
 .about-card {
-    width: min(680px, 92vw);
-    max-height: 86vh;
-    padding: 20px 26px;
+  width: min(680px, 92vw);
+  max-height: 86vh;
+  padding: 20px 26px;
 }
-.about-head, .about-sub {
-    display: flex;
-    justify-content: center;
-}
+
+.about-head,
 .about-sub {
-    margin: 4px 0 14px;
+  display: flex;
+  justify-content: center;
 }
+
+.about-sub {
+  margin: 4px 0 14px;
+}
+
 .about-body {
-    flex: 1;
-    overflow: hidden;                 /* clips the ClassicScrollbar view + track */
-    white-space: pre-wrap;            /* inherited by the scrolling view's text */
-    font-size: 13px;
-    line-height: 1.55;
-    color: #cdd6de;
+  flex: 1;
+  overflow: hidden; /* clips the ClassicScrollbar view + track */
+  white-space: pre-wrap; /* inherited by the scrolling view's text */
+  font-size: 13px;
+  line-height: 1.55;
+  color: #cdd6de;
 }
+
 .about-back {
-    align-self: center;
-    margin-top: 16px;
+  align-self: center;
+  margin-top: 16px;
 }
 
 /* =================== RESOLUTION-TOO-SMALL GATE =================== */
@@ -997,30 +1020,35 @@ canvas {
    the minimum playable size — the brushed-steel plate backdrop with the game's
    `atomic/dialog.bmp` panel and bitmap-font text (no CSS chrome/text). */
 .too-small {
-    z-index: var(--z-gate);           /* above the screen-flash and every screen */
-    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
-    padding: 16px;
+  z-index: var(--z-gate); /* above the screen-flash and every screen */
+  background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+  padding: 16px;
 }
+
 .too-small-card {
-    max-width: min(560px, 92vw);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 24px 34px 26px;
+  max-width: min(560px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 34px 26px;
 }
+
 /* Layout/spacing only — colour and size come from the bitmap fonts themselves. */
 .too-small-title {
-    margin-bottom: 16px;
+  margin-bottom: 16px;
 }
+
 .too-small-msg {
-    margin-top: 3px;
+  margin-top: 3px;
 }
+
 .too-small-sub {
-    margin-top: 16px;
+  margin-top: 16px;
 }
+
 .too-small-size {
-    margin-top: 14px;
-    opacity: 0.8;
+  margin-top: 14px;
+  opacity: 0.8;
 }
 
 /* ============================ MODALS (dialog.bmp) ============================ */
@@ -1029,193 +1057,228 @@ canvas {
    Backdrop is either a scrim (over the current screen) or the steel plate (a full
    screen of its own). Overlay layout comes from .overlay, the frame from .dialog-frame. */
 .modal-overlay {
-    z-index: var(--z-modal);
+  z-index: var(--z-modal);
 }
+
 .modal-scrim {
-    background: var(--overlay-scrim);
+  background: var(--overlay-scrim);
 }
+
 .modal-steel {
-    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+  background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
 }
+
 .modal-card {
-    display: flex;
-    flex-direction: column;
-    padding: 8px 18px 16px;
-    color: #dfe6ec;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 18px 16px;
+  color: #dfe6ec;
 }
 
 /* ============================ HELP MODAL ============================ */
 .help-card {
-    width: min(620px, 94vw);
-    max-height: 88vh;
+  width: min(620px, 94vw);
+  max-height: 88vh;
 }
-.help-head, .help-sub {
-    display: flex;
-    justify-content: center;
-}
+
+.help-head,
 .help-sub {
-    margin: 2px 0 14px;
+  display: flex;
+  justify-content: center;
 }
+
+.help-sub {
+  margin: 2px 0 14px;
+}
+
 .help-list {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
+
 .help-row {
-    display: grid;
-    grid-template-columns: 128px 1fr;
-    gap: 10px;
-    align-items: center;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
+
 .help-close {
-    align-self: center;
-    margin-top: 14px;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    padding: 4px 20px;
-    border-radius: 4px;
-    transition: background 0.1s ease;
+  align-self: center;
+  margin-top: 14px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 4px 20px;
+  border-radius: 4px;
+  transition: background 0.1s ease;
 }
+
 .help-close:hover {
-    background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
+
 .help-close:active {
-    background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 /* Shared metal button (menu cards / About). */
 .metal-btn {
-    padding: 7px 24px;
-    cursor: pointer;
-    font: 700 14px 'Segoe UI', sans-serif;
-    color: #14171a;
-    background: var(--metal-grad-hi);
-    border: 1px solid #2a2f34;
-    border-radius: 6px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  padding: 7px 24px;
+  cursor: pointer;
+  font:
+    700 14px 'Segoe UI',
+    sans-serif;
+  color: #14171a;
+  background: var(--metal-grad-hi);
+  border: 1px solid #2a2f34;
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
+
 .metal-btn:hover {
-    background: linear-gradient(#e2e7ed, #a7adb5);
+  background: linear-gradient(#e2e7ed, #a7adb5);
 }
+
 .metal-btn:active {
-    background: linear-gradient(#9aa0a8, #b8bec6);
+  background: linear-gradient(#9aa0a8, #b8bec6);
 }
 
 /* Title-screen scrolling target reticles (lower half; rows scroll opposite ways). */
 .tgt-rows {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 75%;
-    height: 108px;                      /* two 40px rows + gap */
-    overflow: hidden;
-    pointer-events: none;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    z-index: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 75%;
+  height: 108px; /* two 40px rows + gap */
+  overflow: hidden;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  z-index: 0;
 }
+
 .tgt-row {
-    height: 40px;
-    flex: 0 0 40px;
-    width: calc(100% + 168px);
-    margin-left: -84px;                 /* overscan so the wrap is seamless */
-    background-repeat: repeat-x;
-    background-size: 84px 40px;
-    opacity: 0.5;
-    will-change: background-position;
+  height: 40px;
+  flex: 0 0 40px;
+  width: calc(100% + 168px);
+  margin-left: -84px; /* overscan so the wrap is seamless */
+  background-repeat: repeat-x;
+  background-size: 84px 40px;
+  opacity: 0.5;
+  will-change: background-position;
 }
+
 .tgt-l {
-    animation: tgt-scroll-l 7s linear infinite;
+  animation: tgt-scroll-l 7s linear infinite;
 }
+
 .tgt-r {
-    animation: tgt-scroll-r 7s linear infinite;
+  animation: tgt-scroll-r 7s linear infinite;
 }
+
 @keyframes tgt-scroll-l {
-    from { background-position-x: 0; }
-    to { background-position-x: -84px; }
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -84px;
+  }
 }
+
 @keyframes tgt-scroll-r {
-    from { background-position-x: 0; }
-    to { background-position-x: 84px; }
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: 84px;
+  }
 }
 
 /* Version tag, bottom-left of the main menu. */
 .mainmenu-version {
-    position: absolute;
-    left: 12px;
-    bottom: 10px;
-    transform: translateZ(0);   /* own layer → the bitmap font stays crisp */
-    opacity: 0.85;
-    pointer-events: none;
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  transform: translateZ(0); /* own layer → the bitmap font stays crisp */
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 /* ============================ SETTINGS (options root) ======================= */
 .settings-screen {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-screen);
-    /* Same title backdrop as the main menu (the chrome "ATOMIC CANNON" logo is baked
-       in), darkened with a flat black wash so the white-outlined options read clearly.
-       The brushed-steel plate is reserved for the deeper editor sub-screens. */
-    background: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)),
-                url('/assets/panels/title.webp') top center / cover no-repeat #10141a;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-screen);
+  /* Same title backdrop as the main menu (the chrome "ATOMIC CANNON" logo is baked
+     in), darkened with a flat black wash so the white-outlined options read clearly.
+     The brushed-steel plate is reserved for the deeper editor sub-screens. */
+  background:
+    linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)),
+    url('/assets/panels/title.webp') top center / cover no-repeat #10141a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+
 /* Options list, vertically centred in the gap between title and subtitle. */
 .settings-list {
-    margin: auto 0;
+  margin: auto 0;
 }
+
 /* Hover subtitle, centred along the bottom edge (reserves height so nothing jumps). */
 .settings-subtitle {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 4.5vh;
-    display: flex;
-    justify-content: center;
-    min-height: 20px;
-    pointer-events: none;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4.5vh;
+  display: flex;
+  justify-content: center;
+  min-height: 20px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
 }
 
 /* ---- Settings option pages (two-column widget rows) ---- */
 .settings-rows {
-    margin: auto 0;
+  margin: auto 0;
 }
+
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 1px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 1px 18px;
 }
+
 /* The two click targets of a cyclable/toggle row (label side = prev, value side =
    next) and the label/value groups of a nav row. No per-side box — the whole row
    gets the one uniform highlight (.menu-btn); the < > arrows show the direction. */
 .srow-half,
 .srow-side {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 2px 8px;
 }
+
 .srow-arrow {
-    opacity: 0.82;
+  opacity: 0.82;
 }
+
 /* Done row — centred under the list. */
 .srow-done {
-    justify-content: center;
-    margin-top: 10px;
+  justify-content: center;
+  margin-top: 10px;
 }

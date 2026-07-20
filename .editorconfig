@@ -1,0 +1,15 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# Top-most EditorConfig file
+root = true
+
+# Unix-style newlines
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = false
+
+# Configure languages
+[{*.css,*.html,*.js,*.mjs,*.php,*.py,*.scss,*.ts,*.xml,*.yml}]
+indent_size = 2
+indent_style = space

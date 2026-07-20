@@ -7,12 +7,12 @@
  */
 
 export interface Sprite {
-    bitmap: CanvasImageSource;
-    width: number;
-    height: number;
+  bitmap: CanvasImageSource;
+  width: number;
+  height: number;
 }
 
 /** Anything that can resolve a logical sprite name to a drawable sprite. */
 export interface ISpriteSource {
-    getSprite(name: string): Sprite | null;
+  getSprite(name: string): Sprite | null;
 }

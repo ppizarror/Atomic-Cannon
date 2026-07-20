@@ -30,6 +30,9 @@ importers:
       oxlint:
         specifier: ^1.74.0
         version: 1.74.0
+      prettier:
+        specifier: ^3.9.5
+        version: 3.9.5
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
@@ -1146,6 +1149,11 @@ packages:
       preact-render-to-string:
         optional: true
 
+  prettier@3.9.5:
+    resolution: {integrity: sha512-/FVl766LpUfB5vXgCYOYa0MeV/441Ia99AeICQIQFTY/Nw0roZwULcXpku5i1/m5kt/baz+s4Zogspd839HSMg==}
+    engines: {node: '>=14'}
+    hasBin: true
+
   rolldown@1.1.5:
     resolution: {integrity: sha512-t9z29cJjXf/vxQ8dyhCSpt6H6aSwHTk8cT5I3iy6SMXuFpk5mB6PL6XfC8PCwrPTx93udwKUm9HRteAlTGBLiA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -2084,6 +2092,8 @@ snapshots:
       source-map-js: 1.2.1
 
   preact@10.29.7: {}
+
+  prettier@3.9.5: {}
 
   rolldown@1.1.5:
     dependencies:

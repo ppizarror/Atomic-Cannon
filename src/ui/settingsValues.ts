@@ -6,14 +6,14 @@
  *
  * Defaults here MIRROR the widget defaults in settingsPages.ts — keep them in sync.
  */
-import { getVal } from './settingsStore';
+import {getVal} from './settingsStore';
 
 // Enum → scalar tables. The default index maps to 1.0 so the out-of-the-box feel
 // is the neutral baseline.
-const WIND_SCALE = [0, 0.5, 1, 1.6];             // Disabled/Low/Medium(1.0)/High
-const KICKBACK_SCALE = [0, 0.6, 1, 1.5];         // Off/Low/Normal(1.0)/High
-const EXPLOSION_SCALE = [0.7, 1, 1.35, 1.8];     // Small/Normal(1.0)/Large/Massive
-const PLAYER_SIZE_SCALE = [0.72, 1, 1.35];       // Small/Normal(1.0)/Large
+const WIND_SCALE = [0, 0.5, 1, 1.6]; // Disabled/Low/Medium(1.0)/High
+const KICKBACK_SCALE = [0, 0.6, 1, 1.5]; // Off/Low/Normal(1.0)/High
+const EXPLOSION_SCALE = [0.7, 1, 1.35, 1.8]; // Small/Normal(1.0)/Large/Massive
+const PLAYER_SIZE_SCALE = [0.72, 1, 1.35]; // Small/Normal(1.0)/Large
 
 export const gameSettings = {
   /** Credits each player starts a match with. */

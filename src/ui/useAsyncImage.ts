@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'preact/hooks';
+import {useState, useEffect} from 'preact/hooks';
 
 /**
  * Subscribe to an async image loader (resolves to a data URL, or null on failure).
@@ -11,8 +11,12 @@ export function useAsyncImage(load: () => Promise<string | null>, deps: unknown[
   const [src, setSrc] = useState('');
   useEffect(() => {
     let ok = true;
-    load().then(u => { if (ok && u) setSrc(u); });
-    return () => { ok = false; };
+    load().then(u => {
+      if (ok && u) setSrc(u);
+    });
+    return () => {
+      ok = false;
+    };
   }, deps);
   return src;
 }

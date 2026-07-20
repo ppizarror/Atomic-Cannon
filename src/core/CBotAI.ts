@@ -12,10 +12,10 @@
  * random angle/power error that shrinks toward zero at the top level, and steers
  * target/weapon choice from "random" (easy) toward "best" (hard).
  */
-import { SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_SPEED_SCALE } from './CShot';
-import { GameConfig } from './CGameConfig';
-import { WEAPON_DATABASE } from './CWeapon';
-import { clamp, deg2rad } from '../math/num';
+import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_SPEED_SCALE} from './CShot';
+import {GameConfig} from './CGameConfig';
+import {WEAPON_DATABASE} from './CWeapon';
+import {clamp, deg2rad} from '../math/num';
 
 // Difficulty is a single 0..10 skill level (0 = "Dummy": never aims; 10 =
 // "Einstein": perfect aim). 5 is a reasonable mid default.
@@ -26,14 +26,25 @@ export const AI_DEFAULT_LEVEL = 5;
 // Aim search bounds (power in the game's 10..1000 scale; the sweep covers 100+).
 const P_MIN = 100;
 const P_MAX = 1000;
-const COARSE_A = 5;    // deg
-const COARSE_P = 70;   // power
+const COARSE_A = 5; // deg
+const COARSE_P = 70; // power
 const FINE_A = 1;
 const FINE_P = 15;
 
-export interface Pt { x: number; y: number }
-export interface AimField { heightAt(x: number): number; width: number; height: number }
-export interface AimResult { angleDeg: number; power: number; dist: number }
+export interface Pt {
+  x: number;
+  y: number;
+}
+export interface AimField {
+  heightAt(x: number): number;
+  width: number;
+  height: number;
+}
+export interface AimResult {
+  angleDeg: number;
+  power: number;
+  dist: number;
+}
 
 /**
  * Probability that the bot computes a FRESH firing solution this turn (vs. firing
@@ -65,14 +76,20 @@ export function angleError(level: number, rnd: () => number = Math.random): numb
  * finds transfers exactly. Stops on terrain contact or leaving the field.
  */
 export function simulateMiss(
-  origin: Pt, angleDeg: number, power: number, wind: Pt, field: AimField, target: Pt,
+  origin: Pt,
+  angleDeg: number,
+  power: number,
+  wind: Pt,
+  field: AimField,
+  target: Pt,
 ): number {
   const r = deg2rad(angleDeg);
   // Match the real launch speed (Power Scale) so the solver's prediction is accurate.
   const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
   let vx = Math.cos(r) * speed;
   let vy = -Math.sin(r) * speed;
-  let x = origin.x, y = origin.y;
+  let x = origin.x,
+    y = origin.y;
   const dt = 1 / 30;
   let minD = Math.hypot(x - target.x, y - target.y);
 
@@ -87,7 +104,7 @@ export function simulateMiss(
     if (d < minD) minD = d;
 
     if (x < -40 || x > field.width + 40 || y > field.height + 60) break;
-    if (y >= field.heightAt(clamp(x, 0, field.width - 1))) break;   // hit ground
+    if (y >= field.heightAt(clamp(x, 0, field.width - 1))) break; // hit ground
   }
   return minD;
 }
@@ -98,14 +115,17 @@ export function simulateMiss(
  * the target's side of the tank; returns the best arc found.
  */
 export function bestAim(
-  muzzleFor: (deg: number) => Pt, target: Pt, wind: Pt, field: AimField,
+  muzzleFor: (deg: number) => Pt,
+  target: Pt,
+  wind: Pt,
+  field: AimField,
 ): AimResult {
   const up = muzzleFor(90);
   const aimRight = target.x >= up.x;
   const loA = aimRight ? 8 : 98;
   const hiA = aimRight ? 82 : 172;
 
-  let best: AimResult = { angleDeg: aimRight ? 45 : 135, power: 500, dist: Infinity };
+  let best: AimResult = {angleDeg: aimRight ? 45 : 135, power: 500, dist: Infinity};
 
   const scan = (a0: number, a1: number, aStep: number, p0: number, p1: number, pStep: number) => {
     for (let a = a0; a <= a1; a += aStep) {
@@ -113,14 +133,20 @@ export function bestAim(
       for (let p = p0; p <= p1; p += pStep) {
         if (p < P_MIN || p > P_MAX) continue;
         const d = simulateMiss(o, a, p, wind, field, target);
-        if (d < best.dist) best = { angleDeg: a, power: p, dist: d };
+        if (d < best.dist) best = {angleDeg: a, power: p, dist: d};
       }
     }
   };
 
-  scan(loA, hiA, COARSE_A, P_MIN, P_MAX, COARSE_P);                       // coarse basin
-  scan(best.angleDeg - COARSE_A, best.angleDeg + COARSE_A, FINE_A,        // refine
-       best.power - COARSE_P, best.power + COARSE_P, FINE_P);
+  scan(loA, hiA, COARSE_A, P_MIN, P_MAX, COARSE_P); // coarse basin
+  scan(
+    best.angleDeg - COARSE_A,
+    best.angleDeg + COARSE_A,
+    FINE_A, // refine
+    best.power - COARSE_P,
+    best.power + COARSE_P,
+    FINE_P,
+  );
   return best;
 }
 
@@ -130,23 +156,33 @@ export function bestAim(
  * one. Every other level picks a uniformly random enemy.
  */
 export function pickTarget(
-  enemies: { x: number; y: number; healthFrac: number }[], botX: number, level: number, rnd: () => number = Math.random,
+  enemies: {x: number; y: number; healthFrac: number}[],
+  botX: number,
+  level: number,
+  rnd: () => number = Math.random,
 ): number {
   if (enemies.length === 0) return -1;
   if (enemies.length === 1) return 0;
 
   if (level > 7) {
     const r = rnd();
-    if (r < 0.4) {   // weakest (lowest health)
+    if (r < 0.4) {
+      // weakest (lowest health)
       let best = 0;
-      for (let i = 1; i < enemies.length; i++) if (enemies[i].healthFrac < enemies[best].healthFrac) best = i;
+      for (let i = 1; i < enemies.length; i++)
+        if (enemies[i].healthFrac < enemies[best].healthFrac) best = i;
       return best;
     }
-    if (r < 0.8) {   // nearest
-      let best = 0, bestD = Infinity;
+    if (r < 0.8) {
+      // nearest
+      let best = 0,
+        bestD = Infinity;
       for (let i = 0; i < enemies.length; i++) {
         const d = Math.abs(enemies[i].x - botX);
-        if (d < bestD) { bestD = d; best = i; }
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
       }
       return best;
     }

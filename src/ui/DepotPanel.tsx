@@ -12,8 +12,19 @@ import {ZeonFrame} from './ZeonFrame';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {useAsyncImage} from './useAsyncImage';
 import {
-    showDepot, credits, ownedCounts, playerName, weaponIndex,
-    closeDepot, depotBuy, depotSell, depotAutoBuy, loadWeaponIcon, loadUiBmp, game, uiClick,
+  showDepot,
+  credits,
+  ownedCounts,
+  playerName,
+  weaponIndex,
+  closeDepot,
+  depotBuy,
+  depotSell,
+  depotAutoBuy,
+  loadWeaponIcon,
+  loadUiBmp,
+  game,
+  uiClick,
 } from './store';
 import {WEAPON_DATABASE, weaponPower, type WeaponDef} from '../core/CWeapon';
 import {UNLIMITED} from '../core/CEconomy';
@@ -21,12 +32,12 @@ import {UNLIMITED} from '../core/CEconomy';
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
 // The game's bitmap fonts — catalog ids (see FONTS in BitmapFont.ts).
-const TITLE_FONT = 'bazouk-28';       // native white+outline
-const TABLE_FONT = 'beijing-16-out';  // table header + rows: native white + baked outline
+const TITLE_FONT = 'bazouk-28'; // native white+outline
+const TABLE_FONT = 'beijing-16-out'; // table header + rows: native white + baked outline
 const ROW_FONT = 'msans-14';
 const SMALL_FONT = 'msans-12';
 const BIG_FONT = 'msans-18';
-const SUB_FONT = 'arial-14-out';      // header subtitle: native white + baked outline
+const SUB_FONT = 'arial-14-out'; // header subtitle: native white + baked outline
 const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native outline)
 
 // The depot's "Power" figure is the weapon's derived Power stat (base damage ×
@@ -36,43 +47,58 @@ const powerOf = weaponPower;
 
 // Word-wrap a description into lines of ~`max` chars (BmpText draws one line each).
 function wrap(text: string, max: number): string[] {
-    const out: string[] = [];
-    let line = '';
-    for (const word of text.split(/\s+/)) {
-        if (line && (line.length + 1 + word.length) > max) {
-            out.push(line);
-            line = word;
-        } else line = line ? `${line} ${word}` : word;
-    }
-    if (line) out.push(line);
-    return out;
+  const out: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    if (line && line.length + 1 + word.length > max) {
+      out.push(line);
+      line = word;
+    } else line = line ? `${line} ${word}` : word;
+  }
+  if (line) out.push(line);
+  return out;
 }
 
 // ---- small leaf pieces ------------------------------------------------------
-function WeaponIcon({name}: { name: string }) {
-    const src = useAsyncImage(() => loadWeaponIcon(name, 16), [name]);
-    return src ? <img class="dep-icon" src={src} alt=""/> : <span class="dep-icon"/>;
+function WeaponIcon({name}: {name: string}) {
+  const src = useAsyncImage(() => loadWeaponIcon(name, 16), [name]);
+  return src ? <img class="dep-icon" src={src} alt="" /> : <span class="dep-icon" />;
 }
 
 // The magenta-keyed sort caret next to the active column header. Keeps a fixed-size
 // placeholder while the bitmap loads so nothing reflows and no broken-image glyph shows.
-function SortArrow({dir}: { dir: 1 | -1 }) {
-    const src = useAsyncImage(() => loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`), [dir]);
-    return src ? <img class="dep-sort" src={src} alt=""/> : <span class="dep-sort"/>;
+function SortArrow({dir}: {dir: 1 | -1}) {
+  const src = useAsyncImage(
+    () => loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`),
+    [dir],
+  );
+  return src ? <img class="dep-sort" src={src} alt="" /> : <span class="dep-sort" />;
 }
 
 // A sortable column header. Defined at MODULE scope (not inside DepotPanel) so it
 // keeps a stable component identity across re-renders — otherwise every mouse-move
 // (which repositions the tooltip) would remount the header and blank the sort arrow.
-function Header({k, label, cls, activeKey, dir, onSort}: {
-    k: SortKey; label: string; cls?: string; activeKey: SortKey; dir: 1 | -1; onSort: (k: SortKey) => void;
+function Header({
+  k,
+  label,
+  cls,
+  activeKey,
+  dir,
+  onSort,
+}: {
+  k: SortKey;
+  label: string;
+  cls?: string;
+  activeKey: SortKey;
+  dir: 1 | -1;
+  onSort: (k: SortKey) => void;
 }) {
-    return (
-        <button class={`dep-th ${cls ?? ''}`} onClick={() => onSort(k)}>
-            <BmpText font={TABLE_FONT} text={label} spacing={-1}/>
-            {activeKey === k && <SortArrow dir={dir}/>}
-        </button>
-    );
+  return (
+    <button class={`dep-th ${cls ?? ''}`} onClick={() => onSort(k)}>
+      <BmpText font={TABLE_FONT} text={label} spacing={-1} />
+      {activeKey === k && <SortArrow dir={dir} />}
+    </button>
+  );
 }
 
 // Green weapon tooltip (the `zeon` dialog look) — the real dialog.bmp frame
@@ -81,186 +107,253 @@ function Header({k, label, cls, activeKey, dir, onSort}: {
 // translucency group (.dep-tt-frame) so they composite opaquely THEN fade together
 // — never transparency-over-transparency where the pointer overlaps the box. The
 // text rides above in .dep-tt-body at full opacity.
-function Tooltip({w, x, y}: { w: WeaponDef; x: number; y: number }) {
-    const lines = wrap(w.desc || 'No description available.', 44);
-    return (
-        <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
-            <div class="dep-tt-frame">
-                <ZeonFrame/>
-                <div class="dep-tt-arrow"/>
-            </div>
-            <div class="dep-tt-body">
-                <BmpText font={ROW_FONT} text={w.name} tint="#06210a"/>
-                <div class="dep-tt-desc">
-                    {lines.map((l, i) => <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c"/>)}
-                </div>
-            </div>
+function Tooltip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
+  const lines = wrap(w.desc || 'No description available.', 44);
+  return (
+    <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
+      <div class="dep-tt-frame">
+        <ZeonFrame />
+        <div class="dep-tt-arrow" />
+      </div>
+      <div class="dep-tt-body">
+        <BmpText font={ROW_FONT} text={w.name} tint="#06210a" />
+        <div class="dep-tt-desc">
+          {lines.map((l, i) => (
+            <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c" />
+          ))}
         </div>
-    );
+      </div>
+    </div>
+  );
 }
 
 // A metal action button (the game's button art) with a bitmap-font label.
-function DepBtn({label, onClick, disabled, span}: {
-    label: string;
-    onClick: () => void;
-    disabled?: boolean;
-    span?: boolean
+function DepBtn({
+  label,
+  onClick,
+  disabled,
+  span,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  span?: boolean;
 }) {
-    return (
-        <button class={`dep-btn${span ? ' span' : ''}`} disabled={disabled} onClick={onClick}>
-            <BmpText font={ROW_FONT} text={label} tint={disabled ? '#5b5f64' : '#14171a'}/>
-        </button>
-    );
+  return (
+    <button class={`dep-btn${span ? ' span' : ''}`} disabled={disabled} onClick={onClick}>
+      <BmpText font={ROW_FONT} text={label} tint={disabled ? '#5b5f64' : '#14171a'} />
+    </button>
+  );
 }
 
 // ---- the modal --------------------------------------------------------------
 export function DepotPanel() {
-    if (!showDepot.value) return null;
+  if (!showDepot.value) return null;
 
-    const [sel, setSel] = useState(weaponIndex.value);
-    const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({key: 'cost', dir: 1});
-    const [hover, setHover] = useState<number | null>(null);
-    const [pos, setPos] = useState({x: 0, y: 0});
-    const [showStats, setShowStats] = useState(false);
+  const [sel, setSel] = useState(weaponIndex.value);
+  const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'cost', dir: 1});
+  const [hover, setHover] = useState<number | null>(null);
+  const [pos, setPos] = useState({x: 0, y: 0});
+  const [showStats, setShowStats] = useState(false);
 
-    const owned = ownedCounts.value;
-    const creds = credits.value;
+  const owned = ownedCounts.value;
+  const creds = credits.value;
 
-    // The catalog, sorted by the active column. Rebuilt only when sort/owned change.
-    const rows = useMemo(() => {
-        const val = (w: WeaponDef): number | string => {
-            switch (sort.key) {
-                case 'qty':
-                    return owned[w.index] ?? 0;
-                case 'name':
-                    return w.name.toLowerCase();
-                case 'type':
-                    return String(w.type).toLowerCase();
-                case 'power':
-                    return powerOf(w);
-                case 'cost':
-                    return w.cost;
-                default:
-                    return 0;
-            }
-        };
-        return WEAPON_DATABASE.slice().sort((a, b) => {
-            const va = val(a), vb = val(b);
-            if (va < vb) return -sort.dir;
-            if (va > vb) return sort.dir;
-            return a.index - b.index;
-        });
-    }, [sort.key, sort.dir, owned]);
-
-    const clickHeader = (key: SortKey) => {
-        uiClick();
-        setSort(s => (s.key === key ? {key, dir: (s.dir === 1 ? -1 : 1) as 1 | -1} : {key, dir: 1}));
+  // The catalog, sorted by the active column. Rebuilt only when sort/owned change.
+  const rows = useMemo(() => {
+    const val = (w: WeaponDef): number | string => {
+      switch (sort.key) {
+        case 'qty':
+          return owned[w.index] ?? 0;
+        case 'name':
+          return w.name.toLowerCase();
+        case 'type':
+          return String(w.type).toLowerCase();
+        case 'power':
+          return powerOf(w);
+        case 'cost':
+          return w.cost;
+        default:
+          return 0;
+      }
     };
-    const selectRow = (i: number) => {
-        uiClick();
-        setSel(i);
-        game().selectWeapon(i);
-    };
+    return WEAPON_DATABASE.slice().sort((a, b) => {
+      const va = val(a),
+        vb = val(b);
+      if (va < vb) return -sort.dir;
+      if (va > vb) return sort.dir;
+      return a.index - b.index;
+    });
+  }, [sort.key, sort.dir, owned]);
 
-    const selW = WEAPON_DATABASE[sel];
-    const canBuy = !!selW && owned[sel] !== UNLIMITED && creds >= selW.cost;
-    const canSell = !!selW && owned[sel] !== UNLIMITED && (owned[sel] ?? 0) > 0;
+  const clickHeader = (key: SortKey) => {
+    uiClick();
+    setSort(s => (s.key === key ? {key, dir: (s.dir === 1 ? -1 : 1) as 1 | -1} : {key, dir: 1}));
+  };
+  const selectRow = (i: number) => {
+    uiClick();
+    setSel(i);
+    game().selectWeapon(i);
+  };
 
-    return (
-        <div class="overlay dep-overlay" onClick={closeDepot}>
-            <div class="dep-card" onClick={e => e.stopPropagation()}>
-                <div class="dep-head">
-                    <BmpText font={TITLE_FONT} text="WEAPONS DEPOT"/>
-                    <div class="dep-sub"><BmpText font={SUB_FONT} text="CLICK ICON FOR DESCRIPTIONS" spacing={-1}/>
-                    </div>
-                </div>
+  const selW = WEAPON_DATABASE[sel];
+  const canBuy = !!selW && owned[sel] !== UNLIMITED && creds >= selW.cost;
+  const canSell = !!selW && owned[sel] !== UNLIMITED && (owned[sel] ?? 0) > 0;
 
-                <div class="dep-cols">
-                    <Header k="qty" label="Qty" cls="c-qty" activeKey={sort.key} dir={sort.dir} onSort={clickHeader}/>
-                    <Header k="name" label="Name" cls="c-name" activeKey={sort.key} dir={sort.dir}
-                            onSort={clickHeader}/>
-                    <Header k="type" label="Type" cls="c-type" activeKey={sort.key} dir={sort.dir}
-                            onSort={clickHeader}/>
-                    <Header k="power" label="Power" cls="c-num" activeKey={sort.key} dir={sort.dir}
-                            onSort={clickHeader}/>
-                    <Header k="cost" label="Cost" cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader}/>
-                </div>
-
-                <ClassicScrollbar class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>
-                    {rows.map(w => {
-                        const q = owned[w.index] ?? 0;
-                        const isSel = w.index === sel;
-                        const affordable = q === UNLIMITED || creds >= w.cost;
-                        // Table cells use the outlined font at native colour — its baked
-                        // white+black outline stays legible on every row state (green afford,
-                        // red broke, grey selected), so no per-state tint is applied.
-                        return (
-                            <div
-                                key={w.index}
-                                class={`dep-row${isSel ? ' sel' : ''}${affordable ? ' afford' : ' broke'}`}
-                                onClick={() => selectRow(w.index)}
-                                onMouseEnter={() => setHover(w.index)}
-                                onMouseLeave={() => setHover(h => (h === w.index ? null : h))}
-                            >
-                <span class="c-qty">
-                  {q === UNLIMITED ? <span class="dep-inf">∞</span> :
-                      <BmpText font={TABLE_FONT} text={String(q)} spacing={-1}/>}
-                </span>
-                                <span class="c-name"><WeaponIcon name={w.name}/><BmpText font={TABLE_FONT} text={w.name}
-                                                                                         spacing={-1}/></span>
-                                <span class="c-type"><BmpText font={TABLE_FONT} text={String(w.type)}
-                                                              spacing={-1}/></span>
-                                <span class="c-num"><BmpText font={TABLE_FONT} text={String(powerOf(w))} spacing={-1}/></span>
-                                <span class="c-num"><BmpText font={TABLE_FONT} text={String(w.cost)}
-                                                             spacing={-1}/></span>
-                            </div>
-                        );
-                    })}
-                </ClassicScrollbar>
-
-                {hover !== null && WEAPON_DATABASE[hover] && <Tooltip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y}/>}
-                {showStats && selW && (
-                    <div class="dep-stats" onClick={() => setShowStats(false)}>
-                        <BmpText font={BIG_FONT} text={selW.name} tint="#14171a"/>
-                        <div class="dep-stat-grid">
-                            {([['Type', selW.type], ['Damage', selW.damage], ['Radius', selW.radius],
-                                ['Variance', (selW.variance ?? 0).toFixed(1)], ['Cluster', selW.cluNum > 0 ? selW.cluNum : '-'],
-                                ['Cost', `$${selW.cost}`], ['Owned', owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)]] as const)
-                                .map(([k, v]) => (
-                                    <div class="dep-stat-row" key={k}>
-                                        <BmpText font={ROW_FONT} text={String(k)} tint="#14171a"/>
-                                        <BmpText font={ROW_FONT} text={String(v)} tint="#14171a"/>
-                                    </div>
-                                ))}
-                        </div>
-                        <div class="dep-hint"><BmpText font={SMALL_FONT} text="click to close" tint="#3a3f45"/></div>
-                    </div>
-                )}
-
-                <div class="dep-foot">
-                    <div class="dep-money">
-                        <div class="dep-map"><BmpText font={STATUS_FONT} text={playerName.value} spacing={-1}/></div>
-                        <div class="dep-credits"><BmpText font={STATUS_FONT} text={`Credits ${creds}`} spacing={-1}/>
-                        </div>
-                    </div>
-                    <div class="dep-btns">
-                        {/* Left cluster: Buy | Sell on top, Auto Buy spanning both beneath. */}
-                        <div class="dep-btn-col left">
-                            <DepBtn label="Buy" disabled={!canBuy} onClick={() => depotBuy(sel)}/>
-                            <DepBtn label="Sell" disabled={!canSell} onClick={() => depotSell(sel)}/>
-                            <DepBtn label="Auto Buy" span onClick={depotAutoBuy}/>
-                        </div>
-                        {/* Right cluster: Stats over Close. */}
-                        <div class="dep-btn-col right">
-                            <DepBtn label="Stats" onClick={() => {
-                                uiClick();
-                                setShowStats(s => !s);
-                            }}/>
-                            <DepBtn label="Close" onClick={closeDepot}/>
-                        </div>
-                    </div>
-                </div>
-            </div>
+  return (
+    <div class="overlay dep-overlay" onClick={closeDepot}>
+      <div class="dep-card" onClick={e => e.stopPropagation()}>
+        <div class="dep-head">
+          <BmpText font={TITLE_FONT} text="WEAPONS DEPOT" />
+          <div class="dep-sub">
+            <BmpText font={SUB_FONT} text="CLICK ICON FOR DESCRIPTIONS" spacing={-1} />
+          </div>
         </div>
-    );
+
+        <div class="dep-cols">
+          <Header
+            k="qty"
+            label="Qty"
+            cls="c-qty"
+            activeKey={sort.key}
+            dir={sort.dir}
+            onSort={clickHeader}
+          />
+          <Header
+            k="name"
+            label="Name"
+            cls="c-name"
+            activeKey={sort.key}
+            dir={sort.dir}
+            onSort={clickHeader}
+          />
+          <Header
+            k="type"
+            label="Type"
+            cls="c-type"
+            activeKey={sort.key}
+            dir={sort.dir}
+            onSort={clickHeader}
+          />
+          <Header
+            k="power"
+            label="Power"
+            cls="c-num"
+            activeKey={sort.key}
+            dir={sort.dir}
+            onSort={clickHeader}
+          />
+          <Header
+            k="cost"
+            label="Cost"
+            cls="c-num"
+            activeKey={sort.key}
+            dir={sort.dir}
+            onSort={clickHeader}
+          />
+        </div>
+
+        <ClassicScrollbar class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>
+          {rows.map(w => {
+            const q = owned[w.index] ?? 0;
+            const isSel = w.index === sel;
+            const affordable = q === UNLIMITED || creds >= w.cost;
+            // Table cells use the outlined font at native colour — its baked
+            // white+black outline stays legible on every row state (green afford,
+            // red broke, grey selected), so no per-state tint is applied.
+            return (
+              <div
+                key={w.index}
+                class={`dep-row${isSel ? ' sel' : ''}${affordable ? ' afford' : ' broke'}`}
+                onClick={() => selectRow(w.index)}
+                onMouseEnter={() => setHover(w.index)}
+                onMouseLeave={() => setHover(h => (h === w.index ? null : h))}
+              >
+                <span class="c-qty">
+                  {q === UNLIMITED ? (
+                    <span class="dep-inf">∞</span>
+                  ) : (
+                    <BmpText font={TABLE_FONT} text={String(q)} spacing={-1} />
+                  )}
+                </span>
+                <span class="c-name">
+                  <WeaponIcon name={w.name} />
+                  <BmpText font={TABLE_FONT} text={w.name} spacing={-1} />
+                </span>
+                <span class="c-type">
+                  <BmpText font={TABLE_FONT} text={String(w.type)} spacing={-1} />
+                </span>
+                <span class="c-num">
+                  <BmpText font={TABLE_FONT} text={String(powerOf(w))} spacing={-1} />
+                </span>
+                <span class="c-num">
+                  <BmpText font={TABLE_FONT} text={String(w.cost)} spacing={-1} />
+                </span>
+              </div>
+            );
+          })}
+        </ClassicScrollbar>
+
+        {hover !== null && WEAPON_DATABASE[hover] && (
+          <Tooltip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y} />
+        )}
+        {showStats && selW && (
+          <div class="dep-stats" onClick={() => setShowStats(false)}>
+            <BmpText font={BIG_FONT} text={selW.name} tint="#14171a" />
+            <div class="dep-stat-grid">
+              {(
+                [
+                  ['Type', selW.type],
+                  ['Damage', selW.damage],
+                  ['Radius', selW.radius],
+                  ['Variance', (selW.variance ?? 0).toFixed(1)],
+                  ['Cluster', selW.cluNum > 0 ? selW.cluNum : '-'],
+                  ['Cost', `$${selW.cost}`],
+                  ['Owned', owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)],
+                ] as const
+              ).map(([k, v]) => (
+                <div class="dep-stat-row" key={k}>
+                  <BmpText font={ROW_FONT} text={String(k)} tint="#14171a" />
+                  <BmpText font={ROW_FONT} text={String(v)} tint="#14171a" />
+                </div>
+              ))}
+            </div>
+            <div class="dep-hint">
+              <BmpText font={SMALL_FONT} text="click to close" tint="#3a3f45" />
+            </div>
+          </div>
+        )}
+
+        <div class="dep-foot">
+          <div class="dep-money">
+            <div class="dep-map">
+              <BmpText font={STATUS_FONT} text={playerName.value} spacing={-1} />
+            </div>
+            <div class="dep-credits">
+              <BmpText font={STATUS_FONT} text={`Credits ${creds}`} spacing={-1} />
+            </div>
+          </div>
+          <div class="dep-btns">
+            {/* Left cluster: Buy | Sell on top, Auto Buy spanning both beneath. */}
+            <div class="dep-btn-col left">
+              <DepBtn label="Buy" disabled={!canBuy} onClick={() => depotBuy(sel)} />
+              <DepBtn label="Sell" disabled={!canSell} onClick={() => depotSell(sel)} />
+              <DepBtn label="Auto Buy" span onClick={depotAutoBuy} />
+            </div>
+            {/* Right cluster: Stats over Close. */}
+            <div class="dep-btn-col right">
+              <DepBtn
+                label="Stats"
+                onClick={() => {
+                  uiClick();
+                  setShowStats(s => !s);
+                }}
+              />
+              <DepBtn label="Close" onClick={closeDepot} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

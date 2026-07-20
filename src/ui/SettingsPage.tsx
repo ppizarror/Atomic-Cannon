@@ -8,15 +8,19 @@
  * description centered along the bottom edge; with nothing hovered the page's own
  * header line shows there instead.
  */
-import { useState } from 'preact/hooks';
-import { settingsPageBack } from './store';
-import { BmpText } from './BmpText';
-import { getSettingsPage, type Widget } from './settingsPages';
-import { clamp, wrapIndex } from '../math/num';
+import {useState} from 'preact/hooks';
+import {settingsPageBack} from './store';
+import {BmpText} from './BmpText';
+import {getSettingsPage, type Widget} from './settingsPages';
+import {clamp, wrapIndex} from '../math/num';
 
 const ROW_FONT = 'bazouk-28';
 
-function RowView({ w, bump, onHover }: {
+function RowView({
+  w,
+  bump,
+  onHover,
+}: {
   w: Widget;
   bump: () => void;
   onHover: (s: string | null) => void;
@@ -27,11 +31,20 @@ function RowView({ w, bump, onHover }: {
   // A nav row (opens a sub-page / editor): whole-row button, trailing `>`.
   if (w.kind === 'nav') {
     return (
-      <button class="settings-row srow-nav menu-btn"
-        onMouseEnter={enter} onFocus={enter} onMouseLeave={leave} onBlur={leave}
-        onClick={() => w.onClick?.()}>
-        <span class="srow-side"><BmpText font={ROW_FONT} text={w.label} /></span>
-        <span class="srow-side srow-arrow"><BmpText font={ROW_FONT} text=">" /></span>
+      <button
+        class="settings-row srow-nav menu-btn"
+        onMouseEnter={enter}
+        onFocus={enter}
+        onMouseLeave={leave}
+        onBlur={leave}
+        onClick={() => w.onClick?.()}
+      >
+        <span class="srow-side">
+          <BmpText font={ROW_FONT} text={w.label} />
+        </span>
+        <span class="srow-side srow-arrow">
+          <BmpText font={ROW_FONT} text=">" />
+        </span>
       </button>
     );
   }
@@ -42,7 +55,9 @@ function RowView({ w, bump, onHover }: {
     if (w.kind === 'toggle') w.set(val ? 0 : 1);
     else if (w.kind === 'enum') w.set(wrapIndex(val + dir, w.options!.length));
     else {
-      const step = w.step ?? 1, min = w.min ?? 0, max = w.max ?? 100;
+      const step = w.step ?? 1,
+        min = w.min ?? 0,
+        max = w.max ?? 100;
       w.set(clamp(val + dir * step, min, max));
     }
     bump();
@@ -63,26 +78,29 @@ function RowView({ w, bump, onHover }: {
   }
 
   // Enum / stepper: `< Label` (prev) on the left, `Value >` (next) on the right.
-  const valueText = w.kind === 'enum'
-    ? (w.options![val] ?? String(val))
-    : (w.fmt ? w.fmt(val) : String(val));
+  const valueText =
+    w.kind === 'enum' ? (w.options![val] ?? String(val)) : w.fmt ? w.fmt(val) : String(val);
   return (
     <div class="settings-row menu-btn" onMouseEnter={enter} onMouseLeave={leave}>
       <button class="srow-half srow-left" onClick={() => change(-1)}>
-        <span class="srow-arrow"><BmpText font={ROW_FONT} text="<" /></span>
+        <span class="srow-arrow">
+          <BmpText font={ROW_FONT} text="<" />
+        </span>
         <BmpText font={ROW_FONT} text={w.label} />
       </button>
       <button class="srow-half srow-right" onClick={() => change(1)}>
         <BmpText font={ROW_FONT} text={valueText} />
-        <span class="srow-arrow"><BmpText font={ROW_FONT} text=">" /></span>
+        <span class="srow-arrow">
+          <BmpText font={ROW_FONT} text=">" />
+        </span>
       </button>
     </div>
   );
 }
 
-export function SettingsPage({ id }: { id: string }) {
+export function SettingsPage({id}: {id: string}) {
   const [, setTick] = useState(0);
-  const bump = () => setTick((v) => v + 1);
+  const bump = () => setTick(v => v + 1);
   const [sub, setSub] = useState<string | null>(null);
 
   const page = getSettingsPage(id);
@@ -94,10 +112,12 @@ export function SettingsPage({ id }: { id: string }) {
         {page.rows.map((w, i) => (
           <RowView key={i} w={w} bump={bump} onHover={setSub} />
         ))}
-        <button class="settings-row srow-done menu-btn"
+        <button
+          class="settings-row srow-done menu-btn"
           onMouseEnter={() => setSub('Return to the settings menu')}
           onMouseLeave={() => setSub(null)}
-          onClick={settingsPageBack}>
+          onClick={settingsPageBack}
+        >
           <BmpText font="bazouk-28" text="Done" />
         </button>
       </div>

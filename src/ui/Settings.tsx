@@ -9,11 +9,11 @@
  * Each category opens its option page (`SettingsPage`); Customize Controls / Players
  * are dedicated editor screens that aren't built yet (audible click only).
  */
-import { useState } from 'preact/hooks';
-import { closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick } from './store';
-import { BmpText } from './BmpText';
-import { MenuButton } from './MenuButton';
-import { SettingsPage } from './SettingsPage';
+import {useState} from 'preact/hooks';
+import {closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick} from './store';
+import {BmpText} from './BmpText';
+import {MenuButton} from './MenuButton';
+import {SettingsPage} from './SettingsPage';
 
 interface Entry {
   label: string;
@@ -27,17 +27,41 @@ interface Entry {
 // strings — quirks and all. Each opens its option page; Customize
 // Controls / Players open dedicated editor screens (not built yet — inert click).
 const CATEGORIES: Entry[] = [
-  { label: 'Economy Options', sub: 'Adjust economic settings', onClick: () => openSettingsPage('economy') },
-  { label: 'Tank Options', sub: 'Adjust tank settings', onClick: () => openSettingsPage('tank') },
-  { label: 'Gameplay Options', sub: 'Adjust gameplay settings', onClick: () => openSettingsPage('gameplay') },
-  { label: 'Graphics Options', sub: 'Adjust graphics settings', onClick: () => openSettingsPage('graphics') },
-  { label: 'Audio Options', sub: 'In game razzle dazzle soundfecta', onClick: () => openSettingsPage('audio') },
-  { label: 'Game Content', sub: 'Enable specific weapons and landscapes', onClick: () => openSettingsPage('content') },
-  { label: 'Customize Controls', sub: 'Define custom buttons for game actions', onClick: uiClick },
-  { label: 'Customize Players', sub: 'Define custom names and colors (quits current game)', onClick: uiClick },
+  {
+    label: 'Economy Options',
+    sub: 'Adjust economic settings',
+    onClick: () => openSettingsPage('economy'),
+  },
+  {label: 'Tank Options', sub: 'Adjust tank settings', onClick: () => openSettingsPage('tank')},
+  {
+    label: 'Gameplay Options',
+    sub: 'Adjust gameplay settings',
+    onClick: () => openSettingsPage('gameplay'),
+  },
+  {
+    label: 'Graphics Options',
+    sub: 'Adjust graphics settings',
+    onClick: () => openSettingsPage('graphics'),
+  },
+  {
+    label: 'Audio Options',
+    sub: 'In game razzle dazzle soundfecta',
+    onClick: () => openSettingsPage('audio'),
+  },
+  {
+    label: 'Game Content',
+    sub: 'Enable specific weapons and landscapes',
+    onClick: () => openSettingsPage('content'),
+  },
+  {label: 'Customize Controls', sub: 'Define custom buttons for game actions', onClick: uiClick},
+  {
+    label: 'Customize Players',
+    sub: 'Define custom names and colors (quits current game)',
+    onClick: uiClick,
+  },
 ];
 
-function SettingsItem({ entry, onHover }: { entry: Entry; onHover: (s: string) => void }) {
+function SettingsItem({entry, onHover}: {entry: Entry; onHover: (s: string) => void}) {
   return (
     <MenuButton
       label={entry.label}
@@ -67,7 +91,7 @@ function SettingsRoot() {
   return (
     <div class="settings-screen">
       <div class="menu-list settings-list">
-        {CATEGORIES.map((e) => (
+        {CATEGORIES.map(e => (
           <SettingsItem key={e.label} entry={e} onHover={setSub} />
         ))}
         <SettingsItem key="Done" entry={done} onHover={setSub} />

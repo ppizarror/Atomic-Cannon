@@ -10,20 +10,20 @@
  */
 export const GameConfig = {
   // ── physics / gameplay scalars (1 = the default feel) ──
-  kickbackScale: 1,      // Tank → Kickback (Off = 0)
-  explosionScale: 1,     // Gameplay → Explosion Size
-  powerScale: 1,         // Tank → Power Scale
-  tankSizeScale: 1,      // Tank → Player Size (hull + collision geometry)
-  hitpoints: 1000,       // Tank → Hitpoints (tank starting life)
+  kickbackScale: 1, // Tank → Kickback (Off = 0)
+  explosionScale: 1, // Gameplay → Explosion Size
+  powerScale: 1, // Tank → Power Scale
+  tankSizeScale: 1, // Tank → Player Size (hull + collision geometry)
+  hitpoints: 1000, // Tank → Hitpoints (tank starting life)
 
   // ── render toggles ──
-  drawSmoke: true,       // Graphics → Draw Smoke (lingering ground plumes)
-  colorizeTeam: true,    // Tank → Colorize Team (hull tint)
-  showTeamColor: true,   // Graphics → Show Team Color (name label)
-  showPowerBars: true,   // Graphics → Show Power (life/shield bars)
-  showTankStats: false,  // Graphics 2 → Show Tank Stats (force always-on; default hover-only)
-  tracking: true,        // Graphics → Tracking (off-screen shot notches)
-  showTurn: true,        // Graphics 2 → Show Turn (turn arrow)
-  showLastAim: true,     // Graphics 2 → Show Last Aim (faded initial-aim marker)
-  explosionWaves: true,  // Graphics 2 → Explosion Waves (nuke refractive wave)
+  drawSmoke: true, // Graphics → Draw Smoke (lingering ground plumes)
+  colorizeTeam: true, // Tank → Colorize Team (hull tint)
+  showTeamColor: true, // Graphics → Show Team Color (name label)
+  showPowerBars: true, // Graphics → Show Power (life/shield bars)
+  showTankStats: false, // Graphics 2 → Show Tank Stats (force always-on; default hover-only)
+  tracking: true, // Graphics → Tracking (off-screen shot notches)
+  showTurn: true, // Graphics 2 → Show Turn (turn arrow)
+  showLastAim: true, // Graphics 2 → Show Last Aim (faded initial-aim marker)
+  explosionWaves: true, // Graphics 2 → Explosion Waves (nuke refractive wave)
 };

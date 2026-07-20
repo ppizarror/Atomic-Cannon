@@ -1,0 +1,8 @@
+dist
+node_modules
+public
+pnpm-lock.yaml
+
+# Generated game data (parsed from the original weapons.txt / land tables) —
+# not hand-edited, so leave its formatting alone.
+src/data/*.json

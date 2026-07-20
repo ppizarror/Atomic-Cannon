@@ -4,15 +4,17 @@
  * (see main.tsx); Settings opens the audio settings over it and returns here on
  * close; Quit drops back to the main menu (UI).
  */
-import { showPause, resumeGame, quitToMenu, openSettings } from './store';
-import { BmpText } from './BmpText';
-import { MenuButton } from './MenuButton';
+import {showPause, resumeGame, quitToMenu, openSettings} from './store';
+import {BmpText} from './BmpText';
+import {MenuButton} from './MenuButton';
 
 export function PauseMenu() {
   if (!showPause.value) return null;
   return (
     <div class="overlay pause-overlay">
-      <div class="pause-title"><BmpText font="beijing-20-out" text="GAME PAUSED" /></div>
+      <div class="pause-title">
+        <BmpText font="beijing-20-out" text="GAME PAUSED" />
+      </div>
       <div class="menu-list">
         <MenuButton label="Resume" onClick={resumeGame} />
         <MenuButton label="Settings" onClick={() => openSettings('pause')} />

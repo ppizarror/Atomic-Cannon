@@ -10,7 +10,9 @@
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --fix",
-    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"*.{json,ts}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"*.{json,ts}\"",
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test",
     "preview": "vite preview",
     "test": "tsx tests/run.ts"
   },
@@ -24,6 +26,7 @@
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.1.1",
     "oxlint": "^1.74.0",
+    "prettier": "^3.9.5",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"

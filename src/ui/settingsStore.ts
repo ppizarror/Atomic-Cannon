@@ -7,8 +7,8 @@
  * their widgets bind straight to those subsystems so the menu reflects the real state
  * and there's one source of truth. Everything else is a preference we remember.
  */
-import { signal } from '@preact/signals';
-import { loadJSON, saveJSON } from '../util/storage';
+import {signal} from '@preact/signals';
+import {loadJSON, saveJSON} from '../util/storage';
 
 const KEY = 'atomic.settings';
 
@@ -25,6 +25,6 @@ export function getVal(id: string, dflt: number): number {
 
 /** Set `id` and persist the whole map. */
 export function setVal(id: string, v: number): void {
-  vals.value = { ...vals.value, [id]: v };
+  vals.value = {...vals.value, [id]: v};
   saveJSON(KEY, vals.value);
 }

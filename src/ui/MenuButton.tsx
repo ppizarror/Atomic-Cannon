@@ -6,9 +6,16 @@
  * centering, so callers just supply the label and, where needed (Settings), hover
  * handlers to drive the bottom subtitle. `class` is for rare extra styling.
  */
-import { BmpText, type FontId } from './BmpText';
+import {BmpText, type FontId} from './BmpText';
 
-export function MenuButton({ label, font = 'bazouk-28', onClick, onEnter, onLeave, class: cls }: {
+export function MenuButton({
+  label,
+  font = 'bazouk-28',
+  onClick,
+  onEnter,
+  onLeave,
+  class: cls,
+}: {
   label: string;
   font?: FontId;
   onClick?: () => void;
