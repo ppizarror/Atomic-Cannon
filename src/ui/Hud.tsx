@@ -11,10 +11,12 @@ import {useEffect, useRef, useState} from 'preact/hooks';
 import type {JSX, ComponentChildren} from 'preact';
 import {BmpText} from './BmpText';
 import {
-    power, angle, wind, weaponIndex, playerName, teamColor, life, shield,
+    power, angle, wind, weaponIndex, playerName, teamColor, life, maxLife, shield,
     blocked, winner, weapons, game, loadWeaponIcon, uiClick, battleStatus,
     openDepot, openPauseMenu, openHelp, POWER_MIN, POWER_MAX, wrapAngle, turnTimer,
+    teamId, armor, hazmat, posX, posY, credits, windVelX, windVelY, windAccX, windAccY, canMoveNow,
 } from './store';
+import {weaponPower, weaponDamagePerArea} from '../core/CWeapon';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -249,13 +251,15 @@ function ControlPanel() {
     const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
     const dA = (d: number) => g().setAngle(wrapAngle(g().getAngle() + d));
     // ▲/▼ step through the displayed list (by list position), then select that
-    // row's real weapon index — works whether the list is full or filtered.
+    // row's real weapon index — works whether the list is full or filtered. Wraps
+    // around: ▼ off the last row jumps to the first, ▲ off the first to the last.
     const dW = (d: number) => {
         const list = weapons.value;
         if (!list.length) return;
         uiClick();
         const cur = Math.max(0, list.findIndex(w => w.index === g().getCurrentWeaponIndex()));
-        g().selectWeapon(list[clamp(cur + d, 0, list.length - 1)].index);
+        const next = (((cur + d) % list.length) + list.length) % list.length;
+        g().selectWeapon(list[next].index);
     };
 
     return (
@@ -326,33 +330,94 @@ function TurnBanner() {
 }
 
 // A single bitmap-font line inside a black side box.
-function LcdLine({text, title}: { text: string; title?: boolean }) {
+function LcdLine({text}: { text: string; title?: boolean }) {
     return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={3}/>;
 }
 
-function WeaponDetails() {
-    const w = weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
+/** The currently-selected weapon def (falls back to the first). */
+function currentWeapon() {
+    return weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
+}
+
+// The side-LCD boxes flank the central control panel, like the original HUD
+// painter (FUN_00474ff0): two weapon boxes to the LEFT, two tank/world boxes to
+// the RIGHT. Each is appended outward only when the screen is wide enough to hold
+// it (the width-gating lives in hud.css, revealing outermost boxes last). The
+// field set and every derived value is reversed from the binary. (The original's
+// third left box — "Weapon Desc" — is omitted: most weapons carry no description.)
+
+// L1 — WEAPON DETAILS (innermost left). Power + Damage-per-area are DERIVED stats
+// (see weaponPower/weaponDamagePerArea); Fodder is the raw fraction shown as a %.
+function WeaponDetails1() {
+    const w = currentWeapon();
     return (
-        <div class="side-lcd" id="weapon-details">
+        <div class="side-lcd wpn" id="weapon-details">
             <LcdLine title text="WEAPON DETAILS"/>
             {w && <>
                 <LcdLine text={`TYPE ${String(w.type).toUpperCase()}`}/>
+                <LcdLine text={`POWER ${weaponPower(w)}`}/>
                 <LcdLine text={`DAMAGE ${w.damage}`}/>
                 <LcdLine text={`RADIUS ${w.radius}`}/>
                 <LcdLine text={`VARIANCE ${(w.variance ?? 0).toFixed(1)}`}/>
-                <LcdLine text={`CLUSTER ${w.cluNum > 0 ? w.cluNum : '-'}`}/>
-                <LcdLine text={`COST $${w.cost}`}/>
+                <LcdLine text={`FODDER ${Math.round((w.fodder ?? 0) * 100)}%`}/>
+                <LcdLine text={`DAMAGE PER AREA ${weaponDamagePerArea(w)}`}/>
             </>}
         </div>
     );
 }
 
+// L2 — WEAPON DETAILS (second left). Cluster = total submunitions cluNum^cluRecurse
+// (raw cluNum when it doesn't recurse); Succession is stored+1; Radiation is the
+// binary's irDmg·fodder·radius·100 rating (all RE: FUN_00474ff0 @ 0x47b9c7..).
+function WeaponDetails2() {
+    const w = currentWeapon();
+    const cluster = w ? ((w.cluRecurse ?? 0) > 0 ? Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse)) : (w.cluNum ?? 0)) : 0;
+    return (
+        <div class="side-lcd wpn" id="weapon-details-2">
+            <LcdLine title text="WEAPON DETAILS"/>
+            {w && <>
+                <LcdLine text={`EARTH ${w.earth ?? 0}`}/>
+                <LcdLine text={`SPAWN ${w.spawn ?? 0}`}/>
+                <LcdLine text={`CLUSTER ${cluster}`}/>
+                <LcdLine text={`SUCCESSION ${(w.sucNum ?? 0) + 1}`}/>
+                <LcdLine text={`BATTERY ${w.batSec ?? 0}`}/>
+                <LcdLine text={`RADIATION ${Math.round((w.irDmg ?? 0) * (w.fodder ?? 0) * w.radius * 100)}`}/>
+            </>}
+        </div>
+    );
+}
+
+// R1 — tank stats (innermost right), titled with the acting tank's name.
 function PlayerStats() {
     return (
         <div class="side-lcd" id="player-stats">
             <LcdLine title text={playerName.value.toUpperCase()}/>
-            <LcdLine text={`LIFE ${life.value}/1000`}/>
+            <LcdLine text={`TEAM ${teamId.value}`}/>
+            <LcdLine text={`LIFE ${life.value}/${maxLife.value}`}/>
             <LcdLine text={`SHIELD ${shield.value}/1000`}/>
+            <LcdLine text={`ARMOR ${armor.value}%`}/>
+            <LcdLine text={`HAZMAT ${hazmat.value}%`}/>
+            <LcdLine text={`CREDITS ${credits.value}`}/>
+            <LcdLine text={`POSITION ${posX.value} ${posY.value}`}/>
+        </div>
+    );
+}
+
+// R2 — WIND MEASUREMENTS (outermost right): wind velocity + acceleration and
+// whether the acting tank is free to move (else it's stuck underground).
+function WindMeasurements() {
+    const f = (n: number) => n.toFixed(2);
+    return (
+        <div class="side-lcd" id="wind-measurements">
+            <LcdLine title text="WIND MEASUREMENTS"/>
+            <LcdLine text={`VEL ${f(windVelX.value)} ${f(windVelY.value)}`}/>
+            <LcdLine text={`ACC ${f(windAccX.value)} ${f(windAccY.value)}`}/>
+            {canMoveNow.value
+                ? <LcdLine text="CAN MOVE"/>
+                : <>
+                    <LcdLine text="CAN'T MOVE"/>
+                    <LcdLine text="UNDERGROUND"/>
+                </>}
         </div>
     );
 }
@@ -363,9 +428,11 @@ export function Hud() {
             <BattleStatus/>
             <TurnBanner/>
             <div id="hud">
-                <WeaponDetails/>
+                <WeaponDetails2/>
+                <WeaponDetails1/>
                 <ControlPanel/>
                 <PlayerStats/>
+                <WindMeasurements/>
             </div>
         </>
     );

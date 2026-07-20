@@ -198,13 +198,25 @@ export class CWeapon {
         return this.m_def.batSec || 0;
     }
 
-    // Multi-fire: `spread` simultaneous fanned rounds; `spawn` sequential salvos.
-    getSpreadCount(): number {
-        return this.m_def.spread || 0;
+    // Multi-fire (from the disassembly `impactMultiplier`): `spawn` (+0x1c) = the
+    // number of SIMULTANEOUS rounds fired in a fan; `spread` (+0x24) = degrees BETWEEN
+    // those rounds; `sucNum` (+0x40) = SUCCESSION — the shot fires `sucNum+1` times in
+    // a row (`sucSec` apart). So a Cannon (spawn 5) sprays 5 pellets; a Machine Gun
+    // (sucNum 11) fires ~12 times. (The weapons.txt column NAMES are misleading.)
+    getSpawnCount(): number {
+        return this.m_def.spawn || 1;                 // simultaneous fan count
     }
 
-    getSpawnCount(): number {
-        return this.m_def.spawn || 1;
+    getFanSpacingDeg(): number {
+        return this.m_def.spread || 0;                // degrees between fanned rounds
+    }
+
+    getSuccessionCount(): number {
+        return Math.max(0, this.m_def.sucNum || 0);   // extra salvos fired in succession
+    }
+
+    getSuccessionSec(): number {
+        return this.m_def.sucSec || 0;                // time window for the succession burst
     }
 
     getVariance(): number {
@@ -284,6 +296,52 @@ export class CWeapon {
     getFlareSize(): number {
         return this.m_def.flareSize || 0;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Derived weapon stats shown in the weapon-details LCD / depot.
+//
+// These are NOT columns in weapons.txt — the original computes them once at
+// weapon-load (CWeapon post-parse, FUN_004036e0 @ 0x4036e0) and stores them in
+// the runtime struct (+0x98 Power, +0x9c Damage-per-area). Verified byte-for-byte
+// from the disassembly; reproduces the shipped anchors exactly:
+//   Shell 50 · Rocket 100 · Earth Destroy 25 · Plutonium Nuke 650 · Toxic Cow 700.
+// ---------------------------------------------------------------------------
+
+/** The weapon's "effective impact count" multiplier `m` — the first half of the
+ *  Power derivation. Starts at 1, is OVERWRITTEN by spawn, then multiplied by the
+ *  battery / succession / cluster factors (they compound). Cluster is integer
+ *  `cluNum^cluRecurse`, except cluNum==1 which sets m = cluRecurse outright. */
+function impactMultiplier(w: RawWeapon): number {
+    let m = 1;
+    if ((w.spawn ?? 0) > 0) m = w.spawn;                     // +0x1c: m = spawn (assign)
+    if ((w.batSec ?? 0) > 0) m = m * w.batSec * 3;           // +0x3c: × batSec × 3
+    if ((w.sucNum ?? 0) > 0) m = m * (w.sucNum + 1);         // +0x40: × (sucNum + 1)
+    if (w.cluNum === 1) m = w.cluRecurse;                    // +0x28==1: m = cluRecurse
+    else if ((w.cluNum ?? 0) > 0)                            // else: × cluNum^cluRecurse (int)
+        m = m * Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse ?? 0));
+    return m;
+}
+
+/** Post-override Power (+0x98): `m × damage`, `+200` if the weapon irradiates,
+ *  or just `damage` for Utility weapons (a heal/move amount, not an attack). */
+export function weaponPower(w: RawWeapon): number {
+    const m = impactMultiplier(w);
+    let power = m * w.damage;
+    if ((w.iradiate ?? 0) > 0) power += 200;                 // +0x58 (iradiate) > 0
+    if (w.type === 'Utility') power = w.damage;              // type == "Utility"
+    return Math.round(power);
+}
+
+/** Damage-per-area (+0x9c): `Power·10000 / (radius² · m · 6.28)` — power density
+ *  over the blast footprint. Zero when the weapon has no radius or no impact. */
+export function weaponDamagePerArea(w: RawWeapon): number {
+    const m = impactMultiplier(w);
+    if (m <= 0 || w.radius <= 0) return 0;
+    let power = m * w.damage;
+    if ((w.iradiate ?? 0) > 0) power += 200;
+    if (w.type === 'Utility') power = w.damage;
+    return Math.round((power * 10000) / (w.radius * w.radius * m * 6.28));
 }
 
 export function getWeapon(index: number): CWeapon {

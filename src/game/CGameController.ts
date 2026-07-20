@@ -793,8 +793,13 @@ export class CGameController implements ShotWorld {
         const activeShots = this.m_shots.filter(s => !s.isDead());
 
         if (activeShots.length === 0) {
-            // No active shots - something went wrong, return to battle
+            // Between succession salvos (machine gun / gatling burst): no shot is in the
+            // air yet the next salvo is still scheduled — hold in ShotFlying and wait.
+            if (this.m_pendingSalvos > 0) return;
+            // Nothing flying and nothing pending — end the round.
+            this.m_shots = [];
             this.m_gameState = EGameState.Battle;
+            this.schedule(0.6, () => this.endTurn());
             return;
         }
 
@@ -822,9 +827,9 @@ export class CGameController implements ShotWorld {
             else if (action === 'consumed') shot.kill();
         }
 
-        // Include submunitions spawned this frame, so a cluster keeps the round in
-        // flight until every child has landed.
-        const stillFlying = this.m_shots.some(s => !s.isDead());
+        // Include submunitions spawned this frame (so a cluster keeps the round in
+        // flight until every child lands) AND any succession salvos not yet fired.
+        const stillFlying = this.m_shots.some(s => !s.isDead()) || this.m_pendingSalvos > 0;
         if (stillFlying) {
             this.m_gameState = EGameState.ShotFlying;
         } else {
@@ -1142,12 +1147,16 @@ export class CGameController implements ShotWorld {
         const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
         const varianceRad = weapon.getVariance() * Math.PI / 180;   // per-shot inaccuracy
 
-        // `spread` fires a simultaneous fan of rounds; a plain weapon fires one.
-        const rounds = Math.max(1, weapon.getSpreadCount());
-        const spacingRad = 8 * Math.PI / 180;
+        // Multi-fire (disassembly `impactMultiplier`): `spawn` = SIMULTANEOUS rounds in
+        // a fan, `spread` = degrees between them, `sucNum` = SUCCESSION (fires sucNum+1
+        // times in a row). So a Cannon (spawn 5) sprays 5 pellets, a Machine Gun
+        // (sucNum 11) rattles off ~12, a Tomcat (spawn 3, spread 3) fans 3 rockets.
+        const rounds = Math.max(1, weapon.getSpawnCount());
+        const spacingRad = weapon.getFanSpacingDeg() * Math.PI / 180;
 
-        // Beams are instantaneous hitscan: resolve the whole ray this frame (no flying
-        // projectile). The Explosion state then waits for the beam flash to fade.
+        // Beams are instantaneous hitscan: resolve the whole fan this frame (no flying
+        // projectile), then Explosion waits for the flash to fade. (No beam has a
+        // succession count, so beams don't burst.)
         if (isBeam) {
             for (let i = 0; i < rounds; i++) {
                 const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
@@ -1159,20 +1168,33 @@ export class CGameController implements ShotWorld {
             return;
         }
 
-        for (let i = 0; i < rounds; i++) {
-            const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
-            const jitter = varianceRad > 0 ? (Math.random() * 2 - 1) * varianceRad : 0;
-            const pShot = new CShot();
-            pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, weapon.getDamage(), weapon.getRadius(), tank);
-            pShot.setWeaponIndex(this.m_currentWeaponIndex);
-            pShot.setSkipGravity(isBeam);
-            this.m_shots.push(pShot);
-        }
+        // One salvo = `rounds` rounds fanned `spacingRad` apart, + per-round variance,
+        // plus the muzzle blast. `sucNum+1` salvos fire in SUCCESSION across the `sucSec`
+        // window (clamped to a rapid cadence) — a burst for machine guns / gatlings.
+        const dmg = weapon.getDamage(), rad = weapon.getRadius();
+        const flash = weapon.getMuzzleFlash(), muSmoke = weapon.getMuzzleSmoke();
+        const fireSalvo = () => {
+            for (let i = 0; i < rounds; i++) {
+                const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
+                const jitter = varianceRad > 0 ? (Math.random() * 2 - 1) * varianceRad : 0;
+                const pShot = new CShot();
+                pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, dmg, rad, tank);
+                pShot.setWeaponIndex(this.m_currentWeaponIndex);
+                this.m_shots.push(pShot);
+            }
+            if (flash > 0 || muSmoke > 0) {
+                const d = {x: Math.cos(baseAngle), y: -Math.sin(baseAngle)};
+                this.m_particles.muzzle(muzzlePos.x, muzzlePos.y, d.x, d.y, flash, muSmoke, weapon.getColor());
+            }
+            this.m_pendingSalvos = Math.max(0, this.m_pendingSalvos - 1);
+        };
 
-        // Muzzle blast: forward flash + smoke (bombs/shells have it; rockets/beams don't).
-        if (weapon.getMuzzleFlash() > 0 || weapon.getMuzzleSmoke() > 0) {
-            const d = {x: Math.cos(baseAngle), y: -Math.sin(baseAngle)};
-            this.m_particles.muzzle(muzzlePos.x, muzzlePos.y, d.x, d.y, weapon.getMuzzleFlash(), weapon.getMuzzleSmoke(), weapon.getColor());
+        const salvos = 1 + weapon.getSuccessionCount();
+        const gap = salvos > 1 ? Math.min(0.14, Math.max(0.05, weapon.getSuccessionSec() / salvos)) : 0;
+        this.m_pendingSalvos = salvos;
+        for (let sv = 0; sv < salvos; sv++) {
+            if (sv === 0) fireSalvo();
+            else this.schedule(gap * sv, fireSalvo);
         }
 
         this.m_gameState = EGameState.ShotFlying;
@@ -1556,6 +1578,22 @@ export class CGameController implements ShotWorld {
         return this.m_wind.x;
     }
 
+    /** Full 2-D wind velocity, for the "Wind Measurements" LCD ("Vel %.02f %.02f"). */
+    getWindVec(): { x: number; y: number } {
+        return {x: this.m_wind.x, y: this.m_wind.y};
+    }
+
+    /** Wind acceleration (the drift target), for the LCD's "Acc %.02f %.02f". */
+    getWindAccel(): { x: number; y: number } {
+        return {x: this.m_windAccel.x, y: this.m_windAccel.y};
+    }
+
+    /** Whether the acting tank can drive from where it sits (LCD "Can move" /
+     *  "Can't move" + "underground"). */
+    getCurrentTankCanMove(): boolean {
+        return this.getCurrentTank().canMove(this.m_land);
+    }
+
     getCurrentPlayerName(): string {
         return this.getCurrentTank().getName();
     }
@@ -1617,6 +1655,7 @@ export class CGameController implements ShotWorld {
     private m_land: CLand;
     private m_tanks: CTank[] = [];
     private m_shots: CShot[];
+    private m_pendingSalvos = 0;   // succession salvos still scheduled to fire this shot
 
     private m_particles: CParticleSystem;
     private m_weather: CWeather;

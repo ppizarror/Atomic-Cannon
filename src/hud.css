@@ -181,64 +181,63 @@ img, canvas {
     background: rgba(0, 0, 0, 0.2);
 }
 
-/* weapon list (over the panel's black box) — rows flush, like the original */
+/* weapon list (over the panel's black box) — rows flush, like the original.
+   No scrollbar here: the ▲/▼ arrows step through weapons and scrollIntoView keeps
+   the active row visible, so the overflow just clips (matches the original). */
 .wlist {
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     padding: 0;
 }
 
-/* Classic scrollbar — a black groove with a solid light rectangular "control",
-   no rounding — matching the original game's weapon-list bar. Replaces the OS's
-   modern rounded pill so every scrolling panel (weapon list, depot, about) reads
-   the same. Firefox uses scrollbar-*, WebKit/Blink uses ::-webkit-scrollbar. */
-.wlist,
-.dep-list,
-.about-body {
-    scrollbar-width: thin;                    /* Firefox: thin bar */
-    scrollbar-color: #cfd3d7 #050605;         /* Firefox: thumb / track */
+/* ---- Classic scrollbar (see ClassicScrollbar.tsx) --------------------------
+   The original game's bar: a flat black groove with a solid white rectangular
+   control — hard corners, no border, no inset margin. macOS can't square off the
+   native ::-webkit-scrollbar thumb (it stays a rounded, edge-inset pill), so the
+   native bar is hidden and this is drawn while the view scrolls underneath. */
+.cscroll-host {
+    position: relative;
 }
 
-.wlist::-webkit-scrollbar,
-.dep-list::-webkit-scrollbar,
-.about-body::-webkit-scrollbar {
-    width: 11px;
+.cscroll-view {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 12px;              /* reserve the track's column so rows clear it */
+    scrollbar-width: none;            /* Firefox: hide native bar */
 }
 
-.wlist::-webkit-scrollbar-track,
-.dep-list::-webkit-scrollbar-track,
-.about-body::-webkit-scrollbar-track {
-    background: #050605;                       /* black groove */
-    border-left: 1px solid rgba(0, 0, 0, 0.6);
-}
-
-.wlist::-webkit-scrollbar-thumb,
-.dep-list::-webkit-scrollbar-thumb,
-.about-body::-webkit-scrollbar-thumb {
-    background: #d8dce0;                       /* solid light control */
-    border: 0;                                /* no frame */
-    border-radius: 0;                         /* hard rectangle, not rounded */
-}
-
-.wlist::-webkit-scrollbar-thumb:hover,
-.dep-list::-webkit-scrollbar-thumb:hover,
-.about-body::-webkit-scrollbar-thumb:hover {
-    background: #e7eaed;
-}
-
-.wlist::-webkit-scrollbar-thumb:active,
-.dep-list::-webkit-scrollbar-thumb:active,
-.about-body::-webkit-scrollbar-thumb:active {
-    background: #b7bcc1;
-}
-
-/* No arrow buttons — the classic bar is just track + thumb. */
-.wlist::-webkit-scrollbar-button,
-.dep-list::-webkit-scrollbar-button,
-.about-body::-webkit-scrollbar-button {
-    display: none;
-    height: 0;
+.cscroll-view::-webkit-scrollbar {
     width: 0;
+    height: 0;
+    display: none;                    /* WebKit/Blink: hide native bar */
+}
+
+.cscroll-bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 12px;
+    background: #050605;              /* black groove */
+    pointer-events: none;            /* only the grip is grabbable */
+}
+
+.cscroll-grip {
+    position: absolute;
+    right: 0;
+    width: 12px;
+    background: #d8dce0;              /* solid white control — hard rectangle */
+    pointer-events: auto;
+    cursor: default;
+}
+
+.cscroll-grip:hover {
+    background: #eef1f4;
+}
+
+.cscroll-grip:active {
+    background: #b7bcc1;
 }
 
 .wrow {
@@ -387,7 +386,7 @@ img, canvas {
     position: relative;
     align-self: flex-start;
     margin-top: 7px;
-    min-width: 150px;
+    width: 155px;
     flex: 0 0 auto;
     background: #050705;
     border: 2px solid;
@@ -419,13 +418,23 @@ img, canvas {
     margin-bottom: 2px;
 }
 
-@media (max-width: 1100px) {
+/* Width-gated boxes, matching the original: the panel keeps its innermost box on
+   each side (Weapon Details / tank stats), and the OUTER boxes are revealed only
+   as the screen widens — outermost first to disappear. Order out from the panel:
+   left  = weapon-details → weapon-details-2, right = player-stats → wind-measurements. */
+@media (max-width: 1580px) {
+    #weapon-details-2, #wind-measurements {
+        display: none;
+    }
+}
+
+@media (max-width: 1200px) {
     #player-stats {
         display: none;
     }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1000px) {
     #weapon-details {
         display: none;
     }
@@ -647,8 +656,7 @@ img, canvas {
 
 .dep-list {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;                 /* clips the ClassicScrollbar view + track */
     border: 1px solid rgba(0, 0, 0, 0.4);
     border-radius: 3px;
     background: rgba(0, 0, 0, 0.28);
@@ -919,6 +927,43 @@ img, canvas {
     cursor: default;
 }
 
+/* ======================= SHARED MENU BUTTON (.menu-btn) ==================== */
+/* One highlight treatment for every menu list — main menu, the "Game Menu" pause
+   list, the Settings root, and the option rows. HOVER paints a light box behind the
+   entry; CLICK replaces it with the photographic NEGATIVE of whatever's behind the
+   box (the legacy invert-rect selection), drawn by an overlay whose backdrop-filter
+   inverts the scene *and* the glyphs on top of it.
+   NB: the button must NOT carry `transform`/`filter` — those would isolate its
+   backdrop so the overlay could only invert the button's own interior, not the scene
+   behind it. `:active` also applies to a pressed element's ancestors, so pressing a
+   row's half inverts the whole row. */
+.menu-btn {
+    position: relative;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    transition: background 0.08s ease;
+}
+.menu-btn:hover {
+    background: linear-gradient(rgba(233, 224, 199, 0.34), rgba(198, 187, 160, 0.20));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+.menu-btn:active {
+    background: none;
+    box-shadow: none;
+}
+.menu-btn:active::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    backdrop-filter: invert(1);
+    -webkit-backdrop-filter: invert(1);
+    pointer-events: none;
+}
+.menu-btn canvas {
+    display: block;
+}
+
 /* ============================ PAUSE MENU ============================ */
 /* A centered bitmap-font item list over the darkened, frozen battle. */
 .pause-overlay {
@@ -946,20 +991,9 @@ img, canvas {
     align-items: center;
     gap: 16px;
 }
+/* Layout only — the hover box + click-negative come from .menu-btn. */
 .pause-item {
-    background: none;
-    border: 0;
-    cursor: pointer;
     padding: 3px 22px;
-    border-radius: 4px;
-    transition: background 0.1s ease;
-}
-/* Hover = a light highlight behind the text; click = its negative (dark). */
-.pause-item:hover {
-    background: rgba(255, 255, 255, 0.22);
-}
-.pause-item:active {
-    background: rgba(0, 0, 0, 0.5);
 }
 
 /* ============================ MAIN MENU / ABOUT ============================ */
@@ -993,24 +1027,9 @@ img, canvas {
     align-items: center;
     gap: 4px;
 }
+/* Layout only — the hover box + click-negative come from .menu-btn. */
 .mainmenu-item {
-    background: none;
-    border: 0;
-    cursor: pointer;
     padding: 3px 22px;
-    border-radius: 4px;
-    /* Own GPU layer (no filter — a filter caches the async font <canvas>'s initial
-       0×0 raster): promotes each item to a layer so the bitmap font rasterises
-       crisply always, the way it does when a hover transform promotes it. */
-    transform: translateZ(0);
-    transition: background 0.1s ease;
-}
-/* Hover = a light highlight behind the text; click = its negative (dark). */
-.mainmenu-item:hover {
-    background: rgba(255, 255, 255, 0.22);
-}
-.mainmenu-item:active {
-    background: rgba(0, 0, 0, 0.5);
 }
 .mainmenu-logo {
     position: absolute;
@@ -1056,8 +1075,8 @@ img, canvas {
 }
 .about-body {
     flex: 1;
-    overflow-y: auto;
-    white-space: pre-wrap;
+    overflow: hidden;                 /* clips the ClassicScrollbar view + track */
+    white-space: pre-wrap;            /* inherited by the scrolling view's text */
     font-size: 13px;
     line-height: 1.55;
     color: #cdd6de;
@@ -1068,6 +1087,8 @@ img, canvas {
 }
 
 /* ============================ HELP OVERLAY ============================ */
+/* Rendered on the game's `atomic/dialog.bmp` beveled metal panel (9-sliced via
+   border-image) with the game's bitmap fonts — no CSS chrome. */
 .help-overlay {
     position: fixed;
     inset: 0;
@@ -1078,55 +1099,60 @@ img, canvas {
     background: rgba(0, 0, 0, 0.55);
 }
 .help-card {
-    width: min(560px, 92vw);
-    max-height: 86vh;
+    width: min(620px, 94vw);
+    max-height: 88vh;
     display: flex;
     flex-direction: column;
-    background: rgba(18, 22, 28, 0.92);
-    border: 2px solid #2a2f35;
-    border-radius: 10px;
-    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7);
-    padding: 18px 24px;
+    /* the dialog sprite: 12px beveled frame kept crisp, dark-metal centre filled */
+    border: 12px solid transparent;
+    border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
+    image-rendering: pixelated;
+    padding: 8px 18px 16px;
     color: #dfe6ec;
 }
 .help-head, .help-sub {
     display: flex;
     justify-content: center;
 }
-.help-head canvas, .help-sub canvas {
+.help-head canvas, .help-sub canvas, .help-name canvas, .help-desc canvas {
     display: block;
 }
 .help-sub {
-    margin: 4px 0 14px;
+    margin: 2px 0 14px;
 }
 .help-list {
     flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 9px;
 }
 .help-row {
     display: grid;
-    grid-template-columns: 120px 1fr;
+    grid-template-columns: 128px 1fr;
     gap: 10px;
-    align-items: baseline;
-    padding-bottom: 7px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-.help-name {
-    font: 700 13px 'Segoe UI', sans-serif;
-    color: #f0d060;
-    white-space: nowrap;
-}
-.help-desc {
-    font-size: 13px;
-    line-height: 1.45;
-    color: #cdd6de;
+    align-items: center;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .help-close {
     align-self: center;
-    margin-top: 16px;
+    margin-top: 14px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 4px 20px;
+    border-radius: 4px;
+    transition: background 0.1s ease;
+}
+.help-close canvas {
+    display: block;
+}
+.help-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+.help-close:active {
+    background: rgba(0, 0, 0, 0.5);
 }
 
 /* Shared metal button (menu cards / About). */
@@ -1204,18 +1230,15 @@ img, canvas {
     position: fixed;
     inset: 0;
     z-index: 25;
-    /* Every non-title menu screen sits over the brushed-steel plate. */
-    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+    /* Same title backdrop as the main menu (the chrome "ATOMIC CANNON" logo is baked
+       in), darkened with a flat black wash so the white-outlined options read clearly.
+       The brushed-steel plate is reserved for the deeper editor sub-screens. */
+    background: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)),
+                url('/assets/panels/title.webp') top center / cover no-repeat #10141a;
     display: flex;
     flex-direction: column;
     align-items: center;
 }
-/* The chrome "ATOMIC CANNON" wordmark rides the top of every menu screen. */
-.settings-title {
-    margin-top: 4vh;
-    filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
-}
-.settings-title canvas,
 .settings-item canvas,
 .settings-subtitle canvas {
     display: block;
@@ -1229,25 +1252,11 @@ img, canvas {
     align-items: stretch;
     gap: 1px;
 }
+/* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-item {
     display: flex;
     justify-content: center;
-    background: none;
-    border: 0;
-    cursor: pointer;
     padding: 5px 0;
-    /* Own GPU layer so the bitmap-font <canvas> rasterises crisply (see .mainmenu-item). */
-    transform: translateZ(0);
-    transition: background 0.08s ease;
-}
-/* Hover = a wide warm highlight bar behind the entry (the retail options look);
-   click = its negative. */
-.settings-item:hover {
-    background: linear-gradient(rgba(233, 224, 199, 0.34), rgba(198, 187, 160, 0.20));
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
-}
-.settings-item:active {
-    background: rgba(0, 0, 0, 0.5);
 }
 /* Hover subtitle, centred along the bottom edge (reserves height so nothing jumps). */
 .settings-subtitle {
@@ -1261,3 +1270,51 @@ img, canvas {
     pointer-events: none;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
 }
+
+/* ---- Settings option pages (two-column widget rows) ---- */
+.settings-rows {
+    margin: auto 0;
+    width: min(900px, 90vw);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+/* Layout only — the hover box + click-negative come from .menu-btn. */
+.settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 1px 18px;
+}
+.settings-row canvas {
+    display: block;
+}
+/* The two clickable halves of a cyclable/toggle row (label side / value side) and
+   the label/value groups of a nav row. */
+.srow-half,
+.srow-side {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+/* Light up just the side the click will act on (prev on the left, next on the right). */
+.srow-half:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+.srow-arrow {
+    opacity: 0.82;
+}
+/* Done row — centred under the list. */
+.srow-done {
+    justify-content: center;
+    margin-top: 10px;
+}
+/* PREVIEW-TEMP */
+.settings-rows .menu-btn:nth-child(2){background:none;}
+.settings-rows .menu-btn:nth-child(2)::after{content:'';position:absolute;inset:0;backdrop-filter:invert(1);-webkit-backdrop-filter:invert(1);pointer-events:none;}

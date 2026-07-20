@@ -9,11 +9,12 @@
 import {useEffect, useMemo, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {ZeonFrame} from './ZeonFrame';
+import {ClassicScrollbar} from './ClassicScrollbar';
 import {
     showDepot, credits, ownedCounts, playerName, weaponIndex,
     closeDepot, depotBuy, depotSell, depotAutoBuy, loadWeaponIcon, loadUiBmp, game, uiClick,
 } from './store';
-import {WEAPON_DATABASE, type WeaponDef} from '../core/CWeapon';
+import {WEAPON_DATABASE, weaponPower, type WeaponDef} from '../core/CWeapon';
 
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
@@ -26,24 +27,10 @@ const BIG_FONT = 'msans-18';
 const SUB_FONT = 'arial-14-out';      // header subtitle: native white + baked outline
 const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native outline)
 
-// The depot's "Power" figure. In the original it's derived at weapon-load rather
-// than stored: base damage × the effective projectile count (cluster submunitions
-// dominate), plus a flat +200 for the big fallout weapons (nukes / DOT / organics),
-// and just the raw stat for utilities (a heal/move amount). This reproduces the
-// confirmed values (Plutonium Nuke 650, Toxic Cow 700, Shell 50, Rocket 100); the
-// exact per-field multiplier set isn't fully recovered, so it's an approximation.
-const POWER_BONUS_TYPES = new Set(['NUKE', 'DOT', 'Organic']);
-
-function powerOf(w: WeaponDef): number {
-    if (w.type === 'Utility') return w.damage;
-    let count = 1;
-    if (w.cluRecurse === 1) count = w.cluNum || 1;
-    else if (w.cluRecurse > 1 && (w.cluNum ?? 0) > 0) count = Math.pow(w.cluNum, w.cluRecurse);
-    else if ((w.spread ?? 0) > 0) count = w.spread + 1;
-    let power = count * w.damage;
-    if (POWER_BONUS_TYPES.has(String(w.type))) power += 200;
-    return Math.round(power);
-}
+// The depot's "Power" figure is the weapon's derived Power stat (base damage ×
+// effective impact count, +200 for radioactive weapons, raw stat for utilities) —
+// see `weaponPower` in CWeapon.ts, reversed byte-for-byte from FUN_004036e0.
+const powerOf = weaponPower;
 
 const UNLIMITED = Number.POSITIVE_INFINITY;
 
@@ -218,7 +205,7 @@ export function DepotPanel() {
                     <Header k="cost" label="Cost" cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader}/>
                 </div>
 
-                <div class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>
+                <ClassicScrollbar class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>
                     {rows.map(w => {
                         const q = owned[w.index] ?? 0;
                         const isSel = w.index === sel;
@@ -248,7 +235,7 @@ export function DepotPanel() {
                             </div>
                         );
                     })}
-                </div>
+                </ClassicScrollbar>
 
                 {hover !== null && WEAPON_DATABASE[hover] && <Tooltip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y}/>}
                 {showStats && selW && (

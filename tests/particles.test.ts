@@ -121,9 +121,9 @@ console.log('Particle system');
 {
     const ps = new CParticleSystem();
     ps.setBounds(800, 600);
-    ps.trail(100, 100, '#00ffff');
-    ok('trail adds an ember + smoke puff', ps.count() === 2, `count=${ps.count()}`);
-    stepN(ps, 130, 1 / 60);                 // ~2.2 s — past the ≤1.7 s smoke life
+    ps.trail(100, 100, '#00ffff');          // trailType 1 (ballistic): flare + spark, NO smoke
+    ok('shell trail adds a flare + spark (no smoke)', ps.count() === 2, `count=${ps.count()}`);
+    stepN(ps, 130, 1 / 60);                 // ~2.2 s — past the puff/spark life
     ok('trail puff fades', ps.count() === 0, `left=${ps.count()}`);
 }
 
@@ -133,10 +133,11 @@ console.log('Particle system');
     left.setBounds(4000, 2000);
     const right = new CParticleSystem();
     right.setBounds(4000, 2000);
-    // Same emission; opposite winds.
+    // Same emission; opposite winds. trailType 2 (rocket) so it emits grey SMOKE
+    // (ballistic trailType 1 emits none — that's the shell/rail fix).
     for (let i = 0; i < 30; i++) {
-        left.trail(2000, 1000, '#cccccc');
-        right.trail(2000, 1000, '#cccccc');
+        left.trail(2000, 1000, '#cccccc', 0, 0, 2);
+        right.trail(2000, 1000, '#cccccc', 0, 0, 2);
     }
     stepN(left, 40, 1 / 60, new Vec2(-5, 0));   // strong left wind
     stepN(right, 40, 1 / 60, new Vec2(5, 0));   // strong right wind
@@ -154,8 +155,8 @@ console.log('Particle system');
     lo.setBounds(4000, 2000);
     const hi = new CParticleSystem();
     hi.setBounds(4000, 2000);
-    lo.trail(2000, 1000, '#ffffff', 120, 0);    // slow shot
-    hi.trail(2000, 1000, '#ffffff', 950, 0);    // fast (high-power) shot
+    lo.trail(2000, 1000, '#ffffff', 120, 0, 2);    // slow rocket (trailType 2)
+    hi.trail(2000, 1000, '#ffffff', 950, 0, 2);    // fast (high-power) rocket
     ok('faster shot emits more trail smoke', hi.count() > lo.count(), `lo=${lo.count()} hi=${hi.count()}`);
 }
 
