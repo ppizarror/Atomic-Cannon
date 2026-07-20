@@ -4,7 +4,7 @@
  * (see main.tsx); Settings opens the audio settings over it and returns here on
  * close; Quit drops back to the main menu (UI).
  */
-import { showPause, resumeGame, quitToMenu, showSettings, uiClick } from './store';
+import { showPause, resumeGame, quitToMenu, openSettings } from './store';
 import { BmpText } from './BmpText';
 
 function PauseItem({ label, onClick }: { label: string; onClick: () => void }) {
@@ -22,7 +22,7 @@ export function PauseMenu() {
       <div class="pause-title"><BmpText font="beijing-20-out" text="GAME PAUSED" /></div>
       <div class="pause-list">
         <PauseItem label="Resume" onClick={resumeGame} />
-        <PauseItem label="Settings" onClick={() => { uiClick(); showSettings.value = true; }} />
+        <PauseItem label="Settings" onClick={openSettings} />
         <PauseItem label="Quit" onClick={quitToMenu} />
       </div>
     </div>

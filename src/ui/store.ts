@@ -12,8 +12,6 @@ export type Screen = 'menu' | 'battle' | 'settings' | 'depot';
 
 export const screen = signal<Screen>('battle');
 
-// Audio settings overlay — shown above the battle HUD without switching screens.
-export const showSettings = signal(false);
 
 // Weapons Depot overlay — buy/sell screen shown above the battle HUD.
 export const showDepot = signal(false);
@@ -64,10 +62,23 @@ export function resumeGame(): void {
     uiClick();
 }
 
+/** Pause → Settings: leave the pause overlay for the settings screen (still frozen). */
+export function openSettings(): void {
+    showPause.value = false;
+    screen.value = 'settings';
+    uiClick();
+}
+
+/** Settings → back to the pause menu (the battle stays frozen behind it). */
+export function closeSettings(): void {
+    screen.value = 'battle';
+    showPause.value = true;
+    uiClick();
+}
+
 /** Quit the current battle back to the main menu (UI). */
 export function quitToMenu(): void {
     showPause.value = false;
-    showSettings.value = false;
     game().setPaused(false);
     paused.value = false;
     screen.value = 'menu';

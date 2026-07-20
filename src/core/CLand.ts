@@ -977,18 +977,21 @@ export class CLand {
         if (this.m_radParticles.length && this.m_arrHeights && this.m_radDeposit) {
             const dep = this.m_radDeposit;
             // Pass A — red emissive body (normal blend) painted DOWN INTO the raised earth.
+            // Per zone the tint is constant, so set fillStyle ONCE and vary only
+            // globalAlpha per column — no per-column rgba() string (that churn drove GC).
             for (const z of this.m_radParticles) {
                 const fade = Math.min(1, 2 * z.timeRemaining / Math.max(0.5, z.duration));   // full for the first half, then dim gradually
                 if (fade <= 0) continue;
                 const rr = z.radius;
                 const x0 = Math.max(0, Math.floor(z.x - rr)), x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
+                ctx.fillStyle = `rgb(${z.r},${Math.round(z.g * 0.5)},${Math.round(z.b * 0.4)})`;
                 for (let col = x0; col <= x1; col++) {
                     const d = Math.round(dep[col]);
                     if (d <= 0) continue;                              // only where earth was deposited
                     const edge = 1 - Math.abs(col - z.x) / rr;
                     if (edge <= 0) continue;
                     const sy = this.getHeightAt(col);
-                    ctx.fillStyle = `rgba(${z.r},${Math.round(z.g * 0.5)},${Math.round(z.b * 0.4)},${fade * (0.14 + edge * 0.2)})`;
+                    ctx.globalAlpha = fade * (0.14 + edge * 0.2);
                     ctx.fillRect(col, sy - 3, 1, 15);                 // a soft red BASE hugging the surface — the dots dominate
                 }
             }
@@ -1001,44 +1004,51 @@ export class CLand {
                 if (fade <= 0) continue;
                 const rr = z.radius;
                 const x0 = Math.max(0, Math.floor(z.x - rr)), x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
+                ctx.fillStyle = `rgb(${z.r},${z.g},${z.b})`;
                 for (let col = x0; col <= x1; col++) {
                     const d = Math.round(dep[col]);
                     if (d <= 0) continue;
                     const edge = 1 - Math.abs(col - z.x) / rr;
                     if (edge <= 0) continue;
                     const sy = this.getHeightAt(col);
-                    const a = fade * (0.1 + edge * 0.22) * (0.5 + 0.5 * life);
-                    ctx.fillStyle = `rgba(${z.r},${z.g},${z.b},${a})`;
+                    ctx.globalAlpha = fade * (0.1 + edge * 0.22) * (0.5 + 0.5 * life);
                     ctx.fillRect(col, sy - 3, 1, 16);
                 }
             }
+            ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = prevOp;
         }
 
         // Radiation specks = grains of the irradiated EARTH, each an earthy body with a
         // soft red EMISSIVE glow. They sit within the raised deposit and fade over life.
+        // Up to ~7200 of these, so the hot path avoids per-speck string/path work.
         if (this.m_radSpecks.length) {
             const prevOp = ctx.globalCompositeOperation;
-            const TWO_PI = Math.PI * 2;
-            // Pass 1 — earthy grain bodies (normal blend), subtle texture over the deposit.
+            // Pass 1 — earthy grain bodies (normal blend). Constant colour → set the
+            // fillStyle once and vary only globalAlpha (no per-speck rgba() string).
+            ctx.fillStyle = 'rgb(42,24,13)';
             for (const s of this.m_radSpecks) {
-                const t = s.age / s.life;
-                const fade = Math.min(1, 2.2 * (1 - t));   // full for the first ~55%, then dim gradually to 0
+                const fade = Math.min(1, 2.2 * (1 - s.age / s.life));   // full for the first ~55%, then dim gradually to 0
                 if (fade <= 0) continue;
-                ctx.fillStyle = `rgba(42,24,13,${fade * 0.4})`;
+                ctx.globalAlpha = fade * 0.4;
                 ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
             }
-            // Pass 2 — the soft red emissive glow on top (additive round dots).
+            // Pass 2 — the soft red emissive glow (additive). A fast fillRect instead of
+            // a per-speck arc()+fill() circle (the rasterised path ×7200 was the draw
+            // spike); the tint is constant per blast, so build the rgb() string only when
+            // the colour actually changes, and vary only globalAlpha per speck.
             ctx.globalCompositeOperation = 'lighter';
+            let lastKey = -1;
             for (const s of this.m_radSpecks) {
-                const t = s.age / s.life;
-                const fade = Math.min(1, 2.2 * (1 - t));   // full for the first ~55%, then dim gradually to 0
+                const fade = Math.min(1, 2.2 * (1 - s.age / s.life));   // full for the first ~55%, then dim gradually to 0
                 if (fade <= 0) continue;
-                ctx.fillStyle = `rgba(${s.r},${s.g},${s.b},${fade * 0.5})`;
-                ctx.beginPath();
-                ctx.arc(s.x, s.y, 1 + s.size * 0.5, 0, TWO_PI);
-                ctx.fill();
+                const key = (s.r << 16) | (s.g << 8) | s.b;
+                if (key !== lastKey) { ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`; lastKey = key; }
+                ctx.globalAlpha = fade * 0.5;
+                const w = 2 + s.size;                                   // ≈ old arc diameter
+                ctx.fillRect(s.x - w / 2, s.y - w / 2, w, w);
             }
+            ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = prevOp;
         }
 

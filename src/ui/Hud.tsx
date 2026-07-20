@@ -12,8 +12,8 @@ import type {JSX, ComponentChildren} from 'preact';
 import {BmpText} from './BmpText';
 import {
     power, angle, wind, weaponIndex, playerName, teamColor, life, shield,
-    blocked, winner, weapons, game, loadWeaponIcon, uiClick, showSettings, battleStatus,
-    openDepot, POWER_MIN, POWER_MAX, wrapAngle,
+    blocked, winner, weapons, game, loadWeaponIcon, uiClick, battleStatus,
+    openDepot, openPauseMenu, POWER_MIN, POWER_MAX, wrapAngle,
 } from './store';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -262,10 +262,7 @@ function ControlPanel() {
             <Hotspot r={R.aleft} title="Aim left (+)" onClick={() => dA(2)}/>
             <Hotspot r={R.aright} title="Aim right (-)" onClick={() => dA(-2)}/>
             <WindReadout/>
-            <Hotspot r={R.close} title="Audio settings" onClick={() => {
-                uiClick();
-                showSettings.value = true;
-            }}/>
+            <Hotspot r={R.close} title="Menu" onClick={openPauseMenu}/>
             <PanelLabel r={R.lblWeapon} text="Select Weapon" left/>
             <PanelLabel r={R.lblPower} text="Power"/>
             <PanelLabel r={R.lblAngle} text="Angle"/>

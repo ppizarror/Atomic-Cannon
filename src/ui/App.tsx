@@ -9,9 +9,9 @@ import {useRef} from 'preact/hooks';
 import {useSignalEffect} from '@preact/signals';
 import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWaveStrength, paused} from './store';
 import {Hud} from './Hud';
-import {SettingsPanel} from './SettingsPanel';
 import {DepotPanel} from './DepotPanel';
 import {PauseMenu} from './PauseMenu';
+import {closeSettings} from './store';
 
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
@@ -99,13 +99,13 @@ function FlightHud() {
     );
 }
 
-function Placeholder({title}: { title: string }) {
+function Placeholder({title, backLabel, onBack}: { title: string; backLabel?: string; onBack?: () => void }) {
     return (
         <div class="screen-overlay">
             <div class="screen-card">
                 <h1>{title}</h1>
                 <p>Coming soon.</p>
-                <button class="metal-btn" onClick={() => (screen.value = 'battle')}>Back to battle</button>
+                <button class="metal-btn" onClick={onBack ?? (() => (screen.value = 'battle'))}>{backLabel ?? 'Back to battle'}</button>
             </div>
         </div>
     );
@@ -118,7 +118,9 @@ function CurrentScreen() {
         case 'menu':
             return <Placeholder title="Atomic Cannon"/>;
         case 'settings':
-            return <Placeholder title="Settings"/>;
+            // Interim: the full Settings screen (steel.jpg widget pages) is the next
+            // phase; for now Back returns to the pause menu.
+            return <Placeholder title="Settings" backLabel="Back" onBack={closeSettings}/>;
         case 'depot':
             return <Placeholder title="Weapons Depot"/>;
         default:
@@ -131,7 +133,6 @@ export function App() {
         <>
             <CurrentScreen/>
             <PauseMenu/>
-            <SettingsPanel/>
             <DepotPanel/>
             <FlightHud/>
             <ScreenFlash/>
