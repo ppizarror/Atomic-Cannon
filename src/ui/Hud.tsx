@@ -7,7 +7,7 @@
  * signal, so the 104-row weapon list only re-renders when the weapon changes
  * (not every frame) — keeps it cheap and lets async icons stick.
  */
-import {useEffect, useRef, useState} from 'preact/hooks';
+import {useEffect, useRef} from 'preact/hooks';
 import type {JSX, ComponentChildren, TargetedWheelEvent} from 'preact';
 import {BmpText} from './BmpText';
 import {
@@ -18,6 +18,7 @@ import {
 } from './store';
 import {weaponPower, weaponDamagePerArea} from '../core/CWeapon';
 import {clamp, wrapIndex} from '../math/num';
+import {useAsyncImage} from './useAsyncImage';
 
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
@@ -196,16 +197,7 @@ function WindReadout() {
 
 // ---- weapon list (re-renders only when the weapon changes) ------------------
 function WeaponIcon({name, size, cls}: { name: string; size: 16 | 32; cls: string }) {
-    const [src, setSrc] = useState('');
-    useEffect(() => {
-        let ok = true;
-        loadWeaponIcon(name, size).then(u => {
-            if (ok && u) setSrc(u);
-        });
-        return () => {
-            ok = false;
-        };
-    }, [name, size]);
+    const src = useAsyncImage(() => loadWeaponIcon(name, size), [name, size]);
     return src ? <img class={cls} src={src} alt=""/> : <span class={cls}/>;
 }
 

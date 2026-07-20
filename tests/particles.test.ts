@@ -2,7 +2,8 @@
  * Deterministic logic tests for the particle system (Phase 4).
  * Run: pnpm tsx scripts/test-particles.ts
  */
-import {CParticleSystem, ScreenShake} from '../src/core/CParticleSystem';
+import {CParticleSystem} from '../src/core/CParticleSystem';
+import {ScreenShake} from '../src/core/rendering/ScreenShake';
 import {Vec2} from '../src/math/Vec2';
 
 let pass = 0, fail = 0;

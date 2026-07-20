@@ -14,7 +14,8 @@ import {CShot} from '../core/CShot';
 import {GameConfig} from '../core/CGameConfig';
 import {CWeapon, getDefaultWeaponIndex, getWeapon, WEAPON_DATABASE} from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
-import {CParticleSystem, ScreenShake} from '../core/CParticleSystem';
+import {CParticleSystem} from '../core/CParticleSystem';
+import {ScreenShake} from '../core/rendering/ScreenShake';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
 import {CEconomy, START_CREDITS} from '../core/CEconomy';
@@ -28,8 +29,6 @@ import landData from '../data/land.json';
  * Game state machine states
  */
 export enum EGameState {
-    Menu = 'menu',
-    WeaponSelect = 'weaponselect',
     Battle = 'battle',
     Flying = 'flying',
     ShotFlying = 'shot_flying',

@@ -358,11 +358,15 @@ const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
     greyblack: (p, i) => isGrey(p, i) || (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40),
 };
 
-/** Load an /assets BMP, knock out the `key` colour as transparency, cache it.
- * Used for the depot's colour-keyed UI art (sort arrows, tooltip dialog/pointer). */
-export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string | null> {
-    const cacheKey = `${path}#${key}`;
-    const cached = bmpCache.get(cacheKey);
+/** Shared core: load an /assets image, knock out every pixel the `hit` predicate
+ *  flags (alpha → 0), and cache the resulting data URL under `cacheKey`. */
+function loadColorKeyedBmp(
+    cache: Map<string, Promise<string | null>>,
+    cacheKey: string,
+    src: string,
+    hit: (p: Uint8ClampedArray, i: number) => boolean,
+): Promise<string | null> {
+    const cached = cache.get(cacheKey);
     if (cached) return cached;
     const p = new Promise<string | null>((resolve) => {
         const img = new Image();
@@ -374,7 +378,6 @@ export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string
             g.drawImage(img, 0, 0);
             const im = g.getImageData(0, 0, cv.width, cv.height);
             const px = im.data;
-            const hit = KEYERS[key];
             for (let i = 0; i < px.length; i += 4) {
                 if (hit(px, i)) px[i + 3] = 0;
             }
@@ -382,43 +385,34 @@ export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string
             resolve(cv.toDataURL());
         };
         img.onerror = () => resolve(null);
-        img.src = encodeURI(path.startsWith('/') ? path : `/assets/${path}`);
+        img.src = src;
     });
-    bmpCache.set(cacheKey, p);
+    cache.set(cacheKey, p);
     return p;
+}
+
+/** Load an /assets BMP, knock out the `key` colour as transparency, cache it.
+ * Used for the depot's colour-keyed UI art (sort arrows, tooltip dialog/pointer). */
+export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string | null> {
+    return loadColorKeyedBmp(
+        bmpCache,
+        `${path}#${key}`,
+        encodeURI(path.startsWith('/') ? path : `/assets/${path}`),
+        KEYERS[key],
+    );
 }
 
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
 const iconCache = new Map<string, Promise<string | null>>();
 
-/** Load a weapon icon at the given native pixel size (12 | 16 | 32). */
+/** Load a weapon icon at the given native pixel size (12 | 16 | 32). Only magenta
+ *  keys out — the grey (128,128,128) tile is the icon's intended background. Icon
+ *  files are lowercase; Vite serves public assets case-sensitively. */
 export function loadWeaponIcon(name: string, size: 12 | 16 | 32 = 32): Promise<string | null> {
-    const key = `${size}/${name}`;
-    const cached = iconCache.get(key);
-    if (cached) return cached;
-
-    const p = new Promise<string | null>((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            const cv = document.createElement('canvas');
-            cv.width = img.width;
-            cv.height = img.height;
-            const g = cv.getContext('2d')!;
-            g.drawImage(img, 0, 0);
-            const im = g.getImageData(0, 0, cv.width, cv.height);
-            const px = im.data;
-            // Only magenta (255,0,255) is the transparency key — the grey (128,128,128)
-            // tile is the icon's intended background and must be kept.
-            for (let i = 0; i < px.length; i += 4) {
-                if (px[i] > 200 && px[i + 1] < 70 && px[i + 2] > 200) px[i + 3] = 0;
-            }
-            g.putImageData(im, 0, 0);
-            resolve(cv.toDataURL());
-        };
-        img.onerror = () => resolve(null);
-        // Icon files are lowercase; Vite serves public assets case-sensitively.
-        img.src = encodeURI(`/assets/icons/${size}x${size}/${name.toLowerCase()}.bmp`);
-    });
-    iconCache.set(key, p);
-    return p;
+    return loadColorKeyedBmp(
+        iconCache,
+        `${size}/${name}`,
+        encodeURI(`/assets/icons/${size}x${size}/${name.toLowerCase()}.bmp`),
+        KEYERS.magenta,
+    );
 }

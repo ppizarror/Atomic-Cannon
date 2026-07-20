@@ -7,7 +7,7 @@
  * damage-over-time, the `earth` deposit amount) are derived from the data fields.
  */
 import {Vec2} from '../../math/Vec2';
-import {CShot} from '../CShot';
+import {CShot, SHOT_SPEED_SCALE} from '../CShot';
 import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
@@ -19,8 +19,6 @@ export const EXT = {
     ESCAPE: 8, REBOUND: 9, DEATH: 12, AIRBURST: 13, MINE: 16, JET: 17, SENTRY: 18,
 } as const;
 
-// Shot speed per unit power — same scaling the launch path uses.
-const SPEED_SCALE = 0.9;
 // Submunition launch power = 0.5x firing power.
 const CLUSTER_POWER = 0.5;
 // Roller surface speed (px/s in our space).
@@ -303,7 +301,7 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
     const [startDeg, endDeg] = weapon.getClusterSpread();
     const step = (endDeg - startDeg) / cluNum;
     const childPower = Math.max(1, parent.getPower() * CLUSTER_POWER);
-    const speed = childPower * SPEED_SCALE * GameConfig.powerScale;
+    const speed = childPower * SHOT_SPEED_SCALE * GameConfig.powerScale;
 
     for (let k = 0; k < cluNum; k++) {
         const aDeg = startDeg - k * step;            // fan angle by subtraction

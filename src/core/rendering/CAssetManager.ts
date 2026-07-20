@@ -6,7 +6,7 @@
  * for transparency, which is knocked out to alpha at load time.
  */
 
-import type {Sprite, ISpriteSource} from '../CTank';
+import type {Sprite, ISpriteSource} from './sprites';
 
 type RGB = [number, number, number];
 

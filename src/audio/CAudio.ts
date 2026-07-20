@@ -14,6 +14,7 @@
 
 import {CSoundManager} from './CSoundManager';
 import {CMusicPlayer} from './CMusicPlayer';
+import {loadJSON, saveJSON} from '../util/storage';
 
 // Hardcoded (non-weapon) event sounds — the files present in assets/sound/ that
 // no weapon references. Mapped to game events at their trigger sites.
@@ -263,26 +264,17 @@ export class CAudio {
 
     /** Apply saved volume/enable settings (call once, after construction). */
     loadSettings(): void {
-        try {
-            const raw = localStorage.getItem(SETTINGS_KEY);
-            if (!raw) return;
-            const s = JSON.parse(raw) as Partial<AudioSettings>;
-            if (typeof s.sfxVol === 'number') this.m_sfx.setVolume(s.sfxVol);
-            if (typeof s.musicVol === 'number') this.m_music.setVolume(s.musicVol);
-            if (typeof s.sfxOn === 'boolean') this.m_sfx.setEnabled(s.sfxOn);
-            if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
-        } catch { /* corrupt/absent storage — keep defaults */
-        }
+        const s = loadJSON<Partial<AudioSettings>>(SETTINGS_KEY, {});
+        if (typeof s.sfxVol === 'number') this.m_sfx.setVolume(s.sfxVol);
+        if (typeof s.musicVol === 'number') this.m_music.setVolume(s.musicVol);
+        if (typeof s.sfxOn === 'boolean') this.m_sfx.setEnabled(s.sfxOn);
+        if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
     }
 
     private saveSettings(): void {
-        try {
-            const s: AudioSettings = {
-                sfxVol: this.m_sfx.getVolume(), musicVol: this.m_music.getVolume(),
-                sfxOn: this.m_sfx.isEnabled(), musicOn: this.m_music.isEnabled(),
-            };
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-        } catch { /* storage unavailable (private mode) — settings just won't persist */
-        }
+        saveJSON(SETTINGS_KEY, {
+            sfxVol: this.m_sfx.getVolume(), musicVol: this.m_music.getVolume(),
+            sfxOn: this.m_sfx.isEnabled(), musicOn: this.m_music.isEnabled(),
+        } satisfies AudioSettings);
     }
 }

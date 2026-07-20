@@ -8,22 +8,14 @@
  * and there's one source of truth. Everything else is a preference we remember.
  */
 import { signal } from '@preact/signals';
+import { loadJSON, saveJSON } from '../util/storage';
 
 const KEY = 'atomic.settings';
 
 type Vals = Record<string, number>;
 
-function load(): Vals {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Vals) : {};
-  } catch {
-    return {};
-  }
-}
-
 // Signal-backed so widgets that read it re-render on change.
-const vals = signal<Vals>(load());
+const vals = signal<Vals>(loadJSON<Vals>(KEY, {}));
 
 /** Current value for `id`, or `dflt` if never set. */
 export function getVal(id: string, dflt: number): number {
@@ -34,9 +26,5 @@ export function getVal(id: string, dflt: number): number {
 /** Set `id` and persist the whole map. */
 export function setVal(id: string, v: number): void {
   vals.value = { ...vals.value, [id]: v };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(vals.value));
-  } catch {
-    /* storage unavailable (private mode) — the value still applies this session */
-  }
+  saveJSON(KEY, vals.value);
 }

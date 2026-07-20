@@ -350,6 +350,3 @@ export function getWeapon(index: number): CWeapon {
     return new CWeapon(index);
 }
 
-export function getAllWeapons(): CWeapon[] {
-    return WEAPON_DATABASE.map(def => new CWeapon(def));
-}

@@ -5,6 +5,27 @@
     /* Shared width for every menu list (main menu, pause, Settings root + option
        rows) so their highlight boxes are the same full width — one uniform button. */
     --menu-w: min(860px, 82vw);
+
+    /* z-index ladder — one ordered scale instead of ad-hoc values sprinkled around.
+       Everything that stacks reads from here so the ordering is legible in one place. */
+    --z-hud: 10;              /* HUD bar, battle status, turn indicator */
+    --z-flight: 15;           /* jet-flight indicator */
+    --z-overlay: 20;          /* generic full-screen overlays (placeholder) */
+    --z-depot: 21;            /* weapons depot */
+    --z-depot-tip: 22;        /* depot tooltip */
+    --z-depot-stats: 23;      /* depot stats popup */
+    --z-screen: 25;           /* main menu / settings root */
+    --z-modal: 30;            /* dialog modals (help / about) — above the screens */
+    --z-flash: 9999;          /* nuke white-out */
+    --z-gate: 10000;          /* resolution-too-small gate — above everything */
+
+    /* One dim wash behind every scrim overlay (was 0.5 / 0.55 / 0.72 — now uniform). */
+    --overlay-scrim: rgba(0, 0, 0, 0.6);
+
+    /* Shared brushed-metal button/panel gradients (bright + standard + deep). */
+    --metal-grad-hi: linear-gradient(#d3d8df, #9aa0a8);
+    --metal-grad: linear-gradient(#c3c8cf, #8b9198);
+    --metal-grad-deep: linear-gradient(#9aa0a8, #626870);
 }
 
 * {
@@ -33,6 +54,45 @@ img, canvas {
     user-select: none;
 }
 
+/* Every BmpText / ZeonFrame / Pixi canvas renders as a block — kills the inline
+   baseline gap. BmpText also sets this inline. */
+canvas {
+    display: block;
+}
+
+/* ---- shared building blocks -------------------------------------------------
+   .overlay      full-viewport centered flexbox (backdrop set per-overlay)
+   .dialog-frame the 9-sliced atomic/dialog.bmp beveled metal frame
+   .menu-list    the shared vertical menu column (main menu / pause / settings)
+   .menu-item    one centered menu entry (paired with .menu-btn in <MenuButton>) */
+.overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dialog-frame {
+    border: 12px solid transparent;
+    border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
+    image-rendering: pixelated;
+}
+
+.menu-list {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;          /* items fill --menu-w → full-width highlight box */
+    width: var(--menu-w);
+    gap: 2px;
+}
+
+.menu-item {
+    display: flex;
+    justify-content: center;
+    padding: 1px 0;
+}
+
 /* World renders here, ABOVE the HUD (not behind it). */
 #game-container {
     position: fixed;
@@ -55,17 +115,12 @@ img, canvas {
     position: absolute;
     top: 6px;
     left: 8px;
-    z-index: 10;
+    z-index: var(--z-hud);
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 1px;
     pointer-events: none;
-}
-
-/* BeijingSSK 16 outlined bitmap font carries its own outline. */
-#battle-status canvas {
-    display: block;
 }
 
 .bstat-line {
@@ -84,7 +139,7 @@ img, canvas {
     top: 34%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 10;
+    z-index: var(--z-hud);
     font-size: clamp(22px, 4vw, 40px);
     font-weight: bold;
     color: #fff;
@@ -105,7 +160,7 @@ img, canvas {
     right: 0;
     bottom: 0;
     height: var(--hud-h);
-    z-index: 10;
+    z-index: var(--z-hud);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -222,7 +277,7 @@ img, canvas {
     bottom: 0;
     width: 12px;
     background: #050605;              /* black groove */
-    pointer-events: none;            /* only the grip is grabbable */
+    pointer-events: none;               /* only the grip is grabbable */
 }
 
 .cscroll-grip {
@@ -442,19 +497,14 @@ img, canvas {
     }
 }
 
-/* ---- full-screen overlays (menu / settings / depot) ---- */
+/* ---- full-screen overlays (menu / settings / depot) — layout from .overlay ---- */
 .screen-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.72);
+    z-index: var(--z-overlay);
+    background: var(--overlay-scrim);
 }
 
 .screen-card {
-    background: linear-gradient(#9aa0a8, #626870);
+    background: var(--metal-grad-deep);
     border: 2px solid #3a3f45;
     border-radius: 10px;
     padding: 30px 44px;
@@ -472,78 +522,13 @@ img, canvas {
     color: #2a2f34;
 }
 
-/* Audio settings overlay */
-.set-card {
-    min-width: 340px;
-    text-align: left;
-}
-
-.set-card h1 {
-    text-align: center;
-    margin-bottom: 18px;
-}
-
-.set-row {
-    display: grid;
-    grid-template-columns: 130px 1fr 34px;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 14px;
-}
-
-.set-label {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-weight: 600;
-    cursor: pointer;
-    user-select: none;
-}
-
-.set-label input {
-    cursor: pointer;
-}
-
-.set-slider {
-    width: 100%;
-    accent-color: #2f6d34;
-    cursor: pointer;
-}
-
-.set-slider:disabled {
-    opacity: 0.45;
-    cursor: default;
-}
-
-.set-val {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: #1c2124;
-}
-
-.set-close {
-    display: block;
-    margin: 20px auto 0;
-    padding: 6px 22px;
-    border: 1px solid #2a2f34;
-    border-radius: 6px;
-    background: linear-gradient(#c3c8cf, #8b9198);
-    color: #14171a;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.set-close:hover {
-    background: linear-gradient(#d0d5db, #979da4);
-}
-
 /* Jet-flight indicator (top-centre while airborne) */
 .flight-hud {
     position: fixed;
     top: 14px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 15;
+    z-index: var(--z-flight);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -572,19 +557,14 @@ img, canvas {
     inset: 0;
     background: #fff;
     pointer-events: none;
-    z-index: 9999;
+    z-index: var(--z-flash);
     will-change: opacity;
 }
 
 /* ============================ WEAPONS DEPOT ============================ */
 .dep-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 21;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.72);
+    z-index: var(--z-depot);
+    background: var(--overlay-scrim);
 }
 
 /* Brushed-metal panel (real depot texture) with a bevelled frame. */
@@ -603,14 +583,9 @@ img, canvas {
     font-variant-numeric: tabular-nums;
 }
 
-/* All depot text is drawn with the game's bitmap fonts (BmpText → <canvas>). */
 .dep-head {
     text-align: left;
     margin-bottom: 6px;
-}
-
-.dep-head > canvas {
-    display: block;
 }
 
 .dep-sub {
@@ -688,13 +663,8 @@ img, canvas {
     box-shadow: inset 0 0 0 1px #fff;
 }
 
-/* Cells align the BmpText canvases (which are display:block). */
 .dep-row > span, .dep-th {
     min-width: 0;
-}
-
-.dep-row canvas, .dep-th canvas {
-    display: block;
 }
 
 .c-qty {
@@ -756,7 +726,7 @@ img, canvas {
  * (not box-shadow) follows the frame's rounded alpha, not a rectangle. */
 .dep-tooltip {
     position: fixed;
-    z-index: 22;
+    z-index: var(--z-depot-tip);
     max-width: 340px;
     pointer-events: none;
     transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
@@ -790,10 +760,6 @@ img, canvas {
     z-index: 1;
 }
 
-.dep-tt-body > canvas {
-    display: block;
-}
-
 /* Down-pointer: a plain green triangle merging with the box's green fill (no
    black, no own opacity — the .dep-tt-frame group provides the translucency). */
 .dep-tt-arrow {
@@ -815,28 +781,23 @@ img, canvas {
     margin-top: 3px;
 }
 
-.dep-tt-desc canvas {
-    display: block;
-}
-
 /* Selected-weapon stats popup (the "Stats" button). */
 .dep-stats {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 23;
+    z-index: var(--z-depot-stats);
     min-width: 240px;
     padding: 14px 18px;
     cursor: pointer;
-    background: linear-gradient(#c3c8cf, #8b9198);
+    background: var(--metal-grad);
     border: 2px solid #2a2f34;
     border-radius: 8px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
 }
 
 .dep-stats > canvas {
-    display: block;
     margin: 0 auto;
 }
 
@@ -852,10 +813,6 @@ img, canvas {
     align-items: center;
     justify-content: space-between;
     gap: 24px;
-}
-
-.dep-stat-row canvas {
-    display: block;
 }
 
 .dep-hint {
@@ -965,49 +922,24 @@ img, canvas {
     mix-blend-mode: difference;
     pointer-events: none;
 }
-.menu-btn canvas {
-    display: block;
-}
-
 /* ============================ PAUSE MENU ============================ */
 /* A centered bitmap-font item list over the darkened, frozen battle. */
 .pause-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    display: flex;
+    z-index: var(--z-overlay);
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
     gap: 8px;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--overlay-scrim);
 }
 .pause-title {
     margin-bottom: 24px;
     opacity: 0.92;
-}
-.pause-title canvas,
-.pause-item canvas {
-    display: block;
-}
-.pause-list {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;          /* items fill --menu-w → full-width highlight box */
-    width: var(--menu-w);
-    gap: 2px;
-}
-.pause-item {
-    display: flex;
-    justify-content: center;
-    padding: 1px 0;
 }
 
 /* ============================ MAIN MENU / ABOUT ============================ */
 .mainmenu {
     position: fixed;
     inset: 0;
-    z-index: 25;
+    z-index: var(--z-screen);
     /* Fill the width, anchored to the TOP so the title is always visible; only the
        bottom of the image (desert) is cropped on wide windows — never the title,
        and no letterbox bars. */
@@ -1024,23 +956,6 @@ img, canvas {
     margin-top: 3vh;
     filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
 }
-.mainmenu-title canvas,
-.mainmenu-item canvas {
-    display: block;
-}
-.mainmenu-list {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;          /* items fill --menu-w → full-width highlight box */
-    width: var(--menu-w);
-    gap: 2px;
-}
-/* Layout only — the hover box + click-negative come from .menu-btn. */
-.mainmenu-item {
-    display: flex;
-    justify-content: center;
-    padding: 1px 0;
-}
 .mainmenu-logo {
     position: absolute;
     right: 16px;
@@ -1051,34 +966,15 @@ img, canvas {
     opacity: 0.85;
 }
 
-/* About / credits over steel.jpg */
-.about-screen {
-    position: fixed;
-    inset: 0;
-    z-index: 25;
-    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
+/* About / credits — a steel-backed <Modal> (frame + layout shared with Help). */
 .about-card {
     width: min(680px, 92vw);
     max-height: 86vh;
-    display: flex;
-    flex-direction: column;
-    background: rgba(18, 22, 28, 0.84);
-    border: 2px solid #2a2f35;
-    border-radius: 10px;
-    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7);
     padding: 20px 26px;
-    color: #dfe6ec;
 }
 .about-head, .about-sub {
     display: flex;
     justify-content: center;
-}
-.about-head canvas, .about-sub canvas {
-    display: block;
 }
 .about-sub {
     margin: 4px 0 14px;
@@ -1101,13 +997,8 @@ img, canvas {
    the minimum playable size — the brushed-steel plate backdrop with the game's
    `atomic/dialog.bmp` panel and bitmap-font text (no CSS chrome/text). */
 .too-small {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;                   /* above the screen-flash (9999) and every screen */
+    z-index: var(--z-gate);           /* above the screen-flash and every screen */
     background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     padding: 16px;
 }
 .too-small-card {
@@ -1115,10 +1006,6 @@ img, canvas {
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* the dialog sprite: 12px beveled frame kept crisp, dark-metal centre filled */
-    border: 12px solid transparent;
-    border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
-    image-rendering: pixelated;
     padding: 24px 34px 26px;
 }
 /* Layout/spacing only — colour and size come from the bitmap fonts themselves. */
@@ -1136,36 +1023,35 @@ img, canvas {
     opacity: 0.8;
 }
 
-/* ============================ HELP OVERLAY ============================ */
-/* Rendered on the game's `atomic/dialog.bmp` beveled metal panel (9-sliced via
-   border-image) with the game's bitmap fonts — no CSS chrome. */
-.help-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
+/* ============================ MODALS (dialog.bmp) ============================ */
+/* One framed dialog for Help / About / any pop-up card — rendered by <Modal>: a
+   centered card on the 9-sliced atomic/dialog.bmp metal frame (.dialog-frame).
+   Backdrop is either a scrim (over the current screen) or the steel plate (a full
+   screen of its own). Overlay layout comes from .overlay, the frame from .dialog-frame. */
+.modal-overlay {
+    z-index: var(--z-modal);
 }
+.modal-scrim {
+    background: var(--overlay-scrim);
+}
+.modal-steel {
+    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+}
+.modal-card {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 18px 16px;
+    color: #dfe6ec;
+}
+
+/* ============================ HELP MODAL ============================ */
 .help-card {
     width: min(620px, 94vw);
     max-height: 88vh;
-    display: flex;
-    flex-direction: column;
-    /* the dialog sprite: 12px beveled frame kept crisp, dark-metal centre filled */
-    border: 12px solid transparent;
-    border-image: url('/assets/gui/atomic/dialog.bmp') 12 fill stretch;
-    image-rendering: pixelated;
-    padding: 8px 18px 16px;
-    color: #dfe6ec;
 }
 .help-head, .help-sub {
     display: flex;
     justify-content: center;
-}
-.help-head canvas, .help-sub canvas, .help-name canvas, .help-desc canvas {
-    display: block;
 }
 .help-sub {
     margin: 2px 0 14px;
@@ -1195,9 +1081,6 @@ img, canvas {
     border-radius: 4px;
     transition: background 0.1s ease;
 }
-.help-close canvas {
-    display: block;
-}
 .help-close:hover {
     background: rgba(255, 255, 255, 0.2);
 }
@@ -1211,7 +1094,7 @@ img, canvas {
     cursor: pointer;
     font: 700 14px 'Segoe UI', sans-serif;
     color: #14171a;
-    background: linear-gradient(#d3d8df, #9aa0a8);
+    background: var(--metal-grad-hi);
     border: 1px solid #2a2f34;
     border-radius: 6px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
@@ -1271,15 +1154,12 @@ img, canvas {
     opacity: 0.85;
     pointer-events: none;
 }
-.mainmenu-version canvas {
-    display: block;
-}
 
 /* ============================ SETTINGS (options root) ======================= */
 .settings-screen {
     position: fixed;
     inset: 0;
-    z-index: 25;
+    z-index: var(--z-screen);
     /* Same title backdrop as the main menu (the chrome "ATOMIC CANNON" logo is baked
        in), darkened with a flat black wash so the white-outlined options read clearly.
        The brushed-steel plate is reserved for the deeper editor sub-screens. */
@@ -1289,24 +1169,9 @@ img, canvas {
     flex-direction: column;
     align-items: center;
 }
-.settings-item canvas,
-.settings-subtitle canvas {
-    display: block;
-}
 /* Options list, vertically centred in the gap between title and subtitle. */
 .settings-list {
     margin: auto 0;
-    width: var(--menu-w);
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
-}
-/* Layout only — the hover box + click-negative come from .menu-btn. */
-.settings-item {
-    display: flex;
-    justify-content: center;
-    padding: 1px 0;
 }
 /* Hover subtitle, centred along the bottom edge (reserves height so nothing jumps). */
 .settings-subtitle {
@@ -1324,10 +1189,6 @@ img, canvas {
 /* ---- Settings option pages (two-column widget rows) ---- */
 .settings-rows {
     margin: auto 0;
-    width: var(--menu-w);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
 }
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-row {
@@ -1336,9 +1197,6 @@ img, canvas {
     justify-content: space-between;
     width: 100%;
     padding: 1px 18px;
-}
-.settings-row canvas {
-    display: block;
 }
 /* The two click targets of a cyclable/toggle row (label side = prev, value side =
    next) and the label/value groups of a nav row. No per-side box — the whole row

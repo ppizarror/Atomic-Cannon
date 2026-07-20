@@ -15,6 +15,7 @@
  */
 
 import type {Vec2} from '../math/Vec2';
+import type {ISpriteSource} from './rendering/sprites';
 import particlesRaw from '../data/particles.json';
 import {GameConfig} from './CGameConfig';
 
@@ -47,11 +48,6 @@ interface RGB {
     r: number;
     g: number;
     b: number;
-}
-
-/** Minimal sprite source (the game's CAssetManager satisfies this). */
-interface SpriteSrc {
-    getSprite(name: string): { bitmap: CanvasImageSource; width: number; height: number } | null;
 }
 
 interface Particle {
@@ -139,10 +135,10 @@ export class CParticleSystem {
 
     // Real sprites (looked up lazily each frame; falls back to procedural draws
     // until they finish loading). 'fx:smoke' = gui/smoke.bmp, 'fx:flare' = flares/04.bmp.
-    private m_assets: SpriteSrc | null = null;
+    private m_assets: ISpriteSource | null = null;
     private m_warmSmoke: HTMLCanvasElement | null = null;   // fire-tinted smoke (young trail puffs)
 
-    setAssets(a: SpriteSrc): void {
+    setAssets(a: ISpriteSource): void {
         this.m_assets = a;
         this.m_warmSmoke = null;
     }
@@ -829,33 +825,3 @@ export class CParticleSystem {
     }
 }
 
-/**
- * Screen shake controller — a decaying random offset applied to the whole
- * scene on impact.
- */
-export class ScreenShake {
-    private m_shakeIntensity = 0;
-    private m_shakeDuration = 0;
-    private m_startTime = 0;
-
-    trigger(intensity: number, durationSec: number): void {
-        this.m_shakeIntensity = intensity;
-        this.m_shakeDuration = durationSec;
-        this.m_startTime = performance.now() / 1000;
-    }
-
-    getOffset(): { x: number; y: number } {
-        const elapsed = performance.now() / 1000 - this.m_startTime;
-        if (elapsed > this.m_shakeDuration) return {x: 0, y: 0};
-        const decay = 1 - elapsed / this.m_shakeDuration;
-        const maxOffset = this.m_shakeIntensity * decay;
-        return {
-            x: (Math.random() - 0.5) * 2 * maxOffset,
-            y: (Math.random() - 0.5) * 2 * maxOffset,
-        };
-    }
-
-    isActive(): boolean {
-        return performance.now() / 1000 - this.m_startTime < this.m_shakeDuration;
-    }
-}

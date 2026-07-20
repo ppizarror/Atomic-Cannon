@@ -8,6 +8,7 @@
  * Tunable constants live at the top so they are easy to adjust in one place.
  */
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
+import {clamp01} from '../math/num';
 
 // Economy defaults. Credits are awarded between turns/rounds by these rates
 // (earning is a future gameplay hook — the constants live here so it's one place
@@ -81,7 +82,7 @@ export class CEconomy {
 
     /** Set the sell-back refund fraction (0..1). */
     setSellRate(fraction: number): void {
-        this.m_sellRate = Math.max(0, Math.min(1, fraction));
+        this.m_sellRate = clamp01(fraction);
     }
 
     getCredits(): number {

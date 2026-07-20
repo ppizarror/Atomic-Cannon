@@ -7,7 +7,8 @@
 import {Vec2, Vec2f} from '../math/Vec2';
 import {CLand} from './CLand';
 import {GameConfig} from './CGameConfig';
-import {getFont, type FontId} from '../ui/BitmapFont';
+import {getFont, type FontId} from './rendering/BitmapFont';
+import type {Sprite, ISpriteSource} from './rendering/sprites';
 
 // Tank-badge text font — small pixel font rendered at NATIVE size (10px) so it
 // stays crisp at a compact label size.
@@ -29,17 +30,6 @@ function bmpLabel(font: FontId, text: string, tint: string): HTMLCanvasElement |
 }
 
 /** A drawable image plus its dimensions. */
-export interface Sprite {
-    bitmap: CanvasImageSource;
-    width: number;
-    height: number;
-}
-
-/** Anything that can resolve a logical sprite name to a drawable sprite. */
-export interface ISpriteSource {
-    getSprite(name: string): Sprite | null;
-}
-
 // Tank variants
 const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
 
@@ -330,8 +320,8 @@ export class CTank {
     canMove(pLand: CLand): boolean {
         const nX = Math.floor(this.m_vPos.x);
 
-        // Check bounds
-        if (nX < tankRadius() || nX > 800 - tankRadius()) {
+        // Check bounds (against the real map width, not a hardcoded 800)
+        if (nX < tankRadius() || nX > pLand.width - tankRadius()) {
             return false;
         }
 
