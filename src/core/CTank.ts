@@ -391,10 +391,15 @@ export class CTank {
         // Stop at the battlefield edge.
         if (newX < TANK_RADIUS || newX > pLand.width - TANK_RADIUS) { this.endDrive(pLand); return; }
 
-        // Refuse to climb (or drop off) a wall steeper than the tank can manage.
+        // Follow the surface, but stop at terrain too steep to cross: a wall it can't
+        // climb, or a cliff it won't drive off. (Screen-Y: smaller = higher ground,
+        // so `rise > 0` is climbing.) Descents are allowed more freely than climbs so
+        // a tank on a hilltop can still drive down either side.
         const curH = pLand.getHeightAt(Math.floor(this.m_vPos.x));
         const newH = pLand.getHeightAt(Math.floor(newX));
-        if (Math.abs(newH - curH) > TANK_DRIVE_MAX_CLIMB * Math.max(1, stepPx)) { this.endDrive(pLand); return; }
+        const rise = curH - newH;
+        const span = Math.max(1, stepPx);
+        if (rise > TANK_DRIVE_MAX_CLIMB * span || -rise > TANK_DRIVE_MAX_DROP * span) { this.endDrive(pLand); return; }
 
         this.m_vPos.x = newX;
         this.m_vPos.y = newH - TANK_HEIGHT_PIXELS;
@@ -1041,7 +1046,8 @@ const TANK_TURRET_HEIGHT = 15;          // Turret pivot height above the ground 
 const TANK_DRAW_WIDTH = 46;             // On-screen hull width in pixels
 const TANK_GRAVITY = 400;               // Fall acceleration when unsupported (px/s^2)
 const TANK_DRIVE_SPEED = 70;            // Ground-drive crawl speed (px/s)
-const TANK_DRIVE_MAX_CLIMB = 1.4;       // Max terrain rise/drop per px driven before a wall stops it
+const TANK_DRIVE_MAX_CLIMB = 2.0;       // Max terrain RISE per px driven before a wall stops it
+const TANK_DRIVE_MAX_DROP = 8.0;        // Max terrain DROP per px driven before a cliff stops it
 
 // Jet thrust as multiples of gravity (RE: FUN_00460d60 force constants).
 // UP = -1.2g (net -0.2g up while held); L/R = ∓0.1g. Ceiling at the map top.

@@ -543,7 +543,15 @@ export class CGameController implements ShotWorld {
             }
         }
 
-        // Draw active shots (real projectile sprite, tinted trail fallback).
+        this.drawPlacedEntities(ctx);
+        this.drawAimTarget(ctx);
+        this.drawAim(ctx);
+
+        // Trail / explosion particles.
+        this.m_particles.draw(ctx);
+
+        // Active projectiles ON TOP of their own trail — so the missile sprite is
+        // visible ahead of its exhaust+smoke, not buried under the fire head.
         for (const shot of this.m_shots) {
             if (!shot.isDead()) {
                 const wi = shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex;
@@ -552,13 +560,6 @@ export class CGameController implements ShotWorld {
                 shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize());
             }
         }
-
-        this.drawPlacedEntities(ctx);
-        this.drawAimTarget(ctx);
-        this.drawAim(ctx);
-
-        // Draw explosions on top
-        this.m_particles.draw(ctx);
 
         ctx.restore();
     }
@@ -804,10 +805,17 @@ export class CGameController implements ShotWorld {
             const sp = shot.getPosition();
             const sv = shot.getVelocity();
             // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume).
-            this.m_particles.trail(sp.x, sp.y, weapon.getColor(), sv.x, sv.y, weapon.getTrailType(), weapon.getTrailLength());
+            // The engine burns to the APEX only — smoke/fire is emitted while rising;
+            // on the way down the rocket coasts with just its nose flare (matches the
+            // original: the trail stops at max height, no smoke on descent).
+            if (!shot.isMovingDown()) {
+                this.m_particles.trail(sp.x, sp.y, weapon.getColor(), sv.x, sv.y, weapon.getTrailType(), weapon.getTrailLength(), dt);
+            }
             // In-flight glowing flare on the projectile (rockets: flareType/flareBmp).
+            // Kept SMALL — a tight bright nose point, not a big bloom (the ×~7.8 plume
+            // draw multiplier means a small size here reads at ~14-18px).
             const iff = weapon.getInFlightFlare();
-            if (iff) this.m_particles.inflightFlare(sp.x, sp.y, `fx:${iff}`, 8 + weapon.getFlareSize() * 24);
+            if (iff) this.m_particles.inflightFlare(sp.x, sp.y, `fx:${iff}`, 1.5 + weapon.getFlareSize() * 2.5);
             const action = weaponFlyStep(shot, weapon, this, dt);
             if (action === 'detonate') weaponDetonate(shot, weapon, this);
             else if (action === 'consumed') shot.kill();

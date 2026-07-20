@@ -312,13 +312,15 @@ export class CParticleSystem {
         const r = Math.max(12, radiusPx);
         const big = expType === 4 || nuclear;   // expType 4 = the nuke white-out
 
-        // Phase 1 — a moderate central fireball (the weapon's own expBitmap flare)
-        // and a hot flash. The full-screen white-out is the DOM overlay; the firework
-        // blobs (below) carry the bulk of the visual, so this core stays contained.
-        // Central bloom = the GENERIC `explosion1.bmp` animated sprite (same for every
-        // weapon in the original — the per-weapon look comes from the firework below).
-        // Big + BRIEF so it's a prominent core that fades before the firework spreads.
-        this.spawnExplosion(x, y, r * (big ? 2.2 : 1.6), big ? 0.35 : 0.5, 'fx:explosion');
+        // Phase 1 — a moderate central fireball + a hot flash. The full-screen
+        // white-out is the DOM overlay; the firework blobs (below) carry the bulk of
+        // the spread, so this core stays contained.
+        // Central bloom = the weapon's OWN catalog flare (`expBitmap`: Tomcat=flares/16
+        // white star, nuke=flares/00 white puff, digger=flares/03 green ring, …), NOT
+        // the generic chromatic `explosion1.bmp` (which reads as a rainbow iris — wrong
+        // per weapon). Big + BRIEF so it's a prominent core that fades as it spreads.
+        const flareSpr = expBitmap ? `fx:${expBitmap}` : 'fx:explosion';
+        this.spawnExplosion(x, y, r * (big ? 2.2 : 1.6), big ? 0.35 : 0.5, flareSpr);
         this.spawnFlash(x, y, r * (big ? 2.4 : 1.6), big ? {
             r: 255,
             g: 255,
@@ -336,7 +338,7 @@ export class CParticleSystem {
         // Phase 2 — the firework: the weapon's OWN explosion flare sprite rendered
         // many times as scattered blobs radiating out (nuke=flares/00 white puffs,
         // excavator=flares/03 green rings, …). Plus, for big blasts, a circular ejecta ring.
-        const flareSpr = expBitmap ? `fx:${expBitmap}` : 'fx:explosion';
+        // (`flareSpr` computed above — the same catalog flare drives the central bloom.)
         this.emitGasBlobs(x, y, r, Math.round(r * 1.5) + 30, flareSpr);
         if (big) this.emitEjectaRing(x, y, r);
 
@@ -424,31 +426,35 @@ export class CParticleSystem {
 
     /** In-flight trail — call each frame while a shot flies. A hot leading glow
      * plus a grey smoke puff that lingers and drifts downwind. */
-    trail(x: number, y: number, color: string, vx = 0, vy = 0, trailType = 1, trailLength = 0): void {
+    trail(x: number, y: number, color: string, vx = 0, vy = 0, trailType = 1, trailLength = 0, dt = 0.016): void {
         if (trailType <= 0) return;   // no trail (nukes / beams / diggers)
-        const hot = toward255(parseColor(color), 0.4);
         const speed = Math.hypot(vx, vy);
-        // Exhaust is thrown BACKWARD out of the nose at 0.1·|velocity| (faithful),
-        // and a faster (higher-power) shot lays down more puffs → more smoke.
-        const back = speed > 1 ? {x: -vx / speed, y: -vy / speed} : {x: 0, y: -1};
-        const pspd = speed * 0.1;
         const rocket = trailType >= 2;                       // rocket/missile exhaust
         const lenScale = trailLength > 0 ? 0.6 + trailLength / 100 : 1;   // trailLength 80 → 1.4
-        // Uses the flares/04 starburst asset; rocket types just emit denser + longer.
-        const n = (rocket ? 2 : 1) + Math.min(3, Math.floor(speed / 240));
-        for (let i = 0; i < n; i++) {
+        // Fill the segment the rocket just travelled this frame so the trail is a
+        // CONTINUOUS streak, not blobs spaced one-per-frame. Steps scale with the
+        // segment length (≈ speed·dt) → a faster (higher-power) shot lays down a
+        // longer, denser streak (RE: faster ⇒ more visible smoke, via SPEED).
+        const steps = Math.max(rocket ? 2 : 1, Math.ceil((speed * dt) / 3));
+        for (let s = 0; s < steps; s++) {
+            const f = s / steps;                             // 0 = head, →1 = last-frame position
+            const px = x - vx * dt * f, py = y - vy * dt * f;
+            // FIRE — the hot exhaust: a SMALL bright orange-white glow (the RE trail
+            // flare is only ~4px), brief, so it stays a tight point at the head, not a
+            // big bloom. The ×~7.8 draw multiplier means small sizes here.
             this.add(
-                x, y,
-                back.x * pspd * between(0.3, 1) + between(-8, 8),
-                back.y * pspd * between(0.3, 1) + between(-8, 2),
-                hot, between(0.2, 0.4) * lenScale, between(3, 5) * (rocket ? 1.2 : 1), 'plume',
+                px, py,
+                between(-5, 5), between(-5, 2),
+                {r: 255, g: 200, b: 110}, between(0.14, 0.28) * lenScale, between(0.9, 1.6), 'plume',
             );
-            const g = 155 + between(-25, 25);
+            // Smoke — starts small, SWELLS as it ages (see draw), drifts up. Emitted
+            // grey; the draw tints it WARM while young (near the exhaust) and lets it
+            // cool to grey as it ages back down the trail.
+            const g = 150 + between(-20, 20);
             this.add(
-                x + between(-2, 2), y + between(-2, 2),
-                back.x * pspd * between(0.2, 0.6) + between(-5, 5),
-                back.y * pspd * between(0.2, 0.6) - between(4, 14),
-                {r: g, g, b: g}, between(1.1, 2.1) * lenScale, between(3, 6), 'smoke',
+                px + between(-2, 2), py + between(-2, 2),
+                between(-4, 4), -between(3, 10),
+                {r: g, g, b: g}, between(1.0, 1.8) * lenScale, between(1.6, 3.2), 'smoke',
             );
         }
     }
@@ -580,10 +586,11 @@ export class CParticleSystem {
                 ctx.arc(p.x, p.y, Math.max(0.6, p.size * (0.5 + a * 0.5)), 0, Math.PI * 2);
                 ctx.fill();
             } else if (p.kind === 'smoke') {
-                // Grey puff: swells over its life, alpha peaks early then fades out.
+                // Grey puff: starts SMALL and SWELLS strongly over its life (the fumes
+                // grow as they drift back), alpha peaks early then fades out.
                 const alpha = Math.sin(Math.min(1, t) * Math.PI) * 0.5;
                 if (alpha <= 0.01) continue;
-                const d = p.size * (2.2 + t * 3.4) * 2;      // diameter grows as it drifts
+                const d = p.size * (0.9 + t * 5.5) * 2;      // small at birth → large as it ages
                 if (smokeSpr) {
                     ctx.globalAlpha = alpha;
                     ctx.drawImage(smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);

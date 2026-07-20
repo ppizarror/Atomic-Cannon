@@ -4,11 +4,13 @@
  * map edge.
  * Run: pnpm tsx tests/movement.test.ts   (or `pnpm test`)
  */
-import { installDomMocks } from './_dom';
+import { installDomMocks, makeCanvas } from './_dom';
 installDomMocks();
+(globalThis as unknown as { setTimeout: unknown }).setTimeout = () => 0;
 
 import { CTank } from '../src/core/CTank';
 import type { CLand } from '../src/core/CLand';
+import { CGameController } from '../src/game/CGameController';
 import { Vec2 } from '../src/math/Vec2';
 
 let pass = 0, fail = 0;
@@ -79,6 +81,36 @@ console.log('Tank ground-drive');
   t.update(land, 1 / 30);
   t.stopMoving();
   ok('stopMoving cancels the drive', !t.isDriving() && !t.isMoving());
+}
+
+// 6. In-game: the bot repositions, then aims & fires (full move→aim→fire flow).
+//    Runs several random maps — it always fires; it moves on most (a bot can spawn
+//    boxed in by terrain on rare maps, which is legitimate).
+{
+  type GC = CGameController & { m_tanks: CTank[]; m_currentPlayerIndex: number; executeBotTurn(): void; };
+  const RUNS = 6;
+  let started = 0, moved = 0, fired = 0;
+  for (let r = 0; r < RUNS; r++) {
+    const gc = new CGameController(makeCanvas(900, 600)) as GC;
+    gc.startGame(2);
+    gc.setDifficulty(5);
+    gc.m_currentPlayerIndex = 1;                 // the bot's turn
+    const bot = gc.m_tanks[1];
+    const x0 = bot.getPosition().x;
+
+    const realRandom = Math.random;
+    Math.random = () => 0.1;                      // < BOT_MOVE_CHANCE → reposition; then aim
+    gc.executeBotTurn();
+    if (bot.isDriving() || bot.isMoving()) started++;
+    for (let i = 0; i < 400 && gc.getShotCount() === 0; i++) gc.update(1 / 30);   // ≤13s
+    Math.random = realRandom;
+
+    if (Math.abs(bot.getPosition().x - x0) > 5) moved++;
+    if (gc.getShotCount() > 0) fired++;
+  }
+  ok('bot always starts a reposition', started === RUNS, `${started}/${RUNS}`);
+  ok('bot always fires after repositioning', fired === RUNS, `${fired}/${RUNS}`);
+  ok('bot actually moves on most maps', moved >= RUNS - 2, `${moved}/${RUNS}`);
 }
 
 console.log(`\n${pass}/${pass + fail} movement checks passed`);
