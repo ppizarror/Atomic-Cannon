@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "preview": "vite preview",
     "test": "tsx tests/run.ts"
   },
@@ -18,8 +18,10 @@
     "preact": "^10.29.7"
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.10.5",
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0"
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
   }
 }
