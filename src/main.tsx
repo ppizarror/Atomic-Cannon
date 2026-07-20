@@ -13,8 +13,8 @@ import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {
     setController, syncHud, canFire, openDepot, triggerHudWave, paused as pausedSignal,
-    openPauseMenu, resumeGame, showPause, goToMenu, playNewGame,
-    POWER_MIN, POWER_MAX, wrapAngle,
+    openPauseMenu, resumeGame, showPause, goToMenu, playNewGame, openSettings,
+    showHelp, closeHelp, POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
 async function main(): Promise<void> {
@@ -58,11 +58,13 @@ async function main(): Promise<void> {
     goToMenu();
 
     // Dev/review affordances. `?battle=1` skips the menu into a battle; `?depot=1` /
-    // `?pause=1` do that and then open the depot / pause menu.
+    // `?pause=1` do that and then open the depot / pause menu; `?settings=1` opens the
+    // Settings screen from the main menu.
     const q = new URLSearchParams(location.search);
     if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1') playNewGame();
     if (q.get('depot') === '1') openDepot();
     if (q.get('pause') === '1') openPauseMenu();
+    if (q.get('settings') === '1') openSettings('menu');
 
     // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
     // pause menu, and the DOM FX all read one source. 'P' = a quiet screenshot freeze
@@ -88,10 +90,13 @@ async function main(): Promise<void> {
             return;
         }
 
-        // ESC toggles the pause menu (and freezes the sim while it's up).
+        // ESC closes the Help overlay first, else toggles the pause menu (and
+        // freezes the sim while it's up).
         if (e.code === 'Escape') {
             e.preventDefault();
-            if (showPause.value) resumeGame(); else openPauseMenu();
+            if (showHelp.value) closeHelp();
+            else if (showPause.value) resumeGame();
+            else openPauseMenu();
             return;
         }
 

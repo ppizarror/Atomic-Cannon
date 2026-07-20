@@ -183,8 +183,62 @@ img, canvas {
 
 /* weapon list (over the panel's black box) — rows flush, like the original */
 .wlist {
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding: 0;
+}
+
+/* Classic scrollbar — a black groove with a solid light rectangular "control",
+   no rounding — matching the original game's weapon-list bar. Replaces the OS's
+   modern rounded pill so every scrolling panel (weapon list, depot, about) reads
+   the same. Firefox uses scrollbar-*, WebKit/Blink uses ::-webkit-scrollbar. */
+.wlist,
+.dep-list,
+.about-body {
+    scrollbar-width: thin;                    /* Firefox: thin bar */
+    scrollbar-color: #cfd3d7 #050605;         /* Firefox: thumb / track */
+}
+
+.wlist::-webkit-scrollbar,
+.dep-list::-webkit-scrollbar,
+.about-body::-webkit-scrollbar {
+    width: 11px;
+}
+
+.wlist::-webkit-scrollbar-track,
+.dep-list::-webkit-scrollbar-track,
+.about-body::-webkit-scrollbar-track {
+    background: #050605;                       /* black groove */
+    border-left: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+.wlist::-webkit-scrollbar-thumb,
+.dep-list::-webkit-scrollbar-thumb,
+.about-body::-webkit-scrollbar-thumb {
+    background: #d8dce0;                       /* solid light control */
+    border: 0;                                /* no frame */
+    border-radius: 0;                         /* hard rectangle, not rounded */
+}
+
+.wlist::-webkit-scrollbar-thumb:hover,
+.dep-list::-webkit-scrollbar-thumb:hover,
+.about-body::-webkit-scrollbar-thumb:hover {
+    background: #e7eaed;
+}
+
+.wlist::-webkit-scrollbar-thumb:active,
+.dep-list::-webkit-scrollbar-thumb:active,
+.about-body::-webkit-scrollbar-thumb:active {
+    background: #b7bcc1;
+}
+
+/* No arrow buttons — the classic bar is just track + thumb. */
+.wlist::-webkit-scrollbar-button,
+.dep-list::-webkit-scrollbar-button,
+.about-body::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+    width: 0;
 }
 
 .wrow {
@@ -1013,6 +1067,68 @@ img, canvas {
     margin-top: 16px;
 }
 
+/* ============================ HELP OVERLAY ============================ */
+.help-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+}
+.help-card {
+    width: min(560px, 92vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(18, 22, 28, 0.92);
+    border: 2px solid #2a2f35;
+    border-radius: 10px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7);
+    padding: 18px 24px;
+    color: #dfe6ec;
+}
+.help-head, .help-sub {
+    display: flex;
+    justify-content: center;
+}
+.help-head canvas, .help-sub canvas {
+    display: block;
+}
+.help-sub {
+    margin: 4px 0 14px;
+}
+.help-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.help-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    align-items: baseline;
+    padding-bottom: 7px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.help-name {
+    font: 700 13px 'Segoe UI', sans-serif;
+    color: #f0d060;
+    white-space: nowrap;
+}
+.help-desc {
+    font-size: 13px;
+    line-height: 1.45;
+    color: #cdd6de;
+}
+.help-close {
+    align-self: center;
+    margin-top: 16px;
+}
+
 /* Shared metal button (menu cards / About). */
 .metal-btn {
     padding: 7px 24px;
@@ -1081,4 +1197,67 @@ img, canvas {
 }
 .mainmenu-version canvas {
     display: block;
+}
+
+/* ============================ SETTINGS (options root) ======================= */
+.settings-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    /* Every non-title menu screen sits over the brushed-steel plate. */
+    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+/* The chrome "ATOMIC CANNON" wordmark rides the top of every menu screen. */
+.settings-title {
+    margin-top: 4vh;
+    filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
+}
+.settings-title canvas,
+.settings-item canvas,
+.settings-subtitle canvas {
+    display: block;
+}
+/* Options list, vertically centred in the gap between title and subtitle. */
+.settings-list {
+    margin: auto 0;
+    width: min(860px, 82vw);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+}
+.settings-item {
+    display: flex;
+    justify-content: center;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 5px 0;
+    /* Own GPU layer so the bitmap-font <canvas> rasterises crisply (see .mainmenu-item). */
+    transform: translateZ(0);
+    transition: background 0.08s ease;
+}
+/* Hover = a wide warm highlight bar behind the entry (the retail options look);
+   click = its negative. */
+.settings-item:hover {
+    background: linear-gradient(rgba(233, 224, 199, 0.34), rgba(198, 187, 160, 0.20));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+.settings-item:active {
+    background: rgba(0, 0, 0, 0.5);
+}
+/* Hover subtitle, centred along the bottom edge (reserves height so nothing jumps). */
+.settings-subtitle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 4.5vh;
+    display: flex;
+    justify-content: center;
+    min-height: 20px;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
 }

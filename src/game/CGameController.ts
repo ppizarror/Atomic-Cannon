@@ -57,9 +57,6 @@ const CONTROL_WEAPON: string | null = 'Tomcat';
 const controlWeaponIndex = (): number =>
     CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
 
-// Mid-scale default the "↺" reset button snaps power back to (0..1000 scale).
-const RESET_POWER = 500;
-
 /**
  * CGameController - Main game controller
  */
@@ -1125,6 +1122,9 @@ export class CGameController implements ShotWorld {
         }
 
         this.m_shotsFired++;   // a real projectile is launched (utilities don't count)
+        // Remember this aim as the tank's "last shot" so the reset (↺) button can
+        // restore power+angle to it (RE: FUN_00458c20:307-308, non-utility only).
+        tank.saveLastShot(this.m_angle, this.m_power);
 
         // Death: a self-targeting round that drops straight down onto the firer.
         if (ext === EXT.DEATH) {
@@ -1475,12 +1475,16 @@ export class CGameController implements ShotWorld {
     }
 
     /**
-     * Reset the shot power to the mid-scale default — the "↺" panel button (RE:
-     * FUN_0048a4f0 case 8, "Use the reset button to set power…"). Only power is
-     * reset; the aim angle is left untouched.
+     * Restore the current tank's power AND angle to its last real shot — the "↺"
+     * panel button. Original tooltip (verbatim from the binary): "Use the reset
+     * button to set power and angle to your last shot." (last-shot fields
+     * tank+0x7c / +0x80, seeded to the starting aim before the first shot).
      */
-    resetPower(): void {
-        this.setPower(RESET_POWER);
+    resetAim(): void {
+        if (this.m_paused) return;
+        const tank = this.getCurrentTank();
+        this.setAngle(tank.getLastShotAngle());
+        this.setPower(tank.getLastShotPower());
     }
 
     selectWeapon(index: number): void {

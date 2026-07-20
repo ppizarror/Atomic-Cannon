@@ -907,6 +907,23 @@ export class CTank {
         this.m_power = p;
     }
 
+    // The power + angle of this tank's LAST real shot (RE: tank+0x7c / +0x80),
+    // saved on every non-utility fire. The reset button (↺) restores the current
+    // aim to these — "set power and angle to your last shot." Seeded to the
+    // starting aim so reset is sane before the first shot of a battle.
+    getLastShotAngle(): number {
+        return this.m_lastShotAngle;
+    }
+
+    getLastShotPower(): number {
+        return this.m_lastShotPower;
+    }
+
+    saveLastShot(angleDeg: number, power: number): void {
+        this.m_lastShotAngle = angleDeg;
+        this.m_lastShotPower = power;
+    }
+
     getCredits(): number {
         return this.m_credits;
     }
@@ -998,6 +1015,8 @@ export class CTank {
     private m_weaponIndex: number = 0;  // This tank's own selected weapon
     private m_aimAngle: number = 45;    // This tank's own aim (UI degrees, 0..180)
     private m_power: number = 500;      // This tank's own firing power (10..1000)
+    private m_lastShotAngle: number = 45;   // aim of the last real shot (reset target)
+    private m_lastShotPower: number = 500;
     private m_bIsHuman: boolean = false; // True for the human-controlled tank
     private m_sTankType: string = 'Standard'; // Hull sprite variant
 

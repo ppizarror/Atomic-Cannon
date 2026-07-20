@@ -11,9 +11,10 @@ import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWave
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
 import {PauseMenu} from './PauseMenu';
+import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
 import {About} from './About';
-import {closeSettings} from './store';
+import {Settings} from './Settings';
 
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
@@ -122,9 +123,7 @@ function CurrentScreen() {
         case 'about':
             return <About/>;
         case 'settings':
-            // Interim: the full Settings screen (steel.jpg widget pages) is the next
-            // phase; for now Back returns to wherever it was opened from.
-            return <Placeholder title="Settings" backLabel="Back" onBack={closeSettings}/>;
+            return <Settings/>;
         case 'depot':
             return <Placeholder title="Weapons Depot"/>;
         default:
@@ -137,6 +136,7 @@ export function App() {
         <>
             <CurrentScreen/>
             <PauseMenu/>
+            <HelpOverlay/>
             <DepotPanel/>
             <FlightHud/>
             <ScreenFlash/>

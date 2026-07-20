@@ -13,7 +13,7 @@ import {BmpText} from './BmpText';
 import {
     power, angle, wind, weaponIndex, playerName, teamColor, life, shield,
     blocked, winner, weapons, game, loadWeaponIcon, uiClick, battleStatus,
-    openDepot, openPauseMenu, POWER_MIN, POWER_MAX, wrapAngle, turnTimer,
+    openDepot, openPauseMenu, openHelp, POWER_MIN, POWER_MAX, wrapAngle, turnTimer,
 } from './store';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -271,12 +271,11 @@ function ControlPanel() {
             <FireButton/>
             <TurnTimerBar/>
             <Hotspot r={R.buy} title="Weapons depot" onClick={openDepot}/>
-            <Hotspot r={R.reset} title="Reset power" onClick={() => {
+            <Hotspot r={R.reset} title="Reset to last shot" onClick={() => {
                 uiClick();
-                game().resetPower();
+                game().resetAim();
             }}/>
-            <Hotspot r={R.help} title="Help" onClick={() => {
-            }}/>
+            <Hotspot r={R.help} title="Help" onClick={openHelp}/>
             <Needle/>
             <AngleReadout/>
             <DialGrab/>

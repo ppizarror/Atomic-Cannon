@@ -62,6 +62,29 @@ export function resumeGame(): void {
     uiClick();
 }
 
+// Help overlay — the "?" panel button. The original shows a help/tutorial overlay
+// and highlights each control (RE: flag this+0x97f → tutorial state this+0xa1c);
+// our port shows a modal control reference. Freeze the sim while it's up so the
+// shot-timer doesn't drain behind it.
+export const showHelp = signal(false);
+
+/** Open the Help overlay and freeze the sim. */
+export function openHelp(): void {
+    if (screen.value !== 'battle') return;
+    game().setPaused(true);
+    paused.value = true;
+    showHelp.value = true;
+    uiClick();
+}
+
+/** Close Help and unfreeze the sim. */
+export function closeHelp(): void {
+    showHelp.value = false;
+    game().setPaused(false);
+    paused.value = false;
+    uiClick();
+}
+
 // Where the Settings screen returns to when done — the pause menu or the main menu.
 export const settingsOrigin = signal<'pause' | 'menu'>('pause');
 
