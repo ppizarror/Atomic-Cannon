@@ -314,19 +314,13 @@ function BattleStatus() {
     );
 }
 
-// ---- turn banner / side LCDs -----------------------------------------------
+// ---- winner banner / side LCDs ---------------------------------------------
+// The original has no "X's Turn" popup (the active tank is shown by the bouncing
+// triangle + top-left status), so we only surface the end-of-battle winner.
 function TurnBanner() {
-    const [show, setShow] = useState(false);
-    const name = playerName.value;
     const win = winner.value;
-    useEffect(() => {
-        if (win) return;
-        setShow(true);
-        const t = setTimeout(() => setShow(false), 1500);
-        return () => clearTimeout(t);
-    }, [name]);
-    if (win) return <div id="turn-indicator" class="visible">{win} WINS!</div>;
-    return <div id="turn-indicator" class={show ? 'visible' : ''}>{name}'s Turn</div>;
+    if (!win) return null;
+    return <div id="turn-indicator" class="visible">{win} WINS!</div>;
 }
 
 // A single bitmap-font line inside a black side box.
