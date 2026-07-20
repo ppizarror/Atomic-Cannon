@@ -14,6 +14,7 @@ installDomMocks();
 import {CGameController} from '../src/game/CGameController';
 import {CEconomy} from '../src/core/CEconomy';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {GameConfig} from '../src/core/CGameConfig';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
 
@@ -85,6 +86,29 @@ console.log('Settings → game');
     // And a fresh match honours it: |wind| stays within the scaled bound.
     gc.startGame(2);
     ok('wind is seeded within the scaled bound', Math.abs(gc.getWindValue()) <= 5 * 1.6 + 1e-9, `w=${gc.getWindValue()}`);
+}
+
+// 4. Batch 2: GameConfig scalars + render toggles, and Hitpoints on the spawned tank.
+{
+    setVal('tank.hitpoints', 2500);
+    setVal('tank.kickback', 0);      // Off → scalar 0
+    setVal('gp.explosionSize', 3);   // Massive → 1.8
+    setVal('tank.powerScale', 150);  // 1.5×
+    setVal('gfx.showPower', 0);      // bars off
+    setVal('gfx.expWaves', 0);       // nuke wave off
+
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    ok('Kickback Off → scalar 0', GameConfig.kickbackScale === 0, `k=${GameConfig.kickbackScale}`);
+    ok('Explosion Massive → 1.8', GameConfig.explosionScale === 1.8, `e=${GameConfig.explosionScale}`);
+    ok('Power Scale 150% → 1.5', GameConfig.powerScale === 1.5, `p=${GameConfig.powerScale}`);
+    ok('Show Power off is applied', GameConfig.showPowerBars === false);
+    ok('Explosion Waves off is applied', GameConfig.explosionWaves === false);
+
+    gc.startGame(2);
+    const tank = (gc as unknown as { m_tanks: { getMaxLife(): number; getHealth(): { nLife: number } }[] }).m_tanks[0];
+    ok('Hitpoints → tank max life', tank.getMaxLife() === 2500, `max=${tank.getMaxLife()}`);
+    ok('Hitpoints → tank spawns full', tank.getHealth().nLife === 2500, `life=${tank.getHealth().nLife}`);
 }
 
 console.log(`\n${pass}/${pass + fail} settings checks passed`);

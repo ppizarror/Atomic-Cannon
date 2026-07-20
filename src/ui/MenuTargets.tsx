@@ -1,10 +1,8 @@
 /**
  * The title screen's scrolling target reticles — rows of `target player.bmp`
  * (corner-bracket targets) that scroll horizontally, adjacent rows in OPPOSITE
- * directions, over the lower half of the main menu. Ported from the decompiled
- * title render (`FUN_0042a070` mode-5 branch: a global scroll offset advanced each
- * frame, drawing `gui/square target.bmp` in rows). The exact speed/spacing isn't
- * cleanly recoverable from the obfuscated dump, so those are calibrated.
+ * directions, over the lower half of the main menu. A global scroll offset advances
+ * each frame; the exact speed/spacing are tuned by eye.
  *
  * The reticle sprite is grey-on-black; we rebuild it as white brackets (alpha =
  * luminance) padded with a gap into a repeating tile, so a plain repeat-x + a CSS
@@ -14,7 +12,7 @@ import { useEffect, useState } from 'preact/hooks';
 
 const SPRITE = 40;   // reticle size (px)
 const TILE_W = 84;   // sprite + gap → spacing between reticles
-const ROWS = 2;      // the original has two rows (scrolling opposite ways)
+const ROWS = 2;      // two rows (scrolling opposite ways)
 
 // Build the repeating tile: white reticle (from the grey sprite's luminance) at the
 // left of a TILE_W-wide transparent strip. Returns a data URL, or '' on failure.

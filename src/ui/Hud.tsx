@@ -1,5 +1,5 @@
 /**
- * In-battle HUD. The control panel is the original `gui.bmp` sprite; live content
+ * In-battle HUD. The control panel is the `gui.bmp` sprite; live content
  * (weapon list, power fill, FIRE, angle needle, wind) and click hotspots are
  * positioned over it as a percentage of the 640x120 panel.
  *
@@ -54,7 +54,7 @@ const DIAL_BOX = [75.35, 8.6, 11.5, 61.3] as const;
 const DIAL_GRAB = [75.35, 8.6, 11.5, 52] as const;
 const ANGLE_PER_PX = 0.5;   // degrees of aim per pixel of horizontal drag
 
-// Readout ink — the panel readouts are white, like the original.
+// Readout ink — the panel readouts are white.
 const INK = '#f4f8f4';
 
 const pos = (r: readonly number[]): JSX.CSSProperties =>
@@ -138,8 +138,7 @@ function FireButton() {
 
 // The shot-time bar below FIRE: a fixed red end-cap on the left, then a track
 // whose green fill drains right→left as the turn clock runs down, shading
-// green→yellow→red (RE: the shot-time frame in FUN_00474ff0). Hidden (null)
-// whenever there's no active countdown.
+// green→yellow→red. Hidden (null) whenever there's no active countdown.
 function TurnTimerBar() {
     const t = turnTimer.value;
     if (!t) return null;
@@ -321,7 +320,7 @@ function ControlPanel() {
 }
 
 // Top-left status overlay: each tank's "NAME: N% life" (team colour) then
-// "Battle X of Y - Shot Z" (white) — matches the original (FUN_0048c480).
+// "Battle X of Y - Shot Z" (white).
 function BattleStatus() {
     const s = battleStatus.value;
     return (
@@ -340,7 +339,7 @@ function BattleStatus() {
 }
 
 // ---- winner banner / side LCDs ---------------------------------------------
-// The original has no "X's Turn" popup (the active tank is shown by the bouncing
+// There's no "X's Turn" popup (the active tank is shown by the bouncing
 // triangle + top-left status), so we only surface the end-of-battle winner.
 function TurnBanner() {
     const win = winner.value;
@@ -358,12 +357,11 @@ function currentWeapon() {
     return weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
 }
 
-// The side-LCD boxes flank the central control panel, like the original HUD
-// painter (FUN_00474ff0): two weapon boxes to the LEFT, two tank/world boxes to
-// the RIGHT. Each is appended outward only when the screen is wide enough to hold
-// it (the width-gating lives in hud.css, revealing outermost boxes last). The
-// field set and every derived value is reversed from the binary. (The original's
-// third left box — "Weapon Desc" — is omitted: most weapons carry no description.)
+// The side-LCD boxes flank the central control panel: two weapon boxes to the
+// LEFT, two tank/world boxes to the RIGHT. Each is appended outward only when the
+// screen is wide enough to hold it (the width-gating lives in hud.css, revealing
+// outermost boxes last). A third left box — "Weapon Desc" — is omitted: most
+// weapons carry no description.
 
 // L1 — WEAPON DETAILS (innermost left). Power + Damage-per-area are DERIVED stats
 // (see weaponPower/weaponDamagePerArea); Fodder is the raw fraction shown as a %.
@@ -387,7 +385,7 @@ function WeaponDetails1() {
 
 // L2 — WEAPON DETAILS (second left). Cluster = total submunitions cluNum^cluRecurse
 // (raw cluNum when it doesn't recurse); Succession is stored+1; Radiation is the
-// binary's irDmg·fodder·radius·100 rating (all RE: FUN_00474ff0 @ 0x47b9c7..).
+// irDmg·fodder·radius·100 rating.
 function WeaponDetails2() {
     const w = currentWeapon();
     const cluster = w ? ((w.cluRecurse ?? 0) > 0 ? Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse)) : (w.cluNum ?? 0)) : 0;

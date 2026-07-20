@@ -1,5 +1,5 @@
 /**
- * Main menu — the title screen (the original's mode-5). The `title.jpg` intro image
+ * Main menu — the title screen. The `title.jpg` intro image
  * fills the background; the chrome "ATOMIC CANNON" title sits on top with a centered
  * vertical nav list (Play / Settings / About) in the game's bitmap fonts, and the
  * atom logo in the corner. Play starts a fresh battle; Settings/About navigate.

@@ -1,14 +1,13 @@
 /**
  * Option-page specs for the Settings tree — the widget rows for each category,
- * with the exact labels + hover tooltips recovered from the binary (see
- * `symbols/notes/menu_system.md`). Each row is a `Widget`: a toggle (ON/OFF), an
+ * with their labels + hover tooltips. Each row is a `Widget`: a toggle (ON/OFF), an
  * int/float stepper, an enum cycle, or a nav row.
  *
  * Values bind two ways. Audio and Difficulty drive live subsystems, so their rows
  * read/write CAudio / the controller directly (one source of truth). Everything else
  * is a remembered preference in `settingsStore`. A row's game effect is wired where
- * the port supports it; the rest are faithful, persisted UI whose hooks land as the
- * matching systems come online.
+ * possible; the rest are persisted UI whose hooks land as the matching
+ * systems come online.
  */
 import { getVal, setVal } from './settingsStore';
 import { game, openSettingsPage, uiClick } from './store';
@@ -18,7 +17,7 @@ export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';
 
 export interface Widget {
   label: string;
-  /** Hover subtitle (verbatim from the retail options menu). */
+  /** Hover subtitle (the option's description). */
   tip: string;
   kind: WidgetKind;
   get: () => number;                 // current value (enum index / raw stepper / 0-1 toggle)
@@ -35,8 +34,7 @@ export interface PageSpec {
   rows: Widget[];
 }
 
-// ── enum option pools — all verbatim from the binary, in the game's own index-0
-// (value = min) first order (see menu_system.md; recovered from FUN_0041d240). ──
+// ── enum option pools, in the game's own index-0 (value = min) first order. ──
 const DIFFICULTY = ['1. Easiest', '2. Very Easy', '3. Easy', '4. Moderate', '5. Fun',
   '6. Challenging', '7. Hard', '8. Very Hard', '9. Mastery', '10. Elite'];
 const CHANGE_WIND = ['Per game', 'After round', 'After shot', 'Anytime'];
@@ -48,9 +46,8 @@ const PLAYER_SIZE = ['Small', 'Normal', 'Large'];
 const EXPLOSION_SIZE = ['Small', 'Normal', 'Large', 'Massive'];
 const DETAIL = ['Old School', 'Simple', 'High', 'Wargame'];
 const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
-// Resolution is built dynamically in the original (enumerated display modes ≥ 640×480,
-// formatted "%dx%dx%d %dHz"); the web canvas has no such modes, so we present the
-// common sizes in that same format as a remembered (cosmetic) preference.
+// The web canvas has no enumerable display modes, so Resolution is presented as the
+// common sizes formatted "%dx%dx%d %dHz", a remembered (cosmetic) preference.
 const RESOLUTION = ['800x600x32 60Hz', '1024x768x32 60Hz', '1280x1024x32 60Hz', '1920x1080x32 60Hz'];
 
 const pct = (v: number) => `${v}%`;
@@ -86,7 +83,7 @@ function economyRows(): Widget[] {
 
 function tankRows(): Widget[] {
   return [
-    enumW('Kickback', 'How much explosions move the tanks.', 'tank.kickback', 1, KICKBACK),
+    enumW('Kickback', 'How much explosions move the tanks.', 'tank.kickback', 2, KICKBACK),
     enumW('Player Size', 'How big the tanks are.', 'tank.size', 1, PLAYER_SIZE),
     toggle('Relative Turrets', 'Aiming it relative to the tank', 'tank.relTurrets', 0),
     toggle('Bury Tanks', 'Tanks can be underground', 'tank.bury', 0),
@@ -139,7 +136,7 @@ function graphics2Rows(): Widget[] {
     toggle('Show Blast Circles', 'Display bounds of explosions', 'gfx.blastCircles', 0),
     toggle('Show Points', 'Display damage points for each shot', 'gfx.showPoints', 1),
     toggle('Show Power', 'Display power bars for each tank', 'gfx.showPower', 1),
-    toggle('Show Tank Stats', 'Display stats of each tank', 'gfx.tankStats', 1),
+    toggle('Show Tank Stats', 'Display stats of each tank', 'gfx.tankStats', 0),
     toggle('Auto Scroll', 'Automatically scrolls during game events', 'gfx.autoScroll', 1),
     toggle('Show Last Aim', 'Show last power and angle position', 'gfx.lastAim', 1),
     toggle('Explosion Waves', 'A very cool refractive wave effect for nukes', 'gfx.expWaves', 1),
@@ -175,7 +172,7 @@ function audioRows(): Widget[] {
 
 function contentRows(): Widget[] {
   // Weapons / Landscapes open dedicated enable-list editors (over the steel plate);
-  // those screens aren't ported yet, so the rows click but don't navigate.
+  // those screens aren't built yet, so the rows click but don't navigate.
   return [
     { label: 'Weapons', tip: 'Enable only the weapons you want (quits current game)', kind: 'nav', get: () => 0, onClick: uiClick },
     { label: 'Landscapes', tip: 'Enable only the landscapes you want (quits current game)', kind: 'nav', get: () => 0, onClick: uiClick },

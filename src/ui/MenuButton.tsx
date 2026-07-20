@@ -2,7 +2,7 @@
  * MenuButton — the one menu-list button shared by every menu screen (main menu,
  * the in-game "Game Menu" pause list, and the Settings root). It carries the shared
  * `.menu-btn` highlight treatment: a light box on hover, and on click the
- * photographic NEGATIVE of whatever's behind it — the original's invert-rect
+ * photographic NEGATIVE of whatever's behind it — an invert-rect
  * selection. Callers add a layout class for spacing and, where needed (Settings),
  * hover handlers to drive the bottom subtitle.
  */

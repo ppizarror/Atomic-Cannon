@@ -1,7 +1,7 @@
 /**
  * A single option page in the Settings tree (Gameplay / Audio / …). Renders the
- * page's widget rows over the same darkened title backdrop as the root, matching the
- * retail layout: two-column rows with the label LEFT and the value RIGHT. Cyclable
+ * page's widget rows over the same darkened title backdrop as the root: two-column
+ * rows with the label LEFT and the value RIGHT. Cyclable
  * rows (enum / stepper) frame the value with `‹ … ›` cycle arrows (rendered as
  * `<`/`>`, the glyphs the bitmap fonts carry); toggles show `ON`/`OFF` with no
  * arrows. A centered `Done` returns to the Settings root. Hovering a row shows its

@@ -63,10 +63,8 @@ export function resumeGame(): void {
     uiClick();
 }
 
-// Help overlay — the "?" panel button. The original shows a help/tutorial overlay
-// and highlights each control (RE: flag this+0x97f → tutorial state this+0xa1c);
-// our port shows a modal control reference. Freeze the sim while it's up so the
-// shot-timer doesn't drain behind it.
+// Help overlay — the "?" panel button. Shows a modal control reference. Freeze the
+// sim while it's up so the shot-timer doesn't drain behind it.
 export const showHelp = signal(false);
 
 /** Open the Help overlay and freeze the sim. */
@@ -230,13 +228,13 @@ export const paused = signal(false);
 export const weapons = signal<WeaponDef[]>([]);
 
 // Shot-time bar below FIRE: fraction of turn time remaining (1 = full) + its
-// green→yellow→red colour, or null when there's no active countdown (RE: the
-// shot-time frame in FUN_00474ff0). Republished only when the quantised width
-// or colour changes, so the bar animates without churning every frame.
+// green→yellow→red colour, or null when there's no active countdown. Republished
+// only when the quantised width or colour changes, so the bar animates without
+// churning every frame.
 export const turnTimer = signal<{ frac: number; color: string } | null>(null);
 
 // Top-left status overlay: per-tank life lines (team-coloured) + the battle/shot
-// line — "%s: %d%% life" and "Battle %d of %d - Shot %d" (RE: FUN_0048c480).
+// line — "%s: %d%% life" and "Battle %d of %d - Shot %d".
 export const battleStatus = signal<{
     lines: { text: string; color: string; dead: boolean; active: boolean }[];
     battle: string
@@ -289,6 +287,7 @@ export function syncHud(): void {
     const tank = c.getCurrentTank();
     const h = tank.getHealth();
     life.value = Math.max(0, Math.round(h.nLife));
+    maxLife.value = Math.round(tank.getMaxLife());   // Hitpoints (Settings → Tank)
     shield.value = Math.max(0, Math.round(h.nShield));
     // Side-LCD tank/world readouts (each signal only re-notifies on a real change).
     teamId.value = tank.getTeamId();
@@ -354,7 +353,7 @@ const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
     green: (p, i) => p[i] < 70 && p[i + 1] > 200 && p[i + 2] < 70,
     grey: isGrey,
     // grey outside + black corner outline both keyed — the zeon dialog with its
-    // black rounded-corner border stripped (legacy tooltips have no black border).
+    // black rounded-corner border stripped (these tooltips have no black border).
     greyblack: (p, i) => isGrey(p, i) || (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40),
 };
 
@@ -408,7 +407,7 @@ export function loadWeaponIcon(name: string, size: 12 | 16 | 32 = 32): Promise<s
             const im = g.getImageData(0, 0, cv.width, cv.height);
             const px = im.data;
             // Only magenta (255,0,255) is the transparency key — the grey (128,128,128)
-            // tile is the icon's intended background and must be kept (like the original).
+            // tile is the icon's intended background and must be kept.
             for (let i = 0; i < px.length; i += 4) {
                 if (px[i] > 200 && px[i + 1] < 70 && px[i + 2] > 200) px[i + 3] = 0;
             }

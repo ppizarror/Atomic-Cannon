@@ -1,8 +1,8 @@
 /**
  * Persisted option values for the Settings tree.
  *
- * The original binds each option to a `this+<offset>` field; here we keep a single
- * flat map (keyed by a stable id) persisted to localStorage. Options that drive live
+ * Each option lives in a single flat map (keyed by a stable id) persisted to
+ * localStorage. Options that drive live
  * subsystems — Audio (CAudio) and Difficulty (the controller) — are NOT stored here;
  * their widgets bind straight to those subsystems so the menu reflects the real state
  * and there's one source of truth. Everything else is a preference we remember.

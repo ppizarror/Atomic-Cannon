@@ -1,5 +1,5 @@
 /**
- * Pause menu — an overlay over the frozen battle (the original's "Game Menu").
+ * Pause menu — an overlay over the frozen battle (the in-game "Game Menu").
  * A centered list of bitmap-font items: Resume / Settings / Quit. Opened with ESC
  * (see main.tsx); Settings opens the audio settings over it and returns here on
  * close; Quit drops back to the main menu (UI).

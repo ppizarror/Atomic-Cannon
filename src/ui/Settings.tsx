@@ -1,14 +1,13 @@
 /**
- * Settings / Options root (the original's settings tree). Rendered over the same
+ * Settings / Options root. Rendered over the same
  * darkened title backdrop as the main menu — the brushed-steel plate is only used
  * by the deeper editor sub-screens (weapon / landscape enable lists). A centered
  * vertical list of category entries in the game's outlined bitmap font; hovering an
- * entry shows its one-line description centered along the bottom edge, exactly like
- * the retail options screen. `Done` returns to whichever menu opened Settings (the
- * pause menu or the main menu).
+ * entry shows its one-line description centered along the bottom edge. `Done`
+ * returns to whichever menu opened Settings (the pause menu or the main menu).
  *
- * The individual option pages (Audio / Gameplay / …) are the next step; for now the
- * category entries are inert (audible click only) and `Done` is wired.
+ * Each category opens its option page (`SettingsPage`); Customize Controls / Players
+ * are dedicated editor screens that aren't built yet (audible click only).
  */
 import { useState } from 'preact/hooks';
 import { closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick } from './store';
@@ -18,15 +17,15 @@ import { SettingsPage } from './SettingsPage';
 
 interface Entry {
   label: string;
-  /** Bottom-center subtitle shown on hover (verbatim from the retail options menu). */
+  /** Bottom-center subtitle shown on hover (the option's description). */
   sub: string;
   onClick: () => void;
 }
 
 // The nine root categories, with their exact hover subtitles. The Audio "razzle
-// dazzle" line and the "(quits current game)" warnings are the original's own
-// strings — kept verbatim, quirks and all. Each opens its option page; Customize
-// Controls / Players open dedicated editor screens (not ported yet — inert click).
+// dazzle" line and the "(quits current game)" warnings are intentional game
+// strings — quirks and all. Each opens its option page; Customize
+// Controls / Players open dedicated editor screens (not built yet — inert click).
 const CATEGORIES: Entry[] = [
   { label: 'Economy Options', sub: 'Adjust economic settings', onClick: () => openSettingsPage('economy') },
   { label: 'Tank Options', sub: 'Adjust tank settings', onClick: () => openSettingsPage('tank') },
@@ -58,7 +57,7 @@ export function Settings() {
 
 function SettingsRoot() {
   const [sub, setSub] = useState('');
-  // Done closes Settings. The retail subtitle is "Return to the main menu"; when we
+  // Done closes Settings. The default subtitle is "Return to the main menu"; when we
   // reached Settings from the in-game pause it returns to the game instead, so the
   // hint follows where Done actually goes.
   const done: Entry = {

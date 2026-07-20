@@ -8,9 +8,11 @@
  */
 import { getVal } from './settingsStore';
 
-// Wind enum (Disabled/Low/Medium/High) → strength scalar; Medium (index 2) = 1.0
-// keeps the original feel, Disabled = no wind.
-const WIND_SCALE = [0, 0.5, 1, 1.6];
+// Enum → scalar tables. The default index maps to 1.0 so the out-of-the-box feel
+// is the neutral baseline.
+const WIND_SCALE = [0, 0.5, 1, 1.6];             // Disabled/Low/Medium(1.0)/High
+const KICKBACK_SCALE = [0, 0.6, 1, 1.5];         // Off/Low/Normal(1.0)/High
+const EXPLOSION_SCALE = [0.7, 1, 1.35, 1.8];     // Small/Normal(1.0)/Large/Massive
 
 export const gameSettings = {
   /** Credits each player starts a match with. */
@@ -32,4 +34,22 @@ export const gameSettings = {
   },
   /** Computer AI level 1..10 (difficulty enum index 0..9 → level index+1). */
   difficulty: (): number => getVal('gp.difficulty', 4) + 1,
+
+  /** Blast knockback scalar (Off = 0). */
+  kickbackScale: (): number => KICKBACK_SCALE[getVal('tank.kickback', 2)] ?? 1,
+  /** Explosion radius scalar. */
+  explosionScale: (): number => EXPLOSION_SCALE[getVal('gp.explosionSize', 1)] ?? 1,
+  /** Shot launch-speed scalar (Power Scale %). */
+  powerScale: (): number => getVal('tank.powerScale', 100) / 100,
+  /** Tank starting life. */
+  hitpoints: (): number => getVal('tank.hitpoints', 1000),
+
+  colorizeTeam: (): boolean => getVal('tank.colorize', 1) !== 0,
+  showTeamColor: (): boolean => getVal('gfx.teamColor', 1) !== 0,
+  showPowerBars: (): boolean => getVal('gfx.showPower', 1) !== 0,
+  showTankStats: (): boolean => getVal('gfx.tankStats', 0) !== 0,
+  tracking: (): boolean => getVal('gfx.tracking', 1) !== 0,
+  showTurn: (): boolean => getVal('gfx.showTurn', 1) !== 0,
+  showLastAim: (): boolean => getVal('gfx.lastAim', 1) !== 0,
+  explosionWaves: (): boolean => getVal('gfx.expWaves', 1) !== 0,
 };
