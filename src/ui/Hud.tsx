@@ -13,7 +13,7 @@ import {BmpText} from './BmpText';
 import {
     power, angle, wind, weaponIndex, playerName, teamColor, life, shield,
     blocked, winner, weapons, game, loadWeaponIcon, uiClick, battleStatus,
-    openDepot, openPauseMenu, POWER_MIN, POWER_MAX, wrapAngle,
+    openDepot, openPauseMenu, POWER_MIN, POWER_MAX, wrapAngle, turnTimer,
 } from './store';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -30,6 +30,7 @@ const R = {
     meter: [45.35, 16.3, 4.25, 64.5],   // the coloured gradient column only
 
     fire: [54.8, 16.5, 15, 29.5],
+    timer: [55.6, 48.5, 13.6, 5.5],    // shot-time bar, just below FIRE
     buy: [55, 64.6, 3.2, 18], reset: [60.8, 64, 3.2, 18], help: [66.8, 64, 3.2, 18],
     aleft: [75.5, 64, 2.7, 17], aright: [84.0, 64, 2.7, 17],
     anglen: [76.1, 66, 10, 11],          // number box, lower-centre of the dial
@@ -130,6 +131,23 @@ function FireButton() {
         }}>
             <BmpText font="fire" text="FIRE" height={38}/>
         </button>
+    );
+}
+
+// The shot-time bar below FIRE: a fixed red end-cap on the left, then a track
+// whose green fill drains right→left as the turn clock runs down, shading
+// green→yellow→red (RE: the shot-time frame in FUN_00474ff0). Hidden (null)
+// whenever there's no active countdown.
+function TurnTimerBar() {
+    const t = turnTimer.value;
+    if (!t) return null;
+    return (
+        <div class="ov turn-timer" style={pos(R.timer)}>
+            <div class="tt-cap"/>
+            <div class="tt-track">
+                <div class="tt-fill" style={{width: `${t.frac * 100}%`, background: t.color}}/>
+            </div>
+        </div>
     );
 }
 
@@ -251,6 +269,7 @@ function ControlPanel() {
             <Hotspot r={R.minus} title="Power down" onClick={() => dP(-50)}/>
             <MeterOverlay/>
             <FireButton/>
+            <TurnTimerBar/>
             <Hotspot r={R.buy} title="Weapons depot" onClick={openDepot}/>
             <Hotspot r={R.reset} title="Reset" onClick={() => {
             }}/>

@@ -275,6 +275,37 @@ img, canvas {
     cursor: not-allowed;
 }
 
+/* shot-time bar below FIRE: red end-cap + a draining green track */
+.turn-timer {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    pointer-events: none;
+}
+
+.turn-timer .tt-cap {
+    height: 100%;
+    aspect-ratio: 1;
+    background: #ff0000;
+    border: 1px solid #1a0000;
+    box-sizing: border-box;
+}
+
+.turn-timer .tt-track {
+    flex: 1;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.65);
+    border: 1px solid #0a1a0a;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.turn-timer .tt-fill {
+    height: 100%;
+    /* smooth the ~1%-quantised width steps into a continuous drain */
+    transition: width 0.12s linear;
+}
+
 /* angle needle drawn over the panel's dial */
 .dial-overlay {
     pointer-events: none;
@@ -874,4 +905,162 @@ img, canvas {
 }
 .pause-item:active {
     transform: scale(0.97);
+}
+
+/* ============================ MAIN MENU / ABOUT ============================ */
+.mainmenu {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    /* Fit by HEIGHT (not cover) so the title at the top of the image is always
+       visible; a wide window crops the sides, never the title. */
+    background: #10141a url('/assets/panels/title.webp') center / auto 100% no-repeat;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.mainmenu-title {
+    margin-top: 3vh;
+    filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.85));
+}
+.mainmenu-title canvas,
+.mainmenu-item canvas {
+    display: block;
+}
+.mainmenu-list {
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+.mainmenu-item {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 2px 26px;
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.85));
+    transition: transform 0.08s ease, filter 0.08s ease;
+}
+.mainmenu-item:hover {
+    transform: scale(1.09);
+    filter: brightness(1.2) drop-shadow(0 0 10px rgba(255, 215, 120, 0.75));
+}
+.mainmenu-item:active {
+    transform: scale(0.97);
+}
+.mainmenu-logo {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    width: 38px;
+    height: 40px;
+    image-rendering: pixelated;
+    opacity: 0.85;
+}
+
+/* About / credits over steel.jpg */
+.about-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: #10141a url('/assets/panels/steel.webp') center / cover no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.about-card {
+    width: min(680px, 92vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(18, 22, 28, 0.84);
+    border: 2px solid #2a2f35;
+    border-radius: 10px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7);
+    padding: 20px 26px;
+    color: #dfe6ec;
+}
+.about-head, .about-sub {
+    display: flex;
+    justify-content: center;
+}
+.about-head canvas, .about-sub canvas {
+    display: block;
+}
+.about-sub {
+    margin: 4px 0 14px;
+}
+.about-body {
+    flex: 1;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #cdd6de;
+}
+.about-back {
+    align-self: center;
+    margin-top: 16px;
+}
+
+/* Shared metal button (menu cards / About). */
+.metal-btn {
+    padding: 7px 24px;
+    cursor: pointer;
+    font: 700 14px 'Segoe UI', sans-serif;
+    color: #14171a;
+    background: linear-gradient(#d3d8df, #9aa0a8);
+    border: 1px solid #2a2f34;
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.metal-btn:hover {
+    background: linear-gradient(#e2e7ed, #a7adb5);
+}
+.metal-btn:active {
+    background: linear-gradient(#9aa0a8, #b8bec6);
+}
+
+/* Title-screen scrolling target reticles (lower half; rows scroll opposite ways). */
+.tgt-rows {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 5%;
+    height: 46%;
+    overflow: hidden;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 22px;
+    z-index: 0;
+}
+.tgt-row {
+    height: 40px;
+    flex: 0 0 40px;
+    width: calc(100% + 168px);
+    margin-left: -84px;                 /* overscan so the wrap is seamless */
+    background-repeat: repeat-x;
+    background-size: 84px 40px;
+    opacity: 0.5;
+    will-change: background-position;
+}
+.tgt-l {
+    animation: tgt-scroll-l 7s linear infinite;
+}
+.tgt-r {
+    animation: tgt-scroll-r 7s linear infinite;
+}
+@keyframes tgt-scroll-l {
+    from { background-position-x: 0; }
+    to { background-position-x: -84px; }
+}
+@keyframes tgt-scroll-r {
+    from { background-position-x: 0; }
+    to { background-position-x: 84px; }
 }

@@ -67,6 +67,18 @@ export class CPixiCompositor {
         this.m_scene.filters = [this.m_shockwave];
 
         this.resize();
+
+        // Pre-warm the shockwave shader. Its GLSL program is compiled+linked on the
+        // FIRST render with the filter enabled — a ~50ms stall that otherwise lands on
+        // the first nuke of a match (the "first fire is laggy" hitch). Compile it now,
+        // during load: the canvas isn't mounted yet (main mounts it after init) and the
+        // scene texture is blank, so this one render is invisible and one-time.
+        this.m_shockwave.enabled = true;
+        this.m_shockwave.time = 0;
+        try {
+            this.m_app.renderer.render(this.m_app.stage);
+        } catch { /* headless/edge backends may reject an early render — safe to skip */ }
+        this.m_shockwave.enabled = false;
     }
 
     /**

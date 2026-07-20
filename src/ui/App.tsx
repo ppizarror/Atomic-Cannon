@@ -11,6 +11,8 @@ import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWave
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
 import {PauseMenu} from './PauseMenu';
+import {MainMenu} from './MainMenu';
+import {About} from './About';
 import {closeSettings} from './store';
 
 /**
@@ -116,10 +118,12 @@ function CurrentScreen() {
         case 'battle':
             return <Hud/>;
         case 'menu':
-            return <Placeholder title="Atomic Cannon"/>;
+            return <MainMenu/>;
+        case 'about':
+            return <About/>;
         case 'settings':
             // Interim: the full Settings screen (steel.jpg widget pages) is the next
-            // phase; for now Back returns to the pause menu.
+            // phase; for now Back returns to wherever it was opened from.
             return <Placeholder title="Settings" backLabel="Back" onBack={closeSettings}/>;
         case 'depot':
             return <Placeholder title="Weapons Depot"/>;

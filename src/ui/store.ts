@@ -8,7 +8,7 @@ import {signal} from '@preact/signals';
 import type {CGameController} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'depot';
+export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about';
 
 export const screen = signal<Screen>('battle');
 
@@ -62,26 +62,56 @@ export function resumeGame(): void {
     uiClick();
 }
 
-/** Pause → Settings: leave the pause overlay for the settings screen (still frozen). */
-export function openSettings(): void {
+// Where the Settings screen returns to when done — the pause menu or the main menu.
+export const settingsOrigin = signal<'pause' | 'menu'>('pause');
+
+/** Open the Settings screen, remembering where to return (pause vs main menu). */
+export function openSettings(from: 'pause' | 'menu'): void {
+    settingsOrigin.value = from;
     showPause.value = false;
     screen.value = 'settings';
     uiClick();
 }
 
-/** Settings → back to the pause menu (the battle stays frozen behind it). */
+/** Leave Settings, returning to whichever menu opened it (battle stays frozen). */
 export function closeSettings(): void {
-    screen.value = 'battle';
-    showPause.value = true;
+    if (settingsOrigin.value === 'pause') {
+        screen.value = 'battle';
+        showPause.value = true;
+    } else {
+        screen.value = 'menu';
+    }
     uiClick();
 }
 
-/** Quit the current battle back to the main menu (UI). */
-export function quitToMenu(): void {
+/** Enter the main menu: freeze the battle behind it and play menu music. We freeze
+ * the render loop via the `paused` signal (which skips the sim update) rather than
+ * `setPaused`, because `setPaused` SUSPENDS the AudioContext — that would gag the
+ * menu music. `setPaused(false)` clears any prior game-pause suspend first. */
+export function goToMenu(): void {
     showPause.value = false;
+    screen.value = 'menu';
+    game().setPaused(false);
+    paused.value = true;
+    game().getAudio()?.menuMusic();
+}
+
+/** Play → start a fresh battle. */
+export function playNewGame(): void {
+    uiClick();
+    game().startGame(2);          // also starts the battle music
+    screen.value = 'battle';
     game().setPaused(false);
     paused.value = false;
-    screen.value = 'menu';
+}
+
+/** Main menu → About, and back. */
+export function openAbout(): void { screen.value = 'about'; uiClick(); }
+export function backToMenu(): void { screen.value = 'menu'; uiClick(); }
+
+/** Quit the current battle back to the main menu (UI). */
+export function quitToMenu(): void {
+    goToMenu();
     uiClick();
 }
 
@@ -142,6 +172,12 @@ export function triggerHudWave(strength: number): void {
 export const paused = signal(false);
 
 export const weapons = signal<WeaponDef[]>([]);
+
+// Shot-time bar below FIRE: fraction of turn time remaining (1 = full) + its
+// green→yellow→red colour, or null when there's no active countdown (RE: the
+// shot-time frame in FUN_00474ff0). Republished only when the quantised width
+// or colour changes, so the bar animates without churning every frame.
+export const turnTimer = signal<{ frac: number; color: string } | null>(null);
 
 // Top-left status overlay: per-tank life lines (team-coloured) + the battle/shot
 // line — "%s: %d%% life" and "Battle %d of %d - Shot %d" (RE: FUN_0048c480).
@@ -220,9 +256,19 @@ export function syncHud(): void {
         lastBattleSig = sig;
         battleStatus.value = {lines, battle};
     }
+
+    // Shot-time bar — republish only when the drawn width (quantised to whole
+    // percent) or colour flips, so the drain animates smoothly but cheaply.
+    const t = c.getTurnTimer();
+    const tSig = t ? `${Math.round(t.frac * 100)}|${t.color}` : '';
+    if (tSig !== lastTimerSig) {
+        lastTimerSig = tSig;
+        turnTimer.value = t;
+    }
 }
 
 let lastBattleSig = '';
+let lastTimerSig = '';
 
 // --- generic UI bitmap loader (colour-key → transparent), cached as a data URL ---
 const bmpCache = new Map<string, Promise<string | null>>();

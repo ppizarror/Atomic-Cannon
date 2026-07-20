@@ -755,6 +755,7 @@ export class CGameController implements ShotWorld {
      * Update during battle state (waiting for player input)
      */
     private updateBattle(dt: number): void {
+        this.updateTurnTimer(dt);
         this.updateMines(dt);
 
         // Update tanks on terrain (for falling/movement animations)
@@ -1003,6 +1004,11 @@ export class CGameController implements ShotWorld {
         this.m_turnStartAngle = this.m_angle;
         this.m_turnStartPower = this.m_power;
 
+        // Arm the shot-time countdown for a human turn (bots fire on a schedule and
+        // never time out). Reset the clock either way so it never leaks across turns.
+        this.m_turnElapsed = 0;
+        this.m_turnTimerRunning = this.m_shotTime > 0 && tank.isHuman();
+
         if (tank.isBot()) {
             this.schedule(0.7, () => this.executeBotTurn());
         }
@@ -1011,6 +1017,7 @@ export class CGameController implements ShotWorld {
 
     /** End the current turn: declare a winner, or hand off to the next player. */
     private endTurn(): void {
+        this.m_turnTimerRunning = false;   // the clock never outlives its turn
         const alive = this.m_tanks.filter(t => t.isAlive());
         if (alive.length <= 1) {
             this.m_gameState = EGameState.BattleEnd;
@@ -1023,6 +1030,34 @@ export class CGameController implements ShotWorld {
         }
         this.advanceToNextPlayer();
         this.beginTurn();
+    }
+
+    /**
+     * Advance the shot-time countdown during a human's turn. When the clock runs
+     * out the turn is forfeited (no shot) — the panel bar has already gone red.
+     * Only ticks while `m_turnTimerRunning`, so it's inert for bots, after firing,
+     * and while a shot/explosion is resolving (those aren't the Battle state).
+     */
+    private updateTurnTimer(dt: number): void {
+        if (!this.m_turnTimerRunning) return;
+        this.m_turnElapsed += dt;
+        if (this.m_turnElapsed >= this.m_shotTime) {
+            this.m_turnTimerRunning = false;
+            this.endTurn();                        // time's up → forfeit the turn
+        }
+    }
+
+    /**
+     * Shot-timer state for the panel bar below FIRE, or null when it shouldn't
+     * show (shot-time disabled, or not a human waiting to fire). `frac` is the
+     * fraction of time REMAINING (1 = full); colour goes green→yellow→red as it
+     * drains (RE: FUN_00474ff0:1342-1348).
+     */
+    getTurnTimer(): { frac: number; color: string } | null {
+        if (!this.m_turnTimerRunning || this.m_shotTime <= 0) return null;
+        const frac = Math.max(0, Math.min(1, 1 - this.m_turnElapsed / this.m_shotTime));
+        const color = frac > 0.33 ? '#00ff00' : frac > 0.12 ? '#ffff00' : '#ff0000';
+        return {frac, color};
     }
 
     /**
@@ -1045,6 +1080,8 @@ export class CGameController implements ShotWorld {
         const tank = this.getCurrentTank();
         if (!tank.isAlive()) return;
         if (tank.isMoving()) return;               // can't act while a move is under way
+
+        this.m_turnTimerRunning = false;           // committed to a shot — stop the clock
 
         const weapon = getWeapon(this.m_currentWeaponIndex);
         const ext = weapon.getExtType();
@@ -1639,6 +1676,16 @@ export class CGameController implements ShotWorld {
     // The aim (angle, power) at turn start — anchors the faded "initial" target cross.
     private m_turnStartAngle: number = 45;
     private m_turnStartPower: number = 500;
+
+    // Shot-time countdown (RE: elapsed this+0x17f4, limit this+0x17f8 from the
+    // "Shot Time" setting this+0x1870). The human has this many seconds to aim +
+    // fire; the panel bar below FIRE drains green→yellow→red and, on expiry, the
+    // turn is forfeited. 0 = disabled (no limit, bar hidden).
+    private m_shotTime: number = 30;
+    private m_turnElapsed: number = 0;
+    // Only counts while awaiting the human's shot: true from beginTurn (human,
+    // limit on) until fire()/expiry/turn-end. Bots never time out.
+    private m_turnTimerRunning: boolean = false;
 
     // Game state machine
     private m_gameState: EGameState = EGameState.Battle;

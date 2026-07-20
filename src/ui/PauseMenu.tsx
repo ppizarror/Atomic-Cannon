@@ -22,7 +22,7 @@ export function PauseMenu() {
       <div class="pause-title"><BmpText font="beijing-20-out" text="GAME PAUSED" /></div>
       <div class="pause-list">
         <PauseItem label="Resume" onClick={resumeGame} />
-        <PauseItem label="Settings" onClick={openSettings} />
+        <PauseItem label="Settings" onClick={() => openSettings('pause')} />
         <PauseItem label="Quit" onClick={quitToMenu} />
       </div>
     </div>

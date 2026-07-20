@@ -13,7 +13,7 @@ import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {
     setController, syncHud, canFire, openDepot, triggerHudWave, paused as pausedSignal,
-    openPauseMenu, resumeGame, showPause,
+    openPauseMenu, resumeGame, showPause, goToMenu, playNewGame,
     POWER_MIN, POWER_MAX, wrapAngle,
 } from './ui/store';
 
@@ -49,13 +49,18 @@ async function main(): Promise<void> {
     audio.attachUnlock(window);
     gameController.setAudio(audio);
 
+    // Initialise a battle up front (land + tanks) so the sim is ready, then open the
+    // main menu over it — Play starts a fresh round.
     gameController.startGame(2);
 
     setController(gameController);
     render(<App/>, uiRoot);
+    goToMenu();
 
-    // Dev/review affordance: `?depot=1` opens the Weapons Depot, `?pause=1` the pause menu.
+    // Dev/review affordances. `?battle=1` skips the menu into a battle; `?depot=1` /
+    // `?pause=1` do that and then open the depot / pause menu.
     const q = new URLSearchParams(location.search);
+    if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1') playNewGame();
     if (q.get('depot') === '1') openDepot();
     if (q.get('pause') === '1') openPauseMenu();
 

@@ -419,24 +419,27 @@ export class CLand {
         // and scatter THROUGH the pile (granular texture) tinted by irRGB fading over
         // irTime — so the zone conforms to the ground, not floating (port of FUN_004a6c20).
         const n = Math.max(200, Math.min(12000, Math.round(nRadius * 60)));
+        const pool = this.m_speckPool;
         for (let i = 0; i < n; i++) {
             const ang = this.rand01() * Math.PI * 2;
             const dist = this.rand01() * nRadius;              // stays within the crater zone
             // Thrown mostly UP and a little out, so specks rain back down INSIDE the
             // crater rather than flying onto the surrounding ridges.
             const speed = 30 + this.rand01() * 110;
-            this.m_radSpecks.push({
-                x: x + Math.cos(ang) * dist,
-                y: y + Math.sin(ang) * dist * 0.5,           // start near the surface line
-                vx: Math.cos(ang) * speed * 0.6,
-                vy: Math.sin(ang) * speed * 0.5 - (70 + this.rand01() * 150), // up-biased
-                age: 0,
-                life: dur * (0.85 + this.rand01() * 0.2),   // lingers ~the stretched irTime
-                settled: false,
-                size: 1.6 + this.rand01() * 2,
-                rise: 0,
-                r, g, b,
-            });
+            // Reuse a faded speck from the free pool — up to 12000 per nuke, so this is
+            // the biggest allocation sink; pooling makes a warm blast allocate zero.
+            const s: RadSpeck = pool.pop() ?? { x: 0, y: 0, vx: 0, vy: 0, age: 0, life: 0, settled: false, size: 0, rise: 0, r: 0, g: 0, b: 0 };
+            s.x = x + Math.cos(ang) * dist;
+            s.y = y + Math.sin(ang) * dist * 0.5;             // start near the surface line
+            s.vx = Math.cos(ang) * speed * 0.6;
+            s.vy = Math.sin(ang) * speed * 0.5 - (70 + this.rand01() * 150); // up-biased
+            s.age = 0;
+            s.life = dur * (0.85 + this.rand01() * 0.2);      // lingers ~the stretched irTime
+            s.settled = false;
+            s.size = 1.6 + this.rand01() * 2;
+            s.rise = 0;
+            s.r = r; s.g = g; s.b = b;
+            this.m_radSpecks.push(s);
         }
         if (this.m_radSpecks.length > 13000) this.m_radSpecks.splice(0, this.m_radSpecks.length - 13000);
     }
@@ -494,7 +497,14 @@ export class CLand {
      * are emergent). Chunk colour is procedurally-generated brown (R=v, G≈v/2, B=0,
      * v∈[30,129]) matching the original, not sampled from the ground.
      */
+    /** Dirt-chunk colour string cached by brightness v (0..139) so a 6500-chunk nuke
+     *  doesn't allocate 6500 `rgb()` strings per blast (GC churn → fire-time hitch). */
+    private dirtColor(v: number): string {
+        return this.m_dirtColors[v] ?? (this.m_dirtColors[v] = `rgb(${v},${v >> 1},${v >> 3})`);
+    }
+
     addShowerParticles(x: number, y: number, count: number, radius = 24): void {
+        const pool = this.m_particlePool;
         for (let i = 0; i < count; i++) {
             const ang = Math.random() * Math.PI * 2;
             // Dirt brown (R=v, G≈v/2, B≈0), occasionally a darker clod for texture.
@@ -504,15 +514,16 @@ export class CLand {
             // near the crater instead of raining across the whole map.
             const speed = 30 + Math.random() * (radius * 2.4);
             const up = radius * (0.3 + Math.random() * 1.3);
-            const p: LandParticle = {
-                x: x + (Math.random() * 2 - 1) * radius,
-                y: y + (Math.random() * 2 - 1) * radius * 0.4,
-                vx: Math.cos(ang) * speed,
-                vy: Math.sin(ang) * speed * 0.7 - up,             // varied up-and-out, scaled to the blast
-                color: `rgb(${v},${v >> 1},${v >> 3})`,
-                size: Math.random() < 0.82 ? 1 : 2,               // mostly 1px → many fine chunks
-                spin: 0,
-            };
+            // Reuse a settled chunk from the free pool — after the first big blast the
+            // pool is warm, so a nuke allocates zero LandParticle objects (no GC spike).
+            const p: LandParticle = pool.pop() ?? { x: 0, y: 0, vx: 0, vy: 0, color: '', size: 0, spin: 0 };
+            p.x = x + (Math.random() * 2 - 1) * radius;
+            p.y = y + (Math.random() * 2 - 1) * radius * 0.4;
+            p.vx = Math.cos(ang) * speed;
+            p.vy = Math.sin(ang) * speed * 0.7 - up;             // varied up-and-out, scaled to the blast
+            p.color = this.dirtColor(v);
+            p.size = Math.random() < 0.82 ? 1 : 2;               // mostly 1px → many fine chunks
+            p.spin = 0;
             this.m_particles.push(p);
         }
     }
@@ -544,7 +555,7 @@ export class CLand {
             p.y += p.vy * dt;
 
             const col = Math.floor(p.x);
-            if (col < 0 || col >= this.m_nWidth) continue;   // left the field → drop
+            if (col < 0 || col >= this.m_nWidth) { this.m_particlePool.push(p); continue; }   // left the field → recycle
 
             // A chunk settles when it reaches the surface (only on the way down) and
             // deposits — raising a column by 1px. The landing column is jittered ±2 (as
@@ -570,7 +581,8 @@ export class CLand {
                 this.m_slumpTimer = 3;
                 this.m_slumpX0 = Math.min(this.m_slumpX0, dcol - 3);
                 this.m_slumpX1 = Math.max(this.m_slumpX1, dcol + 3);
-                continue;   // settled → deposited → drop
+                this.m_particlePool.push(p);
+                continue;   // settled → deposited → recycle
             }
 
             this.m_particles[dw++] = p;   // still airborne → keep
@@ -607,14 +619,14 @@ export class CLand {
         for (let i = 0; i < this.m_radSpecks.length; i++) {
             const s = this.m_radSpecks[i];
             s.age += dt;
-            if (s.age >= s.life) continue;   // faded out → drop
+            if (s.age >= s.life) { this.m_speckPool.push(s); continue; }   // faded out → recycle
 
             if (!s.settled) {
                 s.vy += RAD_GRAV * dt;
                 s.x += s.vx * dt;
                 s.y += s.vy * dt;
                 const col = Math.floor(s.x);
-                if (col < 0 || col >= this.m_nWidth) continue;   // left the field → drop
+                if (col < 0 || col >= this.m_nWidth) { this.m_speckPool.push(s); continue; }   // left the field → recycle
                 if (s.vy > 0 && s.y >= this.getHeightAt(col)) {
                     s.settled = true;
                     s.vx = s.vy = 0;
@@ -1103,6 +1115,11 @@ export class CLand {
     private m_particles: LandParticle[] = [];
     private m_radParticles: RadParticle[] = [];
     private m_radSpecks: RadSpeck[] = [];
+    // Free lists of dead particle objects, refilled on removal and drained on emit, so a
+    // repeat blast reuses objects instead of allocating thousands (kills the GC hitch).
+    private m_particlePool: LandParticle[] = [];
+    private m_speckPool: RadSpeck[] = [];
+    private m_dirtColors: string[] = [];            // dirt-chunk colour strings cached by brightness v
     private m_heat: HeatWisp[] = [];                // rising heat-haze plumes off the fallout
     private m_heatSprite: HTMLCanvasElement | null = null;   // cached soft warm glow sprite (fallback)
     private m_smokeSrc: CanvasImageSource | null = null;     // the game's smoke.bmp (for heat wisps)
