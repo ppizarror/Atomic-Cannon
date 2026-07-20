@@ -8,9 +8,11 @@
  * and again whenever an option changes (so live settings update at once).
  */
 import type { CGameController } from '../game/CGameController';
+import { GameConfig } from '../core/CGameConfig';
 import { gameSettings as S } from './settingsValues';
 
 export function applyGameSettings(c: CGameController): void {
+  // Controller-owned: most read at the next startGame, a few live.
   c.setStartCredits(S.creditStart());
   c.setSellRate(S.sellRate());
   c.setTotalBattles(S.battles());
@@ -19,4 +21,19 @@ export function applyGameSettings(c: CGameController): void {
   c.setWindScale(S.windScale());
   c.setLandMode(S.landMode());
   c.setDifficulty(S.difficulty());
+
+  // Cross-cutting scalars + render toggles, read directly off GameConfig
+  // by the tank badge / shot launch / blast / render-gate sites.
+  GameConfig.kickbackScale = S.kickbackScale();
+  GameConfig.explosionScale = S.explosionScale();
+  GameConfig.powerScale = S.powerScale();
+  GameConfig.hitpoints = S.hitpoints();
+  GameConfig.colorizeTeam = S.colorizeTeam();
+  GameConfig.showTeamColor = S.showTeamColor();
+  GameConfig.showPowerBars = S.showPowerBars();
+  GameConfig.showTankStats = S.showTankStats();
+  GameConfig.tracking = S.tracking();
+  GameConfig.showTurn = S.showTurn();
+  GameConfig.showLastAim = S.showLastAim();
+  GameConfig.explosionWaves = S.explosionWaves();
 }

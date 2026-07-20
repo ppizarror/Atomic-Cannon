@@ -6,10 +6,11 @@
 
 import {Vec2, Vec2f} from '../math/Vec2';
 import {CLand} from './CLand';
+import {GameConfig} from './CGameConfig';
 import {getFont, type FontId} from '../ui/BitmapFont';
 
 // Tank-badge text font — small pixel font rendered at NATIVE size (10px) so it
-// stays crisp and matches the original's compact label size.
+// stays crisp at a compact label size.
 const BADGE_FONT: FontId = 'silkscreen-8-white';
 
 // Render text with one of the game's bitmap fonts (cached). Returns null until the
@@ -42,7 +43,7 @@ export interface ISpriteSource {
 // Tank variants
 const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
 
-// The original's 16-team palette (FUN_00447e40 switch, 0xRRGGBB). Team 0 = blue.
+// The 16-team palette (0xRRGGBB). Team 0 = blue.
 export const TEAM_COLORS: Record<number, string> = {
     0: '#0000ff', 1: '#ff0000', 2: '#00ff00', 3: '#0080ff',
     4: '#f000f0', 5: '#8000ff', 6: '#00ffff', 7: '#800080',
@@ -51,7 +52,7 @@ export const TEAM_COLORS: Record<number, string> = {
 };
 
 // --- team-colour body tint (HSL hue-swap: keep each pixel's luminance, force the
-// team hue at sat 0.5 — port of FUN_004074c0). Cached per sprite+team. ----------
+// team hue at sat 0.5). Cached per sprite+team. ----------
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
     r /= 255;
     g /= 255;
@@ -173,6 +174,18 @@ export class CTank {
     }
 
     /**
+     * Rescale position/velocity when the world buffer is resized. Grounded tanks
+     * re-seat on the terrain surface on the next update (Y is derived from the land);
+     * scaling Y here keeps airborne/jet tanks at their relative height meanwhile.
+     */
+    rescale(sx: number, sy: number): void {
+        this.m_vPos.x *= sx;
+        this.m_vPos.y *= sy;
+        this.m_vVel.x *= sx;
+        this.m_vVel.y *= sy;
+    }
+
+    /**
      * Initialize tank at position with given player data
      */
     init(x: number, pLand: CLand): void {
@@ -180,8 +193,14 @@ export class CTank {
         // Snap tank onto the terrain surface at its spawn column
         this.computePosition(pLand);
 
-        // Reset to full health on spawn
-        this.m_health.nLife = 1000;
+        // Spawn at full health — Tank → Hitpoints sets the starting/max life.
+        this.m_maxLife = GameConfig.hitpoints;
+        this.m_health.nLife = this.m_maxLife;
+    }
+
+    /** Full/starting life (Hitpoints) — the denominator for life bars/percent. */
+    getMaxLife(): number {
+        return this.m_maxLife;
     }
 
     /**
@@ -223,8 +242,8 @@ export class CTank {
         const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - TANK_HEIGHT_PIXELS;
 
         // Jet flight (extType 17): while fuel remains the player thrusts against
-        // gravity. Port of FUN_00460d60 / FUN_00402a00 — UP = -1.2g vertical (net
-        // -0.2g, a gentle rise), L/R = ∓0.1g horizontal; fuel drains on real dt.
+        // gravity. UP = -1.2g vertical (net -0.2g, a gentle rise), L/R = ∓0.1g
+        // horizontal; fuel drains on real dt.
         // At empty this branch is skipped and the tank simply falls & lands below.
         if (this.m_fJetFuel > 0) {
             this.m_fJetFuel = Math.max(0, this.m_fJetFuel - dt);
@@ -242,7 +261,7 @@ export class CTank {
                 this.m_bFalling = true;
                 this.m_bIsMoving = true;
 
-                // Ceiling clamp at the top of the map (RE: y→8 when above it).
+                // Ceiling clamp at the top of the map.
                 if (this.m_vPos.y < JET_CEILING) {
                     this.m_vPos.y = JET_CEILING;
                     if (this.m_vVel.y < 0) this.m_vVel.y = 0;
@@ -422,7 +441,7 @@ export class CTank {
         this.m_fJetFuel = Math.max(0, fuelSeconds);
     }
 
-    /** Cut the engine — drops remaining fuel (turn-end / early-out; RE: tank+0x88=0). */
+    /** Cut the engine — drops remaining fuel (turn-end / early-out). */
     cutJet(): void {
         this.m_fJetFuel = 0;
         this.m_jetInput = {up: false, left: false, right: false};
@@ -485,7 +504,7 @@ export class CTank {
 
         // Shield fully absorbs the hit only if it exceeds the damage; otherwise
         // the shield is destroyed and the FULL damage still passes through
-        // (a quirk of the original — the shield does not partially subtract).
+        // (by design — the shield does not partially subtract).
         if (this.m_health.nShield > dmg) {
             this.m_health.nShield -= dmg;
             dmg = 0;
@@ -573,8 +592,8 @@ export class CTank {
         if (sprite) {
             const w = TANK_DRAW_WIDTH;
             const h = (sprite.height / sprite.width) * w;
-            // Team-tint the hull (not the wreck), keeping its shading.
-            const img = this.m_bExploded ? sprite.bitmap
+            // Team-tint the hull (not the wreck), keeping its shading (Tank → Colorize Team).
+            const img = (this.m_bExploded || !GameConfig.colorizeTeam) ? sprite.bitmap
                 : tintToHue(sprite, hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'), `${bodyKey}|${this.m_nTeamId}`);
             ctx.drawImage(img, -w / 2, -h, w, h);
         } else {
@@ -621,8 +640,10 @@ export class CTank {
         if (turret) {
             const scale = TANK_TURRET_LENGTH / turret.width;
             const tw = turret.width * scale, th = turret.height * scale;
-            const img = tintToHue(turret, hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'),
-                `tanks/${this.m_sTankType} turret|${this.m_nTeamId}`);
+            const img = GameConfig.colorizeTeam
+                ? tintToHue(turret, hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'),
+                    `tanks/${this.m_sTankType} turret|${this.m_nTeamId}`)
+                : turret.bitmap;
             ctx.save();
             ctx.translate(pivot.x, pivot.y);
             ctx.rotate(Math.atan2(aim.y, aim.x));
@@ -645,7 +666,7 @@ export class CTank {
     }
 
     /**
-     * The on-field badge (port of FUN_00487340), stacked upward above the tank:
+     * The on-field badge, stacked upward above the tank:
      * name box (team colour) → shield bar (if any) → armour strip (if any) →
      * life bar → full stat lines (only on hover / detail). Life & shield are
      * green/blue fills over black with a red/grey depleted remainder.
@@ -654,10 +675,10 @@ export class CTank {
         const w = Math.round(TANK_DRAW_WIDTH * 0.8);   // bars a little narrower than the hull
         const cx = this.m_vPos.x;
         const team = TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
-        const life = Math.max(0, Math.min(1, this.m_health.nLife / 1000));
+        const life = Math.max(0, Math.min(1, this.m_health.nLife / this.m_maxLife));
         const shield = Math.max(0, Math.min(1, this.m_health.nShield / 1000));
         const armor = this.m_health.nArmor;
-        const BH = 2;                                  // thin bar (like the original)
+        const BH = 2;                                  // thin bar
 
         // Bar: coloured fill over a black border + a "depleted" remainder.
         const bar = (y: number, frac: number, fill: string, empty: string): number => {
@@ -691,60 +712,65 @@ export class CTank {
             return y + 12;
         };
 
-        // The badge sits UNDER the tank (like the original), stacked downward.
+        // The badge sits UNDER the tank, stacked downward.
         // Offset clears the tank even when it's tilted on a slope.
         let y = surfaceY + 11;
-        y = bar(y, life, '#00ff00', '#ff0000');                 // life (green / red)
-        if (shield > 0) y = bar(y, shield, '#0000ff', '#808080'); // shield (blue / grey)
-        if (armor > 0) {                                        // armour (yellow strip)
-            ctx.fillStyle = '#000';
-            ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 3);
-            ctx.fillStyle = '#ffff00';
-            ctx.fillRect(cx - w / 2, y, w * Math.min(1, armor / 100), 1);
-            y += 3;
+        // Life / shield / armour bars (Graphics → Show Power).
+        if (GameConfig.showPowerBars) {
+            y = bar(y, life, '#00ff00', '#ff0000');                 // life (green / red)
+            if (shield > 0) y = bar(y, shield, '#0000ff', '#808080'); // shield (blue / grey)
+            if (armor > 0) {                                        // armour (yellow strip)
+                ctx.fillStyle = '#000';
+                ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 3);
+                ctx.fillStyle = '#ffff00';
+                ctx.fillRect(cx - w / 2, y, w * Math.min(1, armor / 100), 1);
+                y += 3;
+            }
         }
 
-        // --- name box (team colour @ 50% + solid outline), with a shield icon.
-        // Name rendered at NATIVE bitmap-font size (crisp) ---
-        const name = this.m_sName || '—';
-        const lab = bmpLabel(BADGE_FONT, name, '#ffffff');
-        const nameH = lab ? lab.height : 12;
-        const nameW = lab ? lab.width : name.length * 6;
-        const icon = shield > 0 ? (assets?.getSprite('gui/shield') ?? null) : null;
-        const iconH = nameH;
-        const iconW = icon ? Math.round(icon.width * (iconH / icon.height)) : 0;
-        const pad = 3, gap = icon ? 2 : 0;
-        const bw = Math.round(pad * 2 + iconW + gap + nameW);
-        const bh = nameH + 4;
-        const bx = Math.round(cx - bw / 2), by = Math.round(y + 2);
+        // --- name box (team colour @ 50% + solid outline), with a shield icon; the
+        // whole label is gated by Graphics → Show Team Color. Native bitmap-font size. ---
+        if (GameConfig.showTeamColor) {
+            const name = this.m_sName || '—';
+            const lab = bmpLabel(BADGE_FONT, name, '#ffffff');
+            const nameH = lab ? lab.height : 12;
+            const nameW = lab ? lab.width : name.length * 6;
+            const icon = shield > 0 ? (assets?.getSprite('gui/shield') ?? null) : null;
+            const iconH = nameH;
+            const iconW = icon ? Math.round(icon.width * (iconH / icon.height)) : 0;
+            const pad = 3, gap = icon ? 2 : 0;
+            const bw = Math.round(pad * 2 + iconW + gap + nameW);
+            const bh = nameH + 4;
+            const bx = Math.round(cx - bw / 2), by = Math.round(y + 2);
 
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = team;
-        ctx.fillRect(bx, by, bw, bh);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = team;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = team;
+            ctx.fillRect(bx, by, bw, bh);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = team;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
 
-        let contentX = bx + pad;
-        ctx.imageSmoothingEnabled = false;
-        if (icon) {
-            ctx.drawImage(icon.bitmap, contentX, Math.round(by + (bh - iconH) / 2), iconW, iconH);
-            contentX += iconW + gap;
+            let contentX = bx + pad;
+            ctx.imageSmoothingEnabled = false;
+            if (icon) {
+                ctx.drawImage(icon.bitmap, contentX, Math.round(by + (bh - iconH) / 2), iconW, iconH);
+                contentX += iconW + gap;
+            }
+            if (lab) {
+                ctx.drawImage(lab, Math.round(contentX), Math.round(by + (bh - nameH) / 2));   // native 1:1
+            } else {
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(name, contentX, by + bh / 2);
+            }
+            y = by + bh + 1;
         }
-        if (lab) {
-            ctx.drawImage(lab, Math.round(contentX), Math.round(by + (bh - nameH) / 2));   // native 1:1
-        } else {
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 11px sans-serif';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(name, contentX, by + bh / 2);
-        }
-        y = by + bh + 1;
 
-        // --- full stat lines (on hover), below the name box ---
-        if (showDetail) {
+        // --- full stat lines: on hover, or always with Graphics 2 → Show Tank Stats ---
+        if (showDetail || GameConfig.showTankStats) {
             y = line(`Team ${this.m_nTeamId + 1}`, y);
             y = line(`Life ${Math.round(this.m_health.nLife)}`, y);
             if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y);
@@ -909,7 +935,7 @@ export class CTank {
         this.m_power = p;
     }
 
-    // The power + angle of this tank's LAST real shot (RE: tank+0x7c / +0x80),
+    // The power + angle of this tank's LAST real shot,
     // saved on every non-utility fire. The reset button (↺) restores the current
     // aim to these — "set power and angle to your last shot." Seeded to the
     // starting aim so reset is sane before the first shot of a battle.
@@ -938,7 +964,7 @@ export class CTank {
         return TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
     }
 
-    /** Screen/world hit-test for hover (badge detail) — matches FUN_00403520. */
+    /** Screen/world hit-test for hover (badge detail). */
     isPointInside(px: number, py: number): boolean {
         const dx = px - this.m_vPos.x, dy = py - (this.m_vPos.y + TANK_HEIGHT_PIXELS / 2);
         return dx * dx + dy * dy < (TANK_RADIUS + 8) * (TANK_RADIUS + 8);
@@ -1009,7 +1035,7 @@ export class CTank {
     private m_nId: number;              // Unique tank identifier
 
     // Player data reference  
-    private m_pPlayerData: unknown;     // CPlayerData*
+    private m_pPlayerData: unknown;     // per-player data reference
 
     private m_nTeamId: number = 0;      // Team assignment (for color)
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
@@ -1039,9 +1065,12 @@ export class CTank {
         nHazmat: 0,
         fRadiation: 0
     };
+    // Full/starting life — set from Tank → Hitpoints on spawn. Denominator for the
+    // life bar and the life-percent status so custom hitpoints scale correctly.
+    private m_maxLife = 1000;
 
     // Jet flight (extType 17): fuel in seconds remaining, and the current held
-    // thrust input. Flying == fuel > 0 (there is no separate flag; RE: tank+0x88).
+    // thrust input. Flying == fuel > 0 (there is no separate flag).
     private m_fJetFuel: number = 0;
     private m_jetInput = {up: false, left: false, right: false};
 
@@ -1071,7 +1100,7 @@ const TANK_DRIVE_SPEED = 70;            // Ground-drive crawl speed (px/s)
 const TANK_DRIVE_MAX_CLIMB = 2.0;       // Max terrain RISE per px driven before a wall stops it
 const TANK_DRIVE_MAX_DROP = 8.0;        // Max terrain DROP per px driven before a cliff stops it
 
-// Jet thrust as multiples of gravity (RE: FUN_00460d60 force constants).
+// Jet thrust as multiples of gravity.
 // UP = -1.2g (net -0.2g up while held); L/R = ∓0.1g. Ceiling at the map top.
 const JET_UP_ACCEL = -1.2 * TANK_GRAVITY;
 const JET_SIDE_ACCEL = -0.1 * TANK_GRAVITY;

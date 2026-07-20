@@ -5,13 +5,22 @@
 import {Vec2} from '../math/Vec2';
 import {CLand} from './CLand';
 import {CTank} from './CTank';
+import {GameConfig} from './CGameConfig';
 
 // Trajectory constants — the single source of truth, shared with the aim AI so a
-// simulated shot matches a real one exactly. Calibrated to our px/second space;
-// the original's ratios (gravity vs launch speed vs wind) are preserved.
+// simulated shot matches a real one exactly. Calibrated to our px/second space,
+// preserving the ratios between gravity, launch speed and wind.
 export const SHOT_GRAVITY = 500;       // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15;     // wind display units -> px/s^2 of sideways drift
 export const SHOT_SPEED_SCALE = 0.9;   // launch speed per unit power
+
+// Projectile sprite scale. Tanks AND rounds blit at ONE shared sprite scale and each
+// round is sized so its LONGEST side spans `weapon.size × scale` px
+// (`(size / longestNative)·scale`). Our tanks draw at 46px from ~69px-native bodies,
+// so that shared scale is 46/69 ≈ 0.667; projectiles reuse it, keeping every round's
+// true size ratio (a size-15 Stinger stays small, a size-30 Rail stays long) instead
+// of the old raw-native×0.7.
+export const PROJECTILE_DRAW_SCALE = 46 / 69;
 
 interface TrailPoint {
     x: number;
@@ -54,7 +63,7 @@ export class CShot {
 
         const fRadAngle = -((angleDegrees / 180) * Math.PI);
 
-        const speed = power * SHOT_SPEED_SCALE;
+        const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
 
         this.m_vel.x = Math.cos(fRadAngle) * speed;
         this.m_vel.y = Math.sin(fRadAngle) * speed;
@@ -78,7 +87,7 @@ export class CShot {
         this.m_radius = radius;
         this.m_power = power;
 
-        const speed = power * SHOT_SPEED_SCALE;
+        const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
 
         // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
         // Works for every direction, including below-horizon (negative) angles.
@@ -110,9 +119,8 @@ export class CShot {
     }
 
     /**
-     * Semi-implicit Euler step (matches the original): gravity + wind added as
-     * acceleration, then position advances. Beam-type shots skip gravity so they
-     * fly straight.
+     * Semi-implicit Euler step: gravity + wind added as acceleration, then position
+     * advances. Beam-type shots skip gravity so they fly straight.
      */
     update(dt: number, wind: Vec2): void {
         if (this.m_bIsDead) return;
@@ -164,6 +172,17 @@ export class CShot {
 
     setPosition(x: number, y: number): void {
         this.m_pos = new Vec2(x, y);
+    }
+
+    /** Rescale position + velocity when the world buffer is resized (keeps an in-flight
+     *  shot on its trajectory at the new scale); the stale-scale trail is dropped. */
+    rescale(sx: number, sy: number): void {
+        this.m_pos.x *= sx;
+        this.m_pos.y *= sy;
+        this.m_vel.x *= sx;
+        this.m_vel.y *= sy;
+        this.m_prevY *= sy;
+        this.m_trailPoints = [];
     }
 
     isMovingDown(): boolean {
@@ -233,30 +252,40 @@ export class CShot {
         return this.m_pos.clone();
     }
 
+    /** Exhaust point — the missile's REAR, where the trail/plume pours from. The trail
+     * emits here, not at the centre: it offsets back from the centre along the heading
+     * by half the on-screen sprite length, `0.5 × size × scale`. `size` = the weapon
+     * display size. */
+    getExhaustPoint(size: number): Vec2 {
+        const v = this.m_vel;
+        const spd = Math.hypot(v.x, v.y);
+        if (spd < 1e-3) return this.m_pos.clone();
+        const half = 0.5 * size * PROJECTILE_DRAW_SCALE;
+        return new Vec2(this.m_pos.x - (v.x / spd) * half, this.m_pos.y - (v.y / spd) * half);
+    }
+
     isDead(): boolean {
         return this.m_bIsDead;
     }
 
-    draw(ctx: CanvasRenderingContext2D, color: string = '#ff8800', sprite: CanvasImageSource | null = null, _size = 12): void {
+    draw(ctx: CanvasRenderingContext2D, color: string = '#ff8800', sprite: CanvasImageSource | null = null, size = 12): void {
         if (this.m_bIsDead) return;
 
         // No procedural streak — the trail is entirely sprite-based particles now
         // (per-weapon trailType), so trailType-0 weapons (nukes/beams) fly cleanly.
 
-        // Real projectile sprite, rotated to point along its velocity, drawn at its
-        // NATIVE dimensions scaled by a uniform map scale — the original blits each
-        // round's own bitmap. So a 2×2 buckshot pellet reads as a tiny dot and an 8×2
-        // bullet as a small dash, while a long rail (32×3) or rocket (32×9) keeps its
-        // native shape. The weapon `size` field is the BLAST radius, NOT the sprite
-        // size, so it must not drive the on-screen projectile scale.
+        // Real projectile sprite, rotated to point along its velocity. Each round blits
+        // so its LONGEST side spans `weapon.size × scale` px, aspect preserved, pivoted
+        // at centre. `size` is the DISPLAY size (weapons.txt col 4) — the BLAST radius
+        // is the separate `radius` field — so a size-15 Stinger reads as a small missile
+        // even though rocket.bmp is 32px wide.
         if (sprite) {
             const nw = (sprite as { width: number }).width;
             const nh = (sprite as { height: number }).height;
-            const MAP_SCALE = 0.7;              // shared world→sprite scale
             const longest = Math.max(nw, nh);
-            // Floor so a 2px pellet stays a visible dot; ceil so a giant ball/mine
-            // sprite can't dominate the field.
-            const target = Math.max(3, Math.min(44, longest * MAP_SCALE));
+            // Longest on-screen side = size × the shared sprite scale; floor at 2px so a
+            // tiny round still reads.
+            const target = Math.max(2, size * PROJECTILE_DRAW_SCALE);
             const k = target / longest;
             const w = nw * k, h = nh * k;
             const ang = Math.atan2(this.m_vel.y, this.m_vel.x);
