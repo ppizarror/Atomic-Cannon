@@ -1526,11 +1526,13 @@ export class CGameController implements ShotWorld {
     }
 
     // Damage every living tank within the beam's half-width of the FULL line — once
-    // each, full damage (no falloff), including tanks behind terrain it pierced.
+    // each, full damage (no falloff), including tanks behind terrain it pierced. The
+    // shooter is EXCLUDED: the ray starts at its own muzzle, so it would otherwise sit
+    // inside the half-width at the origin and take self-damage on every shot.
     const r = weapon.getRadius();
     const halfWidth = Math.max(8, r * 0.5) + 16; // + tank radius
     for (const t of this.m_tanks) {
-      if (!t.isAlive()) continue;
+      if (!t.isAlive() || t === owner) continue;
       const tp = t.getPosition();
       if (CGameController.pointSegDist(tp.x, tp.y, muzzle.x, muzzle.y, end.x, end.y) > halfWidth)
         continue;
@@ -1545,9 +1547,9 @@ export class CGameController implements ShotWorld {
     }
 
     // The beam itself: the weapon's own colour texture (`bitmap` — red magma, striped
-    // yellow grate, blue …) rotated to the aim and stretched along the line at `size`
-    // thickness. It holds on screen for a beat, THEN the earth collapses — a through-
-    // beam has no single impact point, no crater/explosion/ripple, just a light shake.
+    // yellow grate, blue …) rotated to the aim and tiled end-to-end along the line at
+    // `size` thickness. It holds on screen for a beat, THEN the earth collapses — a
+    // through-beam has no single impact point, no crater/explosion/ripple, just a shake.
     this.m_particles.beam(
       muzzle.x,
       muzzle.y,
@@ -1588,7 +1590,6 @@ export class CGameController implements ShotWorld {
         rad.rgb,
       );
     }
-    void owner;
   }
 
   /** Distance from point (px,py) to segment (ax,ay)-(bx,by). */
