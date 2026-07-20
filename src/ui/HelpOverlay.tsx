@@ -9,6 +9,7 @@
  */
 import {showHelp, closeHelp} from './store';
 import {BmpText} from './BmpText';
+import {Modal} from './Modal';
 
 // One row per panel control, each with a short description of what the control does.
 const CONTROLS: { name: string; desc: string }[] = [
@@ -31,24 +32,21 @@ const CONTROLS: { name: string; desc: string }[] = [
 // the name, a clean Arial for the description.
 export function HelpOverlay() {
     if (!showHelp.value) return null;
-    // Backdrop click closes; clicks inside the card don't bubble out to it.
     return (
-        <div class="help-overlay" onClick={closeHelp}>
-            <div class="help-card" onClick={e => e.stopPropagation()}>
-                <div class="help-head"><BmpText font="bazouk-28" text="HELP"/></div>
-                <div class="help-sub"><BmpText font="arial-14-out" text="Battle Controls"/></div>
-                <div class="help-list">
-                    {CONTROLS.map(c => (
-                        <div class="help-row" key={c.name}>
-                            <div class="help-name"><BmpText font="beijing-16-out" text={c.name} spacing={-1}/></div>
-                            <div class="help-desc"><BmpText font="arial-14-out" text={c.desc}/></div>
-                        </div>
-                    ))}
-                </div>
-                <button class="help-close" onClick={closeHelp}>
-                    <BmpText font="beijing-16-out" text="Close"/>
-                </button>
+        <Modal backdrop="scrim" onClose={closeHelp} width="min(620px, 94vw)" maxHeight="88vh" class="help-card">
+            <div class="help-head"><BmpText font="bazouk-28" text="HELP"/></div>
+            <div class="help-sub"><BmpText font="arial-14-out" text="Battle Controls"/></div>
+            <div class="help-list">
+                {CONTROLS.map(c => (
+                    <div class="help-row" key={c.name}>
+                        <div class="help-name"><BmpText font="beijing-16-out" text={c.name} spacing={-1}/></div>
+                        <div class="help-desc"><BmpText font="arial-14-out" text={c.desc}/></div>
+                    </div>
+                ))}
             </div>
-        </div>
+            <button class="help-close" onClick={closeHelp}>
+                <BmpText font="beijing-16-out" text="Close"/>
+            </button>
+        </Modal>
     );
 }

@@ -11,12 +11,12 @@ import { MenuButton } from './MenuButton';
 export function PauseMenu() {
   if (!showPause.value) return null;
   return (
-    <div class="pause-overlay">
+    <div class="overlay pause-overlay">
       <div class="pause-title"><BmpText font="beijing-20-out" text="GAME PAUSED" /></div>
-      <div class="pause-list">
-        <MenuButton label="Resume" onClick={resumeGame} class="pause-item" />
-        <MenuButton label="Settings" onClick={() => openSettings('pause')} class="pause-item" />
-        <MenuButton label="Quit" onClick={quitToMenu} class="pause-item" />
+      <div class="menu-list">
+        <MenuButton label="Resume" onClick={resumeGame} />
+        <MenuButton label="Settings" onClick={() => openSettings('pause')} />
+        <MenuButton label="Quit" onClick={quitToMenu} />
       </div>
     </div>
   );

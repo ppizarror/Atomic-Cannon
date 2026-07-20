@@ -8,7 +8,7 @@
  * luminance) padded with a gap into a repeating tile, so a plain repeat-x + a CSS
  * position animation gives the scrolling effect (no per-frame JS).
  */
-import { useEffect, useState } from 'preact/hooks';
+import { useAsyncImage } from './useAsyncImage';
 
 const SPRITE = 40;   // reticle size (px)
 const TILE_W = 84;   // sprite + gap → spacing between reticles
@@ -47,8 +47,7 @@ function buildTile(): Promise<string> {
 }
 
 export function MenuTargets() {
-  const [tile, setTile] = useState('');
-  useEffect(() => { let ok = true; buildTile().then(t => { if (ok) setTile(t); }); return () => { ok = false; }; }, []);
+  const tile = useAsyncImage(buildTile, []);
   if (!tile) return null;
 
   const rows = [];

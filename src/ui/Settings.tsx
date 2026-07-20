@@ -44,7 +44,6 @@ function SettingsItem({ entry, onHover }: { entry: Entry; onHover: (s: string) =
       onClick={entry.onClick}
       onEnter={() => onHover(entry.sub)}
       onLeave={() => onHover('')}
-      class="settings-item"
     />
   );
 }
@@ -67,7 +66,7 @@ function SettingsRoot() {
   };
   return (
     <div class="settings-screen">
-      <div class="settings-list">
+      <div class="menu-list settings-list">
         {CATEGORIES.map((e) => (
           <SettingsItem key={e.label} entry={e} onHover={setSub} />
         ))}

@@ -5,11 +5,11 @@
  * `height` only when you deliberately want CSS scaling.
  */
 import {useLayoutEffect, useRef} from 'preact/hooks';
-import {getFont, type FontId} from './BitmapFont';
+import {getFont, type FontId} from '../core/rendering/BitmapFont';
 
 // Re-exported so consumers can grab the component and the font-id type together:
 //   import { BmpText, type FontId } from './BmpText';
-export type {FontId} from './BitmapFont';
+export type {FontId} from '../core/rendering/BitmapFont';
 
 export function BmpText({font, text, height, scale, tint, spacing, class: cls}: {
     font: FontId;

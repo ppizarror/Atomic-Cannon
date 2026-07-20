@@ -10,11 +10,13 @@ import {useEffect, useMemo, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {ZeonFrame} from './ZeonFrame';
 import {ClassicScrollbar} from './ClassicScrollbar';
+import {useAsyncImage} from './useAsyncImage';
 import {
     showDepot, credits, ownedCounts, playerName, weaponIndex,
     closeDepot, depotBuy, depotSell, depotAutoBuy, loadWeaponIcon, loadUiBmp, game, uiClick,
 } from './store';
 import {WEAPON_DATABASE, weaponPower, type WeaponDef} from '../core/CWeapon';
+import {UNLIMITED} from '../core/CEconomy';
 
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
@@ -32,8 +34,6 @@ const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native ou
 // see `weaponPower` in CWeapon.ts.
 const powerOf = weaponPower;
 
-const UNLIMITED = Number.POSITIVE_INFINITY;
-
 // Word-wrap a description into lines of ~`max` chars (BmpText draws one line each).
 function wrap(text: string, max: number): string[] {
     const out: string[] = [];
@@ -50,33 +50,14 @@ function wrap(text: string, max: number): string[] {
 
 // ---- small leaf pieces ------------------------------------------------------
 function WeaponIcon({name}: { name: string }) {
-    const [src, setSrc] = useState('');
-    useEffect(() => {
-        let ok = true;
-        loadWeaponIcon(name, 16).then(u => {
-            if (ok && u) setSrc(u);
-        });
-        return () => {
-            ok = false;
-        };
-    }, [name]);
+    const src = useAsyncImage(() => loadWeaponIcon(name, 16), [name]);
     return src ? <img class="dep-icon" src={src} alt=""/> : <span class="dep-icon"/>;
 }
 
-// The magenta-keyed sort caret next to the active column header.
+// The magenta-keyed sort caret next to the active column header. Keeps a fixed-size
+// placeholder while the bitmap loads so nothing reflows and no broken-image glyph shows.
 function SortArrow({dir}: { dir: 1 | -1 }) {
-    const [src, setSrc] = useState('');
-    useEffect(() => {
-        let ok = true;
-        loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`).then(u => {
-            if (ok && u) setSrc(u);
-        });
-        return () => {
-            ok = false;
-        };
-    }, [dir]);
-    // Keep a fixed-size placeholder while the bitmap loads so nothing reflows and no
-    // broken-image glyph shows.
+    const src = useAsyncImage(() => loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`), [dir]);
     return src ? <img class="dep-sort" src={src} alt=""/> : <span class="dep-sort"/>;
 }
 
@@ -186,7 +167,7 @@ export function DepotPanel() {
     const canSell = !!selW && owned[sel] !== UNLIMITED && (owned[sel] ?? 0) > 0;
 
     return (
-        <div class="dep-overlay" onClick={closeDepot}>
+        <div class="overlay dep-overlay" onClick={closeDepot}>
             <div class="dep-card" onClick={e => e.stopPropagation()}>
                 <div class="dep-head">
                     <BmpText font={TITLE_FONT} text="WEAPONS DEPOT"/>

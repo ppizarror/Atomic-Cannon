@@ -127,8 +127,8 @@ function TooSmallOverlay() {
     // All text is the game's bitmap fonts (ASCII 33..126, no wrapping) on the
     // `atomic/dialog.bmp` panel — same chrome as the Help overlay, no CSS text.
     return (
-        <div class="too-small">
-            <div class="too-small-card">
+        <div class="overlay too-small">
+            <div class="too-small-card dialog-frame">
                 <div class="too-small-title"><BmpText font="bazouk-28" text="RESOLUTION TOO SMALL"/></div>
                 <div class="too-small-msg"><BmpText font="beijing-16-out" text="Atomic Cannon needs a window of at least"/></div>
                 <div class="too-small-msg"><BmpText font="beijing-16-out" text={`${MIN_W} x ${MIN_H} pixels to play.`}/></div>
@@ -141,7 +141,7 @@ function TooSmallOverlay() {
 
 function Placeholder({title, backLabel, onBack}: { title: string; backLabel?: string; onBack?: () => void }) {
     return (
-        <div class="screen-overlay">
+        <div class="overlay screen-overlay">
             <div class="screen-card">
                 <h1>{title}</h1>
                 <p>Coming soon.</p>

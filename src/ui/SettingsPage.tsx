@@ -67,7 +67,7 @@ function RowView({ w, bump, onHover }: {
     ? (w.options![val] ?? String(val))
     : (w.fmt ? w.fmt(val) : String(val));
   return (
-    <div class="settings-row" onMouseEnter={enter} onMouseLeave={leave}>
+    <div class="settings-row menu-btn" onMouseEnter={enter} onMouseLeave={leave}>
       <button class="srow-half srow-left" onClick={() => change(-1)}>
         <span class="srow-arrow"><BmpText font={ROW_FONT} text="<" /></span>
         <BmpText font={ROW_FONT} text={w.label} />
@@ -90,7 +90,7 @@ export function SettingsPage({ id }: { id: string }) {
 
   return (
     <div class="settings-screen">
-      <div class="settings-rows">
+      <div class="menu-list settings-rows">
         {page.rows.map((w, i) => (
           <RowView key={i} w={w} bump={bump} onHover={setSub} />
         ))}
