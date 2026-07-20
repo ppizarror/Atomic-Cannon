@@ -1405,3 +1405,70 @@ canvas {
 .editor-row.armed:hover {
   background: rgba(255, 210, 90, 0.32);
 }
+/* Customize Players: a single per-player card over the steel plate. */
+.player-card {
+  margin: 2vh 0;
+  width: min(520px, 86vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: rgba(18, 74, 30, 0.55);
+  border: 1px solid rgba(120, 220, 140, 0.35);
+  padding: 16px 18px;
+}
+.player-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.player-page {
+  min-width: 34px;
+}
+.player-name {
+  flex: 1 1 120px;
+  min-width: 100px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(120, 220, 140, 0.4);
+  color: #eef2f6;
+  font: 14px/1.4 sans-serif;
+  padding: 3px 6px;
+}
+.player-color {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.player-swatch {
+  width: 40px;
+  height: 24px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  flex: 0 0 auto;
+}
+.player-palette {
+  height: 40px;
+  flex: 1 1 auto;
+  min-width: 0;
+  image-rendering: pixelated;
+  object-fit: fill;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  cursor: crosshair;
+}
+.player-tank {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.player-preview {
+  width: 96px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.player-preview img {
+  max-width: 96px;
+  max-height: 44px;
+  image-rendering: pixelated;
+}

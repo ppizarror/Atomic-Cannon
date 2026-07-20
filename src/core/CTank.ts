@@ -31,7 +31,7 @@ function bmpLabel(font: FontId, text: string, tint: string): HTMLCanvasElement |
 
 /** A drawable image plus its dimensions. */
 // Tank variants
-const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
+export const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
 
 // The 16-team palette (0xRRGGBB). Team 0 = blue.
 export const TEAM_COLORS: Record<number, string> = {
@@ -53,57 +53,23 @@ export const TEAM_COLORS: Record<number, string> = {
   15: '#80ff00',
 };
 
-// --- team-colour body tint (HSL hue-swap: keep each pixel's luminance, force the
-// team hue at sat 0.5). Cached per sprite+team. ----------
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-  const mx = Math.max(r, g, b),
-    mn = Math.min(r, g, b),
-    l = (mx + mn) / 2;
-  if (mx === mn) return [0, 0, l];
-  const d = mx - mn;
-  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-  let h = 0;
-  if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
-  else if (mx === g) h = (b - r) / d + 2;
-  else h = (r - g) / d + 4;
-  return [h / 6, s, l];
-}
-
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  if (s === 0) {
-    const v = Math.round(l * 255);
-    return [v, v, v];
-  }
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const hk = (t: number) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  return [
-    Math.round(hk(h + 1 / 3) * 255),
-    Math.round(hk(h) * 255),
-    Math.round(hk(h - 1 / 3) * 255),
-  ];
-}
-
-function hueOf(hexColor: string): number {
-  const n = parseInt(hexColor.slice(1), 16);
-  return rgbToHsl((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff)[0];
-}
-
+// --- per-tank body recolour: modulate the chosen colour by each pixel's luminance
+// so the sprite's shading is preserved and the brightest pixel shows the exact colour
+// (darker pixels become proportional shades). Reproduces any RGB the player picks.
+// Cached per sprite+colour. ----------
 const tintCache = new Map<string, HTMLCanvasElement>();
 
-function tintToHue(sprite: Sprite, hue: number, key: string): HTMLCanvasElement {
+// Perceptual luminance of a pixel (0..1).
+const lumaOf = (r: number, g: number, b: number): number =>
+  (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+function tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElement {
   const cached = tintCache.get(key);
   if (cached) return cached;
+  const n = parseInt(hex.slice(1), 16);
+  const tr = (n >> 16) & 0xff,
+    tg = (n >> 8) & 0xff,
+    tb = n & 0xff;
   const cv = document.createElement('canvas');
   cv.width = sprite.width;
   cv.height = sprite.height;
@@ -112,13 +78,20 @@ function tintToHue(sprite: Sprite, hue: number, key: string): HTMLCanvasElement 
   g.drawImage(sprite.bitmap, 0, 0);
   const im = g.getImageData(0, 0, cv.width, cv.height);
   const px = im.data;
+  // Pass 1: brightest opaque pixel — it maps to the exact chosen colour.
+  let maxL = 0.001;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;
+    const l = lumaOf(px[i], px[i + 1], px[i + 2]);
+    if (l > maxL) maxL = l;
+  }
+  // Pass 2: scale the target colour by each pixel's relative luminance.
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] === 0) continue; // keep transparency
-    const l = rgbToHsl(px[i], px[i + 1], px[i + 2])[2]; // keep luminance
-    const [r, gg, b] = hslToRgb(hue, 0.5, l); // team hue, sat 0.5
-    px[i] = r;
-    px[i + 1] = gg;
-    px[i + 2] = b;
+    const f = Math.min(1, lumaOf(px[i], px[i + 1], px[i + 2]) / maxL);
+    px[i] = Math.round(tr * f);
+    px[i + 1] = Math.round(tg * f);
+    px[i + 2] = Math.round(tb * f);
   }
   g.putImageData(im, 0, 0);
   tintCache.set(key, cv);
@@ -150,6 +123,7 @@ export class CTank {
   constructor(sName: string = '', nTeamId: number = 0) {
     this.m_sName = sName; // names keep their given case (upper/lower allowed)
     this.m_nTeamId = nTeamId;
+    this.m_sColor = TEAM_COLORS[nTeamId] ?? '#0000ff'; // default until the roster sets it
     this.m_bIsHuman = false;
     // TEMP: random player hull per tank (until per-player tank selection exists in settings).
     this.m_sTankType = PLAYER_TANKS[Math.floor(Math.random() * PLAYER_TANKS.length)];
@@ -604,15 +578,12 @@ export class CTank {
     if (sprite) {
       const w = tankWidth();
       const h = (sprite.height / sprite.width) * w;
-      // Team-tint the hull (not the wreck), keeping its shading (Tank → Colorize Team).
+      // Recolour the hull (not the wreck) to the tank's own colour, keeping its
+      // shading (Tank → Colorize Team).
       const img =
         this.m_bExploded || !GameConfig.colorizeTeam
           ? sprite.bitmap
-          : tintToHue(
-              sprite,
-              hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'),
-              `${bodyKey}|${this.m_nTeamId}`,
-            );
+          : tintToColor(sprite, this.m_sColor, `${bodyKey}|${this.m_sColor}`);
       ctx.drawImage(img, -w / 2, -h, w, h);
     } else {
       this.drawVectorHull(ctx);
@@ -626,9 +597,9 @@ export class CTank {
     }
   }
 
-  /** Simple team-coloured silhouette used until the hull sprite loads. */
+  /** Simple colour silhouette used until the hull sprite loads. */
   private drawVectorHull(ctx: CanvasRenderingContext2D): void {
-    const color = TEAM_COLORS[this.m_nTeamId] ?? '#cccccc';
+    const color = this.m_sColor;
     const w = tankWidth();
 
     ctx.fillStyle = this.m_bExploded ? '#333333' : color;
@@ -660,11 +631,7 @@ export class CTank {
       const tw = turret.width * scale,
         th = turret.height * scale;
       const img = GameConfig.colorizeTeam
-        ? tintToHue(
-            turret,
-            hueOf(TEAM_COLORS[this.m_nTeamId] ?? '#0000ff'),
-            `tanks/${this.m_sTankType} turret|${this.m_nTeamId}`,
-          )
+        ? tintToColor(turret, this.m_sColor, `tanks/${this.m_sTankType} turret|${this.m_sColor}`)
         : turret.bitmap;
       ctx.save();
       ctx.translate(pivot.x, pivot.y);
@@ -701,7 +668,7 @@ export class CTank {
   ): void {
     const w = Math.round(tankWidth() * 0.8); // bars a little narrower than the hull
     const cx = this.m_vPos.x;
-    const team = TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
+    const team = this.m_sColor;
     const life = Math.max(0, Math.min(1, this.m_health.nLife / this.m_maxLife));
     const shield = Math.max(0, Math.min(1, this.m_health.nShield / 1000));
     const armor = this.m_health.nArmor;
@@ -1006,8 +973,24 @@ export class CTank {
     this.m_lastDamager = t;
   }
 
+  getColor(): string {
+    return this.m_sColor;
+  }
+
+  setColor(hex: string): void {
+    this.m_sColor = hex;
+  }
+
+  setTankType(sType: string): void {
+    this.m_sTankType = sType;
+  }
+
+  getTankType(): string {
+    return this.m_sTankType;
+  }
+
   getTeamColor(): string {
-    return TEAM_COLORS[this.m_nTeamId] ?? '#0000ff';
+    return this.m_sColor;
   }
 
   /** Screen/world hit-test for hover (badge detail). */
@@ -1079,7 +1062,8 @@ export class CTank {
   // MEMBER VARIABLES
   // ========================================================================
 
-  private m_nTeamId: number = 0; // Team assignment (for color)
+  private m_nTeamId: number = 0; // Team assignment (tanks sharing a colour are a team)
+  private m_sColor: string = '#0000ff'; // Hull colour (per player; the team is its grouping)
   private m_sName: string = ''; // Display name (e.g. "Player", "BrainBot")
   private m_credits: number = 0; // Economy credits (per-tank balance; shown in the badge)
   private m_lastDamager: CTank | null = null; // kill-credit attribution ("killer")

@@ -6,16 +6,17 @@
  * entry shows its one-line description centered along the bottom edge. `Done`
  * returns to whichever menu opened Settings (the pause menu or the main menu).
  *
- * Each category opens its option page (`SettingsPage`); Customize Controls opens its
- * dedicated key-binding editor. Customize Players' editor isn't built yet (inert click).
+ * Each category opens its option page (`SettingsPage`); Customize Controls and Customize
+ * Players open their dedicated editor screens (key bindings / the player roster).
  */
 import {useState} from 'preact/hooks';
-import {closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick} from './store';
+import {closeSettings, settingsOrigin, settingsPage, openSettingsPage} from './store';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {SettingsPage} from './SettingsPage';
 import {WeaponsEditor, LandscapesEditor} from './EnableListEditor';
 import {ControlsEditor} from './ControlsEditor';
+import {PlayersEditor} from './PlayersEditor';
 
 interface Entry {
   label: string;
@@ -26,8 +27,8 @@ interface Entry {
 
 // The root categories, with their exact hover subtitles. The Audio "razzle
 // dazzle" line and the "(quits current game)" warnings are intentional game
-// strings — quirks and all. Each opens its option page; Customize Controls opens its
-// key-binding editor; Customize Players' editor isn't built yet (inert click).
+// strings — quirks and all. Each opens its option page; Customize Controls and
+// Customize Players open their dedicated editor screens.
 const CATEGORIES: Entry[] = [
   {
     label: 'Economy Options',
@@ -63,7 +64,7 @@ const CATEGORIES: Entry[] = [
   {
     label: 'Customize Players',
     sub: 'Define custom names and colors (quits current game)',
-    onClick: uiClick,
+    onClick: () => openSettingsPage('players'),
   },
 ];
 
@@ -84,6 +85,7 @@ export function Settings() {
   if (p === 'content.weapons') return <WeaponsEditor />;
   if (p === 'content.landscapes') return <LandscapesEditor />;
   if (p === 'controls') return <ControlsEditor />;
+  if (p === 'players') return <PlayersEditor />;
   if (p !== 'root') return <SettingsPage id={p} />;
   return <SettingsRoot />;
 }

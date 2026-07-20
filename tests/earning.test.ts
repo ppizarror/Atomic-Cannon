@@ -12,6 +12,17 @@ installDomMocks();
 import {CTank} from '../src/core/CTank';
 import {CGameController, EGameType} from '../src/game/CGameController';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {Roster} from '../src/core/CRoster';
+
+// Teams are grouped by tank colour; use two alternating colours so N players form the
+// classic even/odd two-team split the pooling / survivor tests rely on.
+function twoTeamRoster(n: number): void {
+  Roster.players = Array.from({length: n}, (_, i) => ({
+    name: `P${i}`,
+    model: '',
+    color: i % 2 === 0 ? '#0000ff' : '#ff0000',
+  }));
+}
 
 let pass = 0,
   fail = 0;
@@ -101,6 +112,7 @@ console.log('Earning economy');
 {
   const gc = new CGameController(makeCanvas());
   gc.setStartCredits(1000);
+  twoTeamRoster(4);
   gc.startGame(4);
   const t = (gc as unknown as Tanks).m_tanks; // teams 0,1,0,1
 
@@ -225,6 +237,7 @@ console.log('Earning economy');
   // Team multiplier + dead exclusion (4 players → teams 0,1,0,1).
   const gc4 = new CGameController(makeCanvas());
   gc4.setStartCredits(0);
+  twoTeamRoster(4);
   gc4.startGame(4);
   const t4 = (gc4 as unknown as Tanks).m_tanks;
   const award = gc4 as unknown as {awardSurvivorCredit(n: number): void};

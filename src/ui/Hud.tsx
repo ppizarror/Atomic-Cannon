@@ -26,6 +26,7 @@ import {
   loadWeaponIcon,
   uiClick,
   battleStatus,
+  statusLeftFrac,
   openDepot,
   openPauseMenu,
   openHelp,
@@ -436,8 +437,11 @@ function ControlPanel() {
 // "Battle X of Y - Shot Z" (white).
 function BattleStatus() {
   const s = battleStatus.value;
+  // On large maps the overview minimap occupies the top-left corner, so the status
+  // lines shift right to sit beside it (matching the original).
+  const lf = statusLeftFrac.value;
   return (
-    <div id="battle-status">
+    <div id="battle-status" style={lf ? {left: `${lf * 100}%`} : undefined}>
       {s.lines.map((l, i) => (
         // Key by slot, NOT by text — keying on the text remounts the line (and its
         // canvas) on every life change, which flashes an undrawn canvas. Redraw in place.

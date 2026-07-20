@@ -248,6 +248,10 @@ export const battleStatus = signal<{
   battle: string;
 }>({lines: [], battle: ''});
 
+// Fraction of view width the top-left status text is pushed right to clear the
+// minimap (0 = no minimap → default left inset).
+export const statusLeftFrac = signal(0);
+
 // Power/angle ranges (UI units). Angle is a full circle measured CCW from
 // horizontal-right and WRAPS at the ends: 0 = right, 90 = up, 180 = left,
 // 270 = straight down, 315 = down-right. Stepping past 359 wraps to 0 (and 0 → 359),
@@ -337,6 +341,9 @@ export function syncHud(): void {
     lastBattleSig = sig;
     battleStatus.value = {lines, battle};
   }
+  // Shift the status text clear of the minimap (large maps only).
+  const slf = c.getMinimapRightFrac();
+  if (slf !== statusLeftFrac.value) statusLeftFrac.value = slf;
 
   // Shot-time bar — republish only when the drawn width (quantised to whole
   // percent) or colour flips, so the drain animates smoothly but cheaply.

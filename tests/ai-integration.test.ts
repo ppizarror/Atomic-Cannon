@@ -14,6 +14,13 @@ installDomMocks();
 import {CGameController} from '../src/game/CGameController';
 import {simulateMiss, AI_LEVEL_MAX, type AimField} from '../src/core/CBotAI';
 import {Vec2} from '../src/math/Vec2';
+import {GameConfig} from '../src/core/CGameConfig';
+
+// This test validates single-shot aim accuracy, which assumes the enemy is within
+// one screen. Pin the world to a single screen (Land Size = 1) so tanks aren't
+// spread across a multi-screen map, where engaging takes scrolling/driving, not one
+// shot (that's a separate large-map concern).
+GameConfig.landSize = 1;
 
 let pass = 0,
   fail = 0;

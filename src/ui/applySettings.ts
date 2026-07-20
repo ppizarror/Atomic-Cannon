@@ -10,8 +10,10 @@
 import type {CGameController} from '../game/CGameController';
 import {GameConfig} from '../core/CGameConfig';
 import {GameContent} from '../core/CGameContent';
+import {Roster} from '../core/CRoster';
 import {gameSettings as S} from './settingsValues';
 import {weaponsOff, landsOff} from './contentStore';
+import {roster} from './playersStore';
 
 export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.
@@ -48,4 +50,7 @@ export function applyGameSettings(c: CGameController): void {
   // Active weapon/landscape selection for the NEXT match (Game Content editors).
   GameContent.weaponsOff = new Set(weaponsOff.value);
   GameContent.landsOff = new Set(landsOff.value);
+
+  // Player roster (name / model / colour) for the NEXT match (Customize Players).
+  Roster.players = roster.value.map(p => ({...p}));
 }
