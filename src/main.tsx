@@ -62,23 +62,34 @@ async function main(): Promise<void> {
     render(<App/>, uiRoot);
     goToMenu();
 
-    // Dev/review affordances. `?battle=1` skips the menu into a battle; `?depot=1` /
-    // `?pause=1` do that and then open the depot / pause menu; `?settings=1` opens the
-    // Settings screen from the main menu.
-    const q = new URLSearchParams(location.search);
-    const weaponTest = q.get('weapontest') === '1';
-    if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1' || weaponTest) playNewGame();
-    if (q.get('depot') === '1') openDepot();
-    if (q.get('pause') === '1') openPauseMenu();
-    // `?weapontest=1`: start a battle and keep the turn on the human forever (the AI
-    // never fires, the shot timer is off) so weapons can be tried back-to-back.
-    if (weaponTest) gameController.setWeaponTest(true);
-    // `?settings=1` opens the Settings root; `?settings=<pageId>` (e.g. gameplay) opens
-    // that option page directly.
-    const settingsArg = q.get('settings');
-    if (settingsArg) {
-        openSettings('menu');
-        if (settingsArg !== '1') openSettingsPage(settingsArg);
+    // Dev/review-only URL affordances (documented in AGENTS.md). These are gated to a
+    // DEV build — a deployed/production bundle ignores them entirely (`import.meta.env.DEV`
+    // is statically false there, so this whole block is tree-shaken out).
+    if (import.meta.env.DEV) {
+        // `?battle=1` skips the menu into a battle; `?depot=1` / `?pause=1` do that and
+        // then open the depot / pause menu; `?settings=1` opens the Settings screen.
+        const q = new URLSearchParams(location.search);
+        const weaponTest = q.get('weapon_test') === '1';
+        const weaponSel = q.get('weapon_sel');   // force a weapon by its 1-based id
+        if (q.get('battle') === '1' || q.get('depot') === '1' || q.get('pause') === '1' || weaponTest || weaponSel !== null) playNewGame();
+        if (q.get('depot') === '1') openDepot();
+        if (q.get('pause') === '1') openPauseMenu();
+        // `?weapon_test=1`: start a battle and keep the turn on the human forever (the AI
+        // never fires, the shot timer is off) so weapons can be tried back-to-back.
+        if (weaponTest) gameController.setWeaponTest(true);
+        // `?weapon_sel=<id>`: force the human onto weapon <id> with unlimited ammo. `id`
+        // is 1-based (id=1 → first weapon, id=65 → Machine Gun) to match the in-game list.
+        if (weaponSel !== null) {
+            const id = parseInt(weaponSel, 10);
+            if (Number.isInteger(id) && id >= 1) gameController.forceWeapon(id - 1);
+        }
+        // `?settings=1` opens the Settings root; `?settings=<pageId>` (e.g. gameplay)
+        // opens that option page directly.
+        const settingsArg = q.get('settings');
+        if (settingsArg) {
+            openSettings('menu');
+            if (settingsArg !== '1') openSettingsPage(settingsArg);
+        }
     }
 
     // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
