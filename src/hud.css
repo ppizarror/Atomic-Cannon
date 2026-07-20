@@ -1388,3 +1388,20 @@ canvas {
   border: 1px solid rgba(0, 0, 0, 0.5);
   flex: 0 0 auto;
 }
+/* Customize Controls: a narrower two-column Action / Button list. */
+.editor-controls {
+  width: min(560px, 82vw);
+}
+.editor-columns {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px 4px;
+  border-bottom: 1px solid rgba(120, 220, 140, 0.35);
+  margin-bottom: 2px;
+}
+.editor-row.armed {
+  background: rgba(255, 210, 90, 0.25); /* armed for rebind = amber highlight */
+}
+.editor-row.armed:hover {
+  background: rgba(255, 210, 90, 0.32);
+}

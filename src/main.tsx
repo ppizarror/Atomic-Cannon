@@ -12,6 +12,9 @@ import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {applyGameSettings} from './ui/applySettings';
+import {resolveAction} from './core/CControls';
+import {bindings} from './ui/controlsStore';
+import {stepWeapon} from './ui/Hud';
 import {
   setController,
   syncHud,
@@ -132,8 +135,12 @@ async function main(): Promise<void> {
           ? 'right'
           : null;
 
-  // Keyboard shortcuts (the on-screen controls live in the Preact HUD).
+  // Keyboard shortcuts (the on-screen controls live in the Preact HUD). Gameplay
+  // actions are resolved through the player's key bindings (Customize Controls); the
+  // pressed key maps to an action, so rebinding takes effect immediately.
   document.addEventListener('keydown', e => {
+    const action = resolveAction(bindings.value, e.code);
+
     if (e.code === 'KeyP') {
       e.preventDefault();
       const p = !pausedSignal.value;
@@ -142,9 +149,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    // ESC closes the Help overlay first, else toggles the pause menu (and
-    // freezes the sim while it's up).
-    if (e.code === 'Escape') {
+    // The Exit action (Escape by default) closes the Help overlay first, else toggles
+    // the pause menu. Escape is always honoured as a fallback so an unbound/rebound
+    // Exit can never lock the player out of the menu.
+    if (action === 'exit' || e.code === 'Escape') {
       e.preventDefault();
       if (showHelp.value) closeHelp();
       else if (showPause.value) resumeGame();
@@ -153,6 +161,7 @@ async function main(): Promise<void> {
     }
 
     // While flying, arrows/WASD are thrust and Space cuts the engine (ends flight).
+    // Jet steering is a fixed port control, independent of the artillery bindings.
     if (isFlying()) {
       const dir = thrustKey(e.code);
       if (dir) {
@@ -170,23 +179,31 @@ async function main(): Promise<void> {
     }
 
     if (!canFire.value) return;
-    switch (e.code) {
-      case 'Space':
+    switch (action) {
+      case 'fire':
         e.preventDefault();
         gameController.fire();
         break;
       // Aim left = increase angle (CCW), aim right = decrease; both wrap at 0/359.
-      case 'ArrowLeft':
+      case 'aimLeft':
         gameController.setAngle(wrapAngle(gameController.getAngle() + 2));
         break;
-      case 'ArrowRight':
+      case 'aimRight':
         gameController.setAngle(wrapAngle(gameController.getAngle() - 2));
         break;
-      case 'ArrowUp':
+      case 'powerUp':
         gameController.setPower(Math.min(POWER_MAX, gameController.getPower() + 50));
         break;
-      case 'ArrowDown':
+      case 'powerDown':
         gameController.setPower(Math.max(POWER_MIN, gameController.getPower() - 50));
+        break;
+      case 'prevWeapon':
+        e.preventDefault();
+        stepWeapon(-1);
+        break;
+      case 'nextWeapon':
+        e.preventDefault();
+        stepWeapon(1);
         break;
     }
   });

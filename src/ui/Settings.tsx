@@ -6,8 +6,8 @@
  * entry shows its one-line description centered along the bottom edge. `Done`
  * returns to whichever menu opened Settings (the pause menu or the main menu).
  *
- * Each category opens its option page (`SettingsPage`); Customize Controls / Players
- * are dedicated editor screens that aren't built yet (audible click only).
+ * Each category opens its option page (`SettingsPage`); Customize Controls opens its
+ * dedicated key-binding editor. Customize Players' editor isn't built yet (inert click).
  */
 import {useState} from 'preact/hooks';
 import {closeSettings, settingsOrigin, settingsPage, openSettingsPage, uiClick} from './store';
@@ -15,6 +15,7 @@ import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {SettingsPage} from './SettingsPage';
 import {WeaponsEditor, LandscapesEditor} from './EnableListEditor';
+import {ControlsEditor} from './ControlsEditor';
 
 interface Entry {
   label: string;
@@ -23,10 +24,10 @@ interface Entry {
   onClick: () => void;
 }
 
-// The nine root categories, with their exact hover subtitles. The Audio "razzle
+// The root categories, with their exact hover subtitles. The Audio "razzle
 // dazzle" line and the "(quits current game)" warnings are intentional game
-// strings — quirks and all. Each opens its option page; Customize
-// Controls / Players open dedicated editor screens (not built yet — inert click).
+// strings — quirks and all. Each opens its option page; Customize Controls opens its
+// key-binding editor; Customize Players' editor isn't built yet (inert click).
 const CATEGORIES: Entry[] = [
   {
     label: 'Economy Options',
@@ -54,7 +55,11 @@ const CATEGORIES: Entry[] = [
     sub: 'Enable specific weapons and landscapes',
     onClick: () => openSettingsPage('content'),
   },
-  {label: 'Customize Controls', sub: 'Define custom buttons for game actions', onClick: uiClick},
+  {
+    label: 'Customize Controls',
+    sub: 'Define custom buttons for game actions',
+    onClick: () => openSettingsPage('controls'),
+  },
   {
     label: 'Customize Players',
     sub: 'Define custom names and colors (quits current game)',
@@ -78,6 +83,7 @@ export function Settings() {
   const p = settingsPage.value;
   if (p === 'content.weapons') return <WeaponsEditor />;
   if (p === 'content.landscapes') return <LandscapesEditor />;
+  if (p === 'controls') return <ControlsEditor />;
   if (p !== 'root') return <SettingsPage id={p} />;
   return <SettingsRoot />;
 }

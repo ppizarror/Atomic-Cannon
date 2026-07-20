@@ -307,9 +307,10 @@ function WeaponPreview() {
   );
 }
 
-// Step the weapon selection by ±1 with wrap-around — shared by the ▲/▼ buttons and
-// the list's mouse-wheel. +1 = next (▼), −1 = previous (▲); wraps past either end.
-function stepWeapon(d: number): void {
+// Step the weapon selection by ±1 with wrap-around — shared by the ▲/▼ buttons, the
+// list's mouse-wheel, and the Previous/Next-weapon keys. +1 = next (▼), −1 = previous
+// (▲); wraps past either end.
+export function stepWeapon(d: number): void {
   const list = weapons.value;
   if (!list.length) return;
   uiClick();
