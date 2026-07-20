@@ -10,6 +10,7 @@
 
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS} from '../core/CTank';
+import {Roster} from '../core/CRoster';
 import {CShot} from '../core/CShot';
 import {GameConfig} from '../core/CGameConfig';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
@@ -94,6 +95,13 @@ const BEAM_COLLAPSE_DELAY = 1;
 const controlWeaponIndex = (): number =>
   CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
 
+// Camera pan speed (world px/sec) — the constant-speed ease toward the follow
+// target (the original scrolls at dt·gameSpeed·scrollSpeed; this is that budget
+// in px/sec). Fast enough to keep a shot roughly framed without whipping.
+const CAMERA_SCROLL_SPEED = 1100;
+// Where the followed object sits in the view: 0.5 = dead centre (RE _DAT_004ef3cc).
+const CAMERA_CENTER = 0.5;
+
 /**
  * CGameController - Main game controller
  */
@@ -106,14 +114,21 @@ export class CGameController implements ShotWorld {
     this.m_canvas = canvas;
     this.m_ctx = canvas.getContext('2d')!;
 
-    // Terrain fills the full viewport so its body covers the bottom of the
-    // screen — the background's foreground never shows in the HUD strip.
-    this.m_land = new CLand(canvas.width, canvas.height);
+    // Large maps: the WORLD can be several viewports wide (Land Size); the scene
+    // canvas is the VIEW. World width = viewWidth × landScale (1 = no scroll);
+    // world height = view height (scroll is horizontal only). `m_camX` is the
+    // world X of the view's left edge.
+    this.m_worldWidth = Math.round(canvas.width * this.landScale());
+
+    // Terrain fills the full world so its body covers the bottom of the screen —
+    // the background's foreground never shows in the HUD strip.
+    this.m_land = new CLand(this.m_worldWidth, canvas.height);
 
     this.m_tanks = [];
     this.m_shots = [];
     this.m_particles = new CParticleSystem();
-    this.m_particles.setBounds(canvas.width, canvas.height);
+    this.m_particles.setBounds(this.m_worldWidth, canvas.height);
+    // Weather fills the VIEW (rain/snow are screen-space), not the world.
     this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_economy = new CEconomy();
     this.m_screenShake = new ScreenShake();
@@ -151,24 +166,42 @@ export class CGameController implements ShotWorld {
       this.m_land.generateRandomTerrain();
     }
 
-    // Create tanks for each player (alternating teams)
-    for (let i = 0; i < nPlayers; i++) {
-      const teamId = i % 2;
+    // Per-player roster (name / tank model / colour) from Customize Players. Colour
+    // is the player's identity: tanks sharing a colour are a team, so team ids are
+    // derived by grouping equal colours (distinct colours → free-for-all).
+    const players = Roster.players;
+    const teamOfColor = new Map<string, number>();
 
-      // Position tanks at opposite ends of screen
+    for (let i = 0; i < nPlayers; i++) {
+      const cfg = players[i] ?? {
+        name: i === 0 ? 'Player' : BOT_NAMES[i % BOT_NAMES.length],
+        model: '',
+        color: TEAM_COLORS[i] ?? '#0000ff',
+      };
+
+      // Team = the colour's group; the first tank of a colour defines a new team id.
+      let teamId = teamOfColor.get(cfg.color);
+      if (teamId === undefined) {
+        teamId = teamOfColor.size;
+        teamOfColor.set(cfg.color, teamId);
+      }
+
+      // Position tanks across the whole WORLD (not just the view) so a large map
+      // is actually used — ends anchored left/right, others scattered between.
+      const worldW = this.m_worldWidth;
       let xPos: number;
       if (i === 0) {
         xPos = 100 + Math.random() * 50; // Left side for player 1
       } else if (i === nPlayers - 1) {
-        xPos = this.m_canvas.width - 150 + Math.random() * 50; // Right side
+        xPos = worldW - 150 + Math.random() * 50; // Right side
       } else {
-        // Bots scattered in middle
-        xPos = 200 + Math.random() * (this.m_canvas.width - 400);
+        // Bots scattered in between
+        xPos = 200 + Math.random() * (worldW - 400);
       }
 
-      const tankName = i === 0 ? 'Player' : BOT_NAMES[i % BOT_NAMES.length];
-
-      const pTank = new CTank(tankName, teamId);
+      const pTank = new CTank(cfg.name, teamId);
+      pTank.setColor(cfg.color); // hull colour (and team identity)
+      if (cfg.model) pTank.setTankType(cfg.model);
       pTank.init(xPos, this.m_land);
       pTank.setHuman(i === 0); // Only first player is human
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
@@ -243,6 +276,10 @@ export class CGameController implements ShotWorld {
     // Player 0 (the human) takes the first turn.
     this.m_currentPlayerIndex = 0;
     this.beginTurn();
+    // Snap the camera onto the first player so a large map opens framed on them
+    // (rather than panning in from the world's left edge).
+    this.m_manualScroll = false;
+    this.centerCameraOn(this.getCurrentTank().getPosition().x);
 
     // Warm the combat SFX set and start a random battle track.
     this.m_audio?.preloadCombat();
@@ -355,6 +392,7 @@ export class CGameController implements ShotWorld {
 
     // Always update terrain, wind and visual effects
     this.m_time += dt;
+    this.updateCamera(dt); // ease the large-map camera toward the shot / active tank
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
@@ -392,6 +430,7 @@ export class CGameController implements ShotWorld {
         return true; // shot/flight/blast in progress
     }
     if (this.m_screenShake.isActive()) return true;
+    if (this.m_camX !== this.m_camTargetX) return true; // camera still panning
     if (this.m_screenFlash > 0) return true;
     if (this.m_particles.hasActiveExplosions()) return true;
     if (this.m_weather.isActive()) return true; // rain/snow/dust never rest
@@ -564,6 +603,67 @@ export class CGameController implements ShotWorld {
     }
   }
 
+  // ========================================================================
+  // CAMERA (large-map horizontal scroll)
+  // ========================================================================
+
+  /** Land-Size scale (1..5); world width = viewWidth × scale. */
+  private landScale(): number {
+    return Math.max(1, Math.min(5, Math.round(GameConfig.landSize)));
+  }
+
+  /** Widest the camera can scroll; 0 when the world fits the view (no scroll). */
+  private maxCamX(): number {
+    return Math.max(0, this.m_worldWidth - this.m_canvas.width);
+  }
+
+  private clampCamX(x: number): number {
+    return Math.max(0, Math.min(this.maxCamX(), x));
+  }
+
+  /** World X of the view's left edge — for input→world mapping and world draw. */
+  getCameraX(): number {
+    return this.m_camX;
+  }
+
+  getWorldWidth(): number {
+    return this.m_worldWidth;
+  }
+
+  /** What the camera centres on this frame: the live shot, else the active tank. */
+  private cameraFollowX(): number {
+    const shot = this.m_shots.find(s => !s.isDead());
+    return shot ? shot.getPosition().x : this.getCurrentTank().getPosition().x;
+  }
+
+  /**
+   * Ease the camera toward its follow target — constant speed, snapping when within
+   * one step (matching the original, which is NOT a proportional lerp). Skipped
+   * while the player manually scrolls via the minimap or Auto Scroll is off; the
+   * result is always clamped to the world.
+   */
+  private updateCamera(dt: number): void {
+    if (this.maxCamX() === 0) {
+      this.m_camX = this.m_camTargetX = 0;
+      return;
+    }
+    if (GameConfig.autoScroll && !this.m_manualScroll) {
+      this.m_camTargetX = this.clampCamX(
+        this.cameraFollowX() - this.m_canvas.width * CAMERA_CENTER,
+      );
+      const step = CAMERA_SCROLL_SPEED * dt;
+      const d = this.m_camTargetX - this.m_camX;
+      this.m_camX = Math.abs(d) <= step ? this.m_camTargetX : this.m_camX + Math.sign(d) * step;
+    }
+    this.m_camX = this.clampCamX(this.m_camX);
+  }
+
+  /** Snap the camera to centre `worldX` immediately (battle start / recenter). */
+  private centerCameraOn(worldX: number): void {
+    this.m_camTargetX = this.clampCamX(worldX - this.m_canvas.width * CAMERA_CENTER);
+    this.m_camX = this.m_camTargetX;
+  }
+
   /**
    * Render frame to canvas - called every frame
    */
@@ -594,7 +694,14 @@ export class CGameController implements ShotWorld {
 
     // Weather (rain / snow / hail / dust) sits between the backdrop and the
     // terrain, so it only shows against the sky and is occluded by the ground.
+    // It fills the VIEW (screen space), so it's drawn before the camera shift.
     this.m_weather.draw(ctx);
+
+    // Everything below is WORLD content: shift left by the camera so a large map
+    // scrolls under the fixed view (screen = world − cam). The backdrop above and
+    // the notches/minimap below draw OUTSIDE this transform, in screen space.
+    ctx.save();
+    ctx.translate(-this.m_camX, 0);
 
     // Draw terrain
     this.m_land.draw(ctx);
@@ -641,10 +748,140 @@ export class CGameController implements ShotWorld {
       }
     }
 
+    ctx.restore(); // end world-space camera transform → back to screen space
+
     // Edge notches pointing at any projectile that has left the view (Tracking).
     if (GameConfig.tracking) this.drawShotNotches(ctx);
 
+    // Overview minimap (large maps only) — drawn last so it sits on top.
+    this.drawMinimap(ctx);
+
     ctx.restore();
+  }
+
+  /**
+   * Overview minimap (RE: FUN_00489cb0) — a top-left strip shown ONLY when the world
+   * is wider than the view. It draws the terrain silhouette, a translucent "extents"
+   * box for the current camera view, and a dot per tank in its team colour (the
+   * active player's dot gets a white outline). Screen-space; Phase 3 adds drag-to-pan.
+   */
+  private drawMinimap(ctx: CanvasRenderingContext2D): void {
+    const Vw = this.m_canvas.width;
+    const W = this.m_worldWidth;
+    if (W <= Vw) return; // no scroll → no minimap
+    const Vh = this.m_canvas.height;
+    const r = this.minimapRect();
+    const {m, width, height} = r;
+    const sx = width / W; // world → minimap X
+    const sy = height / Vh; // world → minimap Y (Y doesn't scroll; worldH = viewH)
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+
+    // Panel: translucent white plate (α 0x40) with a black frame (α 0xff).
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(m, m, width, height);
+
+    // Extents box: the slice of the world currently on screen (α 0x80).
+    const boxX = Math.round(this.m_camX * sx);
+    const boxW = Math.round(Vw * sx);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillRect(m + boxX, m, boxW, height);
+
+    // Terrain silhouette: one down-sampled black column per minimap pixel, from the
+    // surface down to the strip bottom (α 0x80).
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    for (let col = 0; col < width; col++) {
+      const worldX = Math.floor((col * W) / width);
+      const surfY = Math.max(0, Math.min(Vh, this.m_land.getHeightAt(worldX)));
+      const y = Math.round(surfY * sy) + m;
+      ctx.fillRect(m + col, y, 1, m + height - y);
+    }
+
+    // Frames: extents box outline then the panel frame, both crisp 1px.
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.strokeRect(m + boxX + 0.5, m + 0.5, boxW, height - 1);
+    ctx.strokeStyle = '#000';
+    ctx.strokeRect(m + 0.5, m + 0.5, width, height);
+
+    // Tank dots: filled square in the tank's team colour; active player outlined white.
+    const d = 2;
+    const cur = this.getCurrentTank();
+    for (const t of this.m_tanks) {
+      if (!t.isAlive()) continue;
+      const p = t.getPosition();
+      const dx = Math.round(Math.max(m + d, Math.min(m + width - d, p.x * sx + m)));
+      const dy = Math.round(Math.max(m + d, Math.min(m + height - d, p.y * sy + m)));
+      ctx.fillStyle = t.getTeamColor();
+      ctx.fillRect(dx - d, dy - d + 1, d * 2, d * 2);
+      if (t === cur) {
+        ctx.strokeStyle = '#fff';
+        ctx.strokeRect(dx - d - 0.5, dy - d + 0.5, d * 2 + 1, d * 2 + 1);
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * How far (as a fraction of view width) the top-left status text must shift right
+   * to clear the minimap — 0 when there's no minimap. In the original the per-tank
+   * life lines sit to the RIGHT of the overview strip.
+   */
+  getMinimapRightFrac(): number {
+    if (this.m_worldWidth <= this.m_canvas.width) return 0;
+    const r = this.minimapRect();
+    return (r.m + r.width + 6) / this.m_canvas.width;
+  }
+
+  /** True when scene-pixel (px, py) is inside the minimap strip (false if no minimap). */
+  hitMinimap(px: number, py: number): boolean {
+    if (this.m_worldWidth <= this.m_canvas.width) return false;
+    const r = this.minimapRect();
+    return px >= r.m && px <= r.m + r.width && py >= r.m && py <= r.m + r.height;
+  }
+
+  /**
+   * True when scene-pixel (px, py) is inside the minimap's extents box — the
+   * draggable viewport handle (the translucent rectangle). This is what shows the
+   * grab cursor and starts a pan; the rest of the strip is inert.
+   */
+  hitMinimapBox(px: number, py: number): boolean {
+    if (this.m_worldWidth <= this.m_canvas.width) return false;
+    const r = this.minimapRect();
+    const sx = r.width / this.m_worldWidth;
+    const boxX = r.m + this.m_camX * sx;
+    const boxW = this.m_canvas.width * sx;
+    return px >= boxX && px <= boxX + boxW && py >= r.m && py <= r.m + r.height;
+  }
+
+  /**
+   * Drag/click the minimap to pan: a scene-pixel X on the strip snaps the camera so
+   * the picked world column is centred (RE: FUN_00489cb0 input path —
+   * `camX = ((mouseX − m)/width)·W − viewWidth/2`, clamped). Instant (no easing) and
+   * sets the manual-scroll override so auto-follow yields until the next fire/turn.
+   */
+  panFromMinimap(px: number): void {
+    if (this.m_worldWidth <= this.m_canvas.width) return;
+    const r = this.minimapRect();
+    const cam = ((px - r.m) / r.width) * this.m_worldWidth - this.m_canvas.width * CAMERA_CENTER;
+    this.m_camX = this.m_camTargetX = this.clampCamX(cam);
+    this.m_manualScroll = true;
+    this.markDirty();
+  }
+
+  /**
+   * Minimap strip rect (px) — top-left, ~half the view wide (RE: FUN_00489cb0:23-63,
+   * `width = viewWidth/2 − 19`). For a wide (>320) view the strip is `0x30`=48px tall,
+   * or `0x40`=64px at large-display scale (`0x9d7`). Our canvas is always a large
+   * display, so we take the 64px height — 48 leaves the strip over-elongated.
+   */
+  private minimapRect(): {m: number; width: number; height: number} {
+    const Vw = this.m_canvas.width;
+    const m = Vw < 240 ? 2 : Vw > 320 ? 4 : 3;
+    const height = Vw < 240 ? 24 : Vw > 320 ? 64 : 29;
+    const width = Math.floor(Vw / 2 - (Vw < 240 ? 8 : 19));
+    return {m, width, height};
   }
 
   /**
@@ -652,8 +889,9 @@ export class CGameController implements ShotWorld {
    * graphics option). For every live projectile outside the view we draw an edge
    * marker: a top arrow at the shot's X when it's above the ceiling (pointing up
    * while it rises, down once it's descending), and a left/right bracket at the
-   * shot's Y when it's off that side. With no camera scroll yet (large maps come
-   * later) the view is the whole canvas, so screen = world coords.
+   * shot's Y when it's off that side. Drawn in screen space: the shot's screen X is
+   * its world X minus the camera, so on large maps the notch tracks a shot that has
+   * scrolled off either side of the view.
    */
   private drawShotNotches(ctx: CanvasRenderingContext2D): void {
     const live = this.m_shots.filter(s => !s.isDead());
@@ -671,17 +909,18 @@ export class CGameController implements ShotWorld {
     for (const shot of live) {
       const p = shot.getPosition();
       const v = shot.getVelocity();
+      const sx = p.x - this.m_camX; // world → screen X (Y doesn't scroll)
       // Above the ceiling: top arrow at the shot's X (+y is downward, so v.y >= 0
       // means it's on the way down → the "descent" arrow).
       if (p.y < 0) {
         const s = v.y >= 0 ? down : up;
-        if (s) ctx.drawImage(s.bitmap, Math.round(p.x - s.width / 2), 0);
+        if (s) ctx.drawImage(s.bitmap, Math.round(sx - s.width / 2), 0);
       }
       // Off the left / right edge: a bracket at the shot's Y, clamped into the view.
-      if (p.x < 0 && left) {
+      if (sx < 0 && left) {
         ctx.drawImage(left.bitmap, 0, clampY(Math.round(p.y - left.height / 2), left.height));
       }
-      if (p.x > W && right) {
+      if (sx > W && right) {
         ctx.drawImage(
           right.bitmap,
           W - right.width,
@@ -1276,6 +1515,10 @@ export class CGameController implements ShotWorld {
     this.m_turnStartAngle = this.m_angle;
     this.m_turnStartPower = this.m_power;
 
+    // New turn: drop any minimap-scroll override so the camera eases to centre the
+    // player whose turn it now is.
+    this.m_manualScroll = false;
+
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
     this.m_turnElapsed = 0;
@@ -1361,6 +1604,7 @@ export class CGameController implements ShotWorld {
     if (tank.isMoving()) return; // can't act while a move is under way
 
     this.m_turnTimerRunning = false; // committed to a shot — stop the clock
+    this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
 
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
@@ -1405,12 +1649,16 @@ export class CGameController implements ShotWorld {
     // restore power+angle to it (non-utility only).
     tank.saveLastShot(this.m_angle, this.m_power);
 
-    // Death: a self-targeting round that drops straight down onto the firer.
+    // Death weapons ("Six Under", "Cremation", "Ashes", "Toxic Grave"…): a self-targeting
+    // round that drops onto the FIRER. The original ignores the player's aim — it forces
+    // the turret straight up and the power to 0, so the round leaves the muzzle with no
+    // speed and just falls back down onto the tank that fired it (a "bury yourself"
+    // shot). We spawn at the straight-up muzzle with zero velocity → a short drop onto
+    // the shooter, not a bomb materialising high in the sky.
     if (ext === EXT.DEATH) {
-      const tp = tank.getPosition();
       const drop = new CShot();
       drop.initFromVelocity(
-        new Vec2(tp.x, Math.max(0, tp.y - 220)),
+        tank.muzzleForAngle(90),
         0,
         0,
         weapon.getDamage(),
@@ -2055,7 +2303,7 @@ export class CGameController implements ShotWorld {
   /** Wire the audio facade (SFX + music). Optional — the game runs silently without it. */
   setAudio(audio: CAudio): void {
     this.m_audio = audio;
-    this.m_audio.setWorldWidth(this.m_canvas.width);
+    this.m_audio.setWorldWidth(this.m_worldWidth); // stereo pan spans the whole world
   }
 
   getAudio(): CAudio | null {
@@ -2090,6 +2338,15 @@ export class CGameController implements ShotWorld {
 
   private m_canvas: HTMLCanvasElement;
   private m_ctx: CanvasRenderingContext2D;
+
+  // Large-map camera (horizontal only). The world is `m_worldWidth` px wide; the
+  // scene canvas is the view. `m_camX` = world X of the view's left edge (current,
+  // eased); `m_camTargetX` = where it's heading. `m_manualScroll` = the player
+  // dragged the minimap, which suppresses auto-follow until fire / turn change.
+  private m_worldWidth = 0;
+  private m_camX = 0;
+  private m_camTargetX = 0;
+  private m_manualScroll = false;
 
   private m_land: CLand;
   private m_tanks: CTank[] = [];

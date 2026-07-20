@@ -9,6 +9,12 @@
  * (scalars = 1, every display toggle on), so an unconfigured build looks unchanged.
  */
 export const GameConfig = {
+  // ── world / camera ──
+  // Land Size (Settings → Gameplay). World width = viewWidth × scale; scale is
+  // 1..5 for "1 Screen / Small / Normal / Large / Massive" (1 = no scroll).
+  landSize: 3,
+  autoScroll: true, // Graphics 2 → Auto Scroll (camera follows the shot / active tank)
+
   // ── physics / gameplay scalars (1 = the default feel) ──
   kickbackScale: 1, // Tank → Kickback (Off = 0)
   explosionScale: 1, // Gameplay → Explosion Size

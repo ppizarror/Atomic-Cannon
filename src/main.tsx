@@ -217,18 +217,35 @@ async function main(): Promise<void> {
     }
   });
 
-  // Drag-to-aim: click in the world and drag to set angle + power; release fires.
-  // Map client coords to the scene's pixel space (it may be CSS-stretched).
-  const toWorld = (e: PointerEvent): [number, number] => {
+  // Client coords → the scene's pixel space (SCREEN space; the canvas may be
+  // CSS-stretched). The minimap lives here. Adding the camera scroll gives WORLD
+  // space, where aiming/hover happen (Y never scrolls).
+  const toScene = (e: PointerEvent): [number, number] => {
     const r = container.getBoundingClientRect();
     return [
       (e.clientX - r.left) * (scene.width / r.width),
       (e.clientY - r.top) * (scene.height / r.height),
     ];
   };
+  const toWorld = (e: PointerEvent): [number, number] => {
+    const [sx, sy] = toScene(e);
+    return [sx + gameController.getCameraX(), sy];
+  };
   let aiming = false;
+  let minimapDrag = false; // grabbed the minimap → panning the camera (suppresses aim)
   container.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
+    const [sx, sy] = toScene(e);
+    // Minimap first: only the extents box (the viewport handle) starts a pan-drag;
+    // the rest of the strip is inert but still swallows the click so it never aims.
+    if (gameController.hitMinimap(sx, sy)) {
+      if (gameController.hitMinimapBox(sx, sy)) {
+        minimapDrag = true;
+        container.style.cursor = 'grabbing'; // closed hand while panning
+        gameController.panFromMinimap(sx);
+      }
+      return;
+    }
     const [wx, wy] = toWorld(e);
     if (gameController.beginAim(wx, wy)) aiming = true;
   });
@@ -237,6 +254,13 @@ async function main(): Promise<void> {
   window.addEventListener(
     'pointermove',
     e => {
+      const [sx, sy] = toScene(e);
+      if (minimapDrag) {
+        gameController.panFromMinimap(sx); // continuous pan while held
+        return;
+      }
+      // Only the extents box (the draggable handle) shows the open-hand cursor.
+      if (!aiming) container.style.cursor = gameController.hitMinimapBox(sx, sy) ? 'grab' : '';
       const [wx, wy] = toWorld(e);
       gameController.setMouse(wx, wy); // hover-detail on tank badges
       if (aiming) gameController.dragAim(wx, wy);
@@ -247,7 +271,13 @@ async function main(): Promise<void> {
   // FIRE button / Space.
   window.addEventListener(
     'pointerup',
-    () => {
+    e => {
+      if (minimapDrag) {
+        minimapDrag = false;
+        // Released the pan: open hand if still over the box handle, else default.
+        const [sx, sy] = toScene(e);
+        container.style.cursor = gameController.hitMinimapBox(sx, sy) ? 'grab' : '';
+      }
       if (aiming) {
         aiming = false;
         gameController.endAim(false);
@@ -258,6 +288,8 @@ async function main(): Promise<void> {
   window.addEventListener(
     'pointercancel',
     () => {
+      minimapDrag = false;
+      container.style.cursor = '';
       if (aiming) {
         aiming = false;
         gameController.endAim(false);
