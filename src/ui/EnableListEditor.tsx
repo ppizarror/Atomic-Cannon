@@ -6,12 +6,21 @@
  * list; Exit returns to the Game Content page. The selection persists (contentStore)
  * and applies to the NEXT game, so editing never disturbs the running match.
  */
-import {useEffect, useState} from 'preact/hooks';
+import type {ComponentChildren} from 'preact';
+import {useEffect, useLayoutEffect, useRef, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
+import {Button} from './Button';
 import {loadWeaponIcon, openSettingsPage, uiClick} from './store';
 import {WEAPON_DATABASE} from '../core/CWeapon';
 import landData from '../data/land.json';
-import {isWeaponOff, toggleWeapon, isLandOff, toggleLand, weaponsOff, landsOff} from './contentStore';
+import {
+  isWeaponOff,
+  toggleWeapon,
+  isLandOff,
+  toggleLand,
+  weaponsOff,
+  landsOff,
+} from './contentStore';
 
 const LANDS = landData as {bg: string}[];
 
@@ -29,33 +38,67 @@ function WeaponIcon({name}: {name: string}) {
   return <span class="editor-icon">{src ? <img src={src} alt="" /> : null}</span>;
 }
 
-function EditorRow({off, onToggle, children}: {off: boolean; onToggle: () => void; children: unknown}) {
+function EditorRow({
+  off,
+  onToggle,
+  children,
+}: {
+  off: boolean;
+  onToggle: () => void;
+  children: ComponentChildren;
+}) {
   return (
     <button class={`editor-row ${off ? 'off' : 'on'}`} onClick={onToggle}>
       <span class="editor-body">{children}</span>
       <span class="editor-state">
-        <BmpText font="msans-14" text={off ? 'Disabled' : 'Enabled'} tint={off ? '#ffb0b0' : '#bfe9b0'} />
+        <BmpText
+          font="msans-14"
+          text={off ? 'Disabled' : 'Enabled'}
+          tint={off ? '#ffb0b0' : '#bfe9b0'}
+        />
       </span>
     </button>
   );
 }
 
+// First-render guess (refined by measuring the panel) so the initial page isn't empty.
+const estimatePerPage = (rowHeight: number): number =>
+  typeof window !== 'undefined' ? Math.max(3, Math.floor((window.innerHeight * 0.6) / rowHeight)) : 12;
+
 function Editor({
   title,
   footer,
   count,
-  perPage,
+  rowHeight,
   layout,
   row,
 }: {
   title: string;
   footer: string;
   count: number;
-  perPage: number;
+  rowHeight: number;
   layout: 'weapons' | 'lands';
-  row: (i: number) => {off: boolean; toggle: () => void; body: unknown};
+  row: (i: number) => {off: boolean; toggle: () => void; body: ComponentChildren};
 }) {
   const [page, setPage] = useState(0);
+  const [perPage, setPerPage] = useState(() => estimatePerPage(rowHeight));
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Fit as many rows as the panel is tall; recompute on any resize (window / fullscreen).
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rowH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || rowHeight;
+      const n = Math.max(3, Math.floor(el.clientHeight / (rowH + 1))); // +1 for the row gap
+      setPerPage(prev => (prev === n ? prev : n));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rowHeight]);
+
   const pages = Math.max(1, Math.ceil(count / perPage));
   const p = Math.min(page, pages - 1);
   const start = p * perPage;
@@ -75,34 +118,30 @@ function Editor({
       <div class="editor-title">
         <BmpText font="bazouk-28" text={title} />
       </div>
-      <div class={`editor-list editor-${layout}`}>{items}</div>
+      <div ref={listRef} class={`editor-list editor-${layout}`}>
+        {items}
+      </div>
       <div class="editor-footer">
         <BmpText font="msans-14" text={footer} tint="#eef2f6" />
         <BmpText font="msans-14" text={`Page ${p + 1} of ${pages}`} tint="#c9d2da" />
       </div>
       <div class="editor-buttons">
-        <button class="metal-btn" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))}>
-          Prev
-        </button>
-        <button class="metal-btn" onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))}>
-          Next
-        </button>
-        <button class="metal-btn editor-exit" onClick={() => openSettingsPage('content')}>
-          Exit
-        </button>
+        <Button label="Prev" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))} />
+        <Button label="Next" onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))} />
+        <Button label="Exit" onClick={() => openSettingsPage('content')} class="editor-exit" />
       </div>
     </div>
   );
 }
 
 export function WeaponsEditor() {
-  weaponsOff.value; // subscribe so toggles re-render
+  void weaponsOff.value; // subscribe so toggles re-render
   return (
     <Editor
       title="Define Weapons"
       footer="Click a weapon to enable or disable it"
       count={WEAPON_DATABASE.length}
-      perPage={15}
+      rowHeight={25}
       layout="weapons"
       row={i => {
         const w = WEAPON_DATABASE[i];
@@ -122,13 +161,13 @@ export function WeaponsEditor() {
 }
 
 export function LandscapesEditor() {
-  landsOff.value; // subscribe so toggles re-render
+  void landsOff.value; // subscribe so toggles re-render
   return (
     <Editor
       title="Define Landscapes"
       footer="Click a landscape to enable or disable it"
       count={LANDS.length}
-      perPage={6}
+      rowHeight={56}
       layout="lands"
       row={i => ({
         off: isLandOff(i),

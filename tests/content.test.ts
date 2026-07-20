@@ -57,7 +57,10 @@ console.log('Game Content');
   const gc = new CGameController(makeCanvas());
   const defs = gc.getWeaponDefs();
   ok('disabled weapon absent from the arsenal', !defs.some(w => w.index === other));
-  ok('staple stays available even if disabled', defs.some(w => w.index === STAPLE));
+  ok(
+    'staple stays available even if disabled',
+    defs.some(w => w.index === STAPLE),
+  );
 }
 
 // 4. The landscape picker only chooses enabled landscapes.
@@ -82,7 +85,11 @@ console.log('Game Content');
   gc.autoBuyWeapons();
   const owned = gc.getOwnedCounts();
   const finiteBought = owned.filter(c => c > 0 && Number.isFinite(c)).length;
-  ok('auto-buy buys nothing when every weapon is disabled', finiteBought === 0, `bought=${finiteBought}`);
+  ok(
+    'auto-buy buys nothing when every weapon is disabled',
+    finiteBought === 0,
+    `bought=${finiteBought}`,
+  );
   GameContent.weaponsOff = new Set();
 }
 

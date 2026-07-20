@@ -10,7 +10,7 @@
  * systems come online.
  */
 import {getVal, setVal} from './settingsStore';
-import {game, openSettingsPage, uiClick} from './store';
+import {game, openSettingsPage} from './store';
 import {applyGameSettings} from './applySettings';
 
 export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';

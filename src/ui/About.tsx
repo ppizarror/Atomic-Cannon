@@ -8,6 +8,7 @@ import {backToMenu} from './store';
 import {BmpText} from './BmpText';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {Modal} from './Modal';
+import {ModalButton} from './ModalButton';
 
 export function About() {
   const [text, setText] = useState('');
@@ -33,9 +34,7 @@ export function About() {
         <BmpText font="msans-14" text="v3.0  ·  a preservation port" tint="#c9d0d7" />
       </div>
       <ClassicScrollbar class="about-body">{text || 'Loading…'}</ClassicScrollbar>
-      <button class="metal-btn about-back" onClick={backToMenu}>
-        Back
-      </button>
+      <ModalButton label="Back" onClick={backToMenu} class="about-back" />
     </Modal>
   );
 }
