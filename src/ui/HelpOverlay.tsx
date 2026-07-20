@@ -10,6 +10,7 @@
 import {showHelp, closeHelp} from './store';
 import {BmpText} from './BmpText';
 import {Modal} from './Modal';
+import {ModalButton} from './ModalButton';
 
 // One row per panel control, each with a short description of what the control does.
 const CONTROLS: {name: string; desc: string}[] = [
@@ -58,9 +59,7 @@ export function HelpOverlay() {
           </div>
         ))}
       </div>
-      <button class="help-close" onClick={closeHelp}>
-        <BmpText font="beijing-16-out" text="Close" />
-      </button>
+      <ModalButton label="Close" onClick={closeHelp} class="help-close" />
     </Modal>
   );
 }

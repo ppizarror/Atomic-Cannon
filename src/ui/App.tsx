@@ -18,6 +18,7 @@ import {
   paused,
 } from './store';
 import {hexToRgb} from '../math/color';
+import {Button} from './Button';
 import {BmpText} from './BmpText';
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
@@ -193,9 +194,10 @@ function Placeholder({
       <div class="screen-card">
         <h1>{title}</h1>
         <p>Coming soon.</p>
-        <button class="metal-btn" onClick={onBack ?? (() => (screen.value = 'battle'))}>
-          {backLabel ?? 'Back to battle'}
-        </button>
+        <Button
+          label={backLabel ?? 'Back to battle'}
+          onClick={onBack ?? (() => (screen.value = 'battle'))}
+        />
       </div>
     </div>
   );

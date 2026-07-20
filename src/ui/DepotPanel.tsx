@@ -11,6 +11,7 @@ import {BmpText} from './BmpText';
 import {ZeonFrame} from './ZeonFrame';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {useAsyncImage} from './useAsyncImage';
+import {ModalButton} from './ModalButton';
 import {
   showDepot,
   credits,
@@ -141,9 +142,12 @@ function DepBtn({
   span?: boolean;
 }) {
   return (
-    <button class={`dep-btn${span ? ' span' : ''}`} disabled={disabled} onClick={onClick}>
-      <BmpText font={ROW_FONT} text={label} tint={disabled ? '#5b5f64' : '#14171a'} />
-    </button>
+    <ModalButton
+      label={label}
+      onClick={onClick}
+      disabled={disabled}
+      class={`dep-btn${span ? ' span' : ''}`}
+    />
   );
 }
 

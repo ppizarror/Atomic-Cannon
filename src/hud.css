@@ -22,8 +22,8 @@
   /* One dim wash behind every scrim overlay (was 0.5 / 0.55 / 0.72 — now uniform). */
   --overlay-scrim: rgba(0, 0, 0, 0.6);
 
-  /* Shared brushed-metal button/panel gradients (bright + standard + deep). */
-  --metal-grad-hi: linear-gradient(#d3d8df, #9aa0a8);
+  /* Shared brushed-metal gradients — the depot stats popup (standard) and the
+     placeholder-card panel (deep). */
   --metal-grad: linear-gradient(#c3c8cf, #8b9198);
   --metal-grad-deep: linear-gradient(#9aa0a8, #626870);
 }
@@ -866,35 +866,12 @@ canvas {
   grid-template-columns: 1fr;
 }
 
+.dep-btn {
+  height: 34px;
+}
+
 .dep-btn.span {
   grid-column: 1 / -1;
-}
-
-/* Auto Buy spans the Buy|Sell width */
-/* Metal action buttons — the game's `buy button.bmp` art with a bitmap label. */
-.dep-btn {
-  min-width: 62px;
-  height: 34px;
-  padding: 0 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: url('/assets/gui/buy button.bmp') center / 100% 100% no-repeat;
-  border: 0;
-}
-
-.dep-btn:hover:not(:disabled) {
-  filter: brightness(1.09);
-}
-
-.dep-btn:active:not(:disabled) {
-  filter: brightness(0.9);
-}
-
-.dep-btn:disabled {
-  filter: grayscale(0.35) brightness(0.86);
-  cursor: default;
 }
 
 /* ======================= SHARED MENU BUTTON (.menu-btn) ==================== */
@@ -1108,45 +1085,70 @@ canvas {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Layout only — the Close button's look comes from <Button>/.btn. */
 .help-close {
   align-self: center;
   margin-top: 14px;
-  background: none;
-  border: 0;
+}
+
+/* Shared action button (rendered by <Button>) — the game's atomic/button.bmp beveled
+   sprite, 9-sliced. <Button> sets border-image-source (the magenta-keyed sprite data
+   URL) inline; the metal gradient is the pre-load fallback so it still reads as a
+   button until the sprite resolves. Hover/active/disabled are simple brightness shifts,
+   matching the depot's old buttons. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  padding: 3px 16px;
   cursor: pointer;
-  padding: 4px 20px;
-  border-radius: 4px;
-  transition: background 0.1s ease;
-}
-
-.help-close:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.help-close:active {
-  background: rgba(0, 0, 0, 0.5);
-}
-
-/* Shared metal button (menu cards / About). */
-.metal-btn {
-  padding: 7px 24px;
-  cursor: pointer;
-  font:
-    700 14px 'Segoe UI',
-    sans-serif;
   color: #14171a;
-  background: var(--metal-grad-hi);
-  border: 1px solid #2a2f34;
-  border-radius: 6px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: #b4b8bc;
+  border: 4px solid transparent;
+  border-image: url('/assets/gui/atomic/button.png') 4 fill stretch;
+  image-rendering: pixelated;
 }
 
-.metal-btn:hover {
-  background: linear-gradient(#e2e7ed, #a7adb5);
+.btn:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 
-.metal-btn:active {
-  background: linear-gradient(#9aa0a8, #b8bec6);
+.btn:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn:disabled {
+  filter: grayscale(0.4) brightness(0.85);
+  cursor: default;
+}
+
+/* ModalButton (<ModalButton>) — the metal button for metallic panels (dialog modals +
+   the depot). The game's `buy button.bmp` brushed-metal art, stretched to fit (the
+   depot's original, proven look). Fully opaque, so the .bmp is used directly. */
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  padding: 6px 14px;
+  cursor: pointer;
+  color: #14171a;
+  background: url('/assets/gui/buy button.bmp') center / 100% 100% no-repeat;
+  border: 0;
+}
+
+.modal-btn:hover:not(:disabled) {
+  filter: brightness(1.09);
+}
+
+.modal-btn:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.modal-btn:disabled {
+  filter: grayscale(0.35) brightness(0.86);
+  cursor: default;
 }
 
 /* Title-screen scrolling target reticles (lower half; rows scroll opposite ways). */
@@ -1302,12 +1304,14 @@ canvas {
 .editor-footer canvas {
   display: block;
 }
-/* The green list panel (like the retail editors). */
+/* The green list panel (fills the height between title and footer; the row count is
+   computed from the measured height, so a taller window shows more rows / fewer pages). */
 .editor-list {
   margin: 2vh 0;
   width: min(860px, 86vw);
-  max-height: 62vh;
-  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
   background: rgba(18, 74, 30, 0.55);
   border: 1px solid rgba(120, 220, 140, 0.35);
   padding: 6px 12px;
