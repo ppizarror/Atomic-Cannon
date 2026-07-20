@@ -33,10 +33,21 @@ function defaultUnlimited(): number[] {
     return [getDefaultWeaponIndex()];
 }
 
+/** A per-tank credit balance the economy can spend against. CTank implements this,
+ *  so the human's depot operates directly on the human tank's credits. */
+export interface CreditHolder {
+    getCredits(): number;
+    addCredits(n: number): void;
+    setCredits(n: number): void;
+}
+
 export class CEconomy {
-    private m_credits: number;
     private readonly m_owned: number[];   // per weapon index; UNLIMITED for staples
     private m_sellRate = SELL_REFUND;     // fraction refunded on sell (Economy → Sell Back Rate)
+    // Credits live on a bound holder (the human tank) once set; until then an internal
+    // balance is used (construction, unit tests).
+    private m_holder: CreditHolder | null = null;
+    private m_credits: number;
 
     constructor(startCredits = START_CREDITS, unlimited: number[] = defaultUnlimited()) {
         this.m_credits = startCredits;
@@ -44,9 +55,26 @@ export class CEconomy {
         for (const i of unlimited) if (i >= 0 && i < this.m_owned.length) this.m_owned[i] = UNLIMITED;
     }
 
+    /** Route credits through a per-tank balance (the human tank). */
+    bindCredits(h: CreditHolder): void {
+        this.m_holder = h;
+    }
+
+    private creditsGet(): number {
+        return this.m_holder ? this.m_holder.getCredits() : this.m_credits;
+    }
+    private creditsAdd(n: number): void {
+        if (this.m_holder) this.m_holder.addCredits(n);
+        else this.m_credits = Math.max(0, this.m_credits + n);
+    }
+    private creditsSet(n: number): void {
+        if (this.m_holder) this.m_holder.setCredits(n);
+        else this.m_credits = Math.max(0, n);
+    }
+
     /** Reset to a fresh match: `startCredits` on hand, only the staples in stock. */
     reset(startCredits = START_CREDITS, unlimited: number[] = defaultUnlimited()): void {
-        this.m_credits = startCredits;
+        this.creditsSet(startCredits);
         this.m_owned.fill(0);
         for (const i of unlimited) if (i >= 0 && i < this.m_owned.length) this.m_owned[i] = UNLIMITED;
     }
@@ -57,11 +85,11 @@ export class CEconomy {
     }
 
     getCredits(): number {
-        return this.m_credits;
+        return this.creditsGet();
     }
 
     addCredits(n: number): void {
-        this.m_credits = Math.max(0, this.m_credits + n);
+        this.creditsAdd(n);
     }
 
     /** Owned rounds for a weapon (UNLIMITED for staples, 0 if none). */
@@ -71,6 +99,11 @@ export class CEconomy {
 
     isUnlimited(index: number): boolean {
         return this.m_owned[index] === UNLIMITED;
+    }
+
+    /** Mark a weapon as unlimited (dev: ?weapon_sel=<id>). */
+    setUnlimited(index: number): void {
+        if (index >= 0 && index < this.m_owned.length) this.m_owned[index] = UNLIMITED;
     }
 
     /** A weapon is fireable if unlimited or at least one round is in stock. */
@@ -85,13 +118,13 @@ export class CEconomy {
     /** Can the player afford one more of this weapon? (Unlimited staples aren't bought.) */
     canBuy(index: number): boolean {
         if (this.isUnlimited(index)) return false;
-        return this.m_credits >= this.cost(index);
+        return this.creditsGet() >= this.cost(index);
     }
 
     /** Buy one round: deduct the cost, add to stock. Returns whether it went through. */
     buy(index: number): boolean {
         if (!this.canBuy(index)) return false;
-        this.m_credits -= this.cost(index);
+        this.creditsAdd(-this.cost(index));
         this.m_owned[index] = this.getOwned(index) + 1;
         return true;
     }
@@ -105,7 +138,7 @@ export class CEconomy {
     sell(index: number): boolean {
         if (!this.canSell(index)) return false;
         this.m_owned[index] = this.getOwned(index) - 1;
-        this.m_credits += Math.round(this.cost(index) * this.m_sellRate);
+        this.creditsAdd(Math.round(this.cost(index) * this.m_sellRate));
         return true;
     }
 
@@ -129,7 +162,7 @@ export class CEconomy {
         for (let guard = 0; guard < 5000; guard++) {
             const affordable: number[] = [];
             for (let i = 0; i < WEAPON_DATABASE.length; i++) {
-                if (!this.isUnlimited(i) && WEAPON_DATABASE[i].cost > 0 && WEAPON_DATABASE[i].cost <= this.m_credits) {
+                if (!this.isUnlimited(i) && WEAPON_DATABASE[i].cost > 0 && WEAPON_DATABASE[i].cost <= this.creditsGet()) {
                     affordable.push(i);
                 }
             }
