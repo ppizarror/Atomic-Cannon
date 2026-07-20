@@ -53,7 +53,7 @@ const LAND_DATA = landData as LandConfig[];
 // TEMPORARY (explosion-FX testing): lock the weapon selection to one control
 // weapon so it can be spammed to review effects. Set to null to restore the
 // full arsenal.
-const CONTROL_WEAPON: string | null = 'Tomcat';
+const CONTROL_WEAPON: string | null = null;
 const controlWeaponIndex = (): number =>
     CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
 
@@ -152,6 +152,9 @@ export class CGameController implements ShotWorld {
         this.m_assets.loadSprite('gui/turn-arrow', '/assets/gui/arrow.bmp');
         // Shield icon shown on a tank's badge when it has shields (magenta-keyed).
         this.m_assets.loadSprite('gui/shield', '/assets/gui/shield.bmp');
+        // The aim crosshair (magenta-keyed white "+" with a black outline) that marks
+        // the (angle, power) aim point — the original's "target turret" reticle.
+        this.m_assets.loadSprite('gui/target', '/assets/gui/target turret.bmp');
 
         // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
         // and the additive starburst flare used for trail plumes / fireballs.
@@ -655,31 +658,39 @@ export class CGameController implements ShotWorld {
     private drawAimTarget(ctx: CanvasRenderingContext2D): void {
         if (this.m_gameState !== EGameState.Battle || !this.isPlayerTurn()) return;
 
-        // Small white/grey "+" reticle (like the original), with a black backing.
+        // The original's "target turret" reticle sprite, centred on the aim point.
+        // Falls back to a drawn white/grey "+" until the sprite has loaded.
+        const sprite = this.m_assets.getSprite('gui/target');
         const cross = (p: Vec2, alpha: number) => {
-            const arm = 6, gap = 2;
-            const path = () => {
-                ctx.beginPath();
-                ctx.moveTo(p.x - arm, p.y);
-                ctx.lineTo(p.x - gap, p.y);
-                ctx.moveTo(p.x + gap, p.y);
-                ctx.lineTo(p.x + arm, p.y);
-                ctx.moveTo(p.x, p.y - arm);
-                ctx.lineTo(p.x, p.y - gap);
-                ctx.moveTo(p.x, p.y + gap);
-                ctx.lineTo(p.x, p.y + arm);
-            };
             ctx.save();
             ctx.globalAlpha = alpha;
-            ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2.5;
-            path();
-            ctx.stroke();
-            ctx.strokeStyle = '#e6e6e6';
-            ctx.lineWidth = 1;
-            path();
-            ctx.stroke();
+            ctx.imageSmoothingEnabled = false;
+            if (sprite) {
+                const s = 13;
+                ctx.drawImage(sprite.bitmap, Math.round(p.x - s / 2), Math.round(p.y - s / 2), s, s);
+            } else {
+                const arm = 6, gap = 2;
+                const path = () => {
+                    ctx.beginPath();
+                    ctx.moveTo(p.x - arm, p.y);
+                    ctx.lineTo(p.x - gap, p.y);
+                    ctx.moveTo(p.x + gap, p.y);
+                    ctx.lineTo(p.x + arm, p.y);
+                    ctx.moveTo(p.x, p.y - arm);
+                    ctx.lineTo(p.x, p.y - gap);
+                    ctx.moveTo(p.x, p.y + gap);
+                    ctx.lineTo(p.x, p.y + arm);
+                };
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2.5;
+                path();
+                ctx.stroke();
+                ctx.strokeStyle = '#e6e6e6';
+                ctx.lineWidth = 1;
+                path();
+                ctx.stroke();
+            }
             ctx.restore();
         };
 
@@ -982,6 +993,13 @@ export class CGameController implements ShotWorld {
     private advanceToNextPlayer(): void {
         const nPlayers = this.m_tanks.length;
 
+        // Weapon-test mode (?weapontest=1): never hand the turn to the AI — keep it on
+        // the (living) human so weapons can be fired back-to-back indefinitely.
+        if (this.m_weaponTest) {
+            const human = this.m_tanks.findIndex(t => t.isHuman() && t.isAlive());
+            if (human >= 0) { this.m_currentPlayerIndex = human; return; }
+        }
+
         let attempts = 0;
         do {
             this.m_currentPlayerIndex = (this.m_currentPlayerIndex + 1) % nPlayers;
@@ -1012,7 +1030,7 @@ export class CGameController implements ShotWorld {
         // Arm the shot-time countdown for a human turn (bots fire on a schedule and
         // never time out). Reset the clock either way so it never leaks across turns.
         this.m_turnElapsed = 0;
-        this.m_turnTimerRunning = this.m_shotTime > 0 && tank.isHuman();
+        this.m_turnTimerRunning = this.m_shotTime > 0 && tank.isHuman() && !this.m_weaponTest;
 
         if (tank.isBot()) {
             this.schedule(0.7, () => this.executeBotTurn());
@@ -1210,20 +1228,22 @@ export class CGameController implements ShotWorld {
         // beam points exactly where the turret does (screen-Y down, up-aim → negative y).
         const dir = new Vec2(Math.cos(angleRad), -Math.sin(angleRad));
 
-        // March until the ray drops below the terrain surface or leaves the world.
+        // A beam PENETRATES terrain — it does NOT stop at the first hill. March to the
+        // far edge of the world so the ray cuts clean across the map (through mountains,
+        // reaching tanks buried behind them), like the original.
         const W = this.m_land.width, H = this.m_land.height;
-        const maxLen = Math.hypot(W, H) + 120;
+        const maxLen = Math.hypot(W, H) + 200;
         let end = muzzle.clone();
-        for (let d = 0; d <= maxLen; d += 3) {
+        for (let d = 0; d <= maxLen; d += 4) {
             const px = muzzle.x + dir.x * d, py = muzzle.y + dir.y * d;
             end = new Vec2(px, py);
-            if (px < -20 || px > W + 20 || py > H + 20) break;
-            if (py >= 0 && py >= this.m_land.getHeightAt(px)) break;   // hit ground
+            if (px < -40 || px > W + 40 || py > H + 40 || py < -60) break;   // left the world
         }
 
-        // Damage every living tank whose centre is within the beam's half-width of the
-        // segment — once each, full damage (no distance falloff), like the original.
-        const halfWidth = Math.max(8, weapon.getRadius() * 0.5) + 16;   // + tank radius
+        // Damage every living tank within the beam's half-width of the FULL line — once
+        // each, full damage (no falloff), including tanks behind terrain it pierced.
+        const r = weapon.getRadius();
+        const halfWidth = Math.max(8, r * 0.5) + 16;   // + tank radius
         for (const t of this.m_tanks) {
             if (!t.isAlive()) continue;
             const tp = t.getPosition();
@@ -1234,14 +1254,11 @@ export class CGameController implements ShotWorld {
             if (!t.isAlive()) this.handleTankDestroyed(t);
         }
 
-        // Impact: small crater + scorch + burst; flash the beam line; ripple/shake.
-        const r = weapon.getRadius();
-        this.m_land.blastCircle(Math.floor(end.x), Math.floor(end.y), Math.max(6, Math.round(r * 0.6)));
-        this.m_land.scorch(Math.floor(end.x), Math.floor(end.y), r);
+        // The beam itself: a straight ray drawn OVER the terrain (so it reads as
+        // penetrating), sweeping out from the muzzle. A through-beam has no single
+        // impact point — no crater/explosion/ripple, just a light discharge shake.
         this.m_particles.beam(muzzle.x, muzzle.y, end.x, end.y, weapon.getColor());
-        this.m_particles.blast(end.x, end.y, r, weapon.getColor(), weapon.isNuclear(), weapon.getBlastParticle(), weapon.getExpType(), weapon.getExpBitmap());
-        this.shake(4, 0.22);
-        this.ripple(end.x, end.y, 1.0 + r / 120);
+        this.shake(3, 0.18);
 
         const rad = weapon.getRadiation();
         if (rad.time > 0 && rad.dmg > 0) {
@@ -1611,6 +1628,12 @@ export class CGameController implements ShotWorld {
         this.m_onImpact = cb;
     }
 
+    /** Weapon-test mode (?weapontest=1): the AI never takes a turn and the human's
+     *  shot timer is disabled, so weapons can be fired back-to-back indefinitely. */
+    setWeaponTest(on: boolean): void {
+        this.m_weaponTest = on;
+    }
+
     /** Wire the audio facade (SFX + music). Optional — the game runs silently without it. */
     setAudio(audio: CAudio): void {
         this.m_audio = audio;
@@ -1656,6 +1679,7 @@ export class CGameController implements ShotWorld {
     private m_tanks: CTank[] = [];
     private m_shots: CShot[];
     private m_pendingSalvos = 0;   // succession salvos still scheduled to fire this shot
+    private m_weaponTest = false;  // ?weapontest=1: AI never takes a turn (endless firing)
 
     private m_particles: CParticleSystem;
     private m_weather: CWeather;
