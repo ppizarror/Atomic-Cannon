@@ -76,6 +76,11 @@ interface Particle {
 const KIND_GRAV: Record<RenderKind, number> = {disc: 1, flare: 0.25, flash: 0, smoke: -0.12, plume: 0.15};
 const KIND_WIND: Record<RenderKind, number> = {disc: 0.15, flare: 0.5, flash: 0, smoke: 1.6, plume: 0.4};
 
+// Blast radius (px) below which a detonation is drawn as a compact spark-puff rather
+// than the full firework — machine gun (r8), shotgun (r4), gatling (r8). Shells and up
+// (r≥~20) get the full sequence. See `blast`.
+const SMALL_BLAST_R = 14;
+
 const DEG = Math.PI / 180;
 const rnd = () => Math.random();
 /** Uniform in [a, b]. */
@@ -99,7 +104,8 @@ function toward255(c: RGB, t: number): RGB {
     };
 }
 
-// An instantaneous beam flash: a bright line from muzzle to impact that fades.
+// An instantaneous beam flash: the weapon's ray sprite stretched from muzzle to impact,
+// fading out. Falls back to a bright coloured line until the sprite loads.
 interface Beam {
     x0: number;
     y0: number;
@@ -110,6 +116,8 @@ interface Beam {
     b: number;
     age: number;
     life: number;
+    spr?: string;      // ray sprite key (weapon rayMask) — drawn stretched along the line
+    width: number;     // beam thickness (px), the weapon's `size`
 }
 
 // The main explosion fireball — the real `effects/explosion1.bmp` chromatic
@@ -260,6 +268,7 @@ export class CParticleSystem {
     }
 
 
+
     // ---------------------------------------------------------------- emitters
 
     private add(
@@ -335,23 +344,33 @@ export class CParticleSystem {
         // `eLlightBlue` is a typo in the weapon data table for `eLightBlue`.
         const preset = presetName ? (PRESETS[presetName] ?? PRESETS[presetName.replace('Llight', 'Light')]) : undefined;
         const c = preset ? {r: preset.colorr, g: preset.colorg, b: preset.colorb} : parseColor(color);
-        const r = Math.max(12, radiusPx);
+        // Floor low so a small round (machine gun r8, shotgun r4) stays a small puff —
+        // the old floor of 12 forced every blast to grenade size, so bullets "exploded".
+        const r = Math.max(4, radiusPx);
         const big = expType === 4 || nuclear;   // expType 4 = the nuke white-out
+        // Small rounds — bullets/pellets/cannon-shells — get a compact pop, not the full
+        // firework. The original scales its detonation FX by blast size and GATES the
+        // fire streamers by a size threshold, so tiny rounds throw only debris + a spark
+        // puff (no fireball storm, radial rings, fire line or ejecta ring).
+        const small = !big && r < SMALL_BLAST_R;
 
-        // Phase 1 — a moderate central fireball + a hot flash. The full-screen
-        // white-out is the DOM overlay; the firework blobs (below) carry the bulk of
-        // the spread, so this core stays contained.
-        // Central bloom = the weapon's OWN catalog flare (`expBitmap`: Tomcat=flares/16
-        // white star, nuke=flares/00 white puff, digger=flares/03 green ring, …), NOT
-        // the generic chromatic `explosion1.bmp` (which reads as a rainbow iris — wrong
-        // per weapon). Big + BRIEF so it's a prominent core that fades as it spreads.
+        // Phase 1 — a central bloom + hot flash, sized to the blast. The bloom is the
+        // weapon's OWN catalog flare (`expBitmap`: nuke=flares/00 puff, digger=flares/03
+        // ring, …), NOT the generic chromatic explosion1.bmp. Big + BRIEF for a prominent
+        // core; small rounds get just a modest pop.
         const flareSpr = expBitmap ? `fx:${expBitmap}` : 'fx:explosion';
-        this.spawnExplosion(x, y, r * (big ? 2.2 : 1.6), big ? 0.35 : 0.5, flareSpr);
-        this.spawnFlash(x, y, r * (big ? 2.4 : 1.6), big ? {
+        this.spawnExplosion(x, y, r * (big ? 2.2 : small ? 1.1 : 1.6), big ? 0.35 : small ? 0.32 : 0.5, flareSpr);
+        this.spawnFlash(x, y, r * (big ? 2.4 : small ? 0.9 : 1.6), big ? {
             r: 255,
             g: 255,
             b: 255
-        } : toward255(c, 0.4), big ? 0.3 : 0.22);
+        } : toward255(c, 0.4), big ? 0.3 : small ? 0.16 : 0.22);
+
+        // Compact spark puff for small rounds, then stop — no firework/rings/fire/ejecta.
+        if (small) {
+            this.emitBox(x, y, Math.round(r * 1.2) + 4, 120, 0.25, 0.6, 1.1, toward255(c, 0.2), 'disc');
+            return;
+        }
 
         if (preset) {
             this.emitPreset(x, y, r, preset);
@@ -546,10 +565,12 @@ export class CParticleSystem {
         this.blast(x, y, 26 * scale, '#ff8c22', false);
     }
 
-    /** An instantaneous beam flash from muzzle to impact (fades over ~0.35 s). */
-    beam(x0: number, y0: number, x1: number, y1: number, color: string): void {
+    /** A beam from muzzle to impact. `spr` is the weapon's colour texture; `width` its
+     *  drawn thickness (the weapon `size`); `life` how long it stays on screen — set this
+     *  to the collapse delay so the ray VANISHES the instant the earth falls. */
+    beam(x0: number, y0: number, x1: number, y1: number, color: string, spr?: string, width = 8, life = 0.5): void {
         const c = parseColor(color);
-        this.m_beams.push({x0, y0, x1, y1, r: c.r, g: c.g, b: c.b, age: 0, life: 0.35});
+        this.m_beams.push({x0, y0, x1, y1, r: c.r, g: c.g, b: c.b, age: 0, life, spr, width});
     }
 
     /** Spawn the expanding fireball sprite (the weapon's own `expBitmap` flare). */
@@ -746,18 +767,42 @@ export class CParticleSystem {
         for (const b of this.m_beams) {
             const t = b.age / b.life;
             if (t >= 1) continue;
-            const a = 1 - t;
-            const grow = Math.min(1, t / 0.35);              // 0→1 as the tip advances
+            // Hold at full strength almost the whole life, then vanish over the last ~15%.
+            // The beam's life is set to the collapse delay, so the ray disappears at the
+            // SAME instant the earth falls (not a fade, then a gap, then the collapse).
+            const a = t < 0.85 ? 1 : 1 - (t - 0.85) / 0.15;
+            const grow = Math.min(1, t / 0.12);              // 0→1 as the tip advances
             const ex = b.x0 + (b.x1 - b.x0) * grow, ey = b.y0 + (b.y1 - b.y0) * grow;
+            const ang = Math.atan2(ey - b.y0, ex - b.x0);
+            const len = Math.hypot(ex - b.x0, ey - b.y0);
+            const spr = b.spr ? this.m_assets?.getSprite(b.spr) : null;
+            if (spr) {
+                // The weapon's own ray sprite (rayMask) rotated to the aim and stretched
+                // along the bolt at `width` px, drawn additively → it reads as glowing
+                // energy with the sprite's colour/pattern (red magma, striped grate…).
+                ctx.save();
+                ctx.globalAlpha = a;
+                ctx.translate(b.x0, b.y0);
+                ctx.rotate(ang);
+                ctx.imageSmoothingEnabled = true;
+                ctx.drawImage(spr.bitmap, 0, -b.width / 2, len, b.width);
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            } else {
+                // Fallback coloured halo until the sprite loads.
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = `rgba(${b.r | 0},${b.g | 0},${b.b | 0},${a * 0.6})`;
+                ctx.lineWidth = 8 * a + 2;
+                ctx.beginPath();
+                ctx.moveTo(b.x0, b.y0);
+                ctx.lineTo(ex, ey);
+                ctx.stroke();
+            }
+            // Thin white-hot core down the middle (dimmer over a textured beam so the
+            // sprite's colour still reads).
             ctx.lineCap = 'round';
-            ctx.strokeStyle = `rgba(${b.r | 0},${b.g | 0},${b.b | 0},${a * 0.6})`;
-            ctx.lineWidth = 8 * a + 2;
-            ctx.beginPath();
-            ctx.moveTo(b.x0, b.y0);
-            ctx.lineTo(ex, ey);
-            ctx.stroke();
-            ctx.strokeStyle = `rgba(255,255,255,${a})`;
-            ctx.lineWidth = 3 * a + 1;
+            ctx.strokeStyle = `rgba(255,255,255,${a * (spr ? 0.45 : 1)})`;
+            ctx.lineWidth = Math.max(1, b.width * 0.12) * a + 1;
             ctx.beginPath();
             ctx.moveTo(b.x0, b.y0);
             ctx.lineTo(ex, ey);
@@ -766,7 +811,7 @@ export class CParticleSystem {
             if (grow < 1) {
                 ctx.fillStyle = `rgba(255,255,255,${a})`;
                 ctx.beginPath();
-                ctx.arc(ex, ey, 4 * a + 2, 0, Math.PI * 2);
+                ctx.arc(ex, ey, Math.max(4, b.width * 0.4) * a + 2, 0, Math.PI * 2);
                 ctx.fill();
             }
         }

@@ -8,6 +8,7 @@
 import {useRef, useState, useEffect} from 'preact/hooks';
 import {useSignalEffect} from '@preact/signals';
 import {screen, screenFlash, screenFlashColor, flying, jetFuel, hudWave, hudWaveStrength, paused} from './store';
+import {hexToRgb} from '../math/color';
 import {BmpText} from './BmpText';
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
@@ -25,8 +26,7 @@ import {Settings} from './Settings';
 function ScreenFlash() {
     const a = screenFlash.value;
     if (a <= 0.001) return null;
-    const n = parseInt(screenFlashColor.value.slice(1), 16);
-    let cr = (n >> 16) & 255, cg = (n >> 8) & 255, cb = n & 255;
+    let {r: cr, g: cg, b: cb} = hexToRgb(screenFlashColor.value);
     // Saturate toward the dominant hue so a warm tint reads vivid (uranium's light
     // orange → red-orange), not washed-out sepia — then mix toward white by intensity.
     const mx = Math.max(cr, cg, cb, 1);

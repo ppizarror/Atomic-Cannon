@@ -14,6 +14,8 @@
  */
 
 import type {Vec2} from '../math/Vec2';
+import {TWO_PI} from '../math/num';
+import {between} from '../math/random';
 
 export type WeatherType = 'snow' | 'rain' | 'hail' | 'dust';
 
@@ -118,9 +120,6 @@ interface Layer {
     particles: WParticle[];
 }
 
-const TWO_PI = Math.PI * 2;
-const rnd = () => Math.random();
-const between = (a: number, b: number) => a + (b - a) * rnd();
 
 export class CWeather {
     private m_layers: Layer[] = [];
@@ -163,7 +162,7 @@ export class CWeather {
         for (const s of specs) {
             const type = s.type as WeatherType;
             if (!(type in TUNING) || s.intensity <= 0) continue;
-            if (Math.floor(rnd() * 100) > s.intensity) continue;   // probability gate
+            if (Math.floor(Math.random() * 100) > s.intensity) continue;   // probability gate
             const layer: Layer = {type, t: TUNING[type], particles: []};
             this.resize(layer);
             this.m_layers.push(layer);
@@ -190,13 +189,13 @@ export class CWeather {
             x: between(-this.m_margin, this.m_w + this.m_margin),
             y: anywhere ? between(-this.m_margin, this.m_h + this.m_margin) : -this.m_margin,
             size: between(t.sizeMin, t.sizeMax),
-            seed: rnd() * TWO_PI,
+            seed: Math.random() * TWO_PI,
             speedMul: between(0.75, 1.25),
             // Dust seeds a leftward "blowing" bias so it drifts even in calm air;
             // falling types get a small symmetric jitter (unused by them).
             drift: t.hover ? between(-55, -20) : between(-18, 18),
             alpha: between(t.alphaMin, t.alphaMax),
-            ci: Math.floor(rnd() * DUST_TANS.length),
+            ci: Math.floor(Math.random() * DUST_TANS.length),
         };
     }
 

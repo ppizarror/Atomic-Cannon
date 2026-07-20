@@ -55,6 +55,15 @@ export class Vec2<T extends number = number> {
     distanceTo(v: Vec2<T>): number {
         return Math.sqrt((this.x - v.x) ** 2 + (this.y - v.y) ** 2);
     }
+
+    /**
+     * Unit aim/launch direction for a screen-space angle (y-down): `(cos θ, −sin θ)`,
+     * so 0 points right and positive θ points UP. This is the convention used for
+     * turret aim, projectile launch and muzzle FX — build those directions here.
+     */
+    static fromAngle(rad: number): Vec2<number> {
+        return new Vec2(Math.cos(rad), -Math.sin(rad));
+    }
 }
 
 export type Vec2f = Vec2<number>;

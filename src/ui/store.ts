@@ -8,6 +8,7 @@ import {signal} from '@preact/signals';
 import type {CGameController} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
+import {wrapIndex} from '../math/num';
 
 export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about';
 
@@ -248,7 +249,7 @@ export const POWER_MIN = 10, POWER_MAX = 1000;
 export const ANGLE_MIN = 0, ANGLE_MAX = 359;
 
 /** Fold any angle (deg) into the wrapping 0..359 range the HUD uses. */
-export const wrapAngle = (deg: number): number => ((deg % 360) + 360) % 360;
+export const wrapAngle = (deg: number): number => wrapIndex(deg, 360);
 
 let controller: CGameController | null = null;
 

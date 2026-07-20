@@ -184,6 +184,7 @@ export class CTank {
         // Spawn at full health — Tank → Hitpoints sets the starting/max life.
         this.m_maxLife = GameConfig.hitpoints;
         this.m_health.nLife = this.m_maxLife;
+        this.m_lastDamager = null;   // no attacker yet this match
     }
 
     /** Full/starting life (Hitpoints) — the denominator for life bars/percent. */
@@ -955,7 +956,22 @@ export class CTank {
     }
 
     setCredits(n: number): void {
-        this.m_credits = n;
+        this.m_credits = Math.max(0, n);
+    }
+
+    /** Add (or subtract) credits, floored at 0. Used by the earning economy. */
+    addCredits(n: number): void {
+        this.m_credits = Math.max(0, this.m_credits + n);
+    }
+
+    /** The last tank to deal LIFE damage to this one — the kill-credit attribution
+     *  ("killer"). Set on every damaging hit, cleared on spawn. */
+    getLastDamager(): CTank | null {
+        return this.m_lastDamager;
+    }
+
+    setLastDamager(t: CTank | null): void {
+        this.m_lastDamager = t;
     }
 
     getTeamColor(): string {
@@ -1037,7 +1053,8 @@ export class CTank {
 
     private m_nTeamId: number = 0;      // Team assignment (for color)
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
-    private m_credits: number = 0;      // Economy credits (shown in the detail badge)
+    private m_credits: number = 0;      // Economy credits (per-tank balance; shown in the badge)
+    private m_lastDamager: CTank | null = null;   // kill-credit attribution ("killer")
     private m_weaponIndex: number = 0;  // This tank's own selected weapon
     private m_aimAngle: number = 45;    // This tank's own aim (UI degrees, 0..180)
     private m_power: number = 500;      // This tank's own firing power (10..1000)

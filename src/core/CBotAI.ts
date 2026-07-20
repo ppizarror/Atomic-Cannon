@@ -15,6 +15,7 @@
 import { SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_SPEED_SCALE } from './CShot';
 import { GameConfig } from './CGameConfig';
 import { WEAPON_DATABASE } from './CWeapon';
+import { clamp, deg2rad } from '../math/num';
 
 // Difficulty is a single 0..10 skill level (0 = "Dummy": never aims; 10 =
 // "Einstein": perfect aim). 5 is a reasonable mid default.
@@ -30,17 +31,9 @@ const COARSE_P = 70;   // power
 const FINE_A = 1;
 const FINE_P = 15;
 
-const DEG = Math.PI / 180;
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
 export interface Pt { x: number; y: number }
 export interface AimField { heightAt(x: number): number; width: number; height: number }
 export interface AimResult { angleDeg: number; power: number; dist: number }
-
-/** Fraction 0..1 across the difficulty range (0 = easiest, 1 = hardest). */
-export function levelFrac(level: number): number {
-  return clamp((level - AI_LEVEL_MIN) / (AI_LEVEL_MAX - AI_LEVEL_MIN), 0, 1);
-}
 
 /**
  * Probability that the bot computes a FRESH firing solution this turn (vs. firing
@@ -74,7 +67,7 @@ export function angleError(level: number, rnd: () => number = Math.random): numb
 export function simulateMiss(
   origin: Pt, angleDeg: number, power: number, wind: Pt, field: AimField, target: Pt,
 ): number {
-  const r = angleDeg * DEG;
+  const r = deg2rad(angleDeg);
   // Match the real launch speed (Power Scale) so the solver's prediction is accurate.
   const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
   let vx = Math.cos(r) * speed;

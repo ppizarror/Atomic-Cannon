@@ -17,8 +17,7 @@ import {
     teamId, armor, hazmat, posX, posY, credits, windVelX, windVelY, windAccX, windAccY, canMoveNow,
 } from './store';
 import {weaponPower, weaponDamagePerArea} from '../core/CWeapon';
-
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+import {clamp, wrapIndex} from '../math/num';
 
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
@@ -228,7 +227,7 @@ function stepWeapon(d: number): void {
     uiClick();
     const g = game();
     const cur = Math.max(0, list.findIndex(w => w.index === g.getCurrentWeaponIndex()));
-    const next = (((cur + d) % list.length) + list.length) % list.length;
+    const next = wrapIndex(cur + d, list.length);
     g.selectWeapon(list[next].index);
 }
 

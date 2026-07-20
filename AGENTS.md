@@ -64,16 +64,15 @@ Keep this separation. New UI is a Preact component driven by a signal; new gamep
 
 ## Rendering rules
 
-- The world renders to a **high, fixed-WIDTH offscreen buffer** (`BUFFER_W` in `main.tsx`,
-  `max(1600, screen.width)`); `CPixiCompositor` scales it **down** to fill the window, so every
-  size looks like "starting large" (crisp) rather than upscaling a small buffer. The buffer
-  **width is constant** (deterministic world + constant tank scale — art is absolute pixels,
-  `CTank`); its **height tracks the window aspect** so the fill is never distorted and never
-  letterboxed. On resize, `refit` re-fits the height only when the aspect changes, calling
-  `CGameController.resizeHeight` → `CLand.resizeHeight` (vertical terrain resample, width kept)
-  + entity Y-rescale, then `CPixiCompositor.resyncScene` (re-point the GPU texture). A pure
-  size change (same aspect) skips the re-flow and just downscales. Pointer→world mapping is
-  `main.tsx` `toWorld` (client px → scene px; the buffer fills the container, so no offset).
+- The game renders to an **offscreen 2D canvas** sized to the world area (the `#game-container`
+  above the HUD) at load; `CPixiCompositor` presents it as a full-viewport WebGL sprite and
+  `resize()` stretches the sprite to the live container size. Tank/turret art is **absolute
+  pixels** (`CTank`, `TANK_DRAW_WIDTH` etc.), so the buffer resolution is effectively the
+  world's logical scale. (Note: because the buffer is captured at the initial size and the
+  sprite stretches, resizing the window after load softens the scene until reload — a known
+  tradeoff. Several "fix" approaches — fixed-res letterbox, dynamic relayout, high-res
+  downscale — were tried and reverted; do **not** reintroduce one without explicit agreement.)
+  Pointer→world mapping lives in `main.tsx` `toWorld` (client px → scene px).
 - **Minimum playable window is 768×432** (`MIN_W`/`MIN_H` in `App.tsx`). Below it, the
   `TooSmallOverlay` gate covers everything. Keep these in sync with any copy that states the size.
 - **Present-on-demand:** the loop ticks every frame but the expensive 2D redraw + GPU upload

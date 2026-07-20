@@ -8,6 +8,7 @@
 
 import weaponsRaw from '../data/weapons.json';
 import particlesRaw from '../data/particles.json';
+import {rgbToHex} from '../math/color';
 
 // The 20 weapon type strings present in the data.
 export type WeaponType =
@@ -77,15 +78,11 @@ const PARTICLES = particlesRaw as unknown as Record<string, ParticleDef>;
 // Types that add/remove terrain rather than just damage.
 const DIGGING_TYPES = new Set<WeaponType>(['Digger', 'Dirt', 'Cleaner', 'Roller']);
 
-function hex(r: number, g: number, b: number): string {
-    const c = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
-    return `#${c(r)}${c(g)}${c(b)}`;
-}
 
 /** A weapon's on-screen tint, from its blast (else trail) particle effect. */
 function weaponColor(w: RawWeapon): string {
     const p = PARTICLES[w.blast] || PARTICLES[w.trail];
-    return p ? hex(p.colorr, p.colorg, p.colorb) : '#ffaa00';
+    return p ? rgbToHex(p.colorr, p.colorg, p.colorb) : '#ffaa00';
 }
 
 export interface WeaponDef extends RawWeapon {
@@ -295,6 +292,12 @@ export class CWeapon {
 
     getFlareSize(): number {
         return this.m_def.flareSize || 0;
+    }
+
+    /** Beam weapons' ray sprite (`rayMask`, e.g. "magma hit.bmp") — the texture drawn
+     *  stretched along the beam. Empty for non-beam weapons. */
+    getRayMask(): string {
+        return (this.m_def.rayMask as string) || '';
     }
 }
 

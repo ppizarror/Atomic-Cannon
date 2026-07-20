@@ -12,10 +12,9 @@ import { useState } from 'preact/hooks';
 import { settingsPageBack } from './store';
 import { BmpText } from './BmpText';
 import { getSettingsPage, type Widget } from './settingsPages';
+import { clamp, wrapIndex } from '../math/num';
 
 const ROW_FONT = 'bazouk-28';
-
-const wrap = (i: number, n: number) => ((i % n) + n) % n;
 
 function RowView({ w, bump, onHover }: {
   w: Widget;
@@ -41,10 +40,10 @@ function RowView({ w, bump, onHover }: {
   const change = (dir: number) => {
     if (!w.set) return;
     if (w.kind === 'toggle') w.set(val ? 0 : 1);
-    else if (w.kind === 'enum') w.set(wrap(val + dir, w.options!.length));
+    else if (w.kind === 'enum') w.set(wrapIndex(val + dir, w.options!.length));
     else {
       const step = w.step ?? 1, min = w.min ?? 0, max = w.max ?? 100;
-      w.set(Math.max(min, Math.min(max, val + dir * step)));
+      w.set(clamp(val + dir * step, min, max));
     }
     bump();
   };

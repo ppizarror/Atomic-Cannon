@@ -6,6 +6,7 @@ import {Vec2} from '../math/Vec2';
 import {CLand} from './CLand';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
+import {TWO_PI} from '../math/num';
 
 // Trajectory constants — the single source of truth, shared with the aim AI so a
 // simulated shot matches a real one exactly. Calibrated to our px/second space,
@@ -293,11 +294,11 @@ export class CShot {
         ctx.shadowBlur = 10;
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(this.m_pos.x, this.m_pos.y, 4, 0, Math.PI * 2);
+        ctx.arc(this.m_pos.x, this.m_pos.y, 4, 0, TWO_PI);
         ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(this.m_pos.x, this.m_pos.y, 2, 0, Math.PI * 2);
+        ctx.arc(this.m_pos.x, this.m_pos.y, 2, 0, TWO_PI);
         ctx.fill();
         ctx.restore();
     }
