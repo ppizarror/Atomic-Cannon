@@ -16,6 +16,9 @@ export function applyGameSettings(c: CGameController): void {
   c.setStartCredits(S.creditStart());
   c.setSellRate(S.sellRate());
   c.setCreditDamage(S.creditDamage());
+  c.setCreditKill(S.creditKill());
+  c.setCreditTurn(S.creditTurn());
+  c.setCreditRound(S.creditRound());
   c.setTotalBattles(S.battles());
   c.setVariance(S.variance());
   c.setGameSpeed(S.gameSpeed());

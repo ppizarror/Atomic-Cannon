@@ -10,7 +10,7 @@ installDomMocks();
 (globalThis as unknown as { setTimeout: unknown }).setTimeout = () => 0;
 
 import {CTank} from '../src/core/CTank';
-import {CGameController} from '../src/game/CGameController';
+import {CGameController, EGameType} from '../src/game/CGameController';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
 
 let pass = 0, fail = 0;
@@ -119,6 +119,96 @@ console.log('Earning economy');
     gc.applyBlast(bot.getPosition(), 50, 100, human, false);
     const removed = lifeBefore - bot.getHealth().nLife;
     ok('applyBlast credits damage end-to-end', removed > 0 && human.getCredits() === removed * 2, `rm=${removed} c=${human.getCredits()}`);
+}
+
+// 7. Kill credit — Deathmatch only; enemy kill pays +CreditKill, team/self kill
+//    pays −CreditKill, unattributed death pays nothing.
+{
+    const gc = new CGameController(makeCanvas());
+    gc.setStartCredits(0);
+    gc.setCreditKill(500);
+    gc.setGameType(EGameType.Deathmatch);
+    gc.startGame(2);
+    const tanks = (gc as unknown as Tanks).m_tanks;
+    const human = tanks[0], bot = tanks[1];   // teams 0 and 1
+    const priv = gc as unknown as { awardKillCredit(v: CTank): void };
+
+    bot.setLastDamager(human);
+    human.setCredits(0);
+    priv.awardKillCredit(bot);
+    ok('enemy kill awards +CreditKill', human.getCredits() === 500, `c=${human.getCredits()}`);
+
+    const mate = new CTank('Mate', human.getTeamId());
+    mate.setLastDamager(human);
+    human.setCredits(1000);
+    priv.awardKillCredit(mate);               // team kill → penalty
+    ok('team kill applies −CreditKill penalty', human.getCredits() === 500, `c=${human.getCredits()}`);
+
+    const orphan = new CTank('Orphan', 1);    // never damaged → no killer
+    human.setCredits(0);
+    priv.awardKillCredit(orphan);
+    ok('unattributed death awards nothing', human.getCredits() === 0);
+
+    gc.setGameType(EGameType.Rounds);
+    bot.setLastDamager(human);
+    human.setCredits(0);
+    priv.awardKillCredit(bot);
+    ok('no kill credit outside Deathmatch', human.getCredits() === 0);
+}
+
+// 8. End-to-end lethal blast: the shooter earns damage credit AND the kill bounty.
+{
+    const gc = new CGameController(makeCanvas());
+    gc.setStartCredits(0);
+    gc.setCreditDamage(1);
+    gc.setCreditKill(500);
+    gc.setGameType(EGameType.Deathmatch);
+    gc.startGame(2);
+    const tanks = (gc as unknown as Tanks).m_tanks;
+    const human = tanks[0], bot = tanks[1];
+
+    human.setCredits(0);
+    const botLife = bot.getHealth().nLife;
+    gc.applyBlast(bot.getPosition(), 50, 2000, human, false);   // lethal
+    ok('lethal blast credits damage + kill', !bot.isAlive() && human.getCredits() === botLife + 500, `c=${human.getCredits()} life=${botLife}`);
+}
+
+// 9. Turn / Round awards — every survivor earns per turn; a completed round (turn
+//    order wraps) pays Credit Round then Credit Turn. Credits pool per team.
+{
+    // Team multiplier + dead exclusion (4 players → teams 0,1,0,1).
+    const gc4 = new CGameController(makeCanvas());
+    gc4.setStartCredits(0);
+    gc4.startGame(4);
+    const t4 = (gc4 as unknown as Tanks).m_tanks;
+    const award = (gc4 as unknown as { awardSurvivorCredit(n: number): void });
+
+    award.awardSurvivorCredit(100);
+    ok('team of 2 earns perTank × members', t4[0].getCredits() === 200 && t4[2].getCredits() === 200 && t4[1].getCredits() === 200, `t0=${t4[0].getCredits()}`);
+
+    t4[2].hit(99999);                          // kill one team-0 member
+    t4[0].setCredits(0);
+    award.awardSurvivorCredit(100);
+    ok('dead teammate excluded from the multiplier', t4[0].getCredits() === 100, `t0=${t4[0].getCredits()}`);
+}
+{
+    // Turn every hand-off; Round on wrap (Round then Turn), isolated from damage/kill.
+    const gc = new CGameController(makeCanvas());
+    gc.setStartCredits(0);
+    gc.setCreditDamage(0);
+    gc.setCreditKill(0);
+    gc.setCreditTurn(10);
+    gc.setCreditRound(100);
+    gc.startGame(2);
+    const tanks = (gc as unknown as Tanks).m_tanks;
+    const human = tanks[0], bot = tanks[1];
+    const priv = gc as unknown as { endTurn(): void };
+
+    priv.endTurn();                            // 0 → 1, no wrap
+    ok('turn award pays every survivor', human.getCredits() === 10 && bot.getCredits() === 10, `h=${human.getCredits()}`);
+
+    priv.endTurn();                            // 1 → 0, wrap: +Round then +Turn
+    ok('round wrap pays Round then Turn', human.getCredits() === 120 && bot.getCredits() === 120, `h=${human.getCredits()}`);
 }
 
 console.log(`\n${pass}/${pass + fail} earning checks passed`);

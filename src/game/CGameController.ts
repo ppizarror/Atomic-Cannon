@@ -18,7 +18,7 @@ import {CParticleSystem} from '../core/CParticleSystem';
 import {ScreenShake} from '../core/rendering/ScreenShake';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
-import {CEconomy, START_CREDITS, CREDIT_PER_DAMAGE} from '../core/CEconomy';
+import {CEconomy, START_CREDITS, CREDIT_PER_DAMAGE, CREDIT_PER_KILL, CREDIT_PER_TURN, CREDIT_PER_ROUND} from '../core/CEconomy';
 import {AI_DEFAULT_LEVEL, aimProbability, angleError, bestAim, pickMoveWeapon, pickTarget, pickWeapon} from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {EXT, type ShotWorld, weaponDetonate, weaponFlyStep} from '../core/weapons/WeaponBehavior';
@@ -34,6 +34,13 @@ export enum EGameState {
     ShotFlying = 'shot_flying',
     Explosion = 'explosion',
     BattleEnd = 'battle_end'
+}
+
+/** Match type. Deathmatch pays a per-kill bounty; Rounds (Point) scores by damage. */
+export enum EGameType {
+    Rounds = 0,
+    Deathmatch = 1,
+    FastTest = 2,
 }
 
 // Bot names
@@ -954,7 +961,7 @@ export class CGameController implements ShotWorld {
     explode(x: number, y: number, scale: number, color?: string, radiusPx?: number, nuclear = false, blastPreset?: string, expType = 0, expBitmap?: string): void {
         if (color !== undefined && radiusPx !== undefined) {
             this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
-            // Phase 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
+            // Stage 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
             // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
             // It inherits the weapon's colour (uranium reads red, plutonium green, …).
             if (expType === 4 || nuclear) this.flashScreen(1, color ?? '#ffffff');
@@ -1067,10 +1074,25 @@ export class CGameController implements ShotWorld {
     private handleTankDestroyed(tank: CTank): void {
         const pos = tank.getPosition();
 
+        this.awardKillCredit(tank);
+
         // Create explosion at tank position
         this.m_particles.tankDeath(pos.x, pos.y + 12);
         this.m_screenShake.trigger(15, 0.5);
         this.m_audio?.tankExplode(pos.x);   // tank explode.wav
+    }
+
+    /** Kill bounty (Deathmatch only): the killer (the victim's last damager) earns
+     *  +CreditKill for an enemy kill, or pays −CreditKill for a team/self kill. An
+     *  unattributed death (no last damager) pays nothing. Pooled across the killer's
+     *  team afterwards. */
+    private awardKillCredit(victim: CTank): void {
+        if (this.m_gameType !== EGameType.Deathmatch) return;
+        const killer = victim.getLastDamager();
+        if (!killer) return;
+        const enemy = killer.getTeamId() !== victim.getTeamId();
+        killer.addCredits(enemy ? this.m_creditKill : -this.m_creditKill);
+        this.poolTeamCredits(killer);
     }
 
     /** Pool credits within a team: after an award, copy the awarded tank's balance to
@@ -1079,6 +1101,22 @@ export class CGameController implements ShotWorld {
         const credits = tank.getCredits(), team = tank.getTeamId();
         for (const t of this.m_tanks) {
             if (t !== tank && t.getTeamId() === team) t.setCredits(credits);
+        }
+    }
+
+    /** Award `perTank` to every alive tank (Turn / Round). Credits are shared per team,
+     *  so a team's balance rises by `perTank × (its alive members)`. No-op at rate 0. */
+    private awardSurvivorCredit(perTank: number): void {
+        if (perTank <= 0) return;
+        const teams = new Map<number, CTank[]>();
+        for (const t of this.m_tanks) {
+            if (!t.isAlive()) continue;
+            const arr = teams.get(t.getTeamId());
+            if (arr) arr.push(t); else teams.set(t.getTeamId(), [t]);
+        }
+        for (const members of teams.values()) {
+            const shared = members[0].getCredits() + perTank * members.length;
+            for (const m of members) m.setCredits(shared);
         }
     }
 
@@ -1096,18 +1134,21 @@ export class CGameController implements ShotWorld {
     /**
      * Advance to next living player's turn
      */
-    private advanceToNextPlayer(): void {
+    /** Returns whether the turn order WRAPPED (crossed the last player back to the
+     *  start) — i.e. a full round just completed. */
+    private advanceToNextPlayer(): boolean {
         const nPlayers = this.m_tanks.length;
 
         // Weapon-test mode (?weapon_test=1): never hand the turn to the AI — keep it on
         // the (living) human so weapons can be fired back-to-back indefinitely.
         if (this.m_weaponTest) {
             const human = this.m_tanks.findIndex(t => t.isHuman() && t.isAlive());
-            if (human >= 0) { this.m_currentPlayerIndex = human; return; }
+            if (human >= 0) { this.m_currentPlayerIndex = human; return false; }
         }
 
-        let attempts = 0;
+        let wrapped = false, attempts = 0;
         do {
+            if (this.m_currentPlayerIndex + 1 >= nPlayers) wrapped = true;   // crossed the end → round complete
             this.m_currentPlayerIndex = (this.m_currentPlayerIndex + 1) % nPlayers;
             attempts++;
             if (attempts > nPlayers * 2) {
@@ -1115,6 +1156,7 @@ export class CGameController implements ShotWorld {
                 break;
             }
         } while (!this.getCurrentTank().isAlive());
+        return wrapped;
     }
 
     /** Start the current player's turn. The HUD (Preact) reads state via getters. */
@@ -1156,7 +1198,15 @@ export class CGameController implements ShotWorld {
             else this.m_audio?.battleLost();
             return;
         }
-        this.advanceToNextPlayer();
+        // Hand off, then pay the between-turn credits. A completed round (turn order
+        // wrapped) pays Credit Round to every survivor first, then Credit Turn every
+        // hand-off. Credits are pooled per team inside the award.
+        const wrapped = this.advanceToNextPlayer();
+        if (wrapped) {
+            this.m_currentRound++;
+            this.awardSurvivorCredit(this.m_creditRound);
+        }
+        this.awardSurvivorCredit(this.m_creditTurn);
         this.beginTurn();
     }
 
@@ -1624,6 +1674,30 @@ export class CGameController implements ShotWorld {
         this.m_creditDamage = Math.max(0, n);
     }
 
+    /** Credits earned per kill (Economy → Credit Kill), live. */
+    setCreditKill(n: number): void {
+        this.m_creditKill = Math.max(0, n);
+    }
+
+    /** Credits each survivor earns per turn (Economy → Credit Turn), live. */
+    setCreditTurn(n: number): void {
+        this.m_creditTurn = Math.max(0, n);
+    }
+
+    /** Credits each survivor earns per round (Economy → Credit Round), live. */
+    setCreditRound(n: number): void {
+        this.m_creditRound = Math.max(0, n);
+    }
+
+    /** Match type — kill credit is only paid in Deathmatch. */
+    setGameType(t: EGameType): void {
+        this.m_gameType = t;
+    }
+
+    getGameType(): EGameType {
+        return this.m_gameType;
+    }
+
     /** Game-speed multiplier (1 = normal), live. */
     setGameSpeed(scale: number): void {
         this.m_speedScale = Math.max(0.1, scale);
@@ -1922,6 +1996,11 @@ export class CGameController implements ShotWorld {
     private m_variance = true;      // per-shot inaccuracy on/off
     private m_speedScale = 1;       // game-speed multiplier (Update Scale / 10)
     private m_creditDamage = CREDIT_PER_DAMAGE;   // credits earned per point of life removed
+    private m_creditKill = CREDIT_PER_KILL;        // credits earned per kill (Deathmatch)
+    private m_creditTurn = CREDIT_PER_TURN;        // credits earned by each survivor per turn
+    private m_creditRound = CREDIT_PER_ROUND;      // credits earned by each survivor per round
+    private m_gameType = EGameType.Deathmatch;     // match type (kill credit is Deathmatch-only)
+    private m_currentRound = 1;                     // completed turn-order passes + 1
 
     getShotCount(): number {
         return this.m_shotsFired;

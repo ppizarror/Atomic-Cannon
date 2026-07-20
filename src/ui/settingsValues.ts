@@ -22,6 +22,12 @@ export const gameSettings = {
   sellRate: (): number => getVal('eco.sellBack', 50) / 100,
   /** Credits earned per point of life removed. */
   creditDamage: (): number => getVal('eco.creditDamage', 1),
+  /** Credits earned per kill (Deathmatch). */
+  creditKill: (): number => getVal('eco.creditKill', 500),
+  /** Credits each survivor earns per turn. */
+  creditTurn: (): number => getVal('eco.creditTurn', 0),
+  /** Credits each survivor earns per round. */
+  creditRound: (): number => getVal('eco.creditRound', 1000),
   /** Battles per match. */
   battles: (): number => getVal('gp.battles', 5),
   /** Per-shot inaccuracy on/off. */
