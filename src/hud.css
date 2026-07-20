@@ -551,7 +551,7 @@ canvas {
     opacity: 0.9;
 }
 
-/* Full-viewport white-out for big blasts (nuke phase 1) — above everything. */
+/* Full-viewport white-out for big blasts (nuke flash) — above everything. */
 .screen-flash {
     position: fixed;
     inset: 0;

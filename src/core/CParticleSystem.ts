@@ -335,13 +335,13 @@ export class CParticleSystem {
 
     /**
      * Weapon detonation, staged as a multi-phase explosion sequence:
-     *   Phase 1 — a brief central fireball (the weapon's own `expBitmap` flare) + a
+     *   Stage 1 — a brief central fireball (the weapon's own `expBitmap` flare) + a
      *             hot flash; big/nuclear rounds also trigger the full-viewport
      *             white-out (a DOM overlay, driven from the controller — see `explode`).
-     *   Phase 2 — the FIREWORK: the weapon's flare sprite scattered many times as
+     *   Stage 2 — the FIREWORK: the weapon's flare sprite scattered many times as
      *             blobs radiating outward (nuke = white puffs, ring-flares = rings),
      *             plus a circular ejecta ring for big blasts.
-     *   Phase 3 — sparks, a fire line, and a lingering smoke column (+ the caller's
+     *   Stage 3 — sparks, a fire line, and a lingering smoke column (+ the caller's
      *             dirt shower / radiation specks in CLand).
      * `presetName` (particles.json) drives the fireball's colour/density/speed/spread.
      */
@@ -359,7 +359,7 @@ export class CParticleSystem {
         // puff (no fireball storm, radial rings, fire line or ejecta ring).
         const small = !big && r < SMALL_BLAST_R;
 
-        // Phase 1 — a central bloom + hot flash, sized to the blast. The bloom is the
+        // Stage 1 — a central bloom + hot flash, sized to the blast. The bloom is the
         // weapon's OWN catalog flare (`expBitmap`: nuke=flares/00 puff, digger=flares/03
         // ring, …), NOT the generic chromatic explosion1.bmp. Big + BRIEF for a prominent
         // core; small rounds get just a modest pop.
@@ -385,7 +385,7 @@ export class CParticleSystem {
             this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
         }
 
-        // Phase 2 — the firework: the weapon's OWN explosion flare sprite rendered
+        // Stage 2 — the firework: the weapon's OWN explosion flare sprite rendered
         // many times as scattered blobs radiating out (nuke=flares/00 white puffs,
         // excavator=flares/03 green rings, …). Plus, for big blasts, a circular ejecta ring.
         // (`flareSpr` computed above — the same catalog flare drives the central bloom.)
@@ -397,7 +397,7 @@ export class CParticleSystem {
     }
 
     /**
-     * Phase-2 firework: scatter many instances of the weapon's explosion flare
+     * Stage-2 firework: scatter many instances of the weapon's explosion flare
      * SPRITE radiating outward — the cloudy blob burst (each blob is one flare, so
      * its shape/colour is the weapon's own: nuke puffs, excavator green rings, …).
      */
@@ -423,7 +423,7 @@ export class CParticleSystem {
     }
 
     /**
-     * Phase-2 circular ejecta: a fast, near-uniform ring of dirt launched radially
+     * Stage-2 circular ejecta: a fast, near-uniform ring of dirt launched radially
      * outward so it reads as an expanding shockwave shell around the crater.
      */
     private emitEjectaRing(x: number, y: number, r: number): void {

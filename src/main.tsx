@@ -62,7 +62,7 @@ async function main(): Promise<void> {
     render(<App/>, uiRoot);
     goToMenu();
 
-    // Dev/review-only URL affordances (documented in AGENTS.md). These are gated to a
+    // Dev/review-only URL affordances. These are gated to a
     // DEV build — a deployed/production bundle ignores them entirely (`import.meta.env.DEV`
     // is statically false there, so this whole block is tree-shaken out).
     if (import.meta.env.DEV) {

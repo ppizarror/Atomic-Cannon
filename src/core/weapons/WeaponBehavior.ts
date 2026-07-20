@@ -7,7 +7,7 @@
  * damage-over-time, the `earth` deposit amount) are derived from the data fields.
  */
 import {Vec2} from '../../math/Vec2';
-import {CShot, SHOT_SPEED_SCALE} from '../CShot';
+import {CShot, SHOT_GRAVITY, SHOT_SPEED_SCALE} from '../CShot';
 import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
@@ -105,7 +105,6 @@ export function weaponFlyStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt
             // (gen 0). Its cluster submunitions are launched DOWNWARD from the apex, so
             // they're already "moving down"; if they also airburst they'd all pop at the
             // top instead of raining down. Gen≥1 fly ballistically and burst on impact.
-            // (Decompiled: `extType==13 && shot.gen==0 && movingDown`.)
             if (hit || belowSurface) return 'detonate';
             return (shot.getGeneration() === 0 && shot.isMovingDown()) ? 'detonate' : 'continue';
 
@@ -188,15 +187,22 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
     return 'continue';
 }
 
-// Battery drop cadence. The original's `batSec` is a wall-clock interval (accumulator
-// `shot+0x48 += dt`, drop when it passes `batSec`), but the game's `dt` is un-pinned in
-// the RE and our flight times run several× shorter than the original's (a normal lob is
-// ~1 s here vs the multi-second descent the "Bombs are dropped as the bomb descends"
-// weapons assume). At the literal 1.5 s a Black Rain would drop ZERO bomblets before it
-// lands. So we scale the interval to our time-base to get the intended rain, and count
-// from the APEX (first descent) so the drops spread evenly over the fall regardless of
-// how long the shot is airborne.
-const BATTERY_TIME_SCALE = 0.12;   // ~8× faster to match our compressed flight times
+// Battery drop cadence — DERIVED from the ballistics, not tuned.
+//
+// A battery weapon drops one bomblet every `batSec` while descending, where `batSec` is
+// measured in the reference engine's own time step — the same step that integrates
+// gravity and velocity. So the NUMBER of drops over a descent is a pure function of the
+// trajectory, not of wall-clock time. To reproduce that count we convert `batSec` into
+// our seconds by the ratio of the two ballistic time-constants τ = (launch-speed per unit
+// power) / gravity. In the reference engine the launch coefficient and gravity share a
+// map-scale factor that cancels, leaving:
+//   τ_ref  = (refPowerScale · refK) / refGravity = (1.5 · 0.1) / 4.9
+//   τ_ours = SHOT_SPEED_SCALE / SHOT_GRAVITY     = 0.9 / 500
+// interval = batSec · (τ_ours / τ_ref). This keeps the drop count equal to the reference
+// for ANY power/angle/terrain — no invented number.
+const REF_LAUNCH_K = 0.1, REF_POWER_SCALE = 1.5, REF_GRAVITY = 4.9;
+const BATTERY_TIME_SCALE =
+    (SHOT_SPEED_SCALE / SHOT_GRAVITY) / ((REF_POWER_SCALE * REF_LAUNCH_K) / REF_GRAVITY);   // ≈ 0.0588
 
 /** Battery: drop bomblets straight down at a steady cadence while a primary descends. */
 function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number): void {
@@ -205,7 +211,7 @@ function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number
     // Latch the apex the first descending frame, so the cadence starts at the top of the
     // fall (not from launch — otherwise a long ascent would dump a catch-up burst).
     if (shot.batteryApex < 0) shot.batteryApex = shot.getAge();
-    const interval = Math.max(0.08, batSec * BATTERY_TIME_SCALE);
+    const interval = Math.max(0.03, batSec * BATTERY_TIME_SCALE);   // floor = pathological guard only
     const due = Math.floor((shot.getAge() - shot.batteryApex) / interval) + 1;   // 1st drop at apex
     if (due <= shot.batteryDrops) return;
     shot.batteryDrops = due;

@@ -173,8 +173,8 @@ export class CWeapon {
         return DIGGING_TYPES.has(this.m_def.type);
     }
 
-    // --- mechanics for CShot (Phase 3) -----------------------------------------
-    // extType is the behaviour dispatcher — see weapon_types.md.
+    // --- projectile mechanics for CShot ----------------------------------------
+    // extType is the behaviour dispatcher.
     getExtType(): number {
         return this.m_def.extType || 0;
     }

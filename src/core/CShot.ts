@@ -352,8 +352,7 @@ export class CShot {
     private m_prevY: number = 0;
     private m_movingDown: boolean = false;
     private m_age: number = 0;
-    // Behaviour scratch: roller "grounded" latch, beam "fired" latch, battery drop
-    // counter (see weapon_types.md).
+    // Behaviour scratch: roller "grounded" latch, beam "fired" latch, battery drop counter.
     grounded: boolean = false;
     fired: boolean = false;
     batteryDrops: number = 0;
