@@ -357,4 +357,5 @@ export class CShot {
     grounded: boolean = false;
     fired: boolean = false;
     batteryDrops: number = 0;
+    batteryApex: number = -1;   // age at first descent (battery drop cadence anchor); -1 = not yet
 }

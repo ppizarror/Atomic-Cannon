@@ -188,13 +188,25 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
     return 'continue';
 }
 
-/** Battery: every batSec while a primary descends, drop one bomblet straight down. */
+// Battery drop cadence. The original's `batSec` is a wall-clock interval (accumulator
+// `shot+0x48 += dt`, drop when it passes `batSec`), but the game's `dt` is un-pinned in
+// the RE and our flight times run several× shorter than the original's (a normal lob is
+// ~1 s here vs the multi-second descent the "Bombs are dropped as the bomb descends"
+// weapons assume). At the literal 1.5 s a Black Rain would drop ZERO bomblets before it
+// lands. So we scale the interval to our time-base to get the intended rain, and count
+// from the APEX (first descent) so the drops spread evenly over the fall regardless of
+// how long the shot is airborne.
+const BATTERY_TIME_SCALE = 0.12;   // ~8× faster to match our compressed flight times
+
+/** Battery: drop bomblets straight down at a steady cadence while a primary descends. */
 function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number): void {
     const batSec = weapon.getBatterySeconds();
     if (batSec <= 0 || shot.getGeneration() !== 0 || !shot.isMovingDown()) return;
-    // Reuse the age clock as the accumulator: drop when we cross each batSec boundary.
-    const now = shot.getAge();
-    const due = Math.floor(now / batSec);
+    // Latch the apex the first descending frame, so the cadence starts at the top of the
+    // fall (not from launch — otherwise a long ascent would dump a catch-up burst).
+    if (shot.batteryApex < 0) shot.batteryApex = shot.getAge();
+    const interval = Math.max(0.08, batSec * BATTERY_TIME_SCALE);
+    const due = Math.floor((shot.getAge() - shot.batteryApex) / interval) + 1;   // 1st drop at apex
     if (due <= shot.batteryDrops) return;
     shot.batteryDrops = due;
     const p = shot.getPosition();
