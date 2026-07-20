@@ -221,18 +221,25 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     const isPrimary = shot.getGeneration() === 0;
     const ext = weapon.getExtType();
     const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
+    // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
+    // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
+    const isCleaner = weapon.getType() === 'Cleaner';
     const radiusPx = shot.getRadius();
     const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
     world.explode(pos.x, pos.y, isPrimary ? 1.5 : 0.9, weapon.getColor(), radiusPx, weapon.isNuclear(), weapon.getBlastParticle(), weapon.getExpType(), weapon.getExpBitmap());
     world.hitSound(weapon.getHitSound(), pos.x);   // soundHit, panned to the blast (RE: shot field +0xC4)
-    world.shake(isPrimary ? 8 : 3, 0.3);
+    if (!isCleaner) world.shake(isPrimary ? 8 : 3, 0.3);
 
     // Terrain effect.
     const earth = weapon.getEarth();
     if (earth > 0) {
         // Dirt: deposit a mound instead of a crater (INTERP of the debris-settle deposit).
         land.raiseTerrain(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
+    } else if (isCleaner) {
+        // Cleaner: carve out its (large) radius — remove terrain, nothing else. No
+        // scorch (it isn't a burn) and no ejecta (it clears dirt, doesn't throw it).
+        land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
     } else if (!isBeam) {
         // Nukes (expType 4) blow a much wider crater than their base radius.
         const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
@@ -255,7 +262,8 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     if (ext === EXT.TRACER) world.aimMarker(pos.x, pos.y);
 
     // Damage: beams do full damage to what they touch; everything else falls off.
-    world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam);
+    // Cleaners deal NO damage — they only reshape terrain.
+    if (!isCleaner) world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam);
 
     // Radiation zone (NUKE/DOT/Organic/…): irDmg/sec for irTime s, tinted irRGB.
     // INTERP — the DOT applicator is outside the decompiled subset; driven by real fields.
