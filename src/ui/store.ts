@@ -26,7 +26,7 @@ export const mapName = signal('');
 export function refreshEconomy(): void {
   const c = controller;
   if (!c) return;
-  credits.value = c.getCredits();
+  credits.value = Math.floor(c.getCredits());
   ownedCounts.value = c.getOwnedCounts();
   mapName.value = c.getMapName();
 }
@@ -306,7 +306,7 @@ export function syncHud(): void {
   const pos = tank.getPosition();
   posX.value = Math.round(pos.x);
   posY.value = Math.round(pos.y);
-  credits.value = c.getCredits();
+  credits.value = Math.floor(c.getCredits());
   const wv = c.getWindVec(),
     wa = c.getWindAccel();
   windVelX.value = Math.round(wv.x * 100) / 100;

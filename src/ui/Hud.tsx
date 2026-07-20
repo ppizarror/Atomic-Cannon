@@ -335,21 +335,23 @@ function WeaponList() {
   }, [idx]);
   // Mouse-wheel over the list steps the selection like the ▲/▼ arrows (no visible
   // scrollbar). Delta is accumulated (normalised from line/page modes to px) so
-  // sub-notch scrolls add up, and stepping is rate-limited: at most one step per
-  // MIN_MS, dropping the leftover so a fast flick can't burst through the list —
-  // a hard cap on scroll velocity, no matter how hard you spin the wheel.
+  // sub-notch scrolls add up; a step consumes exactly STEP px (the leftover carries
+  // for a snappy, continuous feel), and MIN_MS caps the top speed so a hard flick
+  // can't blow through the list. The backlog is clamped to MAX_ACC so scrolling
+  // stops promptly (no drift) and the next nudge isn't twitchy.
   const onWheel = (e: TargetedWheelEvent<HTMLDivElement>) => {
     if (blocked.value || !e.deltaY) return;
     e.preventDefault();
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientHeight : 1;
-    wheelAcc.current += e.deltaY * unit;
-    const STEP = 50; // px of scroll needed to move one weapon
-    const MIN_MS = 90; // min gap between steps → max ~11 weapons/second
+    const STEP = 38; // px of scroll per weapon step
+    const MIN_MS = 30; // min gap between steps → ~33 weapons/sec ceiling
+    const MAX_ACC = 2 * STEP; // cap the backlog so it can't run on after you stop
+    wheelAcc.current = clamp(wheelAcc.current + e.deltaY * unit, -MAX_ACC, MAX_ACC);
     const now = performance.now();
     if (Math.abs(wheelAcc.current) >= STEP && now - lastStep.current >= MIN_MS) {
       stepWeapon(wheelAcc.current > 0 ? 1 : -1);
+      wheelAcc.current -= Math.sign(wheelAcc.current) * STEP; // keep the remainder
       lastStep.current = now;
-      wheelAcc.current = 0; // drop the remainder so speed can't outrun MIN_MS
     }
   };
   return (
