@@ -4,7 +4,7 @@
  * Handles tank state, movement on terrain, damage, rendering
  */
 
-import {Vec2, Vec2f} from '../math/Vec2';
+import {Vec2} from '../math/Vec2';
 import {CLand} from './CLand';
 import {GameConfig} from './CGameConfig';
 import {getFont, type FontId} from './rendering/BitmapFont';
@@ -131,8 +131,6 @@ export class CTank {
     // ========================================================================
 
     constructor(sName: string = '', nTeamId: number = 0) {
-        this.m_nId = 0;
-        this.m_pPlayerData = null;
         this.m_sName = sName;   // names keep their given case (upper/lower allowed)
         this.m_nTeamId = nTeamId;
         this.m_bIsHuman = false;
@@ -160,7 +158,6 @@ export class CTank {
         this.m_bIsMoving = false;
         this.m_bFalling = false;
         this.m_bExploded = false;
-        this.m_bUnderground = false;
     }
 
     /**
@@ -524,7 +521,7 @@ export class CTank {
      * Apply radiation damage accumulated over dt seconds. Radiation bypasses
      * shield/armor and burns health directly.
      */
-    applyRadiationDamage(fAmount: number, dt: number): void {
+    applyRadiationDamage(fAmount: number, _dt: number): void {
         if (!this.m_bIsAlive) return;
 
         this.m_health.fRadiation += fAmount;
@@ -1036,11 +1033,6 @@ export class CTank {
     // MEMBER VARIABLES
     // ========================================================================
 
-    private m_nId: number;              // Unique tank identifier
-
-    // Player data reference  
-    private m_pPlayerData: unknown;     // per-player data reference
-
     private m_nTeamId: number = 0;      // Team assignment (for color)
     private m_sName: string = '';       // Display name (e.g. "Player", "BrainBot")
     private m_credits: number = 0;      // Economy credits (per-tank balance; shown in the badge)
@@ -1085,7 +1077,6 @@ export class CTank {
     private m_bFalling: boolean = false;
     private m_driveTargetX: number | null = null;   // ground-drive destination, or null
     public m_bExploded: boolean = false;
-    private m_bUnderground: boolean = false;
 
     // Statistics tracking
     private m_nHitCount: number = 0;

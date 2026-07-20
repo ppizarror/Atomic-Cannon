@@ -90,11 +90,14 @@ export interface WeaponDef extends RawWeapon {
     color: string;
 }
 
-export const WEAPON_DATABASE: WeaponDef[] = RAW.map((w, i) => ({
-    ...w,
-    index: i,
-    color: weaponColor(w),
-}));
+export const WEAPON_DATABASE: WeaponDef[] = RAW.map((w, i) => {
+    // RAW is a throwaway view over the JSON, used only here — extend each entry
+    // in place into a WeaponDef rather than copying.
+    const def = w as WeaponDef;
+    def.index = i;
+    def.color = weaponColor(w);
+    return def;
+});
 
 /** Index of the first plain Shell — a sensible default/starter weapon. */
 export function getDefaultWeaponIndex(): number {

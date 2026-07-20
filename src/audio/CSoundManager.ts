@@ -213,7 +213,8 @@ export class CSoundManager {
     }
 
     stopAllLoops(): void {
-        for (const name of [...this.m_loops.keys()]) this.stopLoop(name);
+        // Snapshot the keys first — stopLoop() deletes from m_loops as we go.
+        for (const name of Array.from(this.m_loops.keys())) this.stopLoop(name);
     }
 
     private now(): number {

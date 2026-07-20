@@ -9,8 +9,13 @@ exactly; they encode conventions the codebase already relies on.
 - **Runtime:** TypeScript, [Preact](https://preactjs.com/) + `@preact/signals` for UI,
   [PixiJS](https://pixijs.com/) (WebGL) for presentation, [Vite](https://vitejs.dev/) + `pnpm`.
 - **Dev server runs on port 2141** (`pnpm dev`). It is usually already running — reuse it.
-- Commands: `pnpm dev` · `pnpm build` · `pnpm preview` · `pnpm typecheck` (`tsc --noEmit`) · `pnpm test`.
-- **Always `pnpm typecheck` before considering a change done.** There is no lint/format step to lean on.
+- Commands: `pnpm dev` · `pnpm build` · `pnpm preview` · `pnpm typecheck` · `pnpm lint` · `pnpm test`
+  · `pnpm check` (typecheck + lint + test in one shot).
+- **Always `pnpm check` before considering a change done.** `typecheck` runs `strict` `tsc` over two
+  projects — `tsconfig.app.json` (browser code in `src/`, DOM libs, no node globals) and
+  `tsconfig.node.json` (Vite config + `tests/`, node + DOM). `lint` is `oxlint --deny-warnings`
+  (config in `.oxlintrc.json`; TS-native, so it works with the native TypeScript compiler that
+  `typescript-eslint` does not yet support). Both must be clean.
 - **Dev-only URL params.** The app boots to a MAIN MENU, so a bare `http://localhost:2141`
   renders the menu over everything. Append a query flag to jump straight into a state for
   manual testing or headless screenshots. Handled in `src/main.tsx` inside an

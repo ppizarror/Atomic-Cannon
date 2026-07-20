@@ -11,7 +11,7 @@ import {useEffect, useRef} from 'preact/hooks';
 import type {JSX, ComponentChildren, TargetedWheelEvent} from 'preact';
 import {BmpText} from './BmpText';
 import {
-    power, angle, wind, weaponIndex, playerName, teamColor, life, maxLife, shield,
+    power, angle, wind, weaponIndex, playerName, life, maxLife, shield,
     blocked, winner, weapons, game, loadWeaponIcon, uiClick, battleStatus,
     openDepot, openPauseMenu, openHelp, POWER_MIN, POWER_MAX, wrapAngle, turnTimer,
     teamId, armor, hazmat, posX, posY, credits, windVelX, windVelY, windAccX, windAccY, canMoveNow,

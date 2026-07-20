@@ -6,7 +6,7 @@
  * weapon under the cursor, and Buy / Sell / Auto Buy / Stats / Close controls
  * (the metal button art) over a Credits readout.
  */
-import {useEffect, useMemo, useState} from 'preact/hooks';
+import {useMemo, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {ZeonFrame} from './ZeonFrame';
 import {ClassicScrollbar} from './ClassicScrollbar';

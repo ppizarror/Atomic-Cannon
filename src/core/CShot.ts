@@ -303,24 +303,6 @@ export class CShot {
         ctx.restore();
     }
 
-    private drawStreak(ctx: CanvasRenderingContext2D): void {
-        if (this.m_trailPoints.length < 2) return;
-
-        for (let i = 1; i < this.m_trailPoints.length; i++) {
-            const pt0 = this.m_trailPoints[i - 1];
-            const pt1 = this.m_trailPoints[i];
-
-            const alpha = Math.max(0, 1 - (pt1.age / this.m_maxTrailAge));
-
-            ctx.strokeStyle = `rgba(255, 136, 0, ${alpha})`;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(pt0.x, pt0.y);
-            ctx.lineTo(pt1.x, pt1.y);
-            ctx.stroke();
-        }
-    }
-
     getDamage(): number {
         return this.m_damage;
     }

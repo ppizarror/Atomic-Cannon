@@ -52,7 +52,7 @@ export class CEconomy {
 
     constructor(startCredits = START_CREDITS, unlimited: number[] = defaultUnlimited()) {
         this.m_credits = startCredits;
-        this.m_owned = new Array(WEAPON_DATABASE.length).fill(0);
+        this.m_owned = Array.from({length: WEAPON_DATABASE.length}, () => 0);
         for (const i of unlimited) if (i >= 0 && i < this.m_owned.length) this.m_owned[i] = UNLIMITED;
     }
 
