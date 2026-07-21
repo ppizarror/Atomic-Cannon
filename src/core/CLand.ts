@@ -504,6 +504,67 @@ export class CLand {
   }
 
   /**
+   * Build a flat-topped dirt PLATFORM (the Bunker/Wall terrain tool): level a span of columns
+   * `[cx±halfWidth]` to a common top `height` px above the centre's current surface, filling
+   * with dirt pixels. Only ever RAISES (never lowers ground that's already higher), so a wall
+   * rises out of the terrain without carving it — a solid structure you can hide behind.
+   * Fallback for when the structure bitmap isn't available; `buildStructure` is preferred.
+   */
+  buildPlatform(cx: number, halfWidth: number, height: number): void {
+    if (!this.m_arrHeights) return;
+    const c = Math.max(0, Math.min(this.m_nWidth - 1, Math.round(cx)));
+    const top = Math.max(0, this.m_arrHeights[c] - Math.round(height)); // flat top, `height` above centre
+    const x0 = Math.max(0, c - halfWidth),
+      x1 = Math.min(this.m_nWidth - 1, c + halfWidth);
+    for (let col = x0; col <= x1; col++) {
+      if (top < this.m_arrHeights[col]) this.setColumnTop(col, top); // raise → stamp dirt (never lower)
+    }
+    this.preBlast(x0, x1);
+  }
+
+  /**
+   * Build the Bunker/Wall STRUCTURE at `cx`, TEXTURED with its own bitmap (bunker.bmp /
+   * wall.bmp). The bitmap's own width/height size the platform: level a dirt base the width
+   * of the bitmap, raise the surface by the bitmap's height, then stamp the bitmap's opaque
+   * pixels as the visible face — so it reads as the real emplacement art, not a bare dirt
+   * block. Magenta-keyed (transparent) pixels fall back to the dirt fill, keeping the platform
+   * solid with no sky gaps. Raise-only, like `buildPlatform` (never carves higher ground).
+   * `img.data` is a 32-bit `0xAABBGGRR` view of the keyed sprite (alpha 0 = transparent).
+   */
+  buildStructure(cx: number, img: {width: number; height: number; data: Uint32Array}): void {
+    if (!this.m_arrHeights || !this.m_pixels) return;
+    const W = this.m_nWidth,
+      H = this.m_nHeight;
+    const bw = img.width,
+      bh = img.height;
+    const c = Math.max(0, Math.min(W - 1, Math.round(cx)));
+    const left = c - (bw >> 1); // centre the bitmap on the aim column
+    const baseTop = this.m_arrHeights[c]; // flat ground level = centre's current surface
+    const structTop = Math.max(0, baseTop - bh); // structure top = raise by the bitmap height
+    // 1) Level + fill a solid dirt base under the whole footprint, raised to the structure top.
+    for (let bx = 0; bx < bw; bx++) {
+      const col = left + bx;
+      if (col < 0 || col >= W) continue;
+      if (structTop < this.m_arrHeights[col]) this.setColumnTop(col, structTop);
+    }
+    // 2) Stamp the bitmap's opaque pixels over the structure zone as the textured face.
+    const px = this.m_pixels;
+    for (let by = 0; by < bh; by++) {
+      const y = structTop + by;
+      if (y < 0 || y >= H) continue;
+      for (let bx = 0; bx < bw; bx++) {
+        const col = left + bx;
+        if (col < 0 || col >= W) continue;
+        const rgba = img.data[by * bw + bx];
+        if ((rgba >>> 24) === 0) continue; // transparent (magenta-keyed) → keep the dirt fill
+        px[y * W + col] = (rgba | 0xff000000) >>> 0; // opaque structure pixel
+      }
+    }
+    this.m_pixelsDirty = true;
+    this.preBlast(Math.max(0, left), Math.min(W - 1, left + bw));
+  }
+
+  /**
    * Deposit earth — Dirt weapons (Dirty Boy, Mountain, Land Fill…) REMOVE NOTHING. At the
    * impact a small ball of DIRT appears (a little dome the width of the blast, replacing grass
    * with bare earth — the contact mark), then it GROWS OUTWARD and UP into the full rounded

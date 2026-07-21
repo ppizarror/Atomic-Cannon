@@ -102,6 +102,11 @@ const BEAM_COLLAPSE_DELAY = 1;
 // bounds a single turn's repeated tracer volleys). Well above any one volley's count.
 const MAX_AIM_MARKERS = 16;
 
+// Bunker/Wall structure draw scale (× Player Size). The original scales the structure
+// bitmap down rather than stamping it at native size; this reads proportionate to the tank
+// (bunker.bmp 40×118 → ~18×53, wall.bmp 30×200 → ~14×90 — a barrier a tank hides behind).
+const STRUCTURE_SCALE = 0.45;
+
 const controlWeaponIndex = (): number =>
   CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
 
@@ -1433,25 +1438,32 @@ export class CGameController implements ShotWorld {
   }
 
   /** Pixel data of a structure bitmap (bunker.bmp / wall.bmp) as a `0xAABBGGRR` view for
-   *  `CLand.buildStructure`. Drawn from the magenta-keyed sprite (so transparent stays alpha 0)
-   *  once and cached — this only runs when a player uses a Bunker/Wall utility. */
-  private structureImage(bmp: string): {width: number; height: number; data: Uint32Array} | null {
-    const cached = this.m_structImages.get(bmp);
+   *  `CLand.buildStructure`, rendered at `scale` (the original scales the structure bitmap
+   *  down — it does NOT stamp it at native size, which would be a giant tower). Drawn from the
+   *  magenta-keyed sprite (transparent stays alpha 0), nearest-neighbour so the key stays crisp,
+   *  and cached by bmp+scale — this only runs when a player uses a Bunker/Wall utility. */
+  private structureImage(
+    bmp: string,
+    scale: number,
+  ): {width: number; height: number; data: Uint32Array} | null {
+    const key = `${bmp}@${scale.toFixed(3)}`;
+    const cached = this.m_structImages.get(key);
     if (cached) return cached;
     const sprite = this.m_assets.getSprite(`weapons/${bmp}`);
     if (!sprite) return null;
-    const w = sprite.width,
-      h = sprite.height;
+    const w = Math.max(1, Math.round(sprite.width * scale)),
+      h = Math.max(1, Math.round(sprite.height * scale));
     const cv = document.createElement('canvas');
     cv.width = w;
     cv.height = h;
     const g = cv.getContext('2d');
     if (!g) return null;
     g.clearRect(0, 0, w, h);
-    g.drawImage(sprite.bitmap, 0, 0);
+    g.imageSmoothingEnabled = false; // keep the magenta key crisp (alpha stays 0 or 255)
+    g.drawImage(sprite.bitmap, 0, 0, w, h);
     const id = g.getImageData(0, 0, w, h);
     const img = {width: w, height: h, data: new Uint32Array(id.data.buffer)};
-    this.m_structImages.set(bmp, img);
+    this.m_structImages.set(key, img);
     return img;
   }
 
@@ -2026,11 +2038,19 @@ export class CGameController implements ShotWorld {
         // sizes the platform and paints its visible face, so it reads as the real art. Falls
         // back to a bare dirt platform sized to the known bmp dims if the sprite isn't ready.
         const aim = this.aimPoint(this.m_angle, this.m_power);
-        const img = this.structureImage(weapon.getBitmap());
+        // The structure bitmap is scaled DOWN (the original does not stamp it at native size —
+        // that yields a tower several tanks tall). Scale it to read proportionate to the tank,
+        // tracking Player Size. bunker.bmp 40×118 → ~18×53, wall.bmp 30×200 → ~14×90.
+        const sc = STRUCTURE_SCALE * GameConfig.tankSizeScale;
+        const img = this.structureImage(weapon.getBitmap(), sc);
         if (img) this.m_land.buildStructure(Math.round(aim.x), img);
         else {
           const isWall = /wall/i.test(weapon.getName?.() ?? '');
-          this.m_land.buildPlatform(Math.round(aim.x), isWall ? 15 : 20, isWall ? 200 : 118);
+          this.m_land.buildPlatform(
+            Math.round(aim.x),
+            Math.round((isWall ? 30 : 40) * sc * 0.5),
+            Math.round((isWall ? 200 : 118) * sc),
+          );
         }
         return true;
       }

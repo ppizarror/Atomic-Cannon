@@ -197,23 +197,31 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
   const p = shot.getPosition();
   if (p.y < surfaceY - 6) return 'continue'; // still airborne, keep arcing
 
-  // On the surface: snap to it and roll toward the lower neighbour.
+  // On the surface: snap to it. Sample the neighbours 2px either side (smaller Y = higher).
   const left = land.getHeightAt(Math.max(0, Math.floor(p.x) - 2));
   const right = land.getHeightAt(Math.min(land.width - 1, Math.floor(p.x) + 2));
   shot.setPosition(p.x, surfaceY);
+  const vx = shot.getVelocity().x;
 
+  let dir: number;
   if (!shot.grounded) {
     shot.grounded = true;
-    // Sitting in a pit (both neighbours higher on screen = smaller Y) → detonate.
-    if (left < surfaceY && right < surfaceY) return 'detonate';
+    // First contact sitting in a pit (both neighbours higher) → detonate.
+    if (left < surfaceY - 1 && right < surfaceY - 1) return 'detonate';
+    // Otherwise COMMIT to rolling toward the lower side (ignoring incoming momentum).
+    dir = right > left ? 1 : left > right ? -1 : Math.sign(vx) || 1;
+  } else {
+    // Keep the committed direction — the sign of the velocity we set last frame. Re-picking
+    // toward the momentary-lower side every frame made the roller ping-pong across a valley
+    // floor forever (the "vibration"/camera-jitter bug); a real roller rolls one way until it
+    // meets a rise, then detonates.
+    dir = Math.sign(vx) || 1;
   }
-  // Rising wall ahead in the direction of travel → detonate.
-  const vx = shot.getVelocity().x;
-  if (vx > 0 && right < surfaceY - 2) return 'detonate';
-  if (vx < 0 && left < surfaceY - 2) return 'detonate';
+  // Surface AHEAD in the roll direction rises >1px (a wall, or the far side of a valley it
+  // rolled down into) → detonate. This is what stops it, so it never oscillates.
+  const ahead = dir > 0 ? right : left;
+  if (ahead < surfaceY - 1) return 'detonate';
 
-  // Roll toward the lower neighbour (lower = larger screen-Y).
-  const dir = right > left ? 1 : left > right ? -1 : Math.sign(vx) || 1;
   shot.setVelocity(dir * ROLL_SPEED, 0);
   return 'continue';
 }
