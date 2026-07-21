@@ -19,6 +19,8 @@ export class BitmapFont {
   private glyphs: {x: number; w: number}[] = []; // index 0 == ASCII 33
   private waiters: (() => void)[] = [];
   private tinted = new Map<string, HTMLCanvasElement>();
+  private rendered = new Map<string, HTMLCanvasElement>();
+  private bounds = new Map<string, {top: number; height: number}>();
 
   constructor(path: string) {
     const img = new Image();
@@ -137,6 +139,56 @@ export class BitmapFont {
       } else cx += this.spaceW() + spacing;
     }
     return out;
+  }
+
+  /**
+   * `render()` memoised per (text, spacing, tint) — the single rendered-text cache
+   * for everything that draws bitmap text (the on-canvas tank badge, `<BmpText>`),
+   * so callers no longer keep their own caches. Only stores the result once the font
+   * is ready, so an early empty render never sticks. The returned canvas is shared —
+   * blit FROM it, never draw INTO it.
+   */
+  renderCached(text: string, opts: {spacing?: number; tint?: string} = {}): HTMLCanvasElement {
+    const key = `${opts.tint ?? ''}|${opts.spacing ?? 1}|${text}`;
+    const hit = this.rendered.get(key);
+    if (hit) return hit;
+    const cv = this.render(text, opts);
+    if (this.ready) this.rendered.set(key, cv);
+    return cv;
+  }
+
+  /**
+   * Visible vertical extent of a rendered string — the topmost..bottommost rows that
+   * actually have ink — as `{top, height}` in the label canvas. The font strips carry
+   * blank rows above/below the glyphs, so callers that want TIGHT vertical
+   * centring/padding (e.g. the tank name box) should pad around this, not the full
+   * strip height. Independent of tint (alpha shape is the same), memoised per string.
+   */
+  contentBounds(text: string, spacing?: number): {top: number; height: number} {
+    const key = `${spacing ?? 1}|${text}`;
+    const hit = this.bounds.get(key);
+    if (hit) return hit;
+    const cv = this.renderCached(text, {spacing});
+    let top = -1,
+      bot = -1;
+    if (this.ready && cv.width && cv.height) {
+      const px = cv.getContext('2d')!.getImageData(0, 0, cv.width, cv.height).data;
+      for (let yy = 0; yy < cv.height; yy++) {
+        let ink = false;
+        for (let xx = 0; xx < cv.width; xx++)
+          if (px[(yy * cv.width + xx) * 4 + 3] > 10) {
+            ink = true;
+            break;
+          }
+        if (ink) {
+          if (top < 0) top = yy;
+          bot = yy;
+        }
+      }
+    }
+    const res = top < 0 ? {top: 0, height: this.height || 1} : {top, height: bot - top + 1};
+    if (this.ready) this.bounds.set(key, res);
+    return res;
   }
 }
 
