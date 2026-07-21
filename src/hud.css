@@ -527,10 +527,11 @@ canvas {
   color: #2a2f34;
 }
 
-/* Jet-flight indicator (top-centre while airborne) */
+/* Jet-flight indicator — low-centre, above the HUD panel, clear of the top-left
+   minimap + status text (which the top-centre placement used to collide with). */
 .flight-hud {
   position: fixed;
-  top: 14px;
+  bottom: calc(var(--hud-h) + 16px);
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-flight);
@@ -542,18 +543,17 @@ canvas {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
-.flight-fuel {
-  font-size: 22px;
-  font-weight: 800;
-  color: #ffd23f;
-  letter-spacing: 1px;
-  font-variant-numeric: tabular-nums;
+.flight-fuel canvas {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
 }
 
 .flight-hint {
-  font-size: 13px;
-  color: #dfe8ef;
-  opacity: 0.9;
+  opacity: 0.85;
+}
+.flight-hint canvas {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
 }
 
 /* Full-viewport white-out for big blasts (nuke flash) — above everything. */
@@ -1235,61 +1235,6 @@ canvas {
   margin: auto 0;
 }
 
-/* Play setup — presets + custom player-count, centred on the darkened title backdrop. */
-.setup-panel {
-  margin: auto 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-}
-.setup-title {
-  opacity: 0.92;
-}
-.setup-presets {
-  gap: 2px;
-}
-.setup-custom {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 0 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
-  width: min(360px, 80vw);
-}
-.setup-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.setup-label {
-  width: 90px;
-  text-align: right;
-  display: inline-flex;
-  justify-content: flex-end;
-}
-.setup-step {
-  min-width: 34px;
-}
-.setup-value {
-  min-width: 34px;
-  text-align: center;
-  display: inline-flex;
-  justify-content: center;
-}
-.setup-hint {
-  margin-top: 2px;
-  opacity: 0.9;
-}
-.setup-buttons {
-  display: flex;
-  gap: 14px;
-}
-.setup-back {
-  margin-left: 12px;
-}
-
 /* Hover subtitle, centred along the bottom edge (reserves height so nothing jumps). */
 .settings-subtitle {
   position: absolute;
@@ -1339,6 +1284,16 @@ canvas {
 .srow-done {
   justify-content: center;
   margin-top: 10px;
+}
+/* Start Game with too few players: greyed, no highlight, not clickable. */
+.srow-disabled {
+  cursor: not-allowed;
+}
+.srow-disabled:hover {
+  background: none;
+}
+.srow-disabled:active::after {
+  content: none;
 }
 
 /* ==================== Game Content enable-list editors (steel) ==================== */

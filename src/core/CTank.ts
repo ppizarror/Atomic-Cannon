@@ -581,6 +581,21 @@ export class CTank {
     const bodyKey = `tanks/${this.m_sTankType} ${this.m_bExploded ? 'wreck' : 'body'}`;
     const sprite = assets?.getSprite(bodyKey) ?? null;
 
+    // Booster-jet exhaust: the real jet flame (gui/jet.bmp) hanging below the tank
+    // while it thrusts, drawn straight down (not tilted) and additively so its black
+    // background drops out. Behind the hull so the tank rides on top of the flame.
+    if (this.m_bIsAlive && !this.m_bExploded && this.isThrustingUp()) {
+      const jet = assets?.getSprite('gui/jet');
+      if (jet) {
+        const fw = tankWidth() * 0.7;
+        const fh = (jet.height / jet.width) * fw;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.drawImage(jet.bitmap, cx - fw / 2, surfaceY - fh * 0.1, fw, fh);
+        ctx.restore();
+      }
+    }
+
     ctx.save();
     ctx.translate(cx, surfaceY);
     ctx.rotate(this.m_fAngle); // tilt to terrain slope
