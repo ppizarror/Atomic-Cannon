@@ -116,6 +116,14 @@ export const WEAPON_DATABASE: WeaponDef[] = RAW.map((w, i) => {
   return def;
 });
 
+/** The number shown next to a weapon in the arsenal list — its STABLE 1-based id
+ *  (database position + 1), NOT its position in the currently-shown (filtered) list.
+ *  Because it keys off the weapon's own index it never shifts when weapons are
+ *  disabled in Game Content, so it always matches `?weapon_sel=<id>` (which selects
+ *  `WEAPON_DATABASE[id-1]`). Numbering by list position instead makes the two diverge
+ *  the moment any earlier weapon is turned off. */
+export const weaponDisplayNumber = (w: {index: number}): number => w.index + 1;
+
 /** Index of the first plain Shell — a sensible default/starter weapon. */
 export function getDefaultWeaponIndex(): number {
   const i = WEAPON_DATABASE.findIndex(w => w.type === 'Shell');

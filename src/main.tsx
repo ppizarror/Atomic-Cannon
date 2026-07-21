@@ -109,7 +109,9 @@ async function main(): Promise<void> {
     // never fires, the shot timer is off) so weapons can be tried back-to-back.
     if (weaponTest) gameController.setWeaponTest(true);
     // `?weapon_sel=<id>`: force the human onto weapon <id> with unlimited ammo. `id`
-    // is 1-based (id=1 → first weapon, id=65 → Machine Gun) to match the in-game list.
+    // is the weapon's STABLE 1-based id (database position + 1) — the same number now
+    // shown next to it in the arsenal list (`weaponDisplayNumber`), so what you read in
+    // the list is exactly what you pass here, regardless of which weapons are disabled.
     if (weaponSel !== null) {
       const id = parseInt(weaponSel, 10);
       if (Number.isInteger(id) && id >= 1) gameController.forceWeapon(id - 1);

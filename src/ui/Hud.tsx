@@ -46,7 +46,7 @@ import {
   windAccY,
   canMoveNow,
 } from './store';
-import {weaponPower, weaponDamagePerArea} from '../core/CWeapon';
+import {weaponPower, weaponDamagePerArea, weaponDisplayNumber} from '../core/CWeapon';
 import {clamp, wrapIndex} from '../math/num';
 import {useAsyncImage} from './useAsyncImage';
 
@@ -362,7 +362,7 @@ function WeaponList() {
       ref={listRef}
       onWheel={onWheel}
     >
-      {weapons.value.map((wp, i) => {
+      {weapons.value.map(wp => {
         const active = wp.index === idx;
         return (
           <div
@@ -377,7 +377,7 @@ function WeaponList() {
             <BmpText
               class="wtext"
               font="beijing-16-out"
-              text={`${i + 1}. ${wp.name}`}
+              text={`${weaponDisplayNumber(wp)}. ${wp.name}`}
               spacing={-1}
             />
           </div>
