@@ -8,7 +8,7 @@ import {signal} from '@preact/signals';
 import type {CGameController} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
-import {setup, setSetup} from './setupStore';
+import {setup, playersOf} from './setupStore';
 import {wrapIndex} from '../math/num';
 
 export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about' | 'setup';
@@ -137,20 +137,30 @@ export function goToMenu(): void {
   game().getAudio()?.menuMusic();
 }
 
-/** Start a battle with `total` tanks, the first `humans` of them human. Persists the
- *  setup so Quick Play can replay it, honours the saved options, and enters battle. */
-export function startBattle(total: number, humans: number): void {
-  uiClick();
-  setSetup({total, humans});
+/** A match needs at least two teams (humans + computers) to have an opponent. */
+export const MIN_PLAYERS = 2;
+
+/** Common launch path: honour the saved options, set the counts, enter battle. */
+function enterBattle(players: number, humans: number, tanksPerTeam: number): void {
   applyGameSettings(game()); // honour the saved options for this match
   game().setHumanCount(humans);
-  game().startGame(total); // also starts the battle music
+  game().setTanksPerTeam(tanksPerTeam);
+  game().startGame(players); // also starts the battle music
   screen.value = 'battle';
   game().setPaused(false);
   paused.value = false;
 }
 
-/** Play → open the game-setup screen (presets + custom player count). */
+/** Start a battle from the current (persisted) Play setup — the Start Game button.
+ *  No-op when there are fewer than two players (the Play screen blocks it there too). */
+export function startBattle(): void {
+  const s = setup.value;
+  if (playersOf(s) < MIN_PLAYERS) return;
+  uiClick();
+  enterBattle(playersOf(s), s.humans, s.tanksPerTeam);
+}
+
+/** Play → open the game-setup screen (the "Play" config page). */
 export function openPlaySetup(): void {
   screen.value = 'setup';
   uiClick();
@@ -158,13 +168,13 @@ export function openPlaySetup(): void {
 
 /** Quick Play → start immediately with the last-used setup. */
 export function quickPlay(): void {
-  const s = setup.value;
-  startBattle(s.total, s.humans);
+  startBattle();
 }
 
-/** Legacy entry: a plain 2-player battle (used by the dev URL affordances + boot). */
+/** A plain 2-player battle (dev URL affordances + boot) — does not touch the setup. */
 export function playNewGame(): void {
-  startBattle(2, 1);
+  uiClick();
+  enterBattle(2, 1, 1);
 }
 
 /** Main menu → About, and back. */

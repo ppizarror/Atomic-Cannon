@@ -36,7 +36,7 @@ export function BmpText({
     const draw = () => {
       const c = ref.current;
       if (!c) return;
-      const src = f.render(text, {tint, spacing});
+      const src = f.renderCached(text, {tint, spacing});
       c.width = src.width;
       c.height = src.height;
       c.getContext('2d')!.drawImage(src, 0, 0);

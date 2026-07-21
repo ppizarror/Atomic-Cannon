@@ -1,97 +1,106 @@
 /**
- * Play setup — the game-setup screen reached from the main menu's "Play". Offers the
- * faithful presets (Quick Start / 2 Player / Watch), each starting a battle at once,
- * plus a custom player count: total tanks and how many are human (the rest CPU). Start
- * Game begins with the chosen counts; the setup persists so Quick Play can replay it.
- * Per-player name / colour / tank come from Customize Players.
+ * The Play menu — the "Start Game" configuration page reached from the main menu.
+ * A widget list (same `< Label … Value >` rows as Settings) over the darkened title
+ * backdrop: a top **Start Game** button, the match config rows, and **Cancel**.
+ *
+ * The counts (Humans / Computers / Tanks-per-team) bind to the per-match `setupStore`;
+ * the shared options (Game Type / Battles / Rounds / Land Size / Difficulty / Wind)
+ * bind to the same persisted settings the Settings tree edits. Start Game launches with
+ * the current values; the setup persists so Quick Play replays it. Per-player name /
+ * colour / tank come from Customize Players.
  */
 import {useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
-import {Button} from './Button';
-import {MenuButton} from './MenuButton';
-import {backToMenu, startBattle, uiClick} from './store';
-import {setup, MIN_TANKS, MAX_TANKS} from './setupStore';
+import {WidgetRow} from './WidgetRow';
+import {backToMenu, startBattle, MIN_PLAYERS} from './store';
+import {type Widget, stepper, enumW, GAME_TYPE, LAND_SIZE, DIFFICULTY, WIND} from './settingsPages';
+import {
+  setup,
+  setSetup,
+  MAX_HUMANS,
+  MAX_COMPUTERS,
+  MIN_TANKS_PER_TEAM,
+  MAX_TANKS_PER_TEAM,
+} from './setupStore';
 
-const clampHumans = (humans: number, total: number): number => Math.min(total, Math.max(0, humans));
-
-function Stepper({
+// A stepper bound to one field of the per-match setup (Humans / Computers / Tanks).
+const countRow = (
+  label: string,
+  tip: string,
+  key: 'humans' | 'computers' | 'tanksPerTeam',
+  min: number,
+  max: number,
+): Widget => ({
   label,
-  value,
+  tip,
+  kind: 'stepper',
   min,
   max,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange: (v: number) => void;
-}) {
-  const step = (d: number) => {
-    const v = Math.min(max, Math.max(min, value + d));
-    if (v !== value) {
-      uiClick();
-      onChange(v);
-    }
-  };
-  return (
-    <div class="setup-row">
-      <span class="setup-label">
-        <BmpText font="msans-14" text={label} tint="#eef2f6" />
-      </span>
-      <Button label="<" onClick={() => step(-1)} class="setup-step" />
-      <span class="setup-value">
-        <BmpText font="trebuchet-18" text={String(value)} tint="#eef2f6" />
-      </span>
-      <Button label=">" onClick={() => step(1)} class="setup-step" />
-    </div>
-  );
-}
+  step: 1,
+  get: () => setup.value[key],
+  set: v => setSetup({...setup.value, [key]: v}),
+});
+
+const NEED_PLAYERS = `Add at least ${MIN_PLAYERS} players (humans + computers) to start`;
 
 export function PlaySetup() {
-  const [total, setTotal] = useState(setup.value.total);
-  const [humans, setHumans] = useState(setup.value.humans);
+  const [, setTick] = useState(0);
+  const bump = () => setTick(v => v + 1);
+  const [sub, setSub] = useState<string | null>(null);
 
-  const setTotalClamped = (t: number) => {
-    setTotal(t);
-    setHumans(h => clampHumans(h, t)); // never more humans than tanks
-  };
+  const s = setup.value; // subscribe so the Start Game guard updates as counts change
+  const canStart = s.humans + s.computers >= MIN_PLAYERS;
+
+  const rows: Widget[] = [
+    countRow('Humans', 'Number of human players', 'humans', 0, MAX_HUMANS),
+    countRow('Computers', 'Number of computer AI players', 'computers', 0, MAX_COMPUTERS),
+    countRow(
+      'Tanks',
+      "Number of tanks per player's team",
+      'tanksPerTeam',
+      MIN_TANKS_PER_TEAM,
+      MAX_TANKS_PER_TEAM,
+    ),
+    enumW('Game Type', 'What type of battle', 'gp.gameType', 1, GAME_TYPE),
+    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 5, 1, 50, 1),
+    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 10, 1, 50, 1),
+    enumW('Land Size', 'How large the battle landscape is', 'gp.landSize', 0, LAND_SIZE),
+    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty', 4, DIFFICULTY),
+    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind', 2, WIND),
+  ];
 
   return (
     <div class="settings-screen">
-      <div class="setup-panel">
-        <div class="setup-title">
-          <BmpText font="bazouk-28" text="Play" />
-        </div>
+      <div class="menu-list settings-rows">
+        <button
+          class="settings-row srow-done menu-btn"
+          disabled={!canStart}
+          onMouseEnter={() => setSub('Start the game')}
+          onMouseLeave={() => setSub(null)}
+          onClick={startBattle}
+        >
+          <BmpText font="bazouk-28" text="Start Game" />
+        </button>
 
-        <div class="menu-list setup-presets">
-          <MenuButton label="Quick Start" font="beijing-20-out" onClick={() => startBattle(2, 1)} />
-          <MenuButton label="2 Player" font="beijing-20-out" onClick={() => startBattle(2, 2)} />
-          <MenuButton label="Watch" font="beijing-20-out" onClick={() => startBattle(2, 0)} />
-        </div>
+        {rows.map((w, i) => (
+          <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
+        ))}
 
-        <div class="setup-custom">
-          <Stepper
-            label="Players"
-            value={total}
-            min={MIN_TANKS}
-            max={MAX_TANKS}
-            onChange={setTotalClamped}
-          />
-          <Stepper label="Humans" value={humans} min={0} max={total} onChange={setHumans} />
-          <div class="setup-hint">
-            <BmpText
-              font="msans-14"
-              text={`${humans} human vs ${total - humans} CPU`}
-              tint="#c9d2da"
-            />
-          </div>
-        </div>
-
-        <div class="setup-buttons">
-          <Button label="Start Game" onClick={() => startBattle(total, humans)} />
-          <Button label="Back" onClick={backToMenu} class="setup-back" />
-        </div>
+        <button
+          class="settings-row srow-done menu-btn"
+          onMouseEnter={() => setSub('Return to the main menu')}
+          onMouseLeave={() => setSub(null)}
+          onClick={backToMenu}
+        >
+          <BmpText font="bazouk-28" text="Cancel" />
+        </button>
+      </div>
+      <div class="settings-subtitle">
+        <BmpText
+          font="msans-14"
+          text={sub ?? (canStart ? 'Play' : NEED_PLAYERS)}
+          tint={sub || canStart ? '#eef2f6' : '#ffcf6b'}
+        />
       </div>
     </div>
   );

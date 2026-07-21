@@ -36,6 +36,7 @@ export const GameConfig = {
   showPowerBars: true, // Graphics → Show Power (life/shield bars)
   showTankStats: false, // Graphics 2 → Show Tank Stats (force always-on; default hover-only)
   tracking: true, // Graphics → Tracking (off-screen shot notches)
+  showPoints: true, // Graphics 2 → Show Points (floating damage number per hit)
   showTurn: true, // Graphics 2 → Show Turn (turn arrow)
   showLastAim: true, // Graphics 2 → Show Last Aim (faded initial-aim marker)
   explosionWaves: true, // Graphics 2 → Explosion Waves (nuke refractive wave)

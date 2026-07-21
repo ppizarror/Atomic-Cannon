@@ -38,7 +38,7 @@ export interface PageSpec {
 }
 
 // ── enum option pools, in the game's own index-0 (value = min) first order. ──
-const DIFFICULTY = [
+export const DIFFICULTY = [
   '1. Easiest',
   '2. Very Easy',
   '3. Easy',
@@ -52,7 +52,10 @@ const DIFFICULTY = [
 ];
 const CHANGE_WIND = ['Per game', 'After round', 'After shot', 'Anytime'];
 const LAND_TYPE = ['Flat', 'Hill', 'Gulley', 'Plateau', 'Slope', 'Random'];
-const WIND = ['Disabled', 'Low', 'Medium', 'High'];
+export const WIND = ['Disabled', 'Low', 'Medium', 'High'];
+// Play menu — Game Type (Fast Test is hidden here) and Land Size (world-width ×).
+export const GAME_TYPE = ['Rounds', 'Deathmatch'];
+export const LAND_SIZE = ['1 Screen', '2x', '3x', '4x', '5x'];
 const KICKBACK = ['Off', 'Low', 'Normal', 'High'];
 const PLAYER_SIZE = ['Small', 'Normal', 'Large'];
 const EXPLOSION_SIZE = ['Small', 'Normal', 'Large', 'Massive'];
@@ -64,7 +67,7 @@ const pct = (v: number) => `${v}%`;
 // Every stored change persists AND re-applies live, so wired options (difficulty,
 // wind, variance, …) take effect immediately and start-time ones are ready for the
 // next game.
-const bind = (id: string, dflt: number) => ({
+export const bind = (id: string, dflt: number) => ({
   get: () => getVal(id, dflt),
   set: (v: number) => {
     setVal(id, v);
@@ -77,14 +80,14 @@ const toggle = (label: string, tip: string, id: string, dflt: number): Widget =>
   kind: 'toggle',
   ...bind(id, dflt),
 });
-const enumW = (
+export const enumW = (
   label: string,
   tip: string,
   id: string,
   dflt: number,
   options: string[],
 ): Widget => ({label, tip, kind: 'enum', options, ...bind(id, dflt)});
-const stepper = (
+export const stepper = (
   label: string,
   tip: string,
   id: string,
@@ -196,7 +199,7 @@ function tankRows(): Widget[] {
 function gameplayRows(): Widget[] {
   return [
     stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 5, 1, 50, 1),
-    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 10, 1, 100, 1),
+    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 10, 1, 50, 1),
     // Difficulty is a stored preference (persisted + applied via applyGameSettings →
     // controller.setDifficulty); index 0..9 maps to AI level 1..10.
     enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty', 4, DIFFICULTY),

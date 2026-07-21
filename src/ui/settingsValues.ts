@@ -30,6 +30,12 @@ export const gameSettings = {
   creditRound: (): number => getVal('eco.creditRound', 1000),
   /** Battles per match. */
   battles: (): number => getVal('gp.battles', 5),
+  /** Rounds in a Point/Rounds game. */
+  rounds: (): number => getVal('gp.rounds', 10),
+  /** Game Type enum index → EGameType (0 = Rounds, 1 = Deathmatch). */
+  gameType: (): number => getVal('gp.gameType', 1),
+  /** Land Size: world-width multiplier (enum index 0..4 → 1..5 screens). */
+  landSize: (): number => getVal('gp.landSize', 0) + 1,
   /** Per-shot inaccuracy on/off. */
   variance: (): boolean => getVal('gp.variance', 1) !== 0,
   /** Game-speed multiplier (Update Scale 10 → 1.0 normal). */

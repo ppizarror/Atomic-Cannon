@@ -1285,15 +1285,11 @@ canvas {
   justify-content: center;
   margin-top: 10px;
 }
-/* Start Game with too few players: greyed, no highlight, not clickable. */
-.srow-disabled {
+/* A disabled menu button (e.g. Start Game with too few players): just dimmed. The
+   `disabled` attribute already blocks clicks, hover and the :active invert. */
+.menu-btn:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
-}
-.srow-disabled:hover {
-  background: none;
-}
-.srow-disabled:active::after {
-  content: none;
 }
 
 /* ==================== Game Content enable-list editors (steel) ==================== */

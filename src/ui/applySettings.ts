@@ -24,6 +24,8 @@ export function applyGameSettings(c: CGameController): void {
   c.setCreditTurn(S.creditTurn());
   c.setCreditRound(S.creditRound());
   c.setTotalBattles(S.battles());
+  c.setTotalRounds(S.rounds());
+  c.setGameType(S.gameType());
   c.setVariance(S.variance());
   c.setGameSpeed(S.gameSpeed());
   c.setWindScale(S.windScale());
@@ -32,6 +34,7 @@ export function applyGameSettings(c: CGameController): void {
 
   // Cross-cutting scalars + render toggles, read directly off GameConfig
   // by the tank badge / shot launch / blast / render-gate sites.
+  GameConfig.landSize = S.landSize(); // world-width multiplier (applied at next startGame)
   GameConfig.kickbackScale = S.kickbackScale();
   GameConfig.explosionScale = S.explosionScale();
   GameConfig.powerScale = S.powerScale();
