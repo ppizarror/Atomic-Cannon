@@ -52,5 +52,5 @@ export function applyGameSettings(c: CGameController): void {
   GameContent.landsOff = new Set(landsOff.value);
 
   // Player roster (name / model / colour) for the NEXT match (Customize Players).
-  Roster.players = roster.value.map(p => ({...p}));
+  Roster.players = roster.value.map(p => ({name: p.name, model: p.model, color: p.color}));
 }

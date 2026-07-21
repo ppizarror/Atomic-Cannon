@@ -1445,30 +1445,59 @@ canvas {
   border: 1px solid rgba(0, 0, 0, 0.6);
   flex: 0 0 auto;
 }
-.player-palette {
-  height: 40px;
+.player-palette-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+}
+.player-palette {
+  width: 100%;
+  height: 40px;
   image-rendering: pixelated;
   object-fit: fill;
   border: 1px solid rgba(0, 0, 0, 0.5);
   cursor: crosshair;
+  touch-action: none; /* let pointer-drag pick a colour without scrolling */
+}
+/* Marks where the current colour sits on the bar (draggable): black ring with a white
+   outline so it reads over any hue. */
+.palette-crosshair {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #000;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px #fff;
+  pointer-events: none;
 }
 .player-tank {
   display: flex;
   align-items: center;
   gap: 14px;
 }
+.player-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.player-model-name {
+  min-width: 120px;
+  text-align: center;
+  display: inline-flex;
+  justify-content: center;
+}
 .player-preview {
-  width: 96px;
-  height: 44px;
+  width: 110px;
+  height: 66px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
 }
 .player-preview img {
-  max-width: 96px;
-  max-height: 44px;
+  max-width: 110px;
+  max-height: 66px;
   image-rendering: pixelated;
 }

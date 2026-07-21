@@ -14,13 +14,13 @@ import {BmpText} from './BmpText';
 import {Button} from './Button';
 import {openSettingsPage, uiClick} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
-import {loadPalette, samplePalette, recolorTank} from './palette';
+import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
 
 function TankPreview({model, color}: {model: string; color: string}) {
   const [src, setSrc] = useState('');
   useEffect(() => {
     let ok = true;
-    recolorTank(`/assets/tanks/${model} body.bmp`, color)
+    recolorTankPreview(model, color)
       .then(s => ok && setSrc(s))
       .catch(() => ok && setSrc(''));
     return () => {
@@ -31,36 +31,76 @@ function TankPreview({model, color}: {model: string; color: string}) {
 }
 
 function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => void}) {
-  const dataRef = useRef<ImageData | null>(null);
+  const [data, setData] = useState<ImageData | null>(null);
+  const [mark, setMark] = useState<{fx: number; fy: number} | null>(null);
+
   useEffect(() => {
     let ok = true;
-    loadPalette().then(d => {
-      if (ok) dataRef.current = d;
-    });
+    loadPalette().then(d => ok && setData(d));
     return () => {
       ok = false;
     };
   }, []);
 
-  const pick = (e: MouseEvent) => {
-    const data = dataRef.current;
-    if (!data) return;
-    const el = e.currentTarget as HTMLElement;
-    const r = el.getBoundingClientRect();
-    onPick(samplePalette(data, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height));
+  // Place the crosshair on the palette pixel nearest the current colour (works for
+  // stored/default colours too, not just fresh clicks).
+  useEffect(() => {
+    if (data) setMark(findNearestInPalette(data, value));
+  }, [data, value]);
+
+  const imgRef = useRef<HTMLImageElement>(null);
+  const dragging = useRef(false);
+
+  // Sample the palette at the pointer (clamped to the bar) and commit the colour.
+  const pickAt = (clientX: number, clientY: number) => {
+    if (!data || !imgRef.current) return;
+    const r = imgRef.current.getBoundingClientRect();
+    const fx = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    const fy = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    onPick(samplePalette(data, fx, fy));
+  };
+
+  const onDown = (e: PointerEvent) => {
+    dragging.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    pickAt(e.clientX, e.clientY);
     uiClick();
+    e.preventDefault();
+  };
+  const onMove = (e: PointerEvent) => {
+    if (dragging.current) pickAt(e.clientX, e.clientY);
+  };
+  const onUp = (e: PointerEvent) => {
+    dragging.current = false;
+    const el = e.currentTarget as HTMLElement;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
   };
 
   return (
     <div class="player-color">
       <BmpText font="msans-14" text="Color:" tint="#eef2f6" />
       <span class="player-swatch" style={{background: value}} />
-      <img
-        class="player-palette"
-        src="/assets/gui/color pallette.bmp"
-        alt="colour palette"
-        onClick={pick}
-      />
+      <span class="player-palette-wrap">
+        <img
+          ref={imgRef}
+          class="player-palette"
+          src="/assets/gui/color pallette.bmp"
+          alt="colour palette"
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+        />
+        {mark ? (
+          <span
+            class="palette-crosshair"
+            // Left tracks the (variable-width) bar as a %, but top is pinned in px
+            // against the fixed 40px bar height and clamped so the ring never clips —
+            // the pure hues sit on the top row (fy≈0).
+            style={{left: `${mark.fx * 100}%`, top: `${Math.min(34, Math.max(6, mark.fy * 40))}px`}}
+          />
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -101,7 +141,17 @@ export function PlayersEditor() {
 
         <div class="player-tank">
           <TankPreview model={cfg.model} color={cfg.color} />
-          <Button label={`< ${cfg.model} >`} onClick={() => (uiClick(), cycleModel(idx, 1))} />
+          <div class="player-model">
+            <Button
+              label="<"
+              onClick={() => (uiClick(), cycleModel(idx, -1))}
+              class="player-page"
+            />
+            <span class="player-model-name">
+              <BmpText font="msans-14" text={cfg.model} tint="#eef2f6" />
+            </span>
+            <Button label=">" onClick={() => (uiClick(), cycleModel(idx, 1))} class="player-page" />
+          </div>
         </div>
       </div>
 
