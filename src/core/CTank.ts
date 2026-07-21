@@ -858,8 +858,14 @@ export class CTank {
       y = by + bh + 1;
     }
 
-    // --- full stat lines: on hover, or always with More Graphics Options → Show Tank Stats ---
-    if (showDetail || GameConfig.showTankStats) {
+    // --- full stat lines: on hover, or via the two disjoint always-on toggles —
+    // Show Tank Stats for the human's own tanks, Show AI Stats ("Show the computer's
+    // stats") for the computer tanks. Each toggle owns exactly its tank type. ---
+    if (
+      showDetail ||
+      (GameConfig.showTankStats && !this.isBot()) ||
+      (GameConfig.showAiStats && this.isBot())
+    ) {
       y = line(`Team ${this.m_nTeamId + 1}`, y);
       y = line(`Life ${Math.round(this.m_health.nLife)}`, y);
       if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y);

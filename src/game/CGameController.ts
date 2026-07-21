@@ -814,7 +814,6 @@ export class CGameController implements ShotWorld {
     this.drawPlacedEntities(ctx);
     this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
     this.drawDamageNumbers(ctx); // Show Points: floating damage text (world space)
-    this.drawAiStats(ctx); // Show AI Stats: active bot's aim solution
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
@@ -1123,20 +1122,6 @@ export class CGameController implements ShotWorld {
       ctx.stroke();
       ctx.restore();
     }
-  }
-
-  /**
-   * Show AI Stats: while a bot is taking its turn, print its firing solution (angle /
-   * power) above it in the outlined bitmap font — a peek at the computer's aim.
-   */
-  private drawAiStats(ctx: CanvasRenderingContext2D): void {
-    if (this.m_gameState !== EGameState.Battle) return;
-    const tank = this.getCurrentTank();
-    if (!tank.isBot() && !(GameConfig.demo && tank.isHuman())) return;
-    const p = tank.getPosition();
-    // angle / power — no "°" glyph in the ASCII bitmap font, so plain numbers.
-    const label = `${Math.round(this.m_angle)} / ${Math.round(this.m_power)}`;
-    this.drawBmpCentered(ctx, 'beijing-16-out', label, p.x, p.y - 44);
   }
 
   /** Spawn a Show-Points damage number off `tank` (jittered like the original). */

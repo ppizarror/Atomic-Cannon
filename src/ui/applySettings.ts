@@ -62,4 +62,9 @@ export function applyGameSettings(c: CGameController): void {
 
   // Player roster (name / model / colour) for the NEXT match (Customize Players).
   Roster.players = roster.value.map(p => ({name: p.name, model: p.model, color: p.color}));
+
+  // Force a repaint: a display toggle (Show AI Stats, High Contrast, …) changes what
+  // the scene should draw, but nothing "moved", so the present-on-demand gate would
+  // otherwise keep showing the stale frame until the next real change.
+  c.markDirty();
 }
