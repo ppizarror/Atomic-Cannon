@@ -864,7 +864,10 @@ export class CTank {
       y = line(`Life ${Math.round(this.m_health.nLife)}`, y);
       if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y);
       if (this.m_health.nShield > 0) y = line(`Shield ${Math.round(this.m_health.nShield)}`, y);
-      y = line(`Credits ${this.m_credits}`, y);
+      // Floored (not rounded) to match the depot's credit readout and affordability —
+      // credits accumulate fractional damage-based earnings, but only whole credits are
+      // spendable, so show the whole part.
+      y = line(`Credits ${Math.floor(this.m_credits)}`, y);
     }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

@@ -645,29 +645,36 @@ export class CParticleSystem {
       const px = x - vx * dt * f,
         py = y - vy * dt * f;
       if (rocket) {
-        // ROCKET/MISSILE exhaust — a small bright orange FIRE glow (the trail
-        // flare is only ~4px, so small sizes here vs the ×~7.8 draw) trailing
-        // into grey SMOKE. The grey smoke is a rocket-only touch (other trails
-        // have no lingering smoke — only flare+sparks), so it stays on rockets.
+        // ROCKET/MISSILE exhaust. The original ejects the plume BACKWARD out the tail at only
+        // 0.1×|shot velocity| — very slow relative to the rocket — so the puffs are nearly dropped
+        // in place along the flight path and STACK into a thick, slowly-drifting column (rather
+        // than streaking). They are big, long-lived and wind-blown. `nx,ny` = heading unit vector.
+        const nx = speed > 1e-3 ? vx / speed : 1;
+        const ny = speed > 1e-3 ? vy / speed : 0;
+        const eject = 0.1 * speed; // exhaust speed = 0.1 × |shot velocity| (backward)
+        // Hot exhaust FIRE near the nozzle — a bright glow ejected backward.
         this.add(
           px,
           py,
-          between(-5, 5),
-          between(-5, 2),
-          {r: 255, g: 200, b: 110},
-          between(0.14, 0.28) * lenScale,
-          between(0.9, 1.6),
+          -nx * eject + between(-6, 6),
+          -ny * eject + between(-6, 6),
+          {r: 255, g: 195, b: 95},
+          between(0.12, 0.22) * lenScale,
+          between(2, 3.5),
           'plume',
         );
-        const g = 150 + between(-20, 20);
+        // Fat SMOKE puff — BIG (thick cotton-ball) and LONG-lived so many stack into a dense
+        // column; warm→grey and grown over life by the smoke draw. This is the "underweighted"
+        // fix: large size + long life + slow backward throw, not a small fast-fading wisp.
+        const g = 165 + between(-28, 28);
         this.add(
-          px + between(-2, 2),
-          py + between(-2, 2),
-          between(-4, 4),
-          -between(3, 10),
+          px + between(-3, 3),
+          py + between(-3, 3),
+          -nx * eject + between(-9, 9),
+          -ny * eject + between(-9, 9),
           {r: g, g, b: g},
-          between(1.0, 1.8) * lenScale,
-          between(1.6, 3.2),
+          between(2.4, 3.8) * lenScale,
+          between(5, 8),
           'smoke',
         );
       } else {
@@ -920,12 +927,9 @@ export class CParticleSystem {
         if (alpha <= 0.01) continue;
         const d = p.size * (0.9 + t * 5.5) * 2; // small at birth → large as it ages
         if (smokeSpr) {
-          // Warm while YOUNG (fresh puffs near the exhaust glow orange),
-          // cooling to plain grey as it ages back down the trail. Warmth is
-          // aimed at the EARLY-VISIBLE phase (the smoke is transparent at
-          // birth), and the grey base is dimmed while warm so the fresh puff
-          // reads orange rather than grey-with-a-hint.
-          const warmth = Math.max(0, 1.15 - t * 2.2);
+          // Warm (fire tint) ONLY at the very nozzle — the plume cools to grey smoke fast, then
+          // the grey column lingers (the original's fire→smoke ramp cross-fades quickly).
+          const warmth = Math.max(0, 1.2 - t * 9);
           // Grey base — full grey once cooled, dimmed while warm.
           ctx.globalAlpha = alpha * (0.45 + 0.55 * (1 - warmth));
           ctx.drawImage(smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
