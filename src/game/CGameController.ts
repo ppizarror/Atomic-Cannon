@@ -99,7 +99,7 @@ const controlWeaponIndex = (): number =>
 // target (the original scrolls at dt·gameSpeed·scrollSpeed; this is that budget
 // in px/sec). Fast enough to keep a shot roughly framed without whipping.
 const CAMERA_SCROLL_SPEED = 1100;
-// Where the followed object sits in the view: 0.5 = dead centre (RE _DAT_004ef3cc).
+// Where the followed object sits in the view: 0.5 = dead centre.
 const CAMERA_CENTER = 0.5;
 
 /**
@@ -158,9 +158,11 @@ export class CGameController implements ShotWorld {
     this.m_sentries = [];
     this.m_aimMarkers = [];
 
-    // Generate terrain: a forced landscape shape (Settings → Land Type) or, for
-    // "Random", the usual random landscape.
-    if (this.m_landMode >= 0 && this.m_landMode <= 4) {
+    // Generate terrain: a DEV flat test surface (`?flatland=1`), a forced landscape shape
+    // (Settings → Land Type), or, for "Random", the usual random landscape.
+    if (this.m_flatLand) {
+      this.m_land.generateFlat();
+    } else if (this.m_landMode >= 0 && this.m_landMode <= 4) {
       this.m_land.generateTerrainMode(this.m_landMode);
     } else {
       this.m_land.generateRandomTerrain();
@@ -630,10 +632,28 @@ export class CGameController implements ShotWorld {
     return this.m_worldWidth;
   }
 
-  /** What the camera centres on this frame: the live shot, else the active tank. */
+  /**
+   * What the camera centres on this frame:
+   *  1. the latched active shot while it's in the air (a single, stable target — not
+   *     "whichever shot is alive", which jumps around a multi-missile salvo);
+   *  2. once that shot has landed, the blast, held until the explosion finishes (so a
+   *     nuke plays out on screen before the turn hands off);
+   *  3. otherwise the active tank.
+   * The active shot latches to the first shot of the salvo and never re-picks, so
+   * later missiles landing elsewhere don't yank the camera.
+   */
   private cameraFollowX(): number {
-    const shot = this.m_shots.find(s => !s.isDead());
-    return shot ? shot.getPosition().x : this.getCurrentTank().getPosition().x;
+    if (this.m_activeShot) {
+      if (!this.m_activeShot.isDead()) return this.m_activeShot.getPosition().x;
+    } else {
+      const first = this.m_shots.find(s => !s.isDead());
+      if (first) {
+        this.m_activeShot = first;
+        return first.getPosition().x;
+      }
+    }
+    if (this.m_particles.hasActiveExplosions()) return this.m_lastImpactX;
+    return this.getCurrentTank().getPosition().x;
   }
 
   /**
@@ -760,10 +780,10 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Overview minimap (RE: FUN_00489cb0) — a top-left strip shown ONLY when the world
+   * Overview minimap — a top-left strip shown ONLY when the world
    * is wider than the view. It draws the terrain silhouette, a translucent "extents"
    * box for the current camera view, and a dot per tank in its team colour (the
-   * active player's dot gets a white outline). Screen-space; Phase 3 adds drag-to-pan.
+   * active player's dot gets a white outline). Screen-space, with drag-to-pan.
    */
   private drawMinimap(ctx: CanvasRenderingContext2D): void {
     const Vw = this.m_canvas.width;
@@ -857,9 +877,9 @@ export class CGameController implements ShotWorld {
 
   /**
    * Drag/click the minimap to pan: a scene-pixel X on the strip snaps the camera so
-   * the picked world column is centred (RE: FUN_00489cb0 input path —
-   * `camX = ((mouseX − m)/width)·W − viewWidth/2`, clamped). Instant (no easing) and
-   * sets the manual-scroll override so auto-follow yields until the next fire/turn.
+   * the picked world column is centred (`camX = ((mouseX − m)/width)·W − viewWidth/2`,
+   * clamped). Instant (no easing) and sets the manual-scroll override so auto-follow
+   * yields until the next fire/turn.
    */
   panFromMinimap(px: number): void {
     if (this.m_worldWidth <= this.m_canvas.width) return;
@@ -871,10 +891,10 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Minimap strip rect (px) — top-left, ~half the view wide (RE: FUN_00489cb0:23-63,
-   * `width = viewWidth/2 − 19`). For a wide (>320) view the strip is `0x30`=48px tall,
-   * or `0x40`=64px at large-display scale (`0x9d7`). Our canvas is always a large
-   * display, so we take the 64px height — 48 leaves the strip over-elongated.
+   * Minimap strip rect (px) — top-left, ~half the view wide (`width = viewWidth/2 − 19`).
+   * For a wide (>320) view the strip is 48px tall, or 64px at large-display scale. Our
+   * canvas is always a large display, so we take the 64px height — 48 leaves the strip
+   * over-elongated.
    */
   private minimapRect(): {m: number; width: number; height: number} {
     const Vw = this.m_canvas.width;
@@ -1189,10 +1209,10 @@ export class CGameController implements ShotWorld {
       // Between succession salvos (machine gun / gatling burst): no shot is in the
       // air yet the next salvo is still scheduled — hold in ShotFlying and wait.
       if (this.m_pendingSalvos > 0) return;
-      // Nothing flying and nothing pending — end the round.
+      // Nothing flying and nothing pending — wait for the explosion to finish before
+      // the turn hands off (the Explosion state ends the turn once effects settle).
       this.m_shots = [];
-      this.m_gameState = EGameState.Battle;
-      this.schedule(0.6, () => this.endTurn());
+      this.m_gameState = EGameState.Explosion;
       return;
     }
 
@@ -1251,11 +1271,11 @@ export class CGameController implements ShotWorld {
     if (stillFlying) {
       this.m_gameState = EGameState.ShotFlying;
     } else {
-      // The shot (and any submunitions) have resolved — end the turn after a
-      // short beat so the explosion is visible.
+      // The shot (and any submunitions) have resolved — hold in the Explosion state
+      // so the camera stays on the blast until the whole effect (a nuke can run for
+      // seconds) finishes, THEN the turn hands off.
       this.m_shots = [];
-      this.m_gameState = EGameState.Battle;
-      this.schedule(0.6, () => this.endTurn());
+      this.m_gameState = EGameState.Explosion;
     }
   }
 
@@ -1286,6 +1306,7 @@ export class CGameController implements ShotWorld {
     expType = 0,
     expBitmap?: string,
   ): void {
+    this.m_lastImpactX = x; // the camera holds here while this blast animates
     if (color !== undefined && radiusPx !== undefined) {
       this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
       // Stage 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
@@ -1516,8 +1537,9 @@ export class CGameController implements ShotWorld {
     this.m_turnStartPower = this.m_power;
 
     // New turn: drop any minimap-scroll override so the camera eases to centre the
-    // player whose turn it now is.
+    // player whose turn it now is, and clear the shot the camera was tracking.
     this.m_manualScroll = false;
+    this.m_activeShot = null;
 
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
@@ -2065,6 +2087,11 @@ export class CGameController implements ShotWorld {
     this.m_landMode = mode;
   }
 
+  /** DEV (`?flatland=1`): force a perfectly flat test surface on the next startGame. */
+  setFlatLand(on: boolean): void {
+    this.m_flatLand = on;
+  }
+
   /** Wind-strength scalar (0 = disabled). Live for drift; reseeds next game. */
   setWindScale(scale: number): void {
     this.m_windScale = Math.max(0, scale);
@@ -2347,6 +2374,13 @@ export class CGameController implements ShotWorld {
   private m_camX = 0;
   private m_camTargetX = 0;
   private m_manualScroll = false;
+  // The ONE shot the camera tracks this turn (latched to the first of a salvo, so it
+  // doesn't zig-zag across a multi-missile volley — the original follows a single
+  // active shot). Null once reset each turn; may point at a now-dead shot.
+  private m_activeShot: CShot | null = null;
+  // World X of the most recent blast — the camera holds here while the explosion
+  // animation plays out, so a nuke finishes on screen before the turn hands off.
+  private m_lastImpactX = 0;
 
   private m_land: CLand;
   private m_tanks: CTank[] = [];
@@ -2409,6 +2443,7 @@ export class CGameController implements ShotWorld {
   // values (credits, land shape) are read in startGame; the rest are read live.
   private m_startCredits = START_CREDITS;
   private m_landMode = -1; // -1 = random landscape; 0..4 = a forced shape
+  private m_flatLand = false; // DEV `?flatland=1`: force a flat test surface next startGame
   private m_windScale = 1; // 0 disables wind
   private m_variance = true; // per-shot inaccuracy on/off
   private m_speedScale = 1; // game-speed multiplier (Update Scale / 10)

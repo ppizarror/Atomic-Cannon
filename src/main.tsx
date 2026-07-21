@@ -56,7 +56,10 @@ async function main(): Promise<void> {
 
   const gameController = new CGameController(scene);
   gameController.setImpactListener((x, y, s) => {
-    compositor.shockwave(x, y, s); // warp the game scene (WebGL)
+    // The impact is in WORLD coords; the compositor warps in scene (screen) pixels,
+    // so subtract the camera scroll (Y never scrolls) or a large-map blast warps in
+    // the wrong place / off-screen.
+    compositor.shockwave(x - gameController.getCameraX(), y, s); // warp the game scene (WebGL)
     triggerHudWave(s); // and ripple the DOM HUD in sync (SVG displacement)
   });
 
@@ -89,6 +92,9 @@ async function main(): Promise<void> {
     const q = new URLSearchParams(location.search);
     const weaponTest = q.get('weapon_test') === '1';
     const weaponSel = q.get('weapon_sel'); // force a weapon by its 1-based id
+    // `?flatland=1`: force a perfectly flat test surface (set BEFORE playNewGame generates
+    // terrain) so weapon/terrain effects can be judged without natural slopes in the way.
+    if (q.get('flatland') === '1') gameController.setFlatLand(true);
     if (
       q.get('battle') === '1' ||
       q.get('depot') === '1' ||

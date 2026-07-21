@@ -94,7 +94,7 @@ export class CLand {
     this.m_particles = [];
     this.m_radParticles = [];
     this.m_degrass = new Uint8Array(width);
-    this.m_radDeposit = new Float32Array(width);
+    this.m_deposit = new Float32Array(width);
   }
 
   initFromArray(heights: Int16Array, _scaleX: number = 1, scaleY: number = 1): void {
@@ -149,13 +149,33 @@ export class CLand {
     this.generateProfile(mode);
   }
 
+  /**
+   * DEV/test terrain: a perfectly flat surface at ~⅔ down the map — useful for eyeballing
+   * weapon effects (deposits, craters, strata) without natural slopes confounding the read.
+   */
+  generateFlat(): void {
+    if (!this.m_arrHeights) return;
+    this.m_degrass?.fill(0);
+    this.m_deposit?.fill(0);
+    this.m_dirtBlobs.length = 0;
+    this.m_radSpecks.length = 0;
+    this.m_radParticles.length = 0;
+    this.m_heat.length = 0;
+    const y = Math.floor(this.m_nHeight * 0.62);
+    for (let x = 0; x < this.m_nWidth; x++) this.m_arrHeights[x] = y;
+    if (this.m_baseHeights) this.m_baseHeights.fill(y);
+    this.computeDirtyRegion();
+  }
+
   // The 6 shape modes. Screen-Y: smaller = higher on screen, so
   // Ymin is the highest peaks can reach, Ymax the lowest valleys.
   private generateProfile(mode: number): void {
     if (!this.m_arrHeights) return;
     const W = this.m_nWidth;
     this.m_degrass?.fill(0); // fresh terrain: grass everywhere again
-    this.m_radDeposit?.fill(0); // clear any old fallout pile
+    this.m_deposit?.fill(0); // clear any old fallout pile
+    this.m_dirtBlobs.length = 0; // drop any in-flight dirt deposits
+    this.m_dirtDiscs.length = 0; // and any impact discs
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
     this.m_heat.length = 0;
@@ -292,7 +312,7 @@ export class CLand {
       if (this.m_degrass) this.m_degrass[dx] = 1;
       // A blast destroys any irradiated-earth deposit here (a normal bomb or a
       // terrain-clear removes the fallout + its red glow).
-      if (this.m_radDeposit) this.m_radDeposit[dx] = 0;
+      if (this.m_deposit) this.m_deposit[dx] = 0;
     }
 
     // Wipe the radiation specks + settle-glow the blast overran — the fallout that
@@ -334,14 +354,14 @@ export class CLand {
     // (digger underground, blast) strips the cap and wipes the fallout.
     if (!keepCap) {
       if (this.m_degrass) this.m_degrass[col] = 1; // tore through the grass cap
-      if (this.m_radDeposit) this.m_radDeposit[col] = 0; // blast wipes the fallout
-    } else if (this.m_radDeposit && this.m_radDeposit[col] > 0) {
+      if (this.m_deposit) this.m_deposit[col] = 0; // blast wipes the fallout
+    } else if (this.m_deposit && this.m_deposit[col] > 0) {
       // Irradiated earth survives the collapse EXCEPT the part the ray band cuts
       // directly through: the fallout sits in [surf, surf+dep], so remove only its
       // overlap with the removed band and let the rest fall back with its radiation.
-      const dep = this.m_radDeposit[col];
+      const dep = this.m_deposit[col];
       const hit = Math.min(surf + dep, y + half) - Math.max(surf, y - half);
-      if (hit > 0) this.m_radDeposit[col] = Math.max(0, dep - hit);
+      if (hit > 0) this.m_deposit[col] = Math.max(0, dep - hit);
     }
     return removed;
   }
@@ -518,32 +538,70 @@ export class CLand {
   }
 
   /**
-   * Raise terrain — Dirt weapons deposit a mound, approximated directly as a
-   * circular mound of height `amount` (the weapon's `earth` field) over
-   * `nRadius`.
+   * Deposit earth — Dirt weapons (Dirty Boy, Mountain, Land Fill…) REMOVE NOTHING. At the
+   * impact a small ball of DIRT appears (a little dome the width of the blast, replacing grass
+   * with bare earth — the contact mark), then it GROWS OUTWARD and UP into the full rounded
+   * mound over ~½ s: earth piling ON TOP of the surface, not the ground swelling from below.
+   * Applied as pure ADD (every column only ever rises), so it can never lower or flatten the
+   * surrounding terrain. `amount` (the weapon's `earth` field) scales the mound's height & width.
    */
-  raiseTerrain(x: number, y: number, nRadius: number, amount: number): void {
-    if (!this.m_arrHeights || nRadius <= 0) return;
+  depositDirt(x: number, y: number, nRadius: number, amount: number): void {
+    if (!this.m_arrHeights) return;
+    const R = Math.min(200, Math.round(amount * 1.3 + Math.max(6, nRadius))); // final half-base
+    const H = Math.min(120, Math.round(amount * 0.85)); // final peak height
+    if (R <= 0 || H <= 0) return;
+    const r0 = Math.max(5, Math.min(R, Math.round(nRadius))); // impact-ball radius
+    const cx = Math.round(x);
+    // Fill the BLAST RADIUS at the contact point with a round DISC of dirt (rendered as a
+    // circle, not a column strip): a solid dirt ball right where the bomb lands, centred on
+    // the impact surface. Distinct from the mound around it, which keeps its grass.
+    this.m_dirtDiscs.push({x: cx, r: r0, surfY: Math.round(y)});
+    // `applied` tracks integer px already raised per column so each frame only adds the new
+    // slice; the dome grows from the small ball (r0) out to the full mound (R).
+    this.m_dirtBlobs.push({x: cx, R, H, r0, t: 0, dur: 0.5, applied: new Int16Array(2 * R + 1)});
+    this.stepDirtBlobs(0); // stamp the initial contact ball this frame
+  }
 
-    const startX = Math.max(0, x - nRadius);
-    const endX = Math.min(this.m_nWidth - 1, x + nRadius);
-
-    for (let dx = startX; dx <= endX; dx++) {
-      const d = Math.abs(dx - x);
-      if (d > nRadius) continue;
-      const arc = Math.sqrt(1 - (d / nRadius) * (d / nRadius)); // 1 at centre → 0 at rim
-      const lift = amount * arc;
-      // Screen-Y down: raising = smaller Y. Mound sits on top of whatever is lower.
-      const top = Math.min(this.m_arrHeights[dx], y) - lift;
-      this.m_arrHeights[dx] = Math.max(0, Math.floor(top));
-      // A raised mound is solid new terrain — lift the cavity ceiling with it.
-      if (this.m_baseHeights)
-        this.m_baseHeights[dx] = Math.min(this.m_baseHeights[dx], this.m_arrHeights[dx]);
-      // Deposited dirt is bare EARTH — de-grass so the mound never re-grows grass.
-      if (this.m_degrass) this.m_degrass[dx] = 1;
+  /**
+   * Advance the growing dirt blobs (Dirt-weapon deposits). Each frame the mound's radius and
+   * height ease outward from the small contact ball to the full dome — raising each column,
+   * baking it as bare earth (`m_deposit` + de-grass), and NEVER lowering anything, so earth
+   * piles on top and the surrounding terrain is untouched.
+   */
+  private stepDirtBlobs(dt: number): void {
+    if (!this.m_dirtBlobs.length || !this.m_arrHeights) return;
+    const heights = this.m_arrHeights;
+    for (let bi = this.m_dirtBlobs.length - 1; bi >= 0; bi--) {
+      const blob = this.m_dirtBlobs[bi];
+      blob.t += dt;
+      const frac = Math.min(1, blob.t / blob.dur);
+      const ease = frac * (2 - frac); // ease-out so it eases to rest
+      // The mound spreads out and rises from the contact ball to the full dome.
+      const curR = blob.r0 + (blob.R - blob.r0) * ease;
+      const curH = blob.H * (0.35 + 0.65 * ease); // starts as a small ball, grows up
+      const x0 = Math.max(0, Math.round(blob.x - curR)),
+        x1 = Math.min(this.m_nWidth - 1, Math.round(blob.x + curR));
+      for (let col = x0; col <= x1; col++) {
+        const dx = (col - blob.x) / curR; // -1..1 across the current mound
+        if (dx <= -1 || dx >= 1) continue;
+        // Cosine dome: 1 at centre, 0 at the rim, smooth (zero slope) at both — a rounded hill.
+        const dome = 0.5 * (1 + Math.cos(Math.PI * dx));
+        const want = Math.round(curH * dome); // px raised so far at this column
+        const idx = col - (blob.x - blob.R);
+        if (idx < 0 || idx >= blob.applied.length) continue;
+        const add = want - blob.applied[idx];
+        if (add <= 0) continue; // only ever grows (add-only) — never lowers
+        blob.applied[idx] = want;
+        heights[col] = Math.max(0, heights[col] - add); // ADD only — never lowers the surface
+        if (this.m_baseHeights) this.m_baseHeights[col] = Math.min(this.m_baseHeights[col], heights[col]);
+        // Record the pile height so ONLY the mound (above the original surface) renders as
+        // bare earth. We deliberately do NOT de-grass: the earth sits ON the grass, so the
+        // grass line stays intact under the pile — no dirt is painted below the surface.
+        if (this.m_deposit) this.m_deposit[col] += add;
+      }
+      this.preBlast(x0, x1);
+      if (frac >= 1) this.m_dirtBlobs.splice(bi, 1);
     }
-
-    this.preBlast(x - nRadius, x + nRadius);
   }
 
   blastIradiate(
@@ -591,7 +649,7 @@ export class CLand {
     // column, so it follows the bowl: thick over the deep centre, thin up the walls.
     // The earth glows red densest at the centre, fading to brown up the walls and
     // over irTime; when the glow dies the raised earth stays (never turns to air).
-    if (this.m_radDeposit && this.m_arrHeights && this.m_baseHeights) {
+    if (this.m_deposit && this.m_arrHeights && this.m_baseHeights) {
       const FILL = 0.2; // fraction of the crater refilled by fallout
       const px0 = Math.max(0, Math.floor(x - nRadius)),
         px1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
@@ -599,9 +657,9 @@ export class CLand {
         const craterDepth = this.m_arrHeights[col] - this.m_baseHeights[col]; // >0 inside the crater
         if (craterDepth <= 2) continue; // only where the ground was actually cratered
         const target = craterDepth * FILL;
-        const add = target - this.m_radDeposit[col]; // only the new contribution
+        const add = target - this.m_deposit[col]; // only the new contribution
         if (add > 0) {
-          this.m_radDeposit[col] = target;
+          this.m_deposit[col] = target;
           this.m_arrHeights[col] = Math.max(this.m_baseHeights[col], this.m_arrHeights[col] - add); // raise
         }
       }
@@ -778,6 +836,7 @@ export class CLand {
     const GRAVITY = 500;
 
     this.stepCollapse(dt); // advance any gravity beam-slice collapse
+    this.stepDirtBlobs(dt); // grow any Dirt-weapon deposit domes into place
 
     // Compact-forward removal (a write index), NOT splice(i,1): a nuke flings
     // ~6500 chunks, and hundreds settle per frame — each splice shifts the whole
@@ -900,7 +959,7 @@ export class CLand {
     // active deposit (fewer as the zone cools), they lift, widen and fade so the
     // radioactive ground reads as HOT. Gated on the deposit, so a bomb that clears
     // the fallout stops new heat there too.
-    if (this.m_radParticles.length && this.m_radDeposit && this.m_heat.length < 90) {
+    if (this.m_radParticles.length && this.m_deposit && this.m_heat.length < 90) {
       for (const z of this.m_radParticles) {
         const cool = z.timeRemaining / Math.max(0.5, z.duration); // 1 hot → 0 cold
         const rr = z.radius;
@@ -915,7 +974,7 @@ export class CLand {
           tb = Math.round(z.b * k2);
         for (let k = 0; k < spawn; k++) {
           const col = Math.floor(z.x - rr + this.rand01() * rr * 2);
-          if (col < 0 || col >= this.m_nWidth || this.m_radDeposit[col] <= 0) continue;
+          if (col < 0 || col >= this.m_nWidth || this.m_deposit[col] <= 0) continue;
           this.m_heat.push({
             x: col + this.rand01() * 2 - 1,
             y: this.getHeightAt(col) - this.rand01() * 4,
@@ -1003,10 +1062,10 @@ export class CLand {
   /** Fallout deposit height (px) at a column — 0 where there is no live irradiation
    *  (cleared when a blast overruns it). Gates radiation damage to the visible zone. */
   radDepositAt(x: number): number {
-    if (!this.m_radDeposit) return 0;
+    if (!this.m_deposit) return 0;
     const ix = Math.floor(x);
     if (ix < 0 || ix >= this.m_nWidth) return 0;
-    return this.m_radDeposit[ix];
+    return this.m_deposit[ix];
   }
 
   // ========================================================================
@@ -1125,17 +1184,25 @@ export class CLand {
       g.fill();
     }
 
+    // Sub-surface strata follow the ORIGINAL surface, NOT the raised one: a deposited dirt
+    // mound sits ON TOP of the ground, so it must not drag the layer bands (and the deep
+    // fill) up with it — otherwise the strata bulge under every dirt pile. `sy[x]` = the
+    // pre-deposit surface (current height + the earth deposited above it); off a deposit it
+    // is just the surface. The mound itself (heights[x]…sy[x]) is repainted as bare earth by
+    // the de-grass band below.
+    const dep0 = this.m_deposit;
+    const sy = (x: number) => heights[x] + (dep0 ? Math.round(dep0[x]) : 0);
     for (let i = this.m_layers.length - 2; i >= 0; i--) {
       const pat = this.m_patterns[i];
       if (!pat) continue;
       const d = this.m_layers[i].depth;
       g.beginPath();
-      g.moveTo(-EXT, heights[0]);
-      for (let x = 0; x < W; x++) g.lineTo(x, heights[x]);
-      g.lineTo(W + EXT, heights[W - 1]);
-      g.lineTo(W + EXT, heights[W - 1] + d);
-      for (let x = W - 1; x >= 0; x--) g.lineTo(x, heights[x] + d);
-      g.lineTo(-EXT, heights[0] + d);
+      g.moveTo(-EXT, sy(0));
+      for (let x = 0; x < W; x++) g.lineTo(x, sy(x));
+      g.lineTo(W + EXT, sy(W - 1));
+      g.lineTo(W + EXT, sy(W - 1) + d);
+      for (let x = W - 1; x >= 0; x--) g.lineTo(x, sy(x) + d);
+      g.lineTo(-EXT, sy(0) + d);
       g.closePath();
       g.fillStyle = pat;
       g.fill();
@@ -1162,7 +1229,7 @@ export class CLand {
         this.m_barePattern = g.createPattern(this.m_bareImage, 'repeat');
       }
       const dirtPat = this.m_barePattern ?? this.m_patterns[this.m_patterns.length - 1];
-      const dep = this.m_radDeposit;
+      const dep = this.m_deposit;
       // The de-grass band extends down through the raised fallout deposit (dep[x])
       // so the whole irradiated mound is baked EARTH — this is the terrain that
       // remains once the red emissive glow fades. dep[x]=0 off the crater.
@@ -1182,6 +1249,65 @@ export class CLand {
           if (this.m_degrass[x]) g.fillRect(x, heights[x] - 2, 1, bandDepth(x));
         }
         g.globalCompositeOperation = prevLift;
+      }
+    }
+
+    // Dirt-weapon MOUNDS: bare earth painted ONLY over the raised part — from the mound top
+    // (heights[x]) down to the ORIGINAL surface (heights[x] + deposit[x]). Nothing is painted
+    // below the surface, so the earth reads as piled ON TOP of the intact grass (no
+    // sub-surface dirt block). Skips columns already handled as de-grassed craters/fallout.
+    if (this.m_deposit && this.m_layers.length > 1) {
+      if (!this.m_barePattern && this.m_bareImage) {
+        this.m_barePattern = g.createPattern(this.m_bareImage, 'repeat');
+      }
+      const dirtPat = this.m_barePattern ?? this.m_patterns[this.m_patterns.length - 1];
+      const dep = this.m_deposit;
+      const grassy = this.m_degrass;
+      if (dirtPat) {
+        g.fillStyle = dirtPat;
+        for (let x = 0; x < W; x++) {
+          const d = Math.round(dep[x]);
+          if (d > 0 && !(grassy && grassy[x])) g.fillRect(x, heights[x] - 2, 1, d + 3);
+        }
+        const prevLift = g.globalCompositeOperation;
+        g.globalCompositeOperation = 'lighter';
+        g.fillStyle = 'rgba(48,26,9,0.18)';
+        for (let x = 0; x < W; x++) {
+          const d = Math.round(dep[x]);
+          if (d > 0 && !(grassy && grassy[x])) g.fillRect(x, heights[x] - 2, 1, d + 3);
+        }
+        g.globalCompositeOperation = prevLift;
+      }
+    }
+
+    // Impact discs: a round dirt ball at each Dirt-weapon contact point — a filled CIRCLE of
+    // the bare-earth texture centred on the impact surface (not a column strip, so it reads as
+    // a disc, not a square). Painted per-column as a chord `2·√(r²−dx²)` so the edge is round.
+    if (this.m_dirtDiscs.length && this.m_layers.length > 1) {
+      if (!this.m_barePattern && this.m_bareImage) {
+        this.m_barePattern = g.createPattern(this.m_bareImage, 'repeat');
+      }
+      const dirtPat = this.m_barePattern ?? this.m_patterns[this.m_patterns.length - 1];
+      if (dirtPat) {
+        for (const disc of this.m_dirtDiscs) {
+          const x0 = Math.max(0, disc.x - disc.r),
+            x1 = Math.min(W - 1, disc.x + disc.r);
+          g.fillStyle = dirtPat;
+          for (let x = x0; x <= x1; x++) {
+            const dx = x - disc.x;
+            const hh = Math.sqrt(Math.max(0, disc.r * disc.r - dx * dx));
+            g.fillRect(x, disc.surfY - hh, 1, 2 * hh);
+          }
+          const prevLift = g.globalCompositeOperation;
+          g.globalCompositeOperation = 'lighter';
+          g.fillStyle = 'rgba(48,26,9,0.18)';
+          for (let x = x0; x <= x1; x++) {
+            const dx = x - disc.x;
+            const hh = Math.sqrt(Math.max(0, disc.r * disc.r - dx * dx));
+            g.fillRect(x, disc.surfY - hh, 1, 2 * hh);
+          }
+          g.globalCompositeOperation = prevLift;
+        }
       }
     }
 
@@ -1229,7 +1355,7 @@ export class CLand {
    *  round should not hand off the turn until this settles. Narrower than
    *  `isAnimating()` (which also covers cosmetic redraw/rebuild flags). */
   isSettling(): boolean {
-    return this.m_collapseActive || this.m_particles.length > 0;
+    return this.m_collapseActive || this.m_particles.length > 0 || this.m_dirtBlobs.length > 0;
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -1259,8 +1385,8 @@ export class CLand {
     // and the bitmap baked earthy-brown above); this glow only reddens that earth
     // while the zone is live and fades over irTime, leaving the bare earth behind —
     // it never paints the sky above the surface, so nothing turns to air.
-    if (this.m_radParticles.length && this.m_arrHeights && this.m_radDeposit) {
-      const dep = this.m_radDeposit;
+    if (this.m_radParticles.length && this.m_arrHeights && this.m_deposit) {
+      const dep = this.m_deposit;
       // Pass A — red emissive body (normal blend) painted DOWN INTO the raised earth.
       // Per zone the tint is constant, so set fillStyle ONCE and vary only
       // globalAlpha per column — no per-column rgba() string (that churn drove GC).
@@ -1406,7 +1532,12 @@ export class CLand {
   private m_smokeTints: Map<string, HTMLCanvasElement> = new Map(); // per-colour tinted smoke cache
   private m_scorches: Scorch[] = [];
   private m_degrass: Uint8Array | null = null; // per-column: 1 = grass torn off by a blast
-  private m_radDeposit: Float32Array | null = null; // per-column: accumulated fallout PILE height (px above surface)
+  private m_deposit: Float32Array | null = null; // per-column: deposited earth PILE height above surface (px) — fallout OR Dirt-weapon mound; bakes the pile as bare earth
+  // Active Dirt-weapon deposits: smooth cosine domes that grow from a small contact ball (r0)
+  // out to the full mound (R,H) over `dur` s, ADD-only. `applied` = px raised per column.
+  private m_dirtBlobs: {x: number; R: number; H: number; r0: number; t: number; dur: number; applied: Int16Array}[] = [];
+  // Impact discs: a round dirt ball baked at each Dirt-weapon contact point (x, surfY, radius).
+  private m_dirtDiscs: {x: number; r: number; surfY: number}[] = [];
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
   private m_slumpTimer: number = 0;
   private m_slumpX0: number = 1e9;

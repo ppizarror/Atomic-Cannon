@@ -138,6 +138,9 @@ interface Explosion {
   life: number;
   size: number;
   sprite: string;
+  shrink?: boolean; // true = flare-burst member: starts at `size` and SHRINKS to 0
+  vx?: number; // slow outward drift
+  vy?: number;
 }
 
 export class CParticleSystem {
@@ -456,42 +459,39 @@ export class CParticleSystem {
       big ? 0.35 : small ? 0.32 : 0.5,
       flareSpr,
     );
-    this.spawnFlash(
-      x,
-      y,
-      r * (big ? 2.4 : small ? 0.9 : 1.6),
-      big
-        ? {
-            r: 255,
-            g: 255,
-            b: 255,
-          }
-        : toward255(c, 0.4),
-      big ? 0.3 : small ? 0.16 : 0.22,
-    );
+    // The shrinking flare burst — the weapon's own expBitmap flares that start big and
+    // contract to nothing (additive → a flash that collapses inward). This is the MAIN body
+    // of the blast the original shows, so it is FEW + LARGE (so the flare's own shape reads,
+    // not a washed-out blob) rather than a dense cloud.
+    this.emitShrinkBurst(x, y, r, flareSpr, big ? 14 : small ? 4 : 7);
+    // A hot white-out flash is a NUKE/big-blast thing in the original (style-4 full-screen
+    // add). Smaller rounds get NO washout, so their expBitmap flare stays visible.
+    if (big) this.spawnFlash(x, y, r * 2.4, {r: 255, g: 255, b: 255}, 0.3);
+    if (expType === 2) return;
 
     // Compact spark puff for small rounds, then stop — no firework/rings/fire/ejecta.
     if (small) {
-      this.emitBox(x, y, Math.round(r * 1.2) + 4, 120, 0.25, 0.6, 1.1, toward255(c, 0.2), 'disc');
+      this.emitBox(x, y, Math.round(r * 1.2) + 4, 20, 0.25, 0.6, 1.1, toward255(c, 0.2), 'disc');
       return;
     }
 
+    // Radial fire streamers. The big firework is a NUKE/large-blast thing; medium rounds get
+    // just a light spray so the expBitmap flare stays the star.
     if (preset) {
       this.emitPreset(x, y, r, preset);
     } else {
       const ring = Math.round(r * 1.2) + (nuclear ? 70 : 22);
-      this.emitRadial(x, y, ring, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
-      this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
+      this.emitRadial(x, y, big ? ring : Math.round(ring * 0.35), 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare'); // prettier-ignore
+      if (big) this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
     }
 
-    // Stage 2 — the firework: the weapon's OWN explosion flare sprite rendered
-    // many times as scattered blobs radiating out (nuke=flares/00 white puffs,
-    // excavator=flares/03 green rings, …). Plus, for big blasts, a circular ejecta ring.
-    // (`flareSpr` computed above — the same catalog flare drives the central bloom.)
-    this.emitGasBlobs(x, y, r, Math.round(r * 1.5) + 30, flareSpr);
+    // Stage 2 — scattered expBitmap blobs radiating out, and (big only) a circular ejecta ring.
+    // Kept sparse for medium blasts so they don't bury the shrinking flare burst above.
+    this.emitGasBlobs(x, y, r, big ? Math.round(r * 1.5) + 30 : Math.round(r * 0.5) + 6, flareSpr);
     if (big) this.emitEjectaRing(x, y, r);
 
-    this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc'); // sparks
+    // Sparks — a modest ember spray for medium rounds, a full storm only for big blasts.
+    this.emitBox(x, y, Math.round(r * 1.4) + 26, big ? 190 : 34, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc'); // prettier-ignore
     this.emitFireLine(x, y, r * 0.8, c);
   }
 
@@ -756,6 +756,33 @@ export class CParticleSystem {
     this.m_explosions.push({x, y, age: 0, life, size, sprite});
   }
 
+  /**
+   * The flare BURST: `count` copies of the weapon's own explosion flare (`expBitmap`),
+   * spawned near the blast point, drifting slowly outward, each starting at ~blast size and
+   * SHRINKING to nothing over a short life. Drawn additively, so the overlap reads as a
+   * bright flash that contracts inward and vanishes — the original's shrinking-ring look.
+   */
+  private emitShrinkBurst(x: number, y: number, r: number, sprite: string, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const off = Math.random() * r * 0.55; // born within the blast disc
+      const size = r * (0.9 + Math.random() * 1.0); // starts BIG (≈ blast diameter)
+      const life = 0.32 + Math.random() * 0.22;
+      const spd = (off / life) * 0.5; // slow outward drift (contracting flares still fan out a little)
+      this.m_explosions.push({
+        x: x + Math.cos(ang) * off * 0.4,
+        y: y + Math.sin(ang) * off * 0.4,
+        age: 0,
+        life,
+        size,
+        sprite,
+        shrink: true,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+      });
+    }
+  }
+
   // ------------------------------------------------------------------ update
 
   /**
@@ -801,6 +828,8 @@ export class CParticleSystem {
     for (let i = 0; i < this.m_explosions.length; i++) {
       const e = this.m_explosions[i];
       e.age += dt;
+      if (e.vx) e.x += e.vx * dt;
+      if (e.vy) e.y += e.vy * dt;
       if (e.age < e.life) this.m_explosions[ew++] = e;
     }
     this.m_explosions.length = ew;
@@ -871,8 +900,11 @@ export class CParticleSystem {
     for (const e of this.m_explosions) {
       const t = e.age / e.life;
       if (t >= 1) continue;
-      const d = e.size * (0.7 + t * 1.8) * 2;
-      const a = (1 - t) * (t < 0.15 ? t / 0.15 : 1); // quick fade-in, then fade out
+      // Flare-burst members START big and SHRINK to nothing (the original's contracting
+      // white flash); the central bloom GROWS. Both additive, so overlapping shrink flares
+      // stack into a bright core that collapses inward.
+      const d = e.shrink ? e.size * (1 - t) * 2 : e.size * (0.7 + t * 1.8) * 2;
+      const a = e.shrink ? (1 - t) * 0.9 : (1 - t) * (t < 0.15 ? t / 0.15 : 1);
       const spr =
         this.m_assets?.getSprite(e.sprite) ?? this.m_assets?.getSprite('fx:explosion') ?? null;
       if (spr) {

@@ -1,5 +1,5 @@
 /**
- * Deterministic logic tests for the weapon-behaviour system (Phase 3).
+ * Deterministic logic tests for the weapon-behaviour system.
  * Run: pnpm tsx scripts/test-weapons.ts
  */
 import {CLand} from '../src/core/CLand';
@@ -153,18 +153,32 @@ class MockWorld implements ShotWorld {
   );
 }
 
-// ---- 4. Dirt raises terrain (surface Y decreases) ----------------------------
+// ---- 4. Dirt deposits earth (raises, removes nothing) ------------------------
 {
   const land = flatLand(300);
   const w = getWeapon(idxOf('Dirty Boy')); // earth 50
   const world = new MockWorld(land);
-  const before = land.getHeightAt(400);
+  const cx = 400;
+  const before: number[] = [];
+  for (let x = cx - 80; x <= cx + 80; x++) before.push(land.getHeightAt(x));
   const shot = new CShot();
-  shot.initFromVelocity(new Vec2(400, 300), 0, 0, w.getDamage(), w.getRadius(), null);
+  shot.initFromVelocity(new Vec2(cx, 300), 0, 0, w.getDamage(), w.getRadius(), null);
   shot.setWeaponIndex(w.getIndex());
   weaponDetonate(shot, w, world);
-  const after = land.getHeightAt(400);
-  ok('Dirt raises terrain (smaller surface Y)', after < before, `before=${before} after=${after}`);
+  // Dirt is a thrown earth cloud that arcs up and rains back down — settle it.
+  for (let f = 0; f < 400; f++) land.update(1 / 60);
+  // It RAISED the surface at the impact (smaller screen-Y)…
+  ok(
+    'Dirt raises terrain at impact',
+    land.getHeightAt(cx) < before[80],
+    `before=${before[80]} after=${land.getHeightAt(cx)}`,
+  );
+  // …and REMOVED nothing — no column ended up lower (larger Y) than it started.
+  let dug = 0;
+  for (let i = 0; i < before.length; i++) {
+    if (land.getHeightAt(cx - 80 + i) > before[i] + 1) dug++;
+  }
+  ok('Dirt removes no terrain', dug === 0, `${dug} columns dropped`);
 }
 
 // ---- 5. NUKE creates a radiation zone ----------------------------------------
