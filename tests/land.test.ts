@@ -17,79 +17,49 @@ function ok(name: string, cond: boolean, extra = '') {
   }
 }
 
-type Deg = {m_degrass: Uint8Array | null; m_particles: unknown[]};
-const degrass = (land: CLand): Uint8Array => (land as unknown as Deg).m_degrass!;
-const debrisLeft = (land: CLand): number => (land as unknown as Deg).m_particles.length;
-
-/** Columns de-grassed outside the single contiguous run covering `cx` = strays. */
-function strayDegrass(
-  deg: Uint8Array,
-  cx: number,
-): {total: number; craterCols: number; stray: number; runs: number} {
-  const W = deg.length;
-  let total = 0;
-  for (let i = 0; i < W; i++) if (deg[i]) total++;
-  let lo = cx,
-    hi = cx;
-  while (lo > 0 && deg[lo - 1]) lo--;
-  while (hi < W - 1 && deg[hi + 1]) hi++;
-  let craterCols = 0;
-  for (let i = lo; i <= hi; i++) if (deg[i]) craterCols++;
-  let runs = 0,
-    prev = 0;
-  for (let i = 0; i < W; i++) {
-    if (deg[i]) {
-      if (!prev) runs++;
-      prev = 1;
-    } else prev = 0;
-  }
-  return {total, craterCols, stray: total - craterCols, runs};
-}
+type Priv = {m_particles: unknown[]};
+const debrisLeft = (land: CLand): number => (land as unknown as Priv).m_particles.length;
 
 console.log('CLand terrain');
 
-// 1. A crater + a nuke's worth of ejecta must not speckle the map with isolated
-//    de-grass stripes: every de-grassed column stays connected to the crater, so
-//    the bare-earth zone is ONE contiguous run (no stray vertical dirt bars).
+// 1. A crater LOWERS the surface within its radius (the pixel-model `setColumnTop` clears the
+//    bowl) and leaves terrain outside the blast untouched.
 {
   const land = new CLand(1080, 400);
   land.generateRandomTerrain(12345);
   const cx = 540;
   const sy = land.getHeightAt(cx);
+  const farBefore = land.getHeightAt(cx + 200);
 
-  land.blastCircle(cx, sy, 60); // contiguous crater de-grass seed
-  land.addShowerParticles(cx, sy, 4000, 90); // fling debris far and wide
+  land.blastCircle(cx, sy, 60);
 
-  for (let i = 0; i < 400 && debrisLeft(land) > 0; i++) land.update(1 / 60);
-  for (let i = 0; i < 60; i++) land.update(1 / 60); // let the slump settle
-
-  const s = strayDegrass(degrass(land), cx);
-  ok('crater is de-grassed (bare earth)', s.craterCols >= 100, `craterCols=${s.craterCols}`);
-  ok(
-    'no stray de-grass stripes far from the crater',
-    s.stray === 0,
-    `stray=${s.stray} runs=${s.runs}`,
-  );
-  ok('de-grass forms a single contiguous zone', s.runs === 1, `runs=${s.runs}`);
+  // screen-Y down: a crater makes the surface number LARGER (lower on screen).
+  ok('crater lowers the surface at its centre', land.getHeightAt(cx) > sy, `${sy}→${land.getHeightAt(cx)}`); // prettier-ignore
+  let lowered = 0;
+  for (let x = cx - 55; x <= cx + 55; x++) if (land.getHeightAt(x) > sy - 1) lowered++;
+  ok('crater lowers a wide span', lowered >= 90, `lowered=${lowered}`);
+  ok('terrain far from the crater is untouched', land.getHeightAt(cx + 200) === farBefore);
 }
 
-// 2. Debris that never lands adjacent to bared ground leaves the grass intact
-//    (no de-grass at all without a crater seed).
+// 2. Debris settling RAISES the surface where chunks land (each stamps a dirt pixel + lifts
+//    the column), and never lowers it — deposits only add material.
 {
   const land = new CLand(1080, 400);
   land.generateRandomTerrain(999);
   const cx = 300;
-  const sy = land.getHeightAt(cx);
-  land.addShowerParticles(cx, sy, 1500, 70); // debris, but NO crater seed
-  for (let i = 0; i < 400 && debrisLeft(land) > 0; i++) land.update(1 / 60);
-  const deg = degrass(land);
-  let total = 0;
-  for (let i = 0; i < deg.length; i++) if (deg[i]) total++;
-  ok(
-    'debris alone never bares grass (needs a blast to seed it)',
-    total === 0,
-    `degrassed=${total}`,
-  );
+  const before: number[] = [];
+  for (let x = cx - 90; x <= cx + 90; x++) before.push(land.getHeightAt(x));
+  land.addShowerParticles(cx, land.getHeightAt(cx), 2500, 60);
+  for (let i = 0; i < 500 && debrisLeft(land) > 0; i++) land.update(1 / 60);
+  let raised = 0,
+    dug = 0;
+  for (let i = 0; i < before.length; i++) {
+    const now = land.getHeightAt(cx - 90 + i);
+    if (now < before[i] - 1) raised++; // smaller Y = higher = added earth
+    if (now > before[i] + 1) dug++; // never removes
+  }
+  ok('settled debris raises the surface', raised >= 10, `raised=${raised}`);
+  ok('settled debris removes nothing', dug === 0, `dug=${dug}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
