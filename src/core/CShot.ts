@@ -13,7 +13,7 @@ import {TWO_PI} from '../math/num';
 // preserving the ratios between gravity, launch speed and wind.
 export const SHOT_GRAVITY = 500; // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15; // wind display units -> px/s^2 of sideways drift
-export const SHOT_SPEED_SCALE = 0.9; // launch speed per unit power
+export const SHOT_SPEED_SCALE = 1; // launch speed per unit power
 
 // Projectile sprite scale. Tanks AND rounds blit at ONE shared sprite scale and each
 // round is sized so its LONGEST side spans `weapon.size × scale` px
@@ -63,7 +63,7 @@ export class CShot {
 
     const fRadAngle = -((angleDegrees / 180) * Math.PI);
 
-    const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
+    const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
 
     this.m_vel.x = Math.cos(fRadAngle) * speed;
     this.m_vel.y = Math.sin(fRadAngle) * speed;
@@ -87,7 +87,7 @@ export class CShot {
     this.m_radius = radius;
     this.m_power = power;
 
-    const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
+    const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
 
     // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
     // Works for every direction, including below-horizon (negative) angles.
@@ -127,13 +127,18 @@ export class CShot {
 
     this.m_prevY = this.m_pos.y;
 
+    // Gravity + wind scale with the world (√worldScale) exactly like the launch speed, so the
+    // whole trajectory is one uniform physics zoom — a full-power shot keeps its reach and arc
+    // shape on big maps instead of falling short. Flight time stays constant (speed & gravity
+    // scale together).
+    const ws = Math.sqrt(GameConfig.worldScale);
     if (!this.m_skipGravity) {
       // Rebound/jet shots invert gravity once they've dipped below the surface.
-      const g = this.m_antiGrav ? -CShot.GRAVITY : CShot.GRAVITY;
+      const g = (this.m_antiGrav ? -CShot.GRAVITY : CShot.GRAVITY) * ws;
       this.m_vel.y += g * dt;
     }
-    this.m_vel.x += wind.x * CShot.WIND_ACCEL * dt;
-    this.m_vel.y += wind.y * CShot.WIND_ACCEL * dt;
+    this.m_vel.x += wind.x * CShot.WIND_ACCEL * ws * dt;
+    this.m_vel.y += wind.y * CShot.WIND_ACCEL * ws * dt;
 
     this.m_pos = new Vec2(this.m_pos.x + this.m_vel.x * dt, this.m_pos.y + this.m_vel.y * dt);
 

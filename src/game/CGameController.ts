@@ -119,6 +119,9 @@ export class CGameController implements ShotWorld {
     // world height = view height (scroll is horizontal only). `m_camX` is the
     // world X of the view's left edge.
     this.m_worldWidth = Math.round(canvas.width * this.landScale());
+    // Publish the world scale so shot physics + blast size grow with the map (a full-power
+    // shot stays powerful on big maps instead of only crossing a fraction of them).
+    GameConfig.worldScale = this.m_worldWidth / canvas.width;
 
     // Terrain fills the full world so its body covers the bottom of the screen —
     // the background's foreground never shows in the HUD strip.

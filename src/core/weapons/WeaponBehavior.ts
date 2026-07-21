@@ -301,7 +301,9 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
   const isCleaner = weapon.getType() === 'Cleaner';
   // Explosion Size (Gameplay) scales the blast radius → crater, damage reach and FX.
-  const radiusPx = shot.getRadius() * GameConfig.explosionScale;
+  // Blast radius grows with the map (the original scales it by √(map area); our world widens
+  // only, so √worldScale) — so a blast covers the same fraction of the world at any map size.
+  const radiusPx = shot.getRadius() * GameConfig.explosionScale * Math.sqrt(GameConfig.worldScale);
   const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
   world.explode(
@@ -417,7 +419,7 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
   const [startDeg, endDeg] = weapon.getClusterSpread();
   const step = (endDeg - startDeg) / cluNum;
   const childPower = Math.max(1, parent.getPower() * CLUSTER_POWER);
-  const speed = childPower * SHOT_SPEED_SCALE * GameConfig.powerScale;
+  const speed = childPower * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale); // prettier-ignore
 
   for (let k = 0; k < cluNum; k++) {
     const aDeg = startDeg - k * step; // fan angle by subtraction

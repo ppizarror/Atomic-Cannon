@@ -85,8 +85,10 @@ export function simulateMiss(
   target: Pt,
 ): number {
   const r = deg2rad(angleDeg);
-  // Match the real launch speed (Power Scale) so the solver's prediction is accurate.
-  const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale;
+  // Match the REAL launch physics exactly (incl. the √worldScale zoom) so the solver's
+  // prediction stays accurate on scaled maps — otherwise bots would over/undershoot.
+  const ws = Math.sqrt(GameConfig.worldScale);
+  const speed = power * GameConfig.powerScale * ws;
   let vx = Math.cos(r) * speed;
   let vy = -Math.sin(r) * speed;
   let x = origin.x,
@@ -95,9 +97,9 @@ export function simulateMiss(
   let minD = Math.hypot(x - target.x, y - target.y);
 
   for (let i = 0; i < 500; i++) {
-    vy += SHOT_GRAVITY * dt;
-    vx += wind.x * SHOT_WIND_ACCEL * dt;
-    vy += wind.y * SHOT_WIND_ACCEL * dt;
+    vy += SHOT_GRAVITY * ws * dt;
+    vx += wind.x * SHOT_WIND_ACCEL * ws * dt;
+    vy += wind.y * SHOT_WIND_ACCEL * ws * dt;
     x += vx * dt;
     y += vy * dt;
 

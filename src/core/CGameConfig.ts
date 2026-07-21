@@ -15,6 +15,13 @@ export const GameConfig = {
   landSize: 3,
   autoScroll: true, // Graphics 2 → Auto Scroll (camera follows the shot / active tank)
 
+  // World linear scale = worldWidth / viewWidth (= landSize, 1..5). Set at map load. The
+  // original multiplies launch power AND gravity by the map scale so a full-power shot covers
+  // the same fraction of the world at every map size; we apply √worldScale uniformly to the
+  // physics (speed/gravity/wind/blast) — our world only widens (height is fixed), so a linear
+  // scale would over-tall the arc; √ keeps range strong AND the arc on-screen.
+  worldScale: 1,
+
   // ── physics / gameplay scalars (1 = the default feel) ──
   kickbackScale: 1, // Tank → Kickback (Off = 0)
   explosionScale: 1, // Gameplay → Explosion Size
