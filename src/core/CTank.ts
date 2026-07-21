@@ -18,20 +18,6 @@ import type {Sprite, ISpriteSource} from './rendering/sprites';
 const BADGE_FONT: FontId = 'silkscreen-8-white';
 const STAT_FONT: FontId = 'silkscreen-8-out';
 
-// Render a badge label with one of the game's bitmap fonts. Just the shared,
-// memoised BitmapFont.renderCached — but returns null until the font has loaded so
-// the badge can fall back to a canvas font for that first frame (the shared cache
-// lives in BitmapFont, not here).
-function bmpLabel(
-  font: FontId,
-  text: string,
-  tint?: string,
-  spacing?: number,
-): HTMLCanvasElement | null {
-  const f = getFont(font);
-  return f.ready ? f.renderCached(text, {tint, spacing}) : null;
-}
-
 /** A drawable image plus its dimensions. */
 // Tank variants
 export const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
@@ -756,20 +742,12 @@ export class CTank {
     // font carries its own black outline, so the text reads on any terrain — matching
     // the original, which draws the stat block as plain outlined text.
     const line = (text: string, y: number): number => {
-      const lab = bmpLabel(STAT_FONT, text, undefined, -1); // tighter letter spacing
-      if (lab) {
-        const lx = Math.round(cx - lab.width / 2),
-          ly = Math.round(y);
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(lab, lx, ly);
-        return y + lab.height - 1;
-      }
-      ctx.fillStyle = '#fff';
-      ctx.font = '8px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(text, cx, y);
-      return y + 12;
+      const lab = getFont(STAT_FONT).renderCached(text, {spacing: -1}); // tighter letter spacing
+      const lx = Math.round(cx - lab.width / 2),
+        ly = Math.round(y);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(lab, lx, ly);
+      return y + lab.height - 1;
     };
 
     // The badge sits UNDER the tank, stacked downward.
@@ -807,14 +785,14 @@ export class CTank {
     // box, hanging off its LEFT edge (as in the original), NOT crammed inside next to the name.
     // Gated by Graphics → Show Team Color. Native bitmap-font size. ---
     if (GameConfig.showTeamColor) {
-      const name = this.m_sName || '—';
-      const lab = bmpLabel(BADGE_FONT, name, '#ffffff');
-      const nameW = lab ? lab.width : name.length * 6;
+      const name = this.m_sName || '-';
+      const lab = getFont(BADGE_FONT).renderCached(name, {tint: '#ffffff'});
+      const nameW = lab.width;
       const pad = [3, 2]; // Horizontal, Vertical
       // Pad around the VISIBLE glyph ink, not the font strip (which carries blank
       // rows top/bottom) — otherwise the vertical padding reads far bigger than the
       // horizontal. `ink.top` is the blank offset to pull back when drawing.
-      const ink = lab ? getFont(BADGE_FONT).contentBounds(name) : {top: 0, height: 12};
+      const ink = getFont(BADGE_FONT).contentBounds(name);
       const bw = Math.round(pad[0] * 2 + nameW);
       const bh = ink.height + pad[1] * 2;
       const bx = Math.round(cx - bw / 2),
@@ -827,19 +805,8 @@ export class CTank {
       ctx.strokeStyle = team;
       ctx.lineWidth = 1;
       ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-
       ctx.imageSmoothingEnabled = false;
-      if (lab) {
-        // Pull the strip up by its blank top rows so the glyph ink sits pad[1] below
-        // the box top (true symmetric vertical padding). Native 1:1.
-        ctx.drawImage(lab, Math.round(bx + pad[0]), Math.round(by + pad[1] - ink.top));
-      } else {
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(name, bx + pad[0], by + bh / 2);
-      }
+      ctx.drawImage(lab, Math.round(bx + pad[0]), Math.round(by + pad[1] - ink.top));
 
       // Shield icon (gui/shield.bmp, native 12×15) OUTSIDE the box, hanging off its RIGHT edge —
       // shown only while shielded. Drawn at NATIVE size (the badge blits its sprites 1:1; the

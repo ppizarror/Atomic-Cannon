@@ -22,14 +22,16 @@ export class BitmapFont {
   private rendered = new Map<string, HTMLCanvasElement>();
   private bounds = new Map<string, {top: number; height: number}>();
 
-  constructor(path: string) {
+  constructor(private spec: FontSpec) {
     const img = new Image();
     img.onload = () => this.parse(img);
     img.onerror = () => {
+      // `.bmp` missing/broken → ready but with no atlas, so render() draws the catalog
+      // HTML fallback instead of a blank canvas.
       this.ready = true;
       this.flush();
     };
-    img.src = encodeURI(path);
+    img.src = encodeURI(`/assets/fonts/${spec.file}.bmp`);
   }
 
   onReady(cb: () => void): void {
@@ -118,13 +120,30 @@ export class BitmapFont {
   }
 
   /** Render text to a fresh canvas at native pixel size (transparent bg). */
+  private renderFallback(text: string, tint?: string): HTMLCanvasElement {
+    const {family, size, weight} = this.spec;
+    const font = `${weight ? `${weight} ` : ''}${size}px ${family}`;
+    const out = document.createElement('canvas');
+    const g = out.getContext('2d')!;
+    g.font = font;
+    out.width = Math.max(1, Math.ceil(g.measureText(text).width));
+    out.height = Math.max(1, Math.ceil(size * 1.3)); // room for ascenders/descenders
+    g.font = font; // resizing the canvas above reset the context state
+    g.fillStyle = tint ?? '#fff';
+    g.textBaseline = 'middle';
+    g.fillText(text, 0, out.height / 2);
+    return out;
+  }
+
   render(text: string, opts: {spacing?: number; tint?: string} = {}): HTMLCanvasElement {
     const spacing = opts.spacing ?? 1;
+    const src = this.atlas(opts.tint);
+    // No atlas yet (still loading, or the `.bmp` failed) → the catalog HTML fallback,
+    // so callers always get a real sized canvas and never invent their own font.
+    if (!this.ready || !src) return this.renderFallback(text, opts.tint);
     const out = document.createElement('canvas');
     out.width = this.measure(text, spacing);
     out.height = this.height || 1;
-    const src = this.atlas(opts.tint);
-    if (!this.ready || !src) return out;
     const g = out.getContext('2d')!;
     let cx = 0;
     for (const c of text) {
@@ -193,42 +212,54 @@ export class BitmapFont {
 }
 
 // ---------------------------------------------------------------------------
-// Font catalog. Short, memorable ids → the real `.bmp` filename under
-// public/assets/fonts. Everything that draws bitmap text (`<BmpText>`, the tank
-// badge labels) takes a `FontId`, so only fonts that actually exist can be
-// referenced: a typo is a compile error, never a silent blank render. Add a new
-// font by dropping its `.bmp` in the fonts folder and adding one line here.
+// Font catalog. Short, memorable ids → the real `.bmp` under public/assets/fonts
+// PLUS the HTML font each one falls back to when its `.bmp` can't be loaded. The
+// fallback is declared HERE, per font (a family that approximates the bitmap face and
+// its px size), so no caller ever picks a fallback font — text is never blank and never
+// an ad-hoc `sans-serif`. Everything that draws bitmap text takes a `FontId`, so only
+// fonts that exist can be referenced (a typo is a compile error). Add a font by dropping
+// its `.bmp` in the fonts folder and adding one line here.
+export interface FontSpec {
+  /** `.bmp` filename under public/assets/fonts (no extension). */
+  file: string;
+  /** CSS font-family the fallback draws with (approximates the bitmap face). */
+  family: string;
+  /** px size — the fallback's render size and line height. */
+  size: number;
+  /** Optional CSS weight for the fallback (e.g. `bold`, `900`). */
+  weight?: string;
+}
+
 export const FONTS = {
-  'arial-14': 'Arial 14',
-  'arial-14-out': 'Arial 14 outlined',
-  'arial-black-16-out': 'Arial Black 16 outlined',
-  'bazouk-28': 'BazoukSSK 28 bold outlined',
-  'beijing-16': 'BeijingSSK 16',
-  'beijing-16-out': 'BeijingSSK 16 outlined',
-  'beijing-20': 'BeijingSSK 20',
-  'beijing-20-out': 'BeijingSSK 20 outlined',
-  'msans-12': 'Microsoft Sans Serif 12',
-  'msans-14': 'Microsoft Sans Serif 14',
-  'msans-18': 'Microsoft Sans Serif 18',
-  'trebuchet-9': 'Trebuchet MS 9 bold',
-  'trebuchet-18': 'Trebuchet MS 18',
-  'silkscreen-8': 'UPF Silkscreen ReMix 8',
-  'silkscreen-8-black': 'UPF Silkscreen ReMix 8 black',
-  'silkscreen-8-out': 'UPF Silkscreen ReMix 8 outlined',
-  'silkscreen-8-white': 'UPF Silkscreen ReMix 8 white',
-  'verdana-10-out': 'Verdana 10 bold outlined',
-  fire: 'fire',
-} as const;
+  'arial-14': {file: 'Arial 14', family: 'Arial, sans-serif', size: 14},
+  'arial-14-out': {file: 'Arial 14 outlined', family: 'Arial, sans-serif', size: 14},
+  'arial-black-16-out': {file: 'Arial Black 16 outlined', family: '"Arial Black", sans-serif', size: 16, weight: '900'},
+  'bazouk-28': {file: 'BazoukSSK 28 bold outlined', family: 'Impact, sans-serif', size: 28, weight: 'bold'},
+  'beijing-16': {file: 'BeijingSSK 16', family: '"Arial Narrow", sans-serif', size: 16},
+  'beijing-16-out': {file: 'BeijingSSK 16 outlined', family: '"Arial Narrow", sans-serif', size: 16},
+  'beijing-20': {file: 'BeijingSSK 20', family: '"Arial Narrow", sans-serif', size: 20},
+  'beijing-20-out': {file: 'BeijingSSK 20 outlined', family: '"Arial Narrow", sans-serif', size: 20},
+  'msans-12': {file: 'Microsoft Sans Serif 12', family: '"Microsoft Sans Serif", sans-serif', size: 12},
+  'msans-14': {file: 'Microsoft Sans Serif 14', family: '"Microsoft Sans Serif", sans-serif', size: 14},
+  'msans-18': {file: 'Microsoft Sans Serif 18', family: '"Microsoft Sans Serif", sans-serif', size: 18},
+  'trebuchet-9': {file: 'Trebuchet MS 9 bold', family: '"Trebuchet MS", sans-serif', size: 9, weight: 'bold'},
+  'trebuchet-18': {file: 'Trebuchet MS 18', family: '"Trebuchet MS", sans-serif', size: 18},
+  'silkscreen-8': {file: 'UPF Silkscreen ReMix 8', family: 'monospace', size: 8},
+  'silkscreen-8-black': {file: 'UPF Silkscreen ReMix 8 black', family: 'monospace', size: 8},
+  'silkscreen-8-out': {file: 'UPF Silkscreen ReMix 8 outlined', family: 'monospace', size: 8},
+  'silkscreen-8-white': {file: 'UPF Silkscreen ReMix 8 white', family: 'monospace', size: 8},
+  'verdana-10-out': {file: 'Verdana 10 bold outlined', family: 'Verdana, sans-serif', size: 10, weight: 'bold'},
+  fire: {file: 'fire', family: 'Impact, sans-serif', size: 22, weight: 'bold'},
+} satisfies Record<string, FontSpec>;
 
 /** The only strings any caller may pass as a font — the keys of FONTS. */
 export type FontId = keyof typeof FONTS;
-
 const registry = new Map<FontId, BitmapFont>();
 
 export function getFont(id: FontId): BitmapFont {
   let f = registry.get(id);
   if (!f) {
-    f = new BitmapFont(`/assets/fonts/${FONTS[id]}.bmp`);
+    f = new BitmapFont(FONTS[id]);
     registry.set(id, f);
   }
   return f;

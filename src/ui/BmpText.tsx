@@ -44,16 +44,8 @@ export function BmpText({
       c.style.width = `${Math.round(src.width * k)}px`;
       c.style.height = `${Math.round(src.height * k)}px`;
     };
-    if (f.ready) {
-      draw();
-    } else {
-      // Collapse to nothing until the font loads — never the 300x150 default.
-      cv.width = 0;
-      cv.height = 0;
-      cv.style.width = '0px';
-      cv.style.height = '0px';
-      f.onReady(draw);
-    }
+    draw();
+    if (!f.ready) f.onReady(draw);
   }, [font, text, height, scale, tint, spacing]);
 
   return <canvas ref={ref} class={cls} style={{imageRendering: 'pixelated', display: 'block'}} />;

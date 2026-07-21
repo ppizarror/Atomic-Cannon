@@ -468,7 +468,7 @@ function TurnBanner() {
   if (!win) return null;
   return (
     <div id="turn-indicator" class="visible">
-      {win} WINS!
+      <BmpText font="bazouk-28" text={`${win} WINS!`} />
     </div>
   );
 }
