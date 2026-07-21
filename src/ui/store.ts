@@ -8,9 +8,10 @@ import {signal} from '@preact/signals';
 import type {CGameController} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
+import {setup, setSetup} from './setupStore';
 import {wrapIndex} from '../math/num';
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about';
+export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about' | 'setup';
 
 export const screen = signal<Screen>('battle');
 
@@ -136,14 +137,34 @@ export function goToMenu(): void {
   game().getAudio()?.menuMusic();
 }
 
-/** Play → start a fresh battle. */
-export function playNewGame(): void {
+/** Start a battle with `total` tanks, the first `humans` of them human. Persists the
+ *  setup so Quick Play can replay it, honours the saved options, and enters battle. */
+export function startBattle(total: number, humans: number): void {
   uiClick();
+  setSetup({total, humans});
   applyGameSettings(game()); // honour the saved options for this match
-  game().startGame(2); // also starts the battle music
+  game().setHumanCount(humans);
+  game().startGame(total); // also starts the battle music
   screen.value = 'battle';
   game().setPaused(false);
   paused.value = false;
+}
+
+/** Play → open the game-setup screen (presets + custom player count). */
+export function openPlaySetup(): void {
+  screen.value = 'setup';
+  uiClick();
+}
+
+/** Quick Play → start immediately with the last-used setup. */
+export function quickPlay(): void {
+  const s = setup.value;
+  startBattle(s.total, s.humans);
+}
+
+/** Legacy entry: a plain 2-player battle (used by the dev URL affordances + boot). */
+export function playNewGame(): void {
+  startBattle(2, 1);
 }
 
 /** Main menu → About, and back. */

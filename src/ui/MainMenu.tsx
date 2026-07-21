@@ -1,10 +1,11 @@
 /**
  * Main menu — the title screen. The `title.jpg` intro image
  * fills the background; the chrome "ATOMIC CANNON" title sits on top with a centered
- * vertical nav list (Play / Settings / About) in the game's bitmap fonts, and the
- * atom logo in the corner. Play starts a fresh battle; Settings/About navigate.
+ * vertical nav list (Play / Quick Play / Settings / About) in the game's bitmap fonts,
+ * and the atom logo in the corner. Play opens the game-setup screen; Quick Play starts
+ * immediately with the last-used setup; Settings/About navigate.
  */
-import {playNewGame, openSettings, openAbout} from './store';
+import {openPlaySetup, quickPlay, openSettings, openAbout} from './store';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {MenuTargets} from './MenuTargets';
@@ -48,7 +49,8 @@ export function MainMenu() {
     <div class="mainmenu">
       <MenuTargets />
       <div class="menu-list">
-        <MenuButton label="Play" onClick={playNewGame} />
+        <MenuButton label="Play" onClick={openPlaySetup} />
+        <MenuButton label="Quick Play" onClick={quickPlay} />
         <MenuButton label="Settings" onClick={() => openSettings('menu')} />
         <MenuButton label="About" onClick={openAbout} />
       </div>

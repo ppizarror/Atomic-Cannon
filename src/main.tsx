@@ -31,6 +31,7 @@ import {
   playNewGame,
   openSettings,
   openSettingsPage,
+  openPlaySetup,
   showHelp,
   closeHelp,
   POWER_MIN,
@@ -125,6 +126,8 @@ async function main(): Promise<void> {
       openSettings('menu');
       if (settingsArg !== '1') openSettingsPage(settingsArg);
     }
+    // `?setup=1` opens the Play game-setup screen.
+    if (q.get('setup') === '1') openPlaySetup();
   }
 
   // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC

@@ -27,6 +27,7 @@ import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
 import {About} from './About';
 import {Settings} from './Settings';
+import {PlaySetup} from './PlaySetup';
 
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
@@ -213,6 +214,8 @@ function CurrentScreen() {
       return <About />;
     case 'settings':
       return <Settings />;
+    case 'setup':
+      return <PlaySetup />;
     case 'depot':
       return <Placeholder title="Weapons Depot" />;
     default:
