@@ -63,6 +63,7 @@ export const gameSettings = {
 
   drawSmoke: (): boolean => getVal('gfx.smoke', 1) !== 0,
   colorizeTeam: (): boolean => getVal('tank.colorize', 1) !== 0,
+  chatter: (): boolean => getVal('tank.chatter', 1) !== 0,
   showTeamColor: (): boolean => getVal('gfx.teamColor', 1) !== 0,
   showPowerBars: (): boolean => getVal('gfx.showPower', 1) !== 0,
   showTankStats: (): boolean => getVal('gfx.tankStats', 0) !== 0,

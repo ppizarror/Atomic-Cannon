@@ -5,7 +5,12 @@
  * (menu / settings / depot) switch on `screen`.
  */
 import {signal} from '@preact/signals';
-import type {CGameController} from '../game/CGameController';
+import {
+  EGameState,
+  type CGameController,
+  type WarStandings,
+  type ActiveTaunt,
+} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
@@ -219,6 +224,10 @@ export function depotAutoBuy(): void {
 export const showFramerate = signal(false);
 export const fps = signal(0);
 
+// Active taunt speech bubbles (Chatter), projected to screen-fraction positions and
+// pumped each frame; the TauntLayer overlay renders one <Tooltip> per entry.
+export const tauntBubbles = signal<ActiveTaunt[]>([]);
+
 // Jet flight (extType 17): live while the human is airborne, with remaining fuel.
 export const flying = signal(false);
 export const jetFuel = signal(0);
@@ -254,6 +263,20 @@ export const canMoveNow = signal(false);
 // panel greys out and stops responding while this is set.
 export const blocked = signal(true);
 export const winner = signal('');
+// Between-battles "winning the war" standings (null during normal play).
+export const warStandings = signal<WarStandings | null>(null);
+
+/** Advance from the standings screen: the next battle, or exit to the menu when the
+ *  war is over (click anywhere on the standings). */
+export function advanceWar(): void {
+  const s = warStandings.value;
+  if (!s) return;
+  warStandings.value = null;
+  uiClick();
+  game().clearTaunts(); // drop the victor's bubble before leaving the standings
+  if (s.warOver) goToMenu();
+  else game().nextBattle();
+}
 export const screenFlash = signal(0); // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff'); // flash tint (the bomb's colour)
 
@@ -361,8 +384,17 @@ export function syncHud(): void {
   // Held when paused or when it isn't the human's live turn (see `blocked`).
   blocked.value = c.isPaused() || !c.isPlayerTurn();
   winner.value = c.getWinnerName();
+  // Between-battles standings: compute once on entering BattleEnd, clear on leaving.
+  const atBattleEnd = c.getState() === EGameState.BattleEnd;
+  if (atBattleEnd && !warStandings.value) warStandings.value = c.getWarStandings();
+  else if (!atBattleEnd && warStandings.value) warStandings.value = null;
   screenFlash.value = c.getScreenFlash();
   screenFlashColor.value = c.getScreenFlashColor();
+
+  // Taunt bubbles: re-publish only when there's something to show or clear, so the
+  // overlay doesn't churn every idle frame (the common case is an empty list).
+  const taunts = c.getActiveTaunts();
+  if (taunts.length || tauntBubbles.value.length) tauntBubbles.value = taunts;
 
   // Top-left status text — only re-publish when it actually changes so the
   // bitmap-font lines don't re-render every frame.

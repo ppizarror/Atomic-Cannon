@@ -8,7 +8,7 @@
  */
 import {useMemo, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
-import {ZeonFrame} from './ZeonFrame';
+import {Tooltip} from './Tooltip';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {useAsyncImage} from './useAsyncImage';
 import {ModalButton} from './ModalButton';
@@ -46,20 +46,6 @@ const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native ou
 // effective impact count, +200 for radioactive weapons, raw stat for utilities) —
 // see `weaponPower` in CWeapon.ts.
 const powerOf = weaponPower;
-
-// Word-wrap a description into lines of ~`max` chars (BmpText draws one line each).
-function wrap(text: string, max: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/)) {
-    if (line && line.length + 1 + word.length > max) {
-      out.push(line);
-      line = word;
-    } else line = line ? `${line} ${word}` : word;
-  }
-  if (line) out.push(line);
-  return out;
-}
 
 // ---- small leaf pieces ------------------------------------------------------
 function WeaponIcon({name}: {name: string}) {
@@ -103,28 +89,12 @@ function Header({
   );
 }
 
-// Green weapon tooltip (the `zeon` dialog look) — the real dialog.bmp frame
-// (9-sliced by <ZeonFrame>: beveled green box) plus a down-pointer, floating ABOVE
-// the cursor so the pointer aims at the hovered row. The frame + pointer share one
-// translucency group (.dep-tt-frame) so they composite opaquely THEN fade together
-// — never transparency-over-transparency where the pointer overlaps the box. The
-// text rides above in .dep-tt-body at full opacity.
-function Tooltip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
-  const lines = wrap(w.desc || 'No description available.', 44);
+// Green weapon tooltip — the shared <Tooltip> (zeon frame + tail), title = weapon
+// name, content = its description, floating ABOVE the cursor with its tail aimed down.
+function WeaponTip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
   return (
     <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
-      <div class="dep-tt-frame">
-        <ZeonFrame />
-        <div class="dep-tt-arrow" />
-      </div>
-      <div class="dep-tt-body">
-        <BmpText font={ROW_FONT} text={w.name} tint="#06210a" />
-        <div class="dep-tt-desc">
-          {lines.map((l, i) => (
-            <BmpText key={i} font={SMALL_FONT} text={l} tint="#0a2b0c" />
-          ))}
-        </div>
-      </div>
+      <Tooltip title={w.name} content={w.desc || 'No description available.'} tailLeft="14px" />
     </div>
   );
 }
@@ -303,11 +273,11 @@ export function DepotPanel() {
         </ClassicScrollbar>
 
         {hover !== null && WEAPON_DATABASE[hover] && (
-          <Tooltip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y} />
+          <WeaponTip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y} />
         )}
         {showStats && selW && (
           <div class="dep-stats" onClick={() => setShowStats(false)}>
-            <BmpText font={BIG_FONT} text={selW.name} tint="#14171a" />
+            <BmpText font={BIG_FONT} text={selW.name} />
             <div class="dep-stat-grid">
               {(
                 [
@@ -321,13 +291,13 @@ export function DepotPanel() {
                 ] as const
               ).map(([k, v]) => (
                 <div class="dep-stat-row" key={k}>
-                  <BmpText font={ROW_FONT} text={String(k)} tint="#14171a" />
-                  <BmpText font={ROW_FONT} text={String(v)} tint="#14171a" />
+                  <BmpText font={ROW_FONT} text={String(k)} />
+                  <BmpText font={ROW_FONT} text={String(v)} />
                 </div>
               ))}
             </div>
             <div class="dep-hint">
-              <BmpText font={SMALL_FONT} text="click to close" tint="#3a3f45" />
+              <BmpText font={SMALL_FONT} text="click to close" />
             </div>
           </div>
         )}

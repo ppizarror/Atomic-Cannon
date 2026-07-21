@@ -17,6 +17,7 @@ import {SettingsPage} from './SettingsPage';
 import {WeaponsEditor, LandscapesEditor} from './EnableListEditor';
 import {ControlsEditor} from './ControlsEditor';
 import {PlayersEditor} from './PlayersEditor';
+import {TauntEditor} from './TauntEditor';
 
 interface Entry {
   label: string;
@@ -66,6 +67,11 @@ const CATEGORIES: Entry[] = [
     sub: 'Define custom names and colors (quits current game)',
     onClick: () => openSettingsPage('players'),
   },
+  {
+    label: 'Customize Taunts',
+    sub: 'Edit what the tanks say when they fire, die, and gloat',
+    onClick: () => openSettingsPage('taunts'),
+  },
 ];
 
 function SettingsItem({entry, onHover}: {entry: Entry; onHover: (s: string) => void}) {
@@ -86,6 +92,7 @@ export function Settings() {
   if (p === 'content.landscapes') return <LandscapesEditor />;
   if (p === 'controls') return <ControlsEditor />;
   if (p === 'players') return <PlayersEditor />;
+  if (p === 'taunts') return <TauntEditor />;
   if (p !== 'root') return <SettingsPage id={p} />;
   return <SettingsRoot />;
 }
@@ -109,7 +116,7 @@ function SettingsRoot() {
         <SettingsItem key="Done" entry={done} onHover={setSub} />
       </div>
       <div class="settings-subtitle">
-        {sub ? <BmpText font="msans-14" text={sub} tint="#eef2f6" /> : null}
+        {sub ? <BmpText font="beijing-16-out" text={sub} /> : null}
       </div>
     </div>
   );

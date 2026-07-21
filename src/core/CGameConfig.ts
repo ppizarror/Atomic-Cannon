@@ -32,6 +32,7 @@ export const GameConfig = {
   // ── render toggles ──
   drawSmoke: true, // Graphics → Draw Smoke (lingering ground plumes)
   colorizeTeam: true, // Tank → Colorize Team (hull tint)
+  chatter: true, // Tank → Chatter ("Tanks talk to each other") — gates all taunt bubbles
   showTeamColor: true, // Graphics → Show Team Color (name label)
   showPowerBars: true, // Graphics → Show Power (life/shield bars)
   showTankStats: false, // More Graphics Options → Show Tank Stats (force always-on; default hover-only)
