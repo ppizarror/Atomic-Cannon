@@ -18,18 +18,21 @@ import {
   paused,
   showFramerate,
   fps,
+  warStandings,
 } from './store';
 import {hexToRgb} from '../math/color';
 import {Button} from './Button';
 import {BmpText} from './BmpText';
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
+import {TauntLayer} from './TauntLayer';
 import {PauseMenu} from './PauseMenu';
 import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
 import {About} from './About';
 import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
+import {WarStandings} from './WarStandings';
 
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
@@ -225,7 +228,8 @@ function Placeholder({
 function CurrentScreen() {
   switch (screen.value) {
     case 'battle':
-      return <Hud />;
+      // Between battles the HUD is hidden and the standings screen takes its place.
+      return warStandings.value ? <WarStandings /> : <Hud />;
     case 'menu':
       return <MainMenu />;
     case 'about':
@@ -245,6 +249,7 @@ export function App() {
   return (
     <>
       <CurrentScreen />
+      <TauntLayer />
       <PauseMenu />
       <HelpOverlay />
       <DepotPanel />

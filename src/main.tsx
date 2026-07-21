@@ -130,6 +130,13 @@ async function main(): Promise<void> {
     }
     // `?setup=1` opens the Play game-setup screen.
     if (q.get('setup') === '1') openPlaySetup();
+    // `?warend=1`: jump into a 6-team battle and force it to end, to preview the standings.
+    if (q.get('warend') === '1') {
+      playNewGame(); // enter the battle screen
+      gameController.setHumanCount(1);
+      gameController.startGame(6); // respawn as a 6-team free-for-all
+      gameController.devForceBattleEnd();
+    }
   }
 
   // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
@@ -221,6 +228,10 @@ async function main(): Promise<void> {
       case 'nextWeapon':
         e.preventDefault();
         stepWeapon(1);
+        break;
+      case 'taunt':
+        e.preventDefault();
+        gameController.playerTaunt();
         break;
     }
   });
