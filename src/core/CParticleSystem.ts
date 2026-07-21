@@ -431,6 +431,7 @@ export class CParticleSystem {
     presetName?: string,
     expType = 0,
     expBitmap?: string,
+    deposit = false,
   ): void {
     // `eLlightBlue` is a typo in the weapon data table for `eLightBlue`.
     const preset = presetName
@@ -467,7 +468,13 @@ export class CParticleSystem {
     // A hot white-out flash is a NUKE/big-blast thing in the original (style-4 full-screen
     // add). Smaller rounds get NO washout, so their expBitmap flare stays visible.
     if (big) this.spawnFlash(x, y, r * 2.4, {r: 255, g: 255, b: 255}, 0.3);
-    if (expType === 2) return;
+
+    // Dirt/deposit weapons (Dirty Boy, Mountain, …) DEPOSIT earth rather than cut a fiery
+    // crater — the original shows no fire streamers or debris storm for them, just the flare
+    // burst + a small white puff (their `eWhiteSmall` blast). So stop here: no firework.
+    // (This is gated on DEPOSIT, not `expType`, since expType 2 also covers Bomb/Death/Cleaner
+    // weapons that DO get a fiery crater explosion.)
+    if (deposit) return;
 
     // Compact spark puff for small rounds, then stop — no firework/rings/fire/ejecta.
     if (small) {
@@ -481,7 +488,18 @@ export class CParticleSystem {
       this.emitPreset(x, y, r, preset);
     } else {
       const ring = Math.round(r * 1.2) + (nuclear ? 70 : 22);
-      this.emitRadial(x, y, big ? ring : Math.round(ring * 0.35), 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare'); // prettier-ignore
+      this.emitRadial(
+        x,
+        y,
+        big ? ring : Math.round(ring * 0.35),
+        70,
+        200,
+        0.35,
+        0.7,
+        r * 0.14 + 2,
+        toward255(c, 0.3),
+        'flare',
+      );
       if (big) this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
     }
 
@@ -491,7 +509,17 @@ export class CParticleSystem {
     if (big) this.emitEjectaRing(x, y, r);
 
     // Sparks — a modest ember spray for medium rounds, a full storm only for big blasts.
-    this.emitBox(x, y, Math.round(r * 1.4) + 26, big ? 190 : 34, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc'); // prettier-ignore
+    this.emitBox(
+      x,
+      y,
+      Math.round(r * 1.4) + 26,
+      big ? 190 : 34,
+      0.4,
+      1.1,
+      1.6,
+      toward255(c, 0.2),
+      'disc',
+    );
     this.emitFireLine(x, y, r * 0.8, c);
   }
 
@@ -998,7 +1026,8 @@ export class CParticleSystem {
         // patterned beam (wave, grate) therefore shows a repeating train of its motif
         // instead of one smeared streak. Drawn additively → glowing energy in the
         // sprite's colour. Each blit steps one tile-length (sprite width × fit-scale).
-        const nw = spr.width, nh = spr.height;
+        const nw = spr.width,
+          nh = spr.height;
         const scale = b.width / nh; // fit the sprite's height to the beam thickness
         const tileW = Math.max(2, nw * scale); // one tile's length along the beam
         ctx.save();

@@ -63,7 +63,9 @@ function EditorRow({
 
 // First-render guess (refined by measuring the panel) so the initial page isn't empty.
 const estimatePerPage = (rowHeight: number): number =>
-  typeof window !== 'undefined' ? Math.max(3, Math.floor((window.innerHeight * 0.6) / rowHeight)) : 12;
+  typeof window !== 'undefined'
+    ? Math.max(3, Math.floor((window.innerHeight * 0.6) / rowHeight))
+    : 12;
 
 function Editor({
   title,

@@ -61,6 +61,7 @@ export interface ShotWorld {
     blastPreset?: string,
     expType?: number,
     expBitmap?: string,
+    deposit?: boolean,
   ): void;
 
   shake(mag: number, dur: number): void;
@@ -297,6 +298,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     weapon.getBlastParticle(),
     weapon.getExpType(),
     weapon.getExpBitmap(),
+    weapon.getEarth() > 0, // Dirt/deposit weapons skip the fiery firework — just the flare + puff.
   );
   world.hitSound(weapon.getHitSound(), pos.x); // soundHit, panned to the blast
   // Camera shake is a port embellishment — the original never shakes on impact (it

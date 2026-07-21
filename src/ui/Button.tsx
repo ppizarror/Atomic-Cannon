@@ -14,9 +14,16 @@
  * used directly in CSS — magenta + dither render as ragged edges / "boxes" when stretched
  * — so the pre-cropped PNG is committed and 9-sliced by `.btn`.
  */
-import { BmpText, type FontId } from './BmpText';
+import {BmpText, type FontId} from './BmpText';
 
-export function Button({ label, font = 'msans-14', onClick, disabled, tint = '#14171a', class: cls }: {
+export function Button({
+  label,
+  font = 'msans-14',
+  onClick,
+  disabled,
+  tint = '#14171a',
+  class: cls,
+}: {
   label: string;
   font?: FontId;
   onClick?: () => void;

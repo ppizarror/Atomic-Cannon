@@ -1305,10 +1305,21 @@ export class CGameController implements ShotWorld {
     blastPreset?: string,
     expType = 0,
     expBitmap?: string,
+    deposit = false,
   ): void {
     this.m_lastImpactX = x; // the camera holds here while this blast animates
     if (color !== undefined && radiusPx !== undefined) {
-      this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap);
+      this.m_particles.blast(
+        x,
+        y,
+        radiusPx,
+        color,
+        nuclear,
+        blastPreset,
+        expType,
+        expBitmap,
+        deposit,
+      );
       // Stage 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
       // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
       // It inherits the weapon's colour (uranium reads red, plutonium green, …).

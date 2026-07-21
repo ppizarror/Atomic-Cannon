@@ -430,7 +430,10 @@ export class CLand {
       if (base <= 0.5) continue;
       // Noise so the crater isn't a clean circle: scale the disc height ±40% and add a
       // small absolute wobble per column → a ragged, uneven rim/floor.
-      const h = Math.max(1, base * (0.6 + Math.random() * 0.8) + (Math.random() * 2 - 1) * r * 0.12);
+      const h = Math.max(
+        1,
+        base * (0.6 + Math.random() * 0.8) + (Math.random() * 2 - 1) * r * 0.12,
+      );
       const removed = this.sliceColumn(c, y, h, true, true); // keepCap (grass rides down) + animate
       if (removed > 0.5) this.beginCollapse(c, removed); // the overburden falls in (gravity)
     }
@@ -491,7 +494,6 @@ export class CLand {
       this.m_collapseMaxX = 0;
     }
   }
-
 
   private preBlast(nX1: number, nX2: number): void {
     this.m_dirtyMin = Math.max(0, nX1);
@@ -593,7 +595,8 @@ export class CLand {
         if (add <= 0) continue; // only ever grows (add-only) — never lowers
         blob.applied[idx] = want;
         heights[col] = Math.max(0, heights[col] - add); // ADD only — never lowers the surface
-        if (this.m_baseHeights) this.m_baseHeights[col] = Math.min(this.m_baseHeights[col], heights[col]);
+        if (this.m_baseHeights)
+          this.m_baseHeights[col] = Math.min(this.m_baseHeights[col], heights[col]);
         // Record the pile height so ONLY the mound (above the original surface) renders as
         // bare earth. We deliberately do NOT de-grass: the earth sits ON the grass, so the
         // grass line stays intact under the pile — no dirt is painted below the surface.
@@ -1535,7 +1538,15 @@ export class CLand {
   private m_deposit: Float32Array | null = null; // per-column: deposited earth PILE height above surface (px) — fallout OR Dirt-weapon mound; bakes the pile as bare earth
   // Active Dirt-weapon deposits: smooth cosine domes that grow from a small contact ball (r0)
   // out to the full mound (R,H) over `dur` s, ADD-only. `applied` = px raised per column.
-  private m_dirtBlobs: {x: number; R: number; H: number; r0: number; t: number; dur: number; applied: Int16Array}[] = [];
+  private m_dirtBlobs: {
+    x: number;
+    R: number;
+    H: number;
+    r0: number;
+    t: number;
+    dur: number;
+    applied: Int16Array;
+  }[] = [];
   // Impact discs: a round dirt ball baked at each Dirt-weapon contact point (x, surfY, radius).
   private m_dirtDiscs: {x: number; r: number; surfY: number}[] = [];
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
