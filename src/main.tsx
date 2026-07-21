@@ -34,6 +34,8 @@ import {
   openPlaySetup,
   showHelp,
   closeHelp,
+  showFramerate,
+  fps,
   POWER_MIN,
   POWER_MAX,
   wrapAngle,
@@ -337,6 +339,10 @@ async function main(): Promise<void> {
   // the simulation step entirely (nothing advances or emits); the present-on-demand
   // gate then draws the frozen frame once and skips subsequent identical frames (the
   // GPU texture retains it, so a screenshot still works).
+  // FPS readout state: averaged over a ~0.5s window (below), not the per-frame value
+  // which wobbles (e.g. 119↔120) and reads as flicker. Persists across frames.
+  let fpsFrames = 0,
+    fpsAccumMs = 0;
   compositor.app.ticker.add(ticker => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
     if (!pausedSignal.value) gameController.update(dt);
@@ -348,6 +354,22 @@ async function main(): Promise<void> {
     if (redraw) gameController.draw();
     compositor.update(pausedSignal.value ? 0 : dt, redraw);
     syncHud();
+    // FPS readout (Show Framerate): average frames over a ~0.5s window so the number is
+    // steady (the per-frame value flickers, e.g. 119↔120), updating the counter at most
+    // ~twice a second and only when the rounded value actually changes.
+    if (showFramerate.value) {
+      fpsFrames++;
+      fpsAccumMs += ticker.deltaMS;
+      if (fpsAccumMs >= 500) {
+        const f = Math.round((fpsFrames * 1000) / fpsAccumMs);
+        if (f !== fps.peek()) fps.value = f;
+        fpsFrames = 0;
+        fpsAccumMs = 0;
+      }
+    } else if (fpsFrames || fpsAccumMs) {
+      fpsFrames = 0; // hidden → reset so re-enabling starts a fresh, clean window
+      fpsAccumMs = 0;
+    }
   });
 
   console.log('Atomic Cannon ready.');

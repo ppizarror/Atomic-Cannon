@@ -13,7 +13,7 @@ export const GameConfig = {
   // Land Size (Settings → Gameplay). World width = viewWidth × scale; scale is
   // 1..5 for "1 Screen / Small / Normal / Large / Massive" (1 = no scroll).
   landSize: 3,
-  autoScroll: true, // Graphics 2 → Auto Scroll (camera follows the shot / active tank)
+  autoScroll: true, // More Graphics Options → Auto Scroll (camera follows the shot / active tank)
 
   // World linear scale = worldWidth / viewWidth (= landSize, 1..5). Set at map load. The
   // original multiplies launch power AND gravity by the map scale so a full-power shot covers
@@ -34,10 +34,14 @@ export const GameConfig = {
   colorizeTeam: true, // Tank → Colorize Team (hull tint)
   showTeamColor: true, // Graphics → Show Team Color (name label)
   showPowerBars: true, // Graphics → Show Power (life/shield bars)
-  showTankStats: false, // Graphics 2 → Show Tank Stats (force always-on; default hover-only)
+  showTankStats: false, // More Graphics Options → Show Tank Stats (force always-on; default hover-only)
   tracking: true, // Graphics → Tracking (off-screen shot notches)
-  showPoints: true, // Graphics 2 → Show Points (floating damage number per hit)
-  showTurn: true, // Graphics 2 → Show Turn (turn arrow)
-  showLastAim: true, // Graphics 2 → Show Last Aim (faded initial-aim marker)
-  explosionWaves: true, // Graphics 2 → Explosion Waves (nuke refractive wave)
+  showPoints: true, // More Graphics Options → Show Points (floating damage number per hit)
+  showTurn: true, // More Graphics Options → Show Turn (turn arrow)
+  showLastAim: true, // More Graphics Options → Show Last Aim (faded initial-aim marker)
+  explosionWaves: true, // More Graphics Options → Explosion Waves (nuke refractive wave)
+  blastCircles: false, // More Graphics Options → Show Blast Circles (ring at each explosion's radius)
+  highContrast: false, // Graphics → High Contrast (white outline around tanks)
+  showAiStats: false, // Graphics → Show AI Stats (the active bot's aim solution)
+  demo: false, // More Graphics Options → Demo Mode (the human's turns are played by the AI)
 };

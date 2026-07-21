@@ -87,6 +87,25 @@ function tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElemen
   return cv;
 }
 
+// Solid-colour silhouette of a sprite (all opaque pixels → `color`), cached. Used to
+// stamp a white outline behind the hull for High Contrast.
+const silCache = new Map<string, HTMLCanvasElement>();
+function silhouette(sprite: Sprite, color: string, key: string): HTMLCanvasElement {
+  const hit = silCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = sprite.width;
+  cv.height = sprite.height;
+  const g = cv.getContext('2d')!;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(sprite.bitmap, 0, 0);
+  g.globalCompositeOperation = 'source-in'; // recolour every opaque pixel
+  g.fillStyle = color;
+  g.fillRect(0, 0, cv.width, cv.height);
+  silCache.set(key, cv);
+  return cv;
+}
+
 /**
  * Tank health/shield status structure
  */
@@ -595,6 +614,23 @@ export class CTank {
         this.m_bExploded || !GameConfig.colorizeTeam
           ? sprite.bitmap
           : tintToColor(sprite, this.m_sColor, `${bodyKey}|${this.m_sColor}`);
+      // High Contrast: stamp a white silhouette at 8 offsets behind the hull so the
+      // tank reads as white-outlined against busy terrain.
+      if (GameConfig.highContrast && !this.m_bExploded) {
+        const sil = silhouette(sprite, '#ffffff', `${bodyKey}|white`);
+        const o = Math.max(1.5, w * 0.045);
+        for (const [ox, oy] of [
+          [-o, 0],
+          [o, 0],
+          [0, -o],
+          [0, o],
+          [-o, -o],
+          [o, -o],
+          [-o, o],
+          [o, o],
+        ])
+          ctx.drawImage(sil, -w / 2 + ox, -h + oy, w, h);
+      }
       ctx.drawImage(img, -w / 2, -h, w, h);
     } else {
       this.drawVectorHull(ctx);
@@ -822,7 +858,7 @@ export class CTank {
       y = by + bh + 1;
     }
 
-    // --- full stat lines: on hover, or always with Graphics 2 → Show Tank Stats ---
+    // --- full stat lines: on hover, or always with More Graphics Options → Show Tank Stats ---
     if (showDetail || GameConfig.showTankStats) {
       y = line(`Team ${this.m_nTeamId + 1}`, y);
       y = line(`Life ${Math.round(this.m_health.nLife)}`, y);

@@ -16,6 +16,8 @@ import {
   hudWave,
   hudWaveStrength,
   paused,
+  showFramerate,
+  fps,
 } from './store';
 import {hexToRgb} from '../math/color';
 import {Button} from './Button';
@@ -121,6 +123,17 @@ function HudWave() {
         />
       </filter>
     </svg>
+  );
+}
+
+// FPS counter (More Graphics Options → Show Framerate) — top-right, in the game's outlined
+// bitmap font.
+function FramerateHud() {
+  if (!showFramerate.value) return null;
+  return (
+    <div id="fps-hud">
+      <BmpText font="beijing-16-out" text={`FPS ${fps.value}`} spacing={-1} />
+    </div>
   );
 }
 
@@ -236,6 +249,7 @@ export function App() {
       <HelpOverlay />
       <DepotPanel />
       <FlightHud />
+      <FramerateHud />
       <ScreenFlash />
       <HudWave />
       <TooSmallOverlay />

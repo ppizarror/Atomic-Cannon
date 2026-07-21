@@ -122,6 +122,8 @@ const CAMERA_CENTER = 0.5;
 // (px). Spawn jitter (px) matches the original (±20 / ±12).
 const DMG_NUM_LIFE = 1.1;
 const DMG_NUM_RISE = 28;
+// "Show Blast Circles": how long each explosion ring lingers (s).
+const BLAST_CIRCLE_LIFE = 1.4;
 
 /**
  * CGameController - Main game controller
@@ -185,6 +187,7 @@ export class CGameController implements ShotWorld {
     this.m_sentries = [];
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
+    this.m_blastCircles = [];
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
     // land + bounds if the size changed since the last match.
@@ -447,6 +450,10 @@ export class CGameController implements ShotWorld {
       for (const d of this.m_damageNumbers) d.age += dt;
       this.m_damageNumbers = this.m_damageNumbers.filter(d => d.age < DMG_NUM_LIFE);
     }
+    if (this.m_blastCircles.length) {
+      for (const c of this.m_blastCircles) c.age += dt;
+      this.m_blastCircles = this.m_blastCircles.filter(c => c.age < BLAST_CIRCLE_LIFE);
+    }
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
@@ -491,6 +498,7 @@ export class CGameController implements ShotWorld {
     if (this.m_land.isAnimating()) return true; // debris / fallout / slump / terrain rebuild
     if (!this.m_assets.isReady()) return true; // sprites still popping in
     if (this.m_damageNumbers.length) return true; // floating damage text rising/fading
+    if (this.m_blastCircles.length) return true; // blast-circle rings fading
     for (const s of this.m_shots) if (!s.isDead()) return true;
     for (const m of this.m_mines) if (m.armed > 0) return true; // arming → colour flips
     for (const t of this.m_tanks)
@@ -804,7 +812,9 @@ export class CGameController implements ShotWorld {
     }
 
     this.drawPlacedEntities(ctx);
+    this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
     this.drawDamageNumbers(ctx); // Show Points: floating damage text (world space)
+    this.drawAiStats(ctx); // Show AI Stats: active bot's aim solution
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
@@ -1094,6 +1104,39 @@ export class CGameController implements ShotWorld {
       const t = d.age / DMG_NUM_LIFE;
       this.drawBmpCentered(ctx, 'beijing-16-out', d.text, d.x, d.y - t * DMG_NUM_RISE, 1 - t);
     }
+  }
+
+  /** Show Blast Circles: a fading ring at each explosion's damage radius. */
+  private drawBlastCircles(ctx: CanvasRenderingContext2D): void {
+    for (const c of this.m_blastCircles) {
+      const a = Math.max(0, 1 - c.age / BLAST_CIRCLE_LIFE);
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = `rgba(0,0,0,${0.5 * a})`;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * a})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Show AI Stats: while a bot is taking its turn, print its firing solution (angle /
+   * power) above it in the outlined bitmap font — a peek at the computer's aim.
+   */
+  private drawAiStats(ctx: CanvasRenderingContext2D): void {
+    if (this.m_gameState !== EGameState.Battle) return;
+    const tank = this.getCurrentTank();
+    if (!tank.isBot() && !(GameConfig.demo && tank.isHuman())) return;
+    const p = tank.getPosition();
+    // angle / power — no "°" glyph in the ASCII bitmap font, so plain numbers.
+    const label = `${Math.round(this.m_angle)} / ${Math.round(this.m_power)}`;
+    this.drawBmpCentered(ctx, 'beijing-16-out', label, p.x, p.y - 44);
   }
 
   /** Spawn a Show-Points damage number off `tank` (jittered like the original). */
@@ -1473,6 +1516,10 @@ export class CGameController implements ShotWorld {
     deposit = false,
   ): void {
     this.m_lastImpactX = x; // the camera holds here while this blast animates
+    // Show Blast Circles: a ring at the blast's damage radius, fading out.
+    if (GameConfig.blastCircles && radiusPx !== undefined && radiusPx > 0) {
+      this.m_blastCircles.push({x, y, r: radiusPx, age: 0});
+    }
     if (color !== undefined && radiusPx !== undefined) {
       this.m_particles.blast(
         x,
@@ -1764,7 +1811,9 @@ export class CGameController implements ShotWorld {
     this.m_turnElapsed = 0;
     this.m_turnTimerRunning = this.m_shotTime > 0 && tank.isHuman() && !this.m_weaponTest;
 
-    if (tank.isBot()) {
+    // Demo Mode (More Graphics Options): the human's turns are played by the AI too, so the
+    // game plays itself.
+    if (tank.isBot() || (GameConfig.demo && tank.isHuman())) {
       this.schedule(0.7, () => this.executeBotTurn());
     }
     this.markDirty(); // new turn: indicator moves, aim resets → redraw
@@ -1893,6 +1942,7 @@ export class CGameController implements ShotWorld {
     // The tracer we may be firing right now plants its own pins later, in flight.
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
+    this.m_blastCircles = [];
     // Remember this aim as the tank's "last shot" so the reset (↺) button can
     // restore power+angle to it (non-utility only).
     tank.saveLastShot(this.m_angle, this.m_power);
@@ -2165,7 +2215,8 @@ export class CGameController implements ShotWorld {
   private executeBotTurn(): void {
     const botTank = this.getCurrentTank();
 
-    if (!botTank.isAlive() || !botTank.isBot()) return;
+    // In Demo Mode the AI also drives the human tank, so allow a non-bot through then.
+    if (!botTank.isAlive() || (!botTank.isBot() && !GameConfig.demo)) return;
 
     if (this.m_tanks.filter(t => t !== botTank && t.isAlive()).length === 0) {
       this.endTurn();
@@ -2619,6 +2670,8 @@ export class CGameController implements ShotWorld {
   }
 
   isPlayerTurn(): boolean {
+    // In Demo Mode the AI drives the human too, so the human never "has control".
+    if (GameConfig.demo) return false;
     return this.getCurrentTank().isHuman() && this.m_gameState === EGameState.Battle;
   }
 
@@ -2674,6 +2727,8 @@ export class CGameController implements ShotWorld {
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
   // Floating "Show Points" damage numbers (world pos + age); rise + fade over DMG_NUM_LIFE.
   private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];
+  // "Show Blast Circles": a ring per explosion at its damage radius; fades over BLAST_CIRCLE_LIFE.
+  private m_blastCircles: {x: number; y: number; r: number; age: number}[] = [];
   // Cached pixel data of structure bitmaps (bunker.bmp / wall.bmp) for buildStructure.
   private m_structImages = new Map<string, {width: number; height: number; data: Uint32Array}>();
 

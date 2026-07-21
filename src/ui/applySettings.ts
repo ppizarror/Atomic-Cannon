@@ -14,6 +14,7 @@ import {Roster} from '../core/CRoster';
 import {gameSettings as S} from './settingsValues';
 import {weaponsOff, landsOff} from './contentStore';
 import {roster} from './playersStore';
+import {showFramerate} from './store';
 
 export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.
@@ -49,6 +50,11 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.showTurn = S.showTurn();
   GameConfig.showLastAim = S.showLastAim();
   GameConfig.explosionWaves = S.explosionWaves();
+  GameConfig.blastCircles = S.blastCircles();
+  GameConfig.highContrast = S.highContrast();
+  GameConfig.showAiStats = S.showAiStats();
+  GameConfig.demo = S.demo();
+  showFramerate.value = S.framerate(); // top-right FPS counter (DOM overlay)
 
   // Active weapon/landscape selection for the NEXT match (Game Content editors).
   GameContent.weaponsOff = new Set(weaponsOff.value);

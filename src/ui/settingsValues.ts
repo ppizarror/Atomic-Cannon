@@ -70,4 +70,9 @@ export const gameSettings = {
   showTurn: (): boolean => getVal('gfx.showTurn', 1) !== 0,
   showLastAim: (): boolean => getVal('gfx.lastAim', 1) !== 0,
   explosionWaves: (): boolean => getVal('gfx.expWaves', 1) !== 0,
+  blastCircles: (): boolean => getVal('gfx.blastCircles', 0) !== 0,
+  highContrast: (): boolean => getVal('gfx.highContrast', 0) !== 0,
+  showAiStats: (): boolean => getVal('gfx.aiStats', 0) !== 0,
+  demo: (): boolean => getVal('gfx.demo', 0) !== 0,
+  framerate: (): boolean => getVal('gfx.framerate', 0) !== 0,
 };

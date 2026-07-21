@@ -524,6 +524,19 @@ canvas {
   color: #2a2f34;
 }
 
+/* FPS counter (Show Framerate) — top-right corner, outlined bitmap font. */
+#fps-hud {
+  position: fixed;
+  top: 8px;
+  right: 10px;
+  z-index: var(--z-hud);
+  pointer-events: none;
+}
+#fps-hud canvas {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+}
+
 /* Jet-flight indicator — low-centre, above the HUD panel, clear of the top-left
    minimap + status text (which the top-centre placement used to collide with). */
 .flight-hud {

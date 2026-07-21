@@ -214,6 +214,11 @@ export function depotAutoBuy(): void {
   uiClick();
 }
 
+// Framerate counter (More Graphics Options → Show Framerate): the toggle + the live smoothed
+// value, published from the game loop.
+export const showFramerate = signal(false);
+export const fps = signal(0);
+
 // Jet flight (extType 17): live while the human is airborne, with remaining fuel.
 export const flying = signal(false);
 export const jetFuel = signal(0);
