@@ -1706,7 +1706,7 @@ export class CGameController implements ShotWorld {
 
     const muzzlePos = tank.getMuzzlePosition();
     const baseAngle = tank.getTurretAngle();
-    const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
+    const isBeam = ext === EXT.BEAM || ext === EXT.BEAM_ALT;
     // Per-shot inaccuracy — gated by Settings → Gameplay → Variance.
     const varianceRad = this.m_variance ? (weapon.getVariance() * Math.PI) / 180 : 0;
 

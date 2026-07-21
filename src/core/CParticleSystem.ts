@@ -464,7 +464,8 @@ export class CParticleSystem {
     // contract to nothing (additive → a flash that collapses inward). This is the MAIN body
     // of the blast the original shows, so it is FEW + LARGE (so the flare's own shape reads,
     // not a washed-out blob) rather than a dense cloud.
-    this.emitShrinkBurst(x, y, r, flareSpr, big ? 14 : small ? 4 : 7);
+    // Ring count scales with the blast radius (the original uses ~mag·0.5), not a fixed number.
+    this.emitShrinkBurst(x, y, r, flareSpr, Math.max(3, Math.round(r * (big ? 0.7 : 0.5))));
     // A hot white-out flash is a NUKE/big-blast thing in the original (style-4 full-screen
     // add). Smaller rounds get NO washout, so their expBitmap flare stays visible.
     if (big) this.spawnFlash(x, y, r * 2.4, {r: 255, g: 255, b: 255}, 0.3);
