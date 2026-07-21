@@ -648,6 +648,12 @@ export class CLand {
     fDamagePerSecond: number,
     fDurationSeconds: number,
     rgb?: [number, number, number],
+    // AIRBURST: the fallout is thrown from the mid-air burst point (`speckOriginY`, well above
+    // the surface) and RAINS down onto the ground, instead of erupting up out of a crater. The
+    // damage zone + ground recolour still key off `y` (the surface); only the specks originate
+    // high and fall. Defaults keep the normal ground-blast behaviour.
+    speckOriginY?: number,
+    raining = false,
   ): void {
     // Nukes/DOT ship no explicit irRGB → glow a hot radioactive red-orange.
     const [r, g, b] = rgb && (rgb[0] || rgb[1] || rgb[2]) ? rgb : [255, 46, 20];
@@ -740,14 +746,19 @@ export class CLand {
         g: 0,
         b: 0,
       };
+      const originY = speckOriginY ?? y;
       s.x = x + Math.cos(ang) * dist;
-      s.y = y + Math.sin(ang) * dist * 0.5; // start near the surface line
+      s.y = originY + Math.sin(ang) * dist * 0.5; // near the surface, or high in the air (airburst)
       s.vx = Math.cos(ang) * speed * 0.6;
-      s.vy = Math.sin(ang) * speed * 0.5 - (70 + this.rand01() * 150); // up-biased
+      // Raining (airburst): thrown OUT and slightly DOWN so it falls from the burst point to the
+      // ground. Otherwise (ground blast): thrown UP so it arcs up and rains back into the crater.
+      s.vy = raining
+        ? Math.sin(ang) * speed * 0.3 + (30 + this.rand01() * 70)
+        : Math.sin(ang) * speed * 0.5 - (70 + this.rand01() * 150);
       s.age = 0;
       s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
       s.settled = false;
-      s.size = 1.6 + this.rand01() * 2;
+      s.size = 0.8 + this.rand01() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
       s.rise = 0;
       s.r = r;
       s.g = g;
@@ -1503,10 +1514,9 @@ export class CLand {
         ctx.globalAlpha = fade * 0.4;
         ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
       }
-      // Pass 2 — the soft red emissive glow (additive). A fast fillRect instead of
-      // a per-speck arc()+fill() circle (the rasterised path ×7200 was the draw
-      // spike); the tint is constant per blast, so build the rgb() string only when
-      // the colour actually changes, and vary only globalAlpha per speck.
+      // Pass 2 — the soft emissive glow (additive). Small square dots (a circle this tiny
+      // reads the same), fillRect for speed; the tint is constant per blast, so build the
+      // rgb() string only when the colour changes and vary only globalAlpha per speck.
       ctx.globalCompositeOperation = 'lighter';
       let lastKey = -1;
       for (const s of this.m_radSpecks) {
@@ -1518,7 +1528,7 @@ export class CLand {
           lastKey = key;
         }
         ctx.globalAlpha = fade * 0.5;
-        const w = 2 + s.size; // ≈ old arc diameter
+        const w = 0.25 + s.size; // small dot (was 2 + size — the boxes read too big)
         ctx.fillRect(s.x - w / 2, s.y - w / 2, w, w);
       }
       ctx.globalAlpha = 1;
