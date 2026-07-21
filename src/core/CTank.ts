@@ -617,7 +617,10 @@ export class CTank {
   private drawShieldDome(ctx: CanvasRenderingContext2D, cx: number, surfaceY: number): void {
     const shield = this.m_health.nShield;
     const cy = surfaceY - tankHeight() * 0.5; // tank body centre
-    const r = tankRadius() * 2.5; // base ring radius (2.5× the tank radius)
+    // Base ring radius is proportional to the tank's on-screen radius (the original uses ~2.5×,
+    // but its exact base is unrecoverable); feeding our chunkier collision radius at 2.5× made the
+    // bubble too big, so the base is tuned to hug the hull like the original.
+    const r = tankRadius() * 1.7; // snug base ring radius
     const rings: [number, number][] = [[r - 1, 100]]; // the always-on inner ring
     if (shield > 200) rings.push([r + 1, 150]);
     if (shield > 400) rings.push([r + 3, 200]);
