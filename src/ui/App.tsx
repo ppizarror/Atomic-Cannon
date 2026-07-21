@@ -124,13 +124,18 @@ function HudWave() {
   );
 }
 
-// Jet-flight indicator: shows remaining fuel + controls while the human flies.
+// Jet-flight indicator: remaining fuel + a control hint while the human flies. Sits
+// low-centre, clear of the top-left minimap / status text, in the game's bitmap font.
 function FlightHud() {
   if (!flying.value) return null;
   return (
     <div class="flight-hud">
-      <div class="flight-fuel">JET FUEL {jetFuel.value.toFixed(1)}s</div>
-      <div class="flight-hint">◀ ▲ ▶ / A W D to fly · Space to cut engine</div>
+      <div class="flight-fuel">
+        <BmpText font="beijing-20-out" text={`JET FUEL ${jetFuel.value.toFixed(1)}s`} spacing={-1} />
+      </div>
+      <div class="flight-hint">
+        <BmpText font="beijing-16-out" text="Arrows / WASD to fly - Space to cut engine" spacing={-1} />
+      </div>
     </div>
   );
 }

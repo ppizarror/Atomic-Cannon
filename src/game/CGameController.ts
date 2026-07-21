@@ -38,6 +38,7 @@ import {
   pickWeapon,
 } from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
+import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {
   EXT,
   type ExtType,
@@ -117,6 +118,11 @@ const CAMERA_SCROLL_SPEED = 1100;
 // Where the followed object sits in the view: 0.5 = dead centre.
 const CAMERA_CENTER = 0.5;
 
+// "Show Points" floating damage numbers: life (s) and rise distance over that life
+// (px). Spawn jitter (px) matches the original (±20 / ±12).
+const DMG_NUM_LIFE = 1.1;
+const DMG_NUM_RISE = 28;
+
 /**
  * CGameController - Main game controller
  */
@@ -168,6 +174,9 @@ export class CGameController implements ShotWorld {
   /**
    * Start new game with specified number of players
    */
+  /** Start a match with `nPlayers` teams; each team fields `m_tanksPerTeam` tanks (a
+   *  squad sharing that player's colour), capped at 16 tanks total. The first
+   *  `m_humanCount` teams are human. */
   startGame(nPlayers: number = 2): void {
     // Reset state
     this.m_tanks = [];
@@ -175,6 +184,17 @@ export class CGameController implements ShotWorld {
     this.m_mines = [];
     this.m_sentries = [];
     this.m_aimMarkers = [];
+    this.m_damageNumbers = [];
+
+    // Land Size (Play menu): the world may be several viewports wide. Rebuild the
+    // land + bounds if the size changed since the last match.
+    const worldW = Math.round(this.m_canvas.width * this.landScale());
+    if (worldW !== this.m_worldWidth) {
+      this.m_worldWidth = worldW;
+      GameConfig.worldScale = worldW / this.m_canvas.width;
+      this.m_land = new CLand(worldW, this.m_canvas.height);
+      this.m_particles.setBounds(worldW, this.m_canvas.height);
+    }
 
     // Generate terrain: a DEV flat test surface (`?flatland=1`), a forced landscape shape
     // (Settings → Land Type), or, for "Random", the usual random landscape.
@@ -186,44 +206,52 @@ export class CGameController implements ShotWorld {
       this.m_land.generateRandomTerrain();
     }
 
-    // Per-player roster (name / tank model / colour) from Customize Players. Colour
-    // is the player's identity: tanks sharing a colour are a team, so team ids are
-    // derived by grouping equal colours (distinct colours → free-for-all).
-    const players = Roster.players;
+    // Build the spawn list from the roster (Customize Players): one entry per tank.
+    // Each player fields `m_tanksPerTeam` tanks that share the player's colour — colour
+    // is the team identity, so a squad is a team (distinct player colours → free-for-all).
+    // Capped at 16 tanks total for playability.
+    const roster = Roster.players;
     const teamOfColor = new Map<string, number>();
+    const perTeam = Math.max(1, this.m_tanksPerTeam);
+    const MAX_TANKS = 16;
 
-    for (let i = 0; i < nPlayers; i++) {
-      const cfg = players[i] ?? {
-        name: i === 0 ? 'Player' : BOT_NAMES[i % BOT_NAMES.length],
+    const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
+    for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
+      const cfg = roster[p] ?? {
+        name: p === 0 ? 'Player' : BOT_NAMES[p % BOT_NAMES.length],
         model: '',
-        color: TEAM_COLORS[i] ?? '#0000ff',
+        color: TEAM_COLORS[p] ?? '#0000ff',
       };
-
       // Team = the colour's group; the first tank of a colour defines a new team id.
-      let teamId = teamOfColor.get(cfg.color);
-      if (teamId === undefined) {
-        teamId = teamOfColor.size;
-        teamOfColor.set(cfg.color, teamId);
+      let team = teamOfColor.get(cfg.color);
+      if (team === undefined) {
+        team = teamOfColor.size;
+        teamOfColor.set(cfg.color, team);
       }
-
-      // Position tanks across the whole WORLD (not just the view) so a large map
-      // is actually used — ends anchored left/right, others scattered between.
-      const worldW = this.m_worldWidth;
-      let xPos: number;
-      if (i === 0) {
-        xPos = 100 + Math.random() * 50; // Left side for player 1
-      } else if (i === nPlayers - 1) {
-        xPos = worldW - 150 + Math.random() * 50; // Right side
-      } else {
-        // Bots scattered in between
-        xPos = 200 + Math.random() * (worldW - 400);
+      const human = p < this.m_humanCount;
+      for (let k = 0; k < perTeam && spawns.length < MAX_TANKS; k++) {
+        const name = perTeam > 1 ? `${cfg.name} ${k + 1}` : cfg.name;
+        spawns.push({name, color: cfg.color, model: cfg.model, team, human});
       }
+    }
 
-      const pTank = new CTank(cfg.name, teamId);
-      pTank.setColor(cfg.color); // hull colour (and team identity)
-      if (cfg.model) pTank.setTankType(cfg.model);
+    // Position the tanks spread across the whole WORLD (not just the view) so a large
+    // map is actually used, with a little jitter and clamped to the world.
+    const n = spawns.length;
+    const margin = 120;
+    for (let i = 0; i < n; i++) {
+      const s = spawns[i];
+      const frac = n <= 1 ? 0.5 : i / (n - 1);
+      const xPos = Math.max(
+        60,
+        Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + (Math.random() - 0.5) * 40),
+      );
+
+      const pTank = new CTank(s.name, s.team);
+      pTank.setColor(s.color); // hull colour (and team identity)
+      if (s.model) pTank.setTankType(s.model);
       pTank.init(xPos, this.m_land);
-      pTank.setHuman(i === 0); // Only first player is human
+      pTank.setHuman(s.human);
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
       pTank.setCredits(this.m_startCredits); // per-tank starting credits (Economy → Credit Start)
 
@@ -265,6 +293,8 @@ export class CGameController implements ShotWorld {
     this.m_assets.loadSprite('gui/notch-decent', '/assets/gui/notch center decent.bmp');
     this.m_assets.loadSprite('gui/notch-left', '/assets/gui/notch left.bmp');
     this.m_assets.loadSprite('gui/notch-right', '/assets/gui/notch right.bmp');
+    // Booster-jet exhaust flame drawn below a flying tank (black bg → additive glow).
+    this.m_assets.loadImage('gui/jet', '/assets/gui/jet.bmp');
 
     // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
     // and the additive starburst flare used for trail plumes / fireballs.
@@ -413,6 +443,10 @@ export class CGameController implements ShotWorld {
     // Always update terrain, wind and visual effects
     this.m_time += dt;
     this.updateCamera(dt); // ease the large-map camera toward the shot / active tank
+    if (this.m_damageNumbers.length) {
+      for (const d of this.m_damageNumbers) d.age += dt;
+      this.m_damageNumbers = this.m_damageNumbers.filter(d => d.age < DMG_NUM_LIFE);
+    }
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
@@ -456,6 +490,7 @@ export class CGameController implements ShotWorld {
     if (this.m_weather.isActive()) return true; // rain/snow/dust never rest
     if (this.m_land.isAnimating()) return true; // debris / fallout / slump / terrain rebuild
     if (!this.m_assets.isReady()) return true; // sprites still popping in
+    if (this.m_damageNumbers.length) return true; // floating damage text rising/fading
     for (const s of this.m_shots) if (!s.isDead()) return true;
     for (const m of this.m_mines) if (m.armed > 0) return true; // arming → colour flips
     for (const t of this.m_tanks)
@@ -769,6 +804,7 @@ export class CGameController implements ShotWorld {
     }
 
     this.drawPlacedEntities(ctx);
+    this.drawDamageNumbers(ctx); // Show Points: floating damage text (world space)
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
@@ -978,13 +1014,25 @@ export class CGameController implements ShotWorld {
 
   /** Mines, sentries and tracer markers placed on the field. */
   private drawPlacedEntities(ctx: CanvasRenderingContext2D): void {
+    // Placed mines: the real spiked-mine sprite (weapons/mine.bmp), scaled to the
+    // weapon's display `size` like its in-flight projectile and sat on the ground.
     for (const m of this.m_mines) {
-      ctx.fillStyle = m.armed > 0 ? '#886600' : '#ffcc00';
-      ctx.beginPath();
-      ctx.arc(m.x, m.y - 2, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.fillRect(m.x - 5, m.y - 1, 10, 2);
+      const weapon = getWeapon(m.weaponIndex);
+      const sprite = this.m_assets.getSprite(`weapons/${weapon.getBitmap()}`);
+      if (sprite) {
+        const target = Math.max(6, weapon.getSize() * GameConfig.tankSizeScale);
+        const k = target / Math.max(sprite.width, sprite.height);
+        const dw = sprite.width * k,
+          dh = sprite.height * k;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(sprite.bitmap, Math.round(m.x - dw / 2), Math.round(m.y - dh + 2), dw, dh);
+      } else {
+        // Fallback until the sprite loads: a small dot.
+        ctx.fillStyle = '#b0b0b0';
+        ctx.beginPath();
+        ctx.arc(m.x, m.y - 4, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     for (const s of this.m_sentries) {
       ctx.fillStyle = '#9aa';
@@ -1010,17 +1058,54 @@ export class CGameController implements ShotWorld {
       ctx.arc(mk.x, mk.y - 14, 2.4, 0, Math.PI * 2);
       ctx.fill();
       if (mk.label) {
-        ctx.font = 'bold 11px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#000';
-        ctx.strokeText(mk.label, mk.x, mk.y - 17);
-        ctx.fillStyle = '#fff';
-        ctx.fillText(mk.label, mk.x, mk.y - 17);
+        // Ranging number in the game's outlined bitmap font (its baked outline keeps
+        // it legible over any terrain), replacing the old canvas monospace text.
+        this.drawBmpCentered(ctx, 'beijing-16-out', mk.label, mk.x, mk.y - 22);
       }
       ctx.restore();
     }
+  }
+
+  /** Blit a bitmap-font string centred at world (cx, cy) at native size. */
+  private drawBmpCentered(
+    ctx: CanvasRenderingContext2D,
+    font: FontId,
+    text: string,
+    cx: number,
+    cy: number,
+    alpha = 1,
+  ): void {
+    const cv = getFont(font).renderCached(text);
+    if (!cv.width) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(cv, Math.round(cx - cv.width / 2), Math.round(cy - cv.height / 2));
+    ctx.restore();
+  }
+
+  /**
+   * Floating "Show Points" damage numbers (RE: FUN_0046bd10, gated on 0x97c) — on a
+   * damaging hit, a number rises off the struck tank and fades. Drawn in world space
+   * (under the camera) in an outlined bitmap font.
+   */
+  private drawDamageNumbers(ctx: CanvasRenderingContext2D): void {
+    for (const d of this.m_damageNumbers) {
+      const t = d.age / DMG_NUM_LIFE;
+      this.drawBmpCentered(ctx, 'beijing-16-out', d.text, d.x, d.y - t * DMG_NUM_RISE, 1 - t);
+    }
+  }
+
+  /** Spawn a Show-Points damage number off `tank` (jittered like the original). */
+  private spawnDamageNumber(tank: CTank, amount: number): void {
+    if (!GameConfig.showPoints || amount < 1) return;
+    const p = tank.getPosition();
+    this.m_damageNumbers.push({
+      x: p.x + (Math.random() * 40 - 20),
+      y: p.y + (Math.random() * 24 - 12),
+      text: String(Math.round(amount)),
+      age: 0,
+    });
   }
 
   /**
@@ -1544,6 +1629,7 @@ export class CGameController implements ShotWorld {
 
       const removed = tank.hit(dmg, piercing); // shield → hazmat(if piercing) → armor → life
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
+      this.spawnDamageNumber(tank, removed); // Show Points: floating damage text
 
       const dx = tank.getPosition().x - pos.x; // kick up and away from the blast
       const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
@@ -1806,6 +1892,7 @@ export class CGameController implements ShotWorld {
     // pins live only until the NEXT round is launched (they aren't a growing history).
     // The tracer we may be firing right now plants its own pins later, in flight.
     this.m_aimMarkers = [];
+    this.m_damageNumbers = [];
     // Remember this aim as the tank's "last shot" so the reset (↺) button can
     // restore power+angle to it (non-utility only).
     tank.saveLastShot(this.m_angle, this.m_power);
@@ -2232,6 +2319,17 @@ export class CGameController implements ShotWorld {
     this.m_startCredits = Math.max(0, Math.round(n));
   }
 
+  /** How many of the next match's players are human (the first N teams); the rest are
+   *  CPU. Read in `startGame`; the depot binds to tank 0 as before. */
+  setHumanCount(n: number): void {
+    this.m_humanCount = Math.max(0, Math.round(n));
+  }
+
+  /** Tanks each player fields (squad size, 1..5). Read in `startGame`. */
+  setTanksPerTeam(n: number): void {
+    this.m_tanksPerTeam = Math.max(1, Math.min(5, Math.round(n)));
+  }
+
   /** Depot sell-back refund fraction (0..1), live. */
   setSellRate(fraction: number): void {
     this.m_economy.setSellRate(fraction);
@@ -2240,6 +2338,11 @@ export class CGameController implements ShotWorld {
   /** Number of battles in the match (feeds "Battle X of Y"). */
   setTotalBattles(n: number): void {
     this.m_totalBattles = Math.max(1, Math.round(n));
+  }
+
+  /** Number of rounds in a Point/Rounds game (Play → Rounds). */
+  setTotalRounds(n: number): void {
+    this.m_totalRounds = Math.max(1, Math.round(n));
   }
 
   /** Forced landscape shape 0..4, or -1 for a random landscape (next startGame). */
@@ -2569,6 +2672,8 @@ export class CGameController implements ShotWorld {
   }[] = [];
   private m_sentries: {x: number; y: number; owner: CTank | null; weaponIndex: number}[] = [];
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
+  // Floating "Show Points" damage numbers (world pos + age); rise + fade over DMG_NUM_LIFE.
+  private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];
   // Cached pixel data of structure bitmaps (bunker.bmp / wall.bmp) for buildStructure.
   private m_structImages = new Map<string, {width: number; height: number; data: Uint32Array}>();
 
@@ -2600,10 +2705,13 @@ export class CGameController implements ShotWorld {
   private m_shotsFired = 0;
   private m_currentBattle = 1;
   private m_totalBattles = 5;
+  private m_totalRounds = 10; // rounds in a Point game (Play → Rounds)
 
   // Gameplay config pushed from the Settings menu (see ui/applySettings). Start-time
   // values (credits, land shape) are read in startGame; the rest are read live.
   private m_startCredits = START_CREDITS;
+  private m_humanCount = 1; // how many teams are human (the first N); rest CPU
+  private m_tanksPerTeam = 1; // squad size — tanks each player fields (Play → Tanks)
   private m_landMode = -1; // -1 = random landscape; 0..4 = a forced shape
   private m_flatLand = false; // DEV `?flatland=1`: force a flat test surface next startGame
   private m_windScale = 1; // 0 disables wind

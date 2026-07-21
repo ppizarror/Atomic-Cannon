@@ -328,6 +328,11 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   const bigBlast = weapon.isNuclear() || weapon.getExpType() === 4 || radiusPx >= BIG_BLAST_RADIUS;
   if (!isCleaner && bigBlast) world.shake(isPrimary ? 8 : 4, 0.3);
 
+  // A blast only craters/scorches the GROUND when its radius spans the gap from the detonation
+  // point down to the surface. An AIRBURST (extType 13) detonates high at the apex, so it does
+  // NOT cut a crater or scorch the ground below — it just rains its fallout down from the air.
+  const reachesGround = surfaceY - pos.y < radiusPx;
+
   // Terrain effect.
   const earth = weapon.getEarth();
   if (earth > 0) {
@@ -353,7 +358,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
       Math.min(400, craterR * 6 + 20),
       craterR,
     );
-  } else if (!isBeam) {
+  } else if (!isBeam && reachesGround) {
     // Nukes (expType 4) blow a much wider crater than their base radius.
     const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
     const craterR = Math.round(radiusPx * (heavy ? 1.35 : 1));
@@ -394,6 +399,8 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   if (rad.time > 0 && rad.dmg > 0) {
     const big = weapon.getExpType() === 4 || weapon.isNuclear();
     const zoneR = Math.round(radiusPx * (big ? 1.4 : 1));
+    // The damage zone + ground glow settle on the SURFACE; but for an airburst the fallout is
+    // thrown from the mid-air burst point and RAINS down onto the ground (not up out of a crater).
     land.blastIradiate(
       Math.floor(pos.x),
       Math.floor(surfaceY),
@@ -401,6 +408,8 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
       rad.dmg * 60,
       rad.time,
       rad.rgb,
+      reachesGround ? undefined : Math.floor(pos.y), // speck origin: air burst point when high up
+      !reachesGround, // raining
     );
   }
 

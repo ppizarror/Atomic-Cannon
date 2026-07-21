@@ -663,8 +663,8 @@ export class CLand {
     // good while and decays slowly.
     const dur = fDurationSeconds * 1.6;
 
-    // Gameplay damage zone (queried against tanks each frame) — also drives the
-    // solid glowing band painted along the surface.
+    // Gameplay damage zone (queried against tanks each frame) — invisible; the visible glow
+    // is the specks. Damage-over-time for irTime, matching the original's fallout DOT.
     this.m_radParticles.push({
       x,
       y,
@@ -677,52 +677,17 @@ export class CLand {
       b,
     });
 
-    // Fallout is irradiated EARTH: it REFILLS most of the crater, raising the
-    // heightmap back up — so the deposit is real, collidable, destructible TERRAIN
-    // (not an overlay over the sky). It fills a fixed fraction of the crater at each
-    // column, so it follows the bowl: thick over the deep centre, thin up the walls.
-    // The earth glows red densest at the centre, fading to brown up the walls and
-    // over irTime; when the glow dies the raised earth stays (never turns to air).
-    if (this.m_deposit && this.m_arrHeights && this.m_baseHeights) {
-      const FILL = 0.2; // fraction of the crater refilled by fallout
-      const px0 = Math.max(0, Math.floor(x - nRadius)),
-        px1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
-      for (let col = px0; col <= px1; col++) {
-        const craterDepth = this.m_arrHeights[col] - this.m_baseHeights[col]; // >0 inside the crater
-        if (craterDepth <= 2) continue; // only where the ground was actually cratered
-        const target = craterDepth * FILL;
-        const add = target - this.m_deposit[col]; // only the new contribution
-        if (add > 0) {
-          this.m_deposit[col] = target; // radiation glow-zone height (transient overlay reads it)
-          // Refill the crater with real earth pixels; the glow reddens them while live, then
-          // the bare irradiated earth stays. Clamp the raise to the pristine ceiling.
-          const raised = Math.max(this.m_baseHeights[col], this.m_arrHeights[col] - add);
-          this.setColumnTop(col, raised);
-        }
-      }
-      this.preBlast(px0, px1);
-    }
+    // Radiation makes NO terrain change (faithful to the original: the fallout routine only
+    // spawns glowing specks — it never raises the heightmap or bares/recolours the ground).
+    // In the unified terrain model a bomb REMOVES earth and Dirt weapons DEPOSIT it; radiation
+    // does neither — it's a temporary glow that fades over irTime, leaving the ground as it was.
 
-    // Irradiated ground turns to bare DIRT: recolour the grass cap to dirt pixels across the
-    // whole fallout span (the original bares the grass so the zone reads as radiated earth, not
-    // green under a red tint). Real pixels → the bare earth stays after the glow fades.
-    if (this.m_pixels && this.m_arrHeights) {
-      const gd = Math.max(4, (this.m_layers[0]?.depth ?? 10) + 2); // grass-cap thickness
-      const zx0 = Math.max(0, Math.floor(x - nRadius)),
-        zx1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
-      for (let col = zx0; col <= zx1; col++) {
-        const top = this.m_arrHeights[col];
-        const bot = Math.min(this.m_nHeight - 1, top + gd);
-        for (let yy = top; yy <= bot; yy++)
-          this.m_pixels[yy * this.m_nWidth + col] = this.dirtColorAt(col, yy);
-      }
-      this.m_pixelsDirty = true;
-    }
-
-    // Visual: a cloud of glowing specks thrown out of the crater. They fall, settle,
-    // and scatter THROUGH the pile (granular texture) tinted by irRGB fading over
-    // irTime — so the zone conforms to the ground, not floating.
-    const n = Math.max(200, Math.min(12000, Math.round(nRadius * 60)));
+    // Visual: a cloud of glowing specks. They fall, settle on the surface as a thin glowing
+    // carpet tinted by irRGB, and fade over irTime — no deposit, they just coat the ground.
+    // Count scales with the blast RADIUS (the original's fallout count ∝ radius; the exact
+    // multiplier is x87-lost). Tuned high enough that the 5-px crosses fill the thick crater-void
+    // POOL densely (the reference footage shows a deep red band, not a thin surface line).
+    const n = Math.max(400, Math.min(12000, Math.round(nRadius * 30)));
     const pool = this.m_speckPool;
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
@@ -749,12 +714,13 @@ export class CLand {
       const originY = speckOriginY ?? y;
       s.x = x + Math.cos(ang) * dist;
       s.y = originY + Math.sin(ang) * dist * 0.5; // near the surface, or high in the air (airburst)
-      s.vx = Math.cos(ang) * speed * 0.6;
-      // Raining (airburst): thrown OUT and slightly DOWN so it falls from the burst point to the
-      // ground. Otherwise (ground blast): thrown UP so it arcs up and rains back into the crater.
+      s.vx = Math.cos(ang) * speed;
+      // Ground blast: thrown RADIALLY outward (the original's `rand·8+2` radial velocity), then
+      // gravity settles each onto the surface. Airburst (raining): biased DOWN so it falls from
+      // the mid-air burst point to the ground.
       s.vy = raining
-        ? Math.sin(ang) * speed * 0.3 + (30 + this.rand01() * 70)
-        : Math.sin(ang) * speed * 0.5 - (70 + this.rand01() * 150);
+        ? Math.sin(ang) * speed * 0.4 + (30 + this.rand01() * 70)
+        : Math.sin(ang) * speed;
       s.age = 0;
       s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
       s.settled = false;
@@ -765,8 +731,8 @@ export class CLand {
       s.b = b;
       this.m_radSpecks.push(s);
     }
-    if (this.m_radSpecks.length > 13000)
-      this.m_radSpecks.splice(0, this.m_radSpecks.length - 13000);
+    if (this.m_radSpecks.length > 17000)
+      this.m_radSpecks.splice(0, this.m_radSpecks.length - 17000);
   }
 
   /** Arm the angle-of-repose slump over a span for a few seconds — it runs in `update()`
@@ -978,7 +944,6 @@ export class CLand {
     this.m_radParticles.length = rw;
 
     // Radiation specks: fall until they hit the surface, then settle and glow.
-    // Compact-forward too — up to ~12000 specks meant splice(i,1) was O(n²).
     const RAD_GRAV = 320;
     let sw = 0;
     for (let i = 0; i < this.m_radSpecks.length; i++) {
@@ -1008,8 +973,18 @@ export class CLand {
           // (walls + floor + rim) — a small spread
           // mostly on/just below the ground, a thin fringe above. NOT pooled in the
           // deposit, so it coats the deep walls, not just the bottom.
-          s.rise = this.rand01() * 4 - this.rand01() * this.rand01() * 30; // +4 above .. -30 below (thick, grounded)
-          s.y = this.getHeightAt(col) - s.rise;
+          // Coat the exposed DIRT of the crater face with a thick red band going DOWN INTO the
+          // ground (over the visible soil), thicker where the crater is deep — NOT floating up in
+          // the excavated VOID above the surface. Purely a glow over the terrain; no terrain change.
+          const c2 = Math.max(0, Math.min(this.m_nWidth - 1, col + (Math.floor(this.rand01() * 4) - 2)));
+          const sy = this.getHeightAt(c2);
+          const baseH = this.m_baseHeights ? this.m_baseHeights[c2] : sy;
+          const craterDepth = Math.max(0, sy - baseH); // >0 inside the crater bowl
+          const bandDepth = Math.min(10 + craterDepth * 0.5, 42); // how deep into the soil the red reaches
+          s.x = c2;
+          // rise < 0 → BELOW the surface (into the dirt); +2 fringe just above so the rim reads.
+          s.rise = 2 - Math.floor(this.rand01() * 4) - this.rand01() * bandDepth;
+          s.y = sy - s.rise;
         }
       } else {
         // Keep clinging to the surface as craters below it change the height.
@@ -1020,11 +995,11 @@ export class CLand {
     }
     this.m_radSpecks.length = sw;
 
-    // Heat haze: faint warm plumes rise off the live fallout — spawned across the
-    // active deposit (fewer as the zone cools), they lift, widen and fade so the
-    // radioactive ground reads as HOT. Gated on the deposit, so a bomb that clears
-    // the fallout stops new heat there too.
-    if (this.m_radParticles.length && this.m_deposit && this.m_heat.length < 90) {
+    // Heat haze: faint warm plumes ("fumes") rise off the live radioactive ground — spawned
+    // across the active zone (fewer as it cools), lifting, widening and fading so the ground
+    // reads as HOT. Gated on the radiation ZONE (not the removed deposit), so it stops when the
+    // zone expires or a bomb clears it.
+    if (this.m_radParticles.length && this.m_heat.length < 90) {
       for (const z of this.m_radParticles) {
         const cool = z.timeRemaining / Math.max(0.5, z.duration); // 1 hot → 0 cold
         const rr = z.radius;
@@ -1039,7 +1014,7 @@ export class CLand {
           tb = Math.round(z.b * k2);
         for (let k = 0; k < spawn; k++) {
           const col = Math.floor(z.x - rr + this.rand01() * rr * 2);
-          if (col < 0 || col >= this.m_nWidth || this.m_deposit[col] <= 0) continue;
+          if (col < 0 || col >= this.m_nWidth) continue; // spawn anywhere in the zone, off the surface
           this.m_heat.push({
             x: col + this.rand01() * 2 - 1,
             y: this.getHeightAt(col) - this.rand01() * 4,
@@ -1448,88 +1423,30 @@ export class CLand {
       }
     }
 
-    // Radiation glow — a TEMPORARY emissive tint over the raised fallout deposit.
-    // The deposit is real, collidable, destructible EARTH (the heightmap was raised
-    // and the bitmap baked earthy-brown above); this glow only reddens that earth
-    // while the zone is live and fades over irTime, leaving the bare earth behind —
-    // it never paints the sky above the surface, so nothing turns to air.
-    if (this.m_radParticles.length && this.m_arrHeights && this.m_deposit) {
-      const dep = this.m_deposit;
-      // Pass A — red emissive body (normal blend) painted DOWN INTO the raised earth.
-      // Per zone the tint is constant, so set fillStyle ONCE and vary only
-      // globalAlpha per column — no per-column rgba() string (that churn drove GC).
-      for (const z of this.m_radParticles) {
-        const fade = Math.min(1, (2 * z.timeRemaining) / Math.max(0.5, z.duration)); // full for the first half, then dim gradually
-        if (fade <= 0) continue;
-        const rr = z.radius;
-        const x0 = Math.max(0, Math.floor(z.x - rr)),
-          x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
-        ctx.fillStyle = `rgb(${z.r},${Math.round(z.g * 0.5)},${Math.round(z.b * 0.4)})`;
-        for (let col = x0; col <= x1; col++) {
-          const d = Math.round(dep[col]);
-          if (d <= 0) continue; // only where earth was deposited
-          const edge = 1 - Math.abs(col - z.x) / rr;
-          if (edge <= 0) continue;
-          const sy = this.getHeightAt(col);
-          ctx.globalAlpha = fade * (0.14 + edge * 0.2);
-          ctx.fillRect(col, sy - 3, 1, 15); // a soft red BASE hugging the surface — the dots dominate
-        }
-      }
-      // Pass B — additive GLOW, strongest over the dense centre.
-      const prevOp = ctx.globalCompositeOperation;
-      ctx.globalCompositeOperation = 'lighter';
-      for (const z of this.m_radParticles) {
-        const life = z.timeRemaining / Math.max(0.5, z.duration);
-        const fade = Math.min(1, (2 * z.timeRemaining) / Math.max(0.5, z.duration)); // full for the first half, then dim gradually
-        if (fade <= 0) continue;
-        const rr = z.radius;
-        const x0 = Math.max(0, Math.floor(z.x - rr)),
-          x1 = Math.min(this.m_nWidth - 1, Math.floor(z.x + rr));
-        ctx.fillStyle = `rgb(${z.r},${z.g},${z.b})`;
-        for (let col = x0; col <= x1; col++) {
-          const d = Math.round(dep[col]);
-          if (d <= 0) continue;
-          const edge = 1 - Math.abs(col - z.x) / rr;
-          if (edge <= 0) continue;
-          const sy = this.getHeightAt(col);
-          ctx.globalAlpha = fade * (0.1 + edge * 0.22) * (0.5 + 0.5 * life);
-          ctx.fillRect(col, sy - 3, 1, 16);
-        }
-      }
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = prevOp;
-    }
+    // (Radiation makes no terrain change — the visible glow is the specks below, not a band
+    // painted over a deposit. The old deposit-glow passes were removed with the invented refill.)
 
-    // Radiation specks = grains of the irradiated EARTH, each an earthy body with a
-    // soft red EMISSIVE glow. They sit within the raised deposit and fade over life.
-    // Up to ~7200 of these, so the hot path avoids per-speck string/path work.
+    // Radiation specks — the original draws each as a 5-pixel ADDITIVE CROSS (centre + 4
+    // orthogonal neighbours) tinted by irRGB, fading LINEARLY to black over its life. Where
+    // many overlap they stack brighter (saturating add) → the dense red band coating the
+    // crater. Two fillRects make the plus (the centre is drawn twice → brightest).
     if (this.m_radSpecks.length) {
       const prevOp = ctx.globalCompositeOperation;
-      // Pass 1 — earthy grain bodies (normal blend). Constant colour → set the
-      // fillStyle once and vary only globalAlpha (no per-speck rgba() string).
-      ctx.fillStyle = 'rgb(42,24,13)';
-      for (const s of this.m_radSpecks) {
-        const fade = Math.min(1, 2.2 * (1 - s.age / s.life)); // full for the first ~55%, then dim gradually to 0
-        if (fade <= 0) continue;
-        ctx.globalAlpha = fade * 0.4;
-        ctx.fillRect(Math.round(s.x) - 1, Math.round(s.y) - 1, 2, 2);
-      }
-      // Pass 2 — the soft emissive glow (additive). Small square dots (a circle this tiny
-      // reads the same), fillRect for speed; the tint is constant per blast, so build the
-      // rgb() string only when the colour changes and vary only globalAlpha per speck.
-      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalCompositeOperation = 'lighter'; // saturating additive
       let lastKey = -1;
       for (const s of this.m_radSpecks) {
-        const fade = Math.min(1, 2.2 * (1 - s.age / s.life)); // full for the first ~55%, then dim gradually to 0
+        const fade = 1 - s.age / s.life; // linear: contribution = irRGB · (1 − age/life)
         if (fade <= 0) continue;
         const key = (s.r << 16) | (s.g << 8) | s.b;
         if (key !== lastKey) {
           ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
           lastKey = key;
         }
-        ctx.globalAlpha = fade * 0.5;
-        const w = 0.25 + s.size; // small dot (was 2 + size — the boxes read too big)
-        ctx.fillRect(s.x - w / 2, s.y - w / 2, w, w);
+        ctx.globalAlpha = fade;
+        const x = Math.round(s.x),
+          y = Math.round(s.y);
+        ctx.fillRect(x, y - 1, 1, 3); // vertical arm
+        ctx.fillRect(x - 1, y, 3, 1); // horizontal arm (overlaps centre → brighter)
       }
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = prevOp;
