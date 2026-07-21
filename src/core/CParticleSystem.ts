@@ -691,52 +691,82 @@ export class CParticleSystem {
     }
   }
 
+  /** Tracer ranging round — a thin WHITE ARC. One small stationary white puff per
+   *  frame planted on the flight path (velocity 0, so each hangs and fades exactly
+   *  where the round passed), the segment filled so it's a continuous line, not
+   *  spaced blobs. No exhaust, no smoke, no fire — the line of white puffs IS the
+   *  tracer streak, and because a tracer emits on the way up AND down it traces the
+   *  whole arc. */
+  tracerTrail(x: number, y: number, vx = 0, vy = 0, dt = 0.016): void {
+    const speed = Math.hypot(vx, vy);
+    const steps = Math.max(1, Math.ceil((speed * dt) / 3));
+    for (let s = 0; s < steps; s++) {
+      const f = s / steps;
+      this.add(x - vx * dt * f, y - vy * dt * f, 0, 0, {r: 255, g: 255, b: 255}, 1.5, 2.5, 'disc');
+    }
+  }
+
   /** A glowing flare riding on the projectile (rocket `flareType`/`flareBmp`). */
   inflightFlare(x: number, y: number, sprite: string, size: number): void {
     this.add(x, y, 0, 0, {r: 255, g: 255, b: 255}, 0.14, Math.max(4, size), 'plume', sprite);
   }
 
-  /** Muzzle blast on fire: a forward flash (`muzzleFlash`) + smoke (`muzzleSmoke`). */
-  muzzle(
-    x: number,
-    y: number,
-    vx: number,
-    vy: number,
-    flash: number,
-    smoke: number,
-    color: string,
-  ): void {
-    const speed = Math.hypot(vx, vy);
-    const dir = speed > 1 ? {x: vx / speed, y: vy / speed} : {x: 1, y: 0};
-    if (flash > 0) {
-      const c = toward255(parseColor(color), 0.5);
-      for (let i = 0; i < 7; i++) {
-        this.add(
-          x,
-          y,
-          dir.x * between(30, 150) + between(-30, 30),
-          dir.y * between(30, 150) + between(-30, 30),
-          c,
-          between(0.1, 0.24),
-          between(2.5, 4.5),
-          'plume',
-        );
-      }
+  /**
+   * Muzzle FLASH — the bright burst at the barrel the instant a round leaves. The original
+   * emits, FIRST, a single bright white `flares/04` star that hangs at the muzzle (velocity 0)
+   * and shrinks/fades in place — that fading star is the whole "flash → dissipate" read — plus
+   * a spark burst thrown along the barrel. There is NO grey smoke at the barrel; smoke (our
+   * interpretation) is ramped in AFTERWARDS by the caller, so the effect always reads flash-first.
+   */
+  muzzleFlash(x: number, y: number, dx: number, dy: number, flash: number, color: string): void {
+    if (flash <= 0) return;
+    const sp = Math.hypot(dx, dy);
+    const dir = sp > 1e-3 ? {x: dx / sp, y: dy / sp} : {x: 1, y: 0};
+    const c = toward255(parseColor(color), 0.7); // hot, near-white at the core
+    // The bright star at the muzzle tip: additive flares/04, hangs (vel 0), punchy short fade.
+    this.add(
+      x + dir.x * 3,
+      y + dir.y * 3,
+      0,
+      0,
+      {r: 255, g: 240, b: 205},
+      0.3,
+      4 + Math.min(6, flash * 3),
+      'plume',
+      'fx:flare',
+    );
+    // A tight forward spark burst along the barrel heading (warm embers).
+    const sparks = 14 + Math.round(flash * 6);
+    for (let i = 0; i < sparks; i++) {
+      const s = between(70, 260);
+      const a = between(-0.5, 0.5); // rad spread around the heading
+      const bx = dir.x * Math.cos(a) - dir.y * Math.sin(a);
+      const by = dir.x * Math.sin(a) + dir.y * Math.cos(a);
+      this.add(x, y, bx * s, by * s - between(0, 18), c, between(0.12, 0.3), between(1, 2.4), 'disc');
     }
-    if (smoke > 0) {
-      for (let i = 0; i < smoke * 4; i++) {
-        const g = 150 + between(-25, 25);
-        this.add(
-          x + between(-4, 4),
-          y + between(-4, 4),
-          dir.x * between(0, 60) + between(-20, 20),
-          between(-30, 5),
-          {r: g, g, b: g},
-          between(0.5, 1.1),
-          between(3, 5),
-          'smoke',
-        );
-      }
+  }
+
+  /**
+   * Muzzle SMOKE — a grey puff at the barrel. The original has none here (its only smoke is the
+   * traveling in-flight trail); this is our interpretation, and the caller schedules it a beat
+   * AFTER `muzzleFlash` so it emerges as the flash dies rather than burying it.
+   */
+  muzzleSmoke(x: number, y: number, dx: number, dy: number, smoke: number, _color: string): void {
+    if (smoke <= 0) return;
+    const sp = Math.hypot(dx, dy);
+    const dir = sp > 1e-3 ? {x: dx / sp, y: dy / sp} : {x: 1, y: 0};
+    for (let i = 0; i < smoke * 4; i++) {
+      const g = 150 + between(-25, 25);
+      this.add(
+        x + between(-4, 4),
+        y + between(-4, 4),
+        dir.x * between(0, 60) + between(-20, 20),
+        between(-30, 5),
+        {r: g, g, b: g},
+        between(0.5, 1.1),
+        between(3, 5),
+        'smoke',
+      );
     }
   }
 
