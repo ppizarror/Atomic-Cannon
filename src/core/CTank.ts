@@ -809,14 +809,15 @@ export class CTank {
         ctx.fillText(name, bx + pad, by + bh / 2);
       }
 
-      // Shield icon (gui/shield.bmp) OUTSIDE the box, overlapping its left edge — shown only
-      // while shielded, matching the original's on-badge shield emblem.
+      // Shield icon (gui/shield.bmp, native 12×15) OUTSIDE the box, hanging off its RIGHT edge —
+      // shown only while shielded. Drawn at NATIVE size (the badge blits its sprites 1:1; the
+      // original's ×2 is the double-size-badge flag we don't run), matching the on-badge emblem.
       if (shield > 0) {
         const icon = assets?.getSprite('gui/shield');
         if (icon) {
-          const ih = bh + 3;
-          const iw = Math.round(icon.width * (ih / icon.height));
-          ctx.drawImage(icon.bitmap, Math.round(bx - iw + 2), Math.round(by + (bh - ih) / 2), iw, ih);
+          const iw = icon.width, // 12
+            ih = icon.height; // 15
+          ctx.drawImage(icon.bitmap, Math.round(bx + bw - 2), Math.round(by + (bh - ih) / 2), iw, ih);
         }
       }
       y = by + bh + 1;

@@ -14,6 +14,7 @@
   --z-depot: 21; /* weapons depot */
   --z-depot-tip: 22; /* depot tooltip */
   --z-depot-stats: 23; /* depot stats popup */
+  --z-pause: 24; /* pause menu — a battle overlay above the depot stack */
   --z-screen: 25; /* main menu / settings root */
   --z-modal: 30; /* dialog modals (help / about) — above the screens */
   --z-flash: 9999; /* nuke white-out */
@@ -917,7 +918,7 @@ canvas {
 /* ============================ PAUSE MENU ============================ */
 /* A centered bitmap-font item list over the darkened, frozen battle. */
 .pause-overlay {
-  z-index: var(--z-overlay);
+  z-index: var(--z-pause);
   flex-direction: column;
   gap: 8px;
   background: var(--overlay-scrim);

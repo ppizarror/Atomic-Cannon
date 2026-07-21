@@ -20,6 +20,8 @@ import {
   syncHud,
   canFire,
   openDepot,
+  closeDepot,
+  showDepot,
   triggerHudWave,
   paused as pausedSignal,
   openPauseMenu,
@@ -157,12 +159,14 @@ async function main(): Promise<void> {
       return;
     }
 
-    // The Exit action (Escape by default) closes the Help overlay first, else toggles
-    // the pause menu. Escape is always honoured as a fallback so an unbound/rebound
-    // Exit can never lock the player out of the menu.
+    // The Exit action (Escape by default) backs out of the topmost overlay: Help, then
+    // the depot, then the pause menu; with none open it opens the pause menu. Escape is
+    // always honoured as a fallback so an unbound/rebound Exit can never lock the player
+    // out of the menu.
     if (action === 'exit' || e.code === 'Escape') {
       e.preventDefault();
       if (showHelp.value) closeHelp();
+      else if (showDepot.value) closeDepot();
       else if (showPause.value) resumeGame();
       else openPauseMenu();
       return;

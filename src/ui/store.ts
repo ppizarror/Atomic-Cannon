@@ -49,6 +49,7 @@ export const showPause = signal(false);
 /** Open the pause menu and freeze the sim (ESC during battle). */
 export function openPauseMenu(): void {
   if (screen.value !== 'battle') return;
+  showDepot.value = false; // never leave the depot open behind the pause menu
   game().setPaused(true);
   paused.value = true;
   showPause.value = true;
