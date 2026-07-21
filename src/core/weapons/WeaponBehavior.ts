@@ -144,12 +144,13 @@ export function weaponFlyStep(
       if (hit) return 'detonate';
       if (belowSurface) {
         if (!shot.isMovingDown()) return 'detonate'; // (c) buried, not descending
+        if (shot.digEntryY < 0) shot.digEntryY = p.y; // latch where it broke the surface
         // Descending through the mass: keep tunnelling (its sprite draws over the terrain
-        // so you SEE it bore through) until within the random floor margin. The descent
-        // does NOT cut terrain — a heightmap can't hold a real tunnel (a void with soil
-        // above), so only the detonation crater changes the ground.
-        if (p.y < diggerDetonateY(shot, land, surfaceY)) return 'continue';
-        return 'detonate'; // (a) reached the deep floor margin
+        // so you SEE it bore through) a solid depth below where it entered, then detonate.
+        // The descent does NOT cut terrain — a heightmap can't hold a real tunnel (a void
+        // with soil above), so only the detonation crater changes the ground.
+        if (p.y < diggerDetonateY(shot, land)) return 'continue';
+        return 'detonate'; // reached its dig depth (or the world floor)
       }
       return 'continue'; // open air: before entry OR emerged on the far side — keep arcing
 
@@ -189,13 +190,14 @@ export function weaponFlyStep(
   }
 }
 
-/** The screen-Y a digger detonates at: it burrows until it's within a per-shot random
- *  margin of the WORLD FLOOR (matching the original's "floor − rand" depth), so the
- *  tunnel is DEEP and varies per shot. Guarded to always dig at least a little past the
- *  entry surface and never below the floor itself. */
-function diggerDetonateY(shot: CShot, land: CLand, surfaceY: number): number {
-  if (shot.digDepth < 0) shot.digDepth = 40 + Math.random() * 220; // margin above the floor
-  return Math.min(land.height - 12, Math.max(surfaceY + 60, land.height - shot.digDepth));
+/** The screen-Y a digger detonates at. The original is floor-relative ("floor − rand"),
+ *  which on our terrain proportions either pops shallow (entry near the floor) or bottoms
+ *  out at the world origin. Instead we detonate part-way DOWN from where the shot ENTERED —
+ *  a per-shot random FRACTION of the distance to the floor — so it always blows up INSIDE
+ *  the mass (the middle), never at the very bottom and never a shallow pop. */
+function diggerDetonateY(shot: CShot, land: CLand): number {
+  if (shot.digDepth < 0) shot.digDepth = 0.45 + Math.random() * 0.25; // fraction to the floor
+  return shot.digEntryY + (land.height - shot.digEntryY) * shot.digDepth;
 }
 
 function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank | null): FlyAction {
@@ -307,8 +309,9 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // Terrain effect.
   const earth = weapon.getEarth();
   if (earth > 0) {
-    // Dirt: deposit a mound instead of a crater (debris settles into a deposit).
-    land.raiseTerrain(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
+    // Dirt: remove NOTHING. Throw a cloud of earth that arcs up and rains back down,
+    // piling up and slumping into a natural slope — never a crater, never a hard blob.
+    land.depositDirt(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (isCleaner) {
     // Cleaner: carve out its (large) radius — remove terrain, nothing else. No
     // scorch (it isn't a burn) and no ejecta (it clears dirt, doesn't throw it).
