@@ -475,7 +475,7 @@ function TurnBanner() {
 
 // A single bitmap-font line inside a black side box.
 function LcdLine({text}: {text: string; title?: boolean}) {
-  return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={3} />;
+  return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={2} />;
 }
 
 /** The currently-selected weapon def (falls back to the first). */
