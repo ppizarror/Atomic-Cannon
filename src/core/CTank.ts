@@ -477,18 +477,21 @@ export class CTank {
   /**
    * Apply damage to tank (called from hit detection)
    */
-  /** Apply damage. Returns the LIFE actually removed (post shield + armor), which is
-   *  what the earning economy credits — shield/armor-absorbed damage counts as 0. */
-  hit(fDamage: number, bShieldOnly: boolean = false): number {
+  /** Apply damage. Returns the LIFE actually removed (post shield/hazmat/armor), which is
+   *  what the earning economy credits — absorbed damage counts as 0. Pipeline (matches the
+   *  original): SHIELD → HAZMAT (piercing weapons only) → ARMOR → LIFE.
+   *  `piercing` = the weapon's piercing/secondary flag; only then does Hazmat resistance apply. */
+  hit(fDamage: number, piercing: boolean = false): number {
     if (!this.m_bIsAlive) return 0;
     this.m_nHitCount++;
 
     const lifeBefore = this.m_health.nLife;
     let dmg = fDamage;
 
-    // Shield fully absorbs the hit only if it exceeds the damage; otherwise
-    // the shield is destroyed and the FULL damage still passes through
-    // (by design — the shield does not partially subtract).
+    // SHIELD (a 0..1000 pool) is ALL-OR-NOTHING: it blocks the shot only if it strictly
+    // exceeds that shot's damage (shield -= dmg, nothing passes). The first hit that
+    // exceeds the shield DESTROYS it and the FULL damage still passes through — the shield's
+    // remaining value is NOT subtracted from the overflow (no partial soak).
     if (this.m_health.nShield > dmg) {
       this.m_health.nShield -= dmg;
       dmg = 0;
@@ -496,9 +499,13 @@ export class CTank {
       this.m_health.nShield = 0;
     }
 
-    if (!bShieldOnly && dmg > 0) {
-      // Armor is a 0..100% reduction of the through-damage.
-      this.m_health.nLife -= dmg * (1 - this.m_health.nArmor / 100);
+    if (dmg > 0) {
+      // HAZMAT (+0x64) — a % reducer applied ONLY to piercing/secondary weapons, BEFORE armor.
+      if (piercing) dmg *= 1 - this.m_health.nHazmat / 100;
+      // ARMOR (+0x60) — a % reducer applied to EVERY hit. It is NOT extra HP and is never
+      // depleted; it multiplies the through-damage by (1 − armor%).
+      dmg *= 1 - this.m_health.nArmor / 100;
+      this.m_health.nLife -= dmg;
     }
 
     if (this.m_health.nLife <= 0) {
@@ -590,11 +597,42 @@ export class CTank {
     }
     ctx.restore();
 
+    // Shield DOME — concentric team-colour rings enveloping the tank while shielded (the
+    // shimmering bubble). Drawn over the body, under the badge so the label stays readable.
+    if (this.m_bIsAlive && this.m_health.nShield > 0) this.drawShieldDome(ctx, cx, surfaceY);
+
     // Barrel + turret dome (aim is independent of body tilt)
     if (!this.m_bExploded && this.m_bIsAlive) {
       this.drawBarrel(ctx, assets);
       this.drawBadge(ctx, surfaceY, showDetail, assets);
     }
+  }
+
+  /**
+   * The shield bubble: up to five concentric circle outlines in the tank's TEAM colour,
+   * centred on the tank, semi-transparent. More rings appear as the shield gets stronger —
+   * a base ring always, then outer rings unlock at shield 200 / 400 / 600 / 800. Ring alphas
+   * (inner→outer) 100 / 150 / 200 / 100 / 50 give the layered, shimmering look.
+   */
+  private drawShieldDome(ctx: CanvasRenderingContext2D, cx: number, surfaceY: number): void {
+    const shield = this.m_health.nShield;
+    const cy = surfaceY - tankHeight() * 0.5; // tank body centre
+    const r = tankRadius() * 2.5; // base ring radius (2.5× the tank radius)
+    const rings: [number, number][] = [[r - 1, 100]]; // the always-on inner ring
+    if (shield > 200) rings.push([r + 1, 150]);
+    if (shield > 400) rings.push([r + 3, 200]);
+    if (shield > 600) rings.push([r + 5, 100]);
+    if (shield > 800) rings.push([r + 7, 50]);
+    ctx.save();
+    ctx.strokeStyle = this.m_sColor;
+    ctx.lineWidth = 1;
+    for (const [rad, a] of rings) {
+      ctx.globalAlpha = a / 255;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** Simple colour silhouette used until the hull sprite loads. */
@@ -710,33 +748,44 @@ export class CTank {
     // The badge sits UNDER the tank, stacked downward.
     // Offset clears the tank even when it's tilted on a slope.
     let y = surfaceY + 11;
-    // Life / shield / armour bars (Graphics → Show Power).
+    // Life / shield bars + armour/hazmat strip (Graphics → Show Power).
     if (GameConfig.showPowerBars) {
       y = bar(y, life, '#00ff00', '#ff0000'); // life (green / red)
-      if (shield > 0) y = bar(y, shield, '#0000ff', '#808080'); // shield (blue / grey)
-      if (armor > 0) {
-        // armour (yellow strip)
+      // Shield: a clean BLUE bar. The depleted remainder is near-black (not the light grey
+      // that read as a stray white bar) so only the blue shield reads.
+      if (shield > 0) y = bar(y, shield, '#0000ff', '#0a0a1e');
+      // Armour/Hazmat strip: a thin YELLOW line = armour%, a thin WHITE line = hazmat%
+      // (each only when > 0). These are 1px lines, not full bars.
+      const hazmat = this.m_health.nHazmat;
+      if (armor > 0 || hazmat > 0) {
+        const x0 = cx - w / 2;
+        const rows = (armor > 0 ? 1 : 0) + (hazmat > 0 ? 1 : 0);
         ctx.fillStyle = '#000';
-        ctx.fillRect(cx - w / 2 - 1, y - 1, w + 2, 3);
-        ctx.fillStyle = '#ffff00';
-        ctx.fillRect(cx - w / 2, y, w * Math.min(1, armor / 100), 1);
-        y += 3;
+        ctx.fillRect(x0 - 1, y - 1, w + 2, rows + 2);
+        if (armor > 0) {
+          ctx.fillStyle = '#ffff00';
+          ctx.fillRect(x0, y, w * Math.min(1, armor / 100), 1);
+          y += 1;
+        }
+        if (hazmat > 0) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(x0, y, w * Math.min(1, hazmat / 100), 1);
+          y += 1;
+        }
+        y += 2;
       }
     }
 
-    // --- name box (team colour @ 50% + solid outline), with a shield icon; the
-    // whole label is gated by Graphics → Show Team Color. Native bitmap-font size. ---
+    // --- name box (team colour @ 50% + solid outline). The shield icon is drawn OUTSIDE the
+    // box, hanging off its LEFT edge (as in the original), NOT crammed inside next to the name.
+    // Gated by Graphics → Show Team Color. Native bitmap-font size. ---
     if (GameConfig.showTeamColor) {
       const name = this.m_sName || '—';
       const lab = bmpLabel(BADGE_FONT, name, '#ffffff');
       const nameH = lab ? lab.height : 12;
       const nameW = lab ? lab.width : name.length * 6;
-      const icon = shield > 0 ? (assets?.getSprite('gui/shield') ?? null) : null;
-      const iconH = nameH;
-      const iconW = icon ? Math.round(icon.width * (iconH / icon.height)) : 0;
-      const pad = 3,
-        gap = icon ? 2 : 0;
-      const bw = Math.round(pad * 2 + iconW + gap + nameW);
+      const pad = 3;
+      const bw = Math.round(pad * 2 + nameW);
       const bh = nameH + 4;
       const bx = Math.round(cx - bw / 2),
         by = Math.round(y + 2);
@@ -749,20 +798,26 @@ export class CTank {
       ctx.lineWidth = 1;
       ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
 
-      let contentX = bx + pad;
       ctx.imageSmoothingEnabled = false;
-      if (icon) {
-        ctx.drawImage(icon.bitmap, contentX, Math.round(by + (bh - iconH) / 2), iconW, iconH);
-        contentX += iconW + gap;
-      }
       if (lab) {
-        ctx.drawImage(lab, Math.round(contentX), Math.round(by + (bh - nameH) / 2)); // native 1:1
+        ctx.drawImage(lab, Math.round(bx + pad), Math.round(by + (bh - nameH) / 2)); // native 1:1
       } else {
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(name, contentX, by + bh / 2);
+        ctx.fillText(name, bx + pad, by + bh / 2);
+      }
+
+      // Shield icon (gui/shield.bmp) OUTSIDE the box, overlapping its left edge — shown only
+      // while shielded, matching the original's on-badge shield emblem.
+      if (shield > 0) {
+        const icon = assets?.getSprite('gui/shield');
+        if (icon) {
+          const ih = bh + 3;
+          const iw = Math.round(icon.width * (ih / icon.height));
+          ctx.drawImage(icon.bitmap, Math.round(bx - iw + 2), Math.round(by + (bh - ih) / 2), iw, ih);
+        }
       }
       y = by + bh + 1;
     }
@@ -1025,8 +1080,16 @@ export class CTank {
     this.m_health.nLife = Math.max(0, Math.min(1000, this.m_health.nLife + n));
   }
 
+  // Armor and Hazmat are SET stats (a level), NOT additive pools like shield/life — the
+  // original writes `armor = weapon.dmg·k` on use, so buying a second armor does NOT stack;
+  // it re-sets to the item's level. (Only Shield/Heal add.) Upgrade-only: never downgrade a
+  // stronger existing level, matching the "buy only if it improves you" purchase gate.
   setArmor(pct: number): void {
-    this.m_health.nArmor = Math.max(0, Math.min(100, pct));
+    this.m_health.nArmor = Math.max(this.m_health.nArmor, Math.max(0, Math.min(100, pct)));
+  }
+
+  setHazmat(pct: number): void {
+    this.m_health.nHazmat = Math.max(this.m_health.nHazmat, Math.max(0, Math.min(100, pct)));
   }
 
   getTeamId(): number {

@@ -1524,7 +1524,14 @@ export class CGameController implements ShotWorld {
    * Falloff blast damage + kick, applied through the tank's shield/armor model.
    * `full` = beam direct hit: no distance falloff.
    */
-  applyBlast(pos: Vec2, radius: number, damage: number, owner: CTank | null, full: boolean): void {
+  applyBlast(
+    pos: Vec2,
+    radius: number,
+    damage: number,
+    owner: CTank | null,
+    full: boolean,
+    piercing = false,
+  ): void {
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
       const dist = tank.distanceTo(pos.x, pos.y);
@@ -1535,7 +1542,7 @@ export class CGameController implements ShotWorld {
       const dmg = damage * falloff;
       if (dmg <= 0) continue;
 
-      const removed = tank.hit(dmg); // shield/armor applied by the tank
+      const removed = tank.hit(dmg, piercing); // shield → hazmat(if piercing) → armor → life
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
 
       const dx = tank.getPosition().x - pos.x; // kick up and away from the blast
@@ -2029,9 +2036,10 @@ export class CGameController implements ShotWorld {
         return true; // repair
       case EXT.ARMOR:
         tank.setArmor(v);
-        return true; // set armor %
+        return true; // SET armor % (a level, not additive — does not stack)
       case EXT.HAZMAT:
-        return true; // secondary/piercing resist (no field yet) — consumes turn
+        tank.setHazmat(v);
+        return true; // SET hazmat % (piercing/secondary resist; a level, not additive)
       case EXT.BUNKER_WALL: {
         // Terrain tool: raise a solid structure at the aim point, TEXTURED with its own
         // bitmap (Wall = tall/narrow shield; Bunker = wider/shorter emplacement). The bitmap

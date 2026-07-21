@@ -58,8 +58,16 @@ export interface ShotWorld {
 
   ripple(x: number, y: number, strength: number): void;
 
-  /** Falloff blast damage + kick + shield/armor. `full` skips falloff (beams). */
-  applyBlast(pos: Vec2, radius: number, damage: number, owner: CTank | null, full: boolean): void;
+  /** Falloff blast damage + kick + shield/armor. `full` skips falloff (beams). `piercing`
+   * marks a secondary/piercing weapon, so the target's Hazmat resistance applies. */
+  applyBlast(
+    pos: Vec2,
+    radius: number,
+    damage: number,
+    owner: CTank | null,
+    full: boolean,
+    piercing?: boolean,
+  ): void;
 
   aimMarker(x: number, y: number, label?: string): void;
 
@@ -370,8 +378,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   }
 
   // Damage: beams do full damage to what they touch; everything else falls off.
-  // Cleaners deal NO damage — they only reshape terrain.
-  if (!isCleaner) world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam);
+  // Cleaners deal NO damage — they only reshape terrain. Radioactive/DOT rounds count as
+  // PIERCING, so a target's Hazmat resistance (not its Armor) applies to them.
+  if (!isCleaner)
+    world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam, weapon.isRadioactive());
 
   // Radiation zone (NUKE/DOT/Organic/…): irDmg/sec for irTime s, tinted irRGB.
   // The fallout scatters as a speck cloud out of the crater — each speck lands at
