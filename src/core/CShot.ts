@@ -15,14 +15,6 @@ export const SHOT_GRAVITY = 500; // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15; // wind display units -> px/s^2 of sideways drift
 export const SHOT_SPEED_SCALE = 1; // launch speed per unit power
 
-// Projectile sprite scale. Tanks AND rounds blit at ONE shared sprite scale and each
-// round is sized so its LONGEST side spans `weapon.size × scale` px
-// (`(size / longestNative)·scale`). Our tanks draw at 46px from ~69px-native bodies,
-// so that shared scale is 46/69 ≈ 0.667; projectiles reuse it, keeping every round's
-// true size ratio (a size-15 Stinger stays small, a size-30 Rail stays long) instead
-// of the old raw-native×0.7.
-export const PROJECTILE_DRAW_SCALE = 46 / 69;
-
 interface TrailPoint {
   x: number;
   y: number;
@@ -243,7 +235,7 @@ export class CShot {
     const v = this.m_vel;
     const spd = Math.hypot(v.x, v.y);
     if (spd < 1e-3) return this.m_pos.clone();
-    const half = 0.5 * size * PROJECTILE_DRAW_SCALE;
+    const half = 0.5 * size * GameConfig.tankSizeScale;
     return new Vec2(this.m_pos.x - (v.x / spd) * half, this.m_pos.y - (v.y / spd) * half);
   }
 
@@ -271,9 +263,9 @@ export class CShot {
       const nw = (sprite as {width: number}).width;
       const nh = (sprite as {height: number}).height;
       const longest = Math.max(nw, nh);
-      // Longest on-screen side = size × the shared sprite scale; floor at 2px so a
-      // tiny round still reads.
-      const target = Math.max(2, size * PROJECTILE_DRAW_SCALE);
+      // Longest on-screen side = size × the shared sprite scale × Player Size; floor at
+      // 2px so a tiny round still reads.
+      const target = Math.max(2, size * GameConfig.tankSizeScale);
       const k = target / longest;
       const w = nw * k,
         h = nh * k;
