@@ -636,6 +636,22 @@ export class CLand {
       this.preBlast(px0, px1);
     }
 
+    // Irradiated ground turns to bare DIRT: recolour the grass cap to dirt pixels across the
+    // whole fallout span (the original bares the grass so the zone reads as radiated earth, not
+    // green under a red tint). Real pixels → the bare earth stays after the glow fades.
+    if (this.m_pixels && this.m_arrHeights) {
+      const gd = Math.max(4, (this.m_layers[0]?.depth ?? 10) + 2); // grass-cap thickness
+      const zx0 = Math.max(0, Math.floor(x - nRadius)),
+        zx1 = Math.min(this.m_nWidth - 1, Math.floor(x + nRadius));
+      for (let col = zx0; col <= zx1; col++) {
+        const top = this.m_arrHeights[col];
+        const bot = Math.min(this.m_nHeight - 1, top + gd);
+        for (let yy = top; yy <= bot; yy++)
+          this.m_pixels[yy * this.m_nWidth + col] = this.dirtColorAt(col, yy);
+      }
+      this.m_pixelsDirty = true;
+    }
+
     // Visual: a cloud of glowing specks thrown out of the crater. They fall, settle,
     // and scatter THROUGH the pile (granular texture) tinted by irRGB fading over
     // irTime — so the zone conforms to the ground, not floating.
@@ -698,7 +714,7 @@ export class CLand {
   private slump(x0: number, x1: number): void {
     const h = this.m_arrHeights;
     if (!h) return;
-    const THRESH = 6; // adjacent columns may differ by up to this before dirt slides
+    const THRESH = 7; // adjacent columns may differ by up to this before dirt slides (repose angle)
     const a = Math.max(1, Math.floor(x0)),
       b = Math.min(this.m_nWidth - 2, Math.floor(x1));
     for (let x = a; x <= b; x++) {

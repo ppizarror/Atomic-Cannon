@@ -193,9 +193,7 @@ export class CShot {
 
   private addTrailPoint(): void {
     const pt: TrailPoint = {x: this.m_pos.x, y: this.m_pos.y, age: 0};
-
     this.m_trailPoints.push(pt);
-
     if (this.m_trailPoints.length > this.m_maxTrailPoints) {
       this.m_trailPoints.shift();
     }
@@ -211,16 +209,13 @@ export class CShot {
 
   checkTerrainCollision(land: CLand): boolean {
     const nTerrainHeight = land.getHeightAt(Math.floor(this.m_pos.x));
-
     if (this.m_pos.y >= nTerrainHeight - 5) {
       return true;
     }
-
     if (this.m_pos.x < -50 || this.m_pos.x > land.width + 50 || this.m_pos.y > land.height + 50) {
       this.m_bIsDead = true;
       return false;
     }
-
     return false;
   }
 

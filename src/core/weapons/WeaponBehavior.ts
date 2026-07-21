@@ -13,21 +13,37 @@ import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
 import {GameConfig} from '../CGameConfig';
 
-/** extType values. 0 and unlisted = plain ballistic. */
+/**
+ * `extType` = a weapon's BEHAVIOUR-TYPE selector. 0 = a plain ballistic shot; every other value
+ * swaps in a special behaviour. The COMPLETE 0..18 map (no bare numbers anywhere) so a value can
+ * never be silently misrouted — cross-checked against the weapon data and each type's weapons.
+ *
+ * Two families:
+ *  • PROJECTILE types fire a shot and are dispatched in `weaponFly`/`weaponDetonate` below.
+ *  • UTILITY types are on-use, NO projectile (heal/armour/shield/build/move) — applied when the
+ *    weapon is used, handled outside the shot pipeline. Named here so they can't be missed.
+ */
 export const EXT = {
-  BALLISTIC: 0,
-  DIGGER: 1,
-  ROLLER: 2,
-  TRACER: 4,
-  BEAM: 5,
-  BEAM2: 6,
-  ESCAPE: 8,
-  REBOUND: 9,
-  DEATH: 12,
-  AIRBURST: 13,
-  MINE: 16,
-  JET: 17,
-  SENTRY: 18,
+  // -- projectile behaviours --
+  BALLISTIC: 0, //  Shell / Bomb / Rocket / Dirt / Cleaner / NUKE / DOT / Organic / Missile (default)
+  DIGGER: 1, //     Digger, Excavator — tunnels then detonates buried
+  ROLLER: 2, //     Roller, Big Wheel, Mighty Roller — rolls downhill on contact
+  MOVE: 3, //       Move Near / Mid / Far — relocate the firing tank
+  TRACER: 4, //     Tracer 3/5 — plants a persistent aim marker on impact
+  BEAM: 5, //       Magma / Blue / Wave / Grate Beam — instant ray, carves a slice
+  BEAM_ALT: 6, //   (unused — no weapon carries it; kept so 6 is never treated as ballistic)
+  SHIELD: 7, //     Light / Heavy Shield (utility)
+  ESCAPE: 8, //     Escaper, Breakout — carves upward, keeps flying while rising
+  REBOUND: 9, //    Rebounder, Seeker — bounces off / jets under the surface
+  HEAL: 10, //      Repairs, Medkit, Medical Supply (utility)
+  ARMOR: 11, //     Light / Heavy Armor (utility)
+  DEATH: 12, //     Six Under, Burial Mound, Cremation, Ashes, Toxic Grave — drops on the firer
+  AIRBURST: 13, //  Sky Bomb, Glowing Rain, Shrapnel, Sky Cluster — detonates at apex
+  HAZMAT: 14, //    Light / Heavy Hazmat — sets piercing-resist (utility)
+  BUNKER_WALL: 15, // Bunker, Wall — terrain tool: builds a flat-topped dirt platform (utility)
+  MINE: 16, //      Mine, Minefield, Super Mine — plants a persistent mine
+  JET: 17, //       Booster Jet, Jump Jet — tank flight (utility)
+  SENTRY: 18, //    Sentry Turret, Sentry Minigun — deploys an auto-firing turret
 } as const;
 
 // Submunition launch power = 0.5x firing power.
@@ -109,7 +125,7 @@ export function weaponFlyStep(
   if (p.x < -60 || p.x > land.width + 60 || p.y > land.height + 80) return 'consumed';
 
   const ext = weapon.getExtType();
-  const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
+  const isBeam = ext === EXT.BEAM || ext === EXT.BEAM_ALT;
 
   // Battery: primary shots drop a bomblet straight down every batSec while descending.
   if (!isBeam) batteryTick(shot, weapon, world, dt);
@@ -123,7 +139,7 @@ export function weaponFlyStep(
 
   switch (ext) {
     case EXT.BEAM:
-    case EXT.BEAM2:
+    case EXT.BEAM_ALT:
       // Hitscan: straight line (no gravity, set at launch). Detonates on a tank.
       return hit ? 'detonate' : 'continue';
 
@@ -280,7 +296,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // on the far side). It is NOT relocated to the surface.
   const pos = shot.getPosition();
   const isPrimary = shot.getGeneration() === 0;
-  const isBeam = ext === EXT.BEAM || ext === EXT.BEAM2;
+  const isBeam = ext === EXT.BEAM || ext === EXT.BEAM_ALT;
   // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
   // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
   const isCleaner = weapon.getType() === 'Cleaner';
