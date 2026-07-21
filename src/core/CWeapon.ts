@@ -9,6 +9,7 @@
 import weaponsRaw from '../data/weapons.json';
 import particlesRaw from '../data/particles.json';
 import {rgbToHex} from '../math/color';
+import {type ExtType, toExtType} from './weapons/ExtType';
 
 // The 20 weapon type strings present in the data.
 export type WeaponType =
@@ -199,9 +200,10 @@ export class CWeapon {
   }
 
   // --- projectile mechanics for CShot ----------------------------------------
-  // extType is the behaviour dispatcher.
-  getExtType(): number {
-    return this.m_def.extType || 0;
+  // extType is the behaviour dispatcher — narrowed from the raw JSON number to the
+  // authoritative ExtType union (unknown/missing → BALLISTIC) so it can't be misrouted.
+  getExtType(): ExtType {
+    return toExtType(this.m_def.extType || 0);
   }
 
   // Cluster: cluNum submunitions on detonation, fanning cluStart..cluEnd, at 0.5x power,

@@ -12,39 +12,13 @@ import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
 import {GameConfig} from '../CGameConfig';
+import {EXT} from './ExtType';
 
-/**
- * `extType` = a weapon's BEHAVIOUR-TYPE selector. 0 = a plain ballistic shot; every other value
- * swaps in a special behaviour. The COMPLETE 0..18 map (no bare numbers anywhere) so a value can
- * never be silently misrouted — cross-checked against the weapon data and each type's weapons.
- *
- * Two families:
- *  • PROJECTILE types fire a shot and are dispatched in `weaponFly`/`weaponDetonate` below.
- *  • UTILITY types are on-use, NO projectile (heal/armour/shield/build/move) — applied when the
- *    weapon is used, handled outside the shot pipeline. Named here so they can't be missed.
- */
-export const EXT = {
-  // -- projectile behaviours --
-  BALLISTIC: 0, //  Shell / Bomb / Rocket / Dirt / Cleaner / NUKE / DOT / Organic / Missile (default)
-  DIGGER: 1, //     Digger, Excavator — tunnels then detonates buried
-  ROLLER: 2, //     Roller, Big Wheel, Mighty Roller — rolls downhill on contact
-  MOVE: 3, //       Move Near / Mid / Far — relocate the firing tank
-  TRACER: 4, //     Tracer 3/5 — plants a persistent aim marker on impact
-  BEAM: 5, //       Magma / Blue / Wave / Grate Beam — instant ray, carves a slice
-  BEAM_ALT: 6, //   (unused — no weapon carries it; kept so 6 is never treated as ballistic)
-  SHIELD: 7, //     Light / Heavy Shield (utility)
-  ESCAPE: 8, //     Escaper, Breakout — carves upward, keeps flying while rising
-  REBOUND: 9, //    Rebounder, Seeker — bounces off / jets under the surface
-  HEAL: 10, //      Repairs, Medkit, Medical Supply (utility)
-  ARMOR: 11, //     Light / Heavy Armor (utility)
-  DEATH: 12, //     Six Under, Burial Mound, Cremation, Ashes, Toxic Grave — drops on the firer
-  AIRBURST: 13, //  Sky Bomb, Glowing Rain, Shrapnel, Sky Cluster — detonates at apex
-  HAZMAT: 14, //    Light / Heavy Hazmat — sets piercing-resist (utility)
-  BUNKER_WALL: 15, // Bunker, Wall — terrain tool: builds a flat-topped dirt platform (utility)
-  MINE: 16, //      Mine, Minefield, Super Mine — plants a persistent mine
-  JET: 17, //       Booster Jet, Jump Jet — tank flight (utility)
-  SENTRY: 18, //    Sentry Turret, Sentry Minigun — deploys an auto-firing turret
-} as const;
+// `EXT` / `ExtType` / `toExtType` — the authoritative behaviour-selector table — live in
+// ./ExtType so `CWeapon.getExtType()` can return the typed value without a circular import.
+// Re-exported here because this dispatcher is the natural place callers look for them.
+export {EXT} from './ExtType';
+export type {ExtType} from './ExtType';
 
 // Submunition launch power = 0.5x firing power.
 const CLUSTER_POWER = 0.5;
@@ -87,7 +61,7 @@ export interface ShotWorld {
   /** Falloff blast damage + kick + shield/armor. `full` skips falloff (beams). */
   applyBlast(pos: Vec2, radius: number, damage: number, owner: CTank | null, full: boolean): void;
 
-  aimMarker(x: number, y: number): void;
+  aimMarker(x: number, y: number, label?: string): void;
 
   deployMine(x: number, y: number, owner: CTank | null, weaponIndex: number): void;
 
@@ -306,6 +280,18 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   const radiusPx = shot.getRadius() * GameConfig.explosionScale * Math.sqrt(GameConfig.worldScale);
   const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
+  // A Tracer is a RANGING round — 0 damage, 0 radius. It does NOTHING to the land or
+  // tanks: no blast, no crater, no scorch, no ejecta, no shake. It only plants a
+  // persistent numbered marker where it lands (its white in-flight streak already
+  // traced the arc). Handle it here and return before any terrain/damage happens.
+  if (ext === EXT.TRACER) {
+    const owner = shot.getOwner();
+    const range = owner ? Math.round(Math.abs(pos.x - owner.getPosition().x)) : 0;
+    world.aimMarker(pos.x, Math.floor(surfaceY), String(range));
+    world.hitSound(weapon.getHitSound(), pos.x); // faint spotting-round report
+    return;
+  }
+
   world.explode(
     pos.x,
     pos.y,
@@ -374,8 +360,6 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   if (isPrimary && (weapon.isNuclear() || weapon.getExpType() === 4)) {
     world.ripple(pos.x, pos.y, 2.6 + radiusPx / 120);
   }
-
-  if (ext === EXT.TRACER) world.aimMarker(pos.x, pos.y);
 
   // Damage: beams do full damage to what they touch; everything else falls off.
   // Cleaners deal NO damage — they only reshape terrain.

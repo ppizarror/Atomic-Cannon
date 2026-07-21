@@ -38,7 +38,13 @@ import {
   pickWeapon,
 } from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
-import {EXT, type ShotWorld, weaponDetonate, weaponFlyStep} from '../core/weapons/WeaponBehavior';
+import {
+  EXT,
+  type ExtType,
+  type ShotWorld,
+  weaponDetonate,
+  weaponFlyStep,
+} from '../core/weapons/WeaponBehavior';
 import {CAudio} from '../audio/CAudio';
 import landData from '../data/land.json';
 
@@ -91,6 +97,10 @@ const CONTROL_WEAPON: string | null = null;
 // falls/settles over the following ~second). Keep it just under the beam's on-screen
 // life so the ground drops as the ray fades — "beam holds → earth falls".
 const BEAM_COLLAPSE_DELAY = 1;
+
+// Safety ceiling on live tracer ranging pins (they clear on the next shot; this only
+// bounds a single turn's repeated tracer volleys). Well above any one volley's count.
+const MAX_AIM_MARKERS = 16;
 
 const controlWeaponIndex = (): number =>
   CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
@@ -754,6 +764,7 @@ export class CGameController implements ShotWorld {
     }
 
     this.drawPlacedEntities(ctx);
+    this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
 
@@ -766,6 +777,12 @@ export class CGameController implements ShotWorld {
       if (!shot.isDead()) {
         const wi = shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex;
         const weapon = getWeapon(wi);
+        // A tracer has no missile body — draw just the small white round head (null
+        // sprite → the glowing-dot fallback) leading its white streak.
+        if (weapon.getExtType() === EXT.TRACER) {
+          shot.draw(ctx, '#ffffff', null, weapon.getSize());
+          continue;
+        }
         const sprite = this.m_assets.getSprite(`weapons/${weapon.getBitmap()}`);
         shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize());
       }
@@ -969,15 +986,35 @@ export class CGameController implements ShotWorld {
       ctx.fillRect(s.x - 5, s.y - 10, 10, 10);
       ctx.fillRect(s.x, s.y - 8, 12, 3);
     }
+    // Tracer ranging markers: a persistent white pin at the impact with a centred NUMBER
+    // above it (the range), matching the original's numbered ranging label.
     for (const mk of this.m_aimMarkers) {
-      ctx.strokeStyle = 'rgba(255,80,80,0.8)';
-      ctx.lineWidth = 1;
+      ctx.save();
+      // white pin (stem + head) on a thin black backing so it reads over any terrain
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(mk.x - 6, mk.y);
-      ctx.lineTo(mk.x + 6, mk.y);
-      ctx.moveTo(mk.x, mk.y - 6);
-      ctx.lineTo(mk.x, mk.y + 6);
+      ctx.moveTo(mk.x, mk.y);
+      ctx.lineTo(mk.x, mk.y - 14);
       ctx.stroke();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(mk.x, mk.y - 14, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      if (mk.label) {
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#000';
+        ctx.strokeText(mk.label, mk.x, mk.y - 17);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(mk.label, mk.x, mk.y - 17);
+      }
+      ctx.restore();
     }
   }
 
@@ -1031,6 +1068,35 @@ export class CGameController implements ShotWorld {
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 1.5;
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * When a Move utility (extType 3) is selected on the human's turn, highlight the valid move
+   * AREA — a translucent green band hugging the terrain within `[tankX ± budget]` (budget =
+   * `moveRange`). This is the original's "Click in the green area to move" region; the tank
+   * walks to the point you aim at inside it.
+   */
+  private drawMoveArea(ctx: CanvasRenderingContext2D): void {
+    if (this.m_gameState !== EGameState.Battle) return;
+    const tank = this.getCurrentTank();
+    if (!tank.isAlive() || !tank.isHuman()) return;
+    const weapon = getWeapon(this.m_currentWeaponIndex);
+    if (weapon.getExtType() !== EXT.MOVE) return;
+    const budget = this.moveRange(weapon);
+    const tx = tank.getPosition().x;
+    const x0 = Math.max(0, Math.floor(tx - budget)),
+      x1 = Math.min(this.m_worldWidth - 1, Math.ceil(tx + budget));
+    if (x1 <= x0) return;
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#00ff00';
+    ctx.beginPath();
+    ctx.moveTo(x0, this.m_land.getHeightAt(x0));
+    for (let x = x0; x <= x1; x++) ctx.lineTo(x, this.m_land.getHeightAt(x)); // along the surface
+    for (let x = x1; x >= x0; x--) ctx.lineTo(x, this.m_land.getHeightAt(x) - 26); // up 26px = the band
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
@@ -1234,8 +1300,14 @@ export class CGameController implements ShotWorld {
       // apex the flag sets and the WHOLE trail — smoke and fire alike — stops; the
       // rocket then coasts down as just its sprite. Both the smoke and the nose
       // flare must share this gate, or the fire outlives the smoke on the way down.
-      const emitTrail = !shot.isMovingDown() || weapon.getExtType() === EXT.TRACER;
-      if (emitTrail) {
+      const isTracer = weapon.getExtType() === EXT.TRACER;
+      const emitTrail = !shot.isMovingDown() || isTracer;
+      if (isTracer) {
+        // Tracer: NO exhaust, NO smoke, NO nose flare — just a thin white streak.
+        // Stationary white puffs planted along the whole path (it emits rising AND
+        // descending) hang and fade, tracing a white arc across the sky.
+        this.m_particles.tracerTrail(sp.x, sp.y, sv.x, sv.y, dt);
+      } else if (emitTrail) {
         // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume).
         // Emitted from the missile's REAR (exhaust), not its centre — the trail
         // is offset back along the heading by half the sprite length so
@@ -1360,8 +1432,35 @@ export class CGameController implements ShotWorld {
     this.m_onImpact?.(x, y, strength);
   }
 
-  aimMarker(x: number, y: number): void {
-    this.m_aimMarkers.push({x, y});
+  /** Pixel data of a structure bitmap (bunker.bmp / wall.bmp) as a `0xAABBGGRR` view for
+   *  `CLand.buildStructure`. Drawn from the magenta-keyed sprite (so transparent stays alpha 0)
+   *  once and cached — this only runs when a player uses a Bunker/Wall utility. */
+  private structureImage(bmp: string): {width: number; height: number; data: Uint32Array} | null {
+    const cached = this.m_structImages.get(bmp);
+    if (cached) return cached;
+    const sprite = this.m_assets.getSprite(`weapons/${bmp}`);
+    if (!sprite) return null;
+    const w = sprite.width,
+      h = sprite.height;
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const g = cv.getContext('2d');
+    if (!g) return null;
+    g.clearRect(0, 0, w, h);
+    g.drawImage(sprite.bitmap, 0, 0);
+    const id = g.getImageData(0, 0, w, h);
+    const img = {width: w, height: h, data: new Uint32Array(id.data.buffer)};
+    this.m_structImages.set(bmp, img);
+    return img;
+  }
+
+  aimMarker(x: number, y: number, label?: string): void {
+    this.m_aimMarkers.push({x, y, label});
+    // Hard ceiling so a turn of repeated tracer volleys can never grow the list
+    // without bound — drop the oldest pins past the cap (they clear on the next shot
+    // anyway; this only guards a single turn's within-turn accumulation).
+    if (this.m_aimMarkers.length > MAX_AIM_MARKERS) this.m_aimMarkers.shift();
     this.markDirty();
   }
 
@@ -1663,13 +1762,16 @@ export class CGameController implements ShotWorld {
       return;
     }
 
-    // Move utilities (extType 3 — Move Near/Mid/Far): drive the tank in the aim
-    // direction, using the power bar as the distance (up to the weapon's max
-    // range = width × power/100). Consumes the turn like any utility; no shot.
-    if (ext === 3) {
-      const frac = Math.max(0.15, this.m_power / 1000); // power bar → how far
-      const dir = Math.cos(tank.getTurretAngle()) >= 0 ? 1 : -1; // aim right → move right
-      this.startTankMove(tank, tank.getPosition().x + dir * frac * this.moveRange(weapon));
+    // Move utilities (extType 3 — Move Near/Mid/Far): the original shows a green move-AREA
+    // (`[tankX ± budget]`, budget = worldWidth·dmg·0.01) and the tank drives to the point the
+    // player picks WITHIN it. We use the aim cursor as that pick, clamped to the budget — so you
+    // aim at a spot in the green band and it walks there. Consumes the turn; no shot.
+    if (ext === EXT.MOVE) {
+      const budget = this.moveRange(weapon);
+      const tx = tank.getPosition().x;
+      const pick = this.aimPoint(this.m_angle, this.m_power).x; // where the player is pointing
+      const destX = Math.max(tx - budget, Math.min(tx + budget, pick));
+      this.startTankMove(tank, destX);
       return;
     }
 
@@ -1681,6 +1783,10 @@ export class CGameController implements ShotWorld {
     }
 
     this.m_shotsFired++; // a real projectile is launched (utilities don't count)
+    // Fresh shot setup wipes the previous shot's transient marks — tracer ranging
+    // pins live only until the NEXT round is launched (they aren't a growing history).
+    // The tracer we may be firing right now plants its own pins later, in flight.
+    this.m_aimMarkers = [];
     // Remember this aim as the tank's "last shot" so the reset (↺) button can
     // restore power+angle to it (non-utility only).
     tank.saveLastShot(this.m_angle, this.m_power);
@@ -1752,15 +1858,15 @@ export class CGameController implements ShotWorld {
       }
       if (flash > 0 || muSmoke > 0) {
         const d = {x: Math.cos(baseAngle), y: -Math.sin(baseAngle)};
-        this.m_particles.muzzle(
-          muzzlePos.x,
-          muzzlePos.y,
-          d.x,
-          d.y,
-          flash,
-          muSmoke,
-          weapon.getColor(),
-        );
+        const col = weapon.getColor();
+        // FLASH first — the bright barrel burst the instant the round leaves.
+        if (flash > 0) this.m_particles.muzzleFlash(muzzlePos.x, muzzlePos.y, d.x, d.y, flash, col);
+        // SMOKE a beat later — it emerges as the flash dies (flash → smoke), never together.
+        if (muSmoke > 0) {
+          const mx = muzzlePos.x,
+            my = muzzlePos.y;
+          this.schedule(0.06, () => this.m_particles.muzzleSmoke(mx, my, d.x, d.y, muSmoke, col));
+        }
       }
       this.m_pendingSalvos = Math.max(0, this.m_pendingSalvos - 1);
     };
@@ -1900,22 +2006,34 @@ export class CGameController implements ShotWorld {
    * 3/15/17 are left as no-ops.
    * Returns true if the weapon was a utility (and consumed the turn).
    */
-  private applyUtility(tank: CTank, weapon: CWeapon, ext: number): boolean {
+  private applyUtility(tank: CTank, weapon: CWeapon, ext: ExtType): boolean {
     const v = weapon.getDamage(); // the effect magnitude lives in the damage field
     switch (ext) {
-      case 7:
+      case EXT.SHIELD:
         tank.addShield(v);
         return true; // shield boost
-      case 10:
+      case EXT.HEAL:
         tank.addLife(v);
         return true; // repair
-      case 11:
+      case EXT.ARMOR:
         tank.setArmor(v);
         return true; // set armor %
-      case 14:
-        return true; // secondary resist (no field yet) — consumes turn
-      case 15:
-        return true; // wall/bunker — consumes turn (effect TODO)
+      case EXT.HAZMAT:
+        return true; // secondary/piercing resist (no field yet) — consumes turn
+      case EXT.BUNKER_WALL: {
+        // Terrain tool: raise a solid structure at the aim point, TEXTURED with its own
+        // bitmap (Wall = tall/narrow shield; Bunker = wider/shorter emplacement). The bitmap
+        // sizes the platform and paints its visible face, so it reads as the real art. Falls
+        // back to a bare dirt platform sized to the known bmp dims if the sprite isn't ready.
+        const aim = this.aimPoint(this.m_angle, this.m_power);
+        const img = this.structureImage(weapon.getBitmap());
+        if (img) this.m_land.buildStructure(Math.round(aim.x), img);
+        else {
+          const isWall = /wall/i.test(weapon.getName?.() ?? '');
+          this.m_land.buildPlatform(Math.round(aim.x), isWall ? 15 : 20, isWall ? 200 : 118);
+        }
+        return true;
+      }
       // extType 17 (jet) is handled in fire() before this — flight, not a no-op.
       default:
         return false;
@@ -2422,7 +2540,9 @@ export class CGameController implements ShotWorld {
     armed: number;
   }[] = [];
   private m_sentries: {x: number; y: number; owner: CTank | null; weaponIndex: number}[] = [];
-  private m_aimMarkers: {x: number; y: number}[] = [];
+  private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
+  // Cached pixel data of structure bitmaps (bunker.bmp / wall.bmp) for buildStructure.
+  private m_structImages = new Map<string, {width: number; height: number; data: Uint32Array}>();
 
   // Free-running clock for animated indicators (bouncing turn triangle) — also
   // the timebase for scheduled game-flow actions (see m_timers), so both freeze
