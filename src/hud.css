@@ -562,32 +562,16 @@ canvas {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
 }
 
-/* ---- Taunt speech bubbles (Chatter) ----------------------------------------
-   The layer overlays the game scene (matches #game-container), and each bubble is
-   absolutely positioned in scene fractions (set inline) so it tracks the tank as the
-   camera scrolls. The bubble is anchored by its tail tip (translate -50%,-100%): it
-   grows UP from the tank with the tail pointing down at it. Pointer-transparent. */
-.taunt-layer {
+/* ---- Anchored tooltip (taunt bubble) ---------------------------------------
+   The Tooltip positions ITSELF here: `left`/`top` are set inline (viewport px,
+   edge-clamped, tail slid to stay on the tank), and the box rises from that
+   bottom-left anchor with the tail tip at (left+tail, top). Pointer-transparent. */
+.tooltip-anchor {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: calc(100vh - var(--hud-h));
   z-index: var(--z-hud);
-  pointer-events: none;
-  overflow: hidden; /* a bubble at the map edge clips to the view, never spills */
-}
-
-.taunt-bubble {
-  position: absolute;
-  /* Fixed tail near the left edge (14px, matching the depot). Shift the box left by
-     that much so the tail — not the box centre — sits at the tank's centre, and the
-     bubble grows up-and-right from the tank. */
-  transform: translate(-14px, -100%);
-  max-width: 300px;
-  min-width: 60px;
-  width: max-content;
+  transform: translateY(-100%); /* box rises above the anchor point */
   filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
 }
 
 /* Full-viewport white-out for big blasts (nuke flash) — above everything. */
@@ -773,6 +757,9 @@ canvas {
 .tooltip {
   position: relative;
   padding: 6px 11px 8px;
+  max-width: 300px;
+  min-width: 60px;
+  width: max-content;
 }
 
 /* Taunt-only "pop" on show: the box grows from its centre, then the text is revealed
@@ -832,16 +819,27 @@ canvas {
 /* Down-pointer tail: a plain green triangle merging with the box's green fill (no
    black, no own opacity — the .tooltip-frame group provides the translucency).
    `left` is set inline (centred by default; the depot points it at the row). */
+/* Tail = the zeon `tt arrow` sprite (11×22), centred on `left` and overlapping the box
+   so frame + tail read as one shape. `down` hangs below the box; `up` above it. */
 .tooltip-tail {
   position: absolute;
+  width: 11px;
+  height: 22px;
+  transform: translateX(-6px);
+}
+.tooltip-tail img {
+  display: block;
+  width: 11px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+.tooltip-tail.tip-down {
   top: 100%;
-  width: 0;
-  height: 0;
-  margin-top: -4px; /* overlap into the box so it reads as one shape */
-  transform: translateX(-7px); /* centre the 14px-wide triangle on `left` */
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-top: 8px solid #00ff00;
+  margin-top: -10px; /* overlap up into the box */
+}
+.tooltip-tail.tip-up {
+  bottom: 100%;
+  margin-bottom: -10px; /* overlap down into the box */
 }
 
 /* Green tooltip wrapper — positions the shared bubble ABOVE the cursor (translated
@@ -1381,8 +1379,13 @@ canvas {
   /* every line reads over the scene */
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
 }
+/* The war-end banner (bazouk-28) and, between battles, an empty spacer of the SAME
+   height sit above the title — so the title holds one position across both screens. */
 .war-banner {
   opacity: 0.95;
+}
+.war-banner-space {
+  height: 36px; /* bazouk-28 glyph height — reserves the banner's row when it's hidden */
 }
 .war-title {
   margin-bottom: 4px;
@@ -1391,7 +1394,7 @@ canvas {
   opacity: 0.92;
 }
 .war-table {
-  margin: 2vh 0;
+  margin: 5vh 0 2vh; /* sit a little lower, matching the legacy layout */
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1413,8 +1416,17 @@ canvas {
   margin-top: 2px;
   text-transform: uppercase;
 }
+/* "Click anywhere to play next battle." — pinned to the bottom black HUD strip
+   (the hidden control panel's area), centred within it, like the legacy screen. */
 .war-prompt {
-  margin-top: 3vh;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--hud-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0.9;
 }
 

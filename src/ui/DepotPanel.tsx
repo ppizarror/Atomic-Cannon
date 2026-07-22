@@ -94,7 +94,12 @@ function Header({
 function WeaponTip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
   return (
     <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
-      <Tooltip title={w.name} content={w.desc || 'No description available.'} tailLeft="14px" />
+      <Tooltip
+        title={w.name}
+        content={w.desc || 'No description available.'}
+        tailLeft="14px"
+        tipPosition="down"
+      />
     </div>
   );
 }

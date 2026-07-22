@@ -1,13 +1,14 @@
 /**
  * In-game taunt speech bubbles (Chatter). The controller publishes the active bubbles
- * each frame — one per speaking tank, as `"Name: line"` positioned in screen fractions
- * so they track the camera — and this overlay renders each as the shared green
- * <Tooltip> (title = the speaker's name, content = the taunt line). The bubble's tail
- * is fixed near its left edge and anchored to the tank's centre, so the bubble grows
- * up-and-right from the tank. Pure presentation: timing / selection lives in the engine.
+ * each frame — one per speaking tank, as `"Name: line"` in scene fractions so they
+ * track the camera. This just renders one ANCHORED <Tooltip> per bubble (title =
+ * speaker, content = line); the Tooltip points its tail at the tank and keeps itself on
+ * screen. The only local concern is turning the scene fractions into viewport pixels,
+ * which `useSceneSize` provides.
  */
 import {tauntBubbles} from './store';
 import {Tooltip} from './Tooltip';
+import {useSceneSize} from './useSceneSize';
 
 // Split `"Ice: I'm melting…"` into title `"Ice:"` and content `"I'm melting…"`.
 function splitTaunt(text: string): {title: string; content: string} {
@@ -17,22 +18,26 @@ function splitTaunt(text: string): {title: string; content: string} {
 }
 
 export function TauntLayer() {
+  const {w, h} = useSceneSize();
   const bubbles = tauntBubbles.value;
-  if (!bubbles.length) return null;
+  if (!bubbles.length || !w) return null;
   return (
-    <div class="taunt-layer">
+    <>
       {bubbles.map(b => {
         const {title, content} = splitTaunt(b.text);
         return (
-          <div
+          <Tooltip
             key={b.id}
-            class="taunt-bubble"
-            style={{left: `${b.xPct * 100}%`, top: `${b.yPct * 100}%`, opacity: b.alpha}}
-          >
-            <Tooltip title={title} content={content} tailLeft="14px" animated />
-          </div>
+            title={title}
+            content={content}
+            anchorX={b.xPct * w}
+            anchorY={b.yPct * h}
+            fade={b.alpha}
+            tipPosition="down"
+            animated
+          />
         );
       })}
-    </div>
+    </>
   );
 }
