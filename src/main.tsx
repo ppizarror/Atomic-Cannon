@@ -112,8 +112,8 @@ async function main(): Promise<void> {
     // `?battle=1` skips the menu into a battle; `?depot=1` / `?pause=1` do that and
     // then open the depot / pause menu; `?settings=1` opens the Settings screen.
     const q = new URLSearchParams(location.search);
-    const weaponTest = q.get('weapon_test') === '1';
-    const weaponSel = q.get('weapon_sel'); // force a weapon by its 1-based id
+    const weaponTest = q.get('weapontest') === '1';
+    const weaponSel = q.get('weaponsel'); // force a weapon by its 1-based id
     // `?flatland=1`: force a perfectly flat test surface (set BEFORE playNewGame generates
     // terrain) so weapon/terrain effects can be judged without natural slopes in the way.
     if (q.get('flatland') === '1') gameController.setFlatLand(true);
@@ -127,10 +127,10 @@ async function main(): Promise<void> {
       playNewGame();
     if (q.get('depot') === '1') openDepot();
     if (q.get('pause') === '1') openPauseMenu();
-    // `?weapon_test=1`: start a battle and keep the turn on the human forever (the AI
+    // `?weapontest=1`: start a battle and keep the turn on the human forever (the AI
     // never fires, the shot timer is off) so weapons can be tried back-to-back.
     if (weaponTest) gameController.setWeaponTest(true);
-    // `?weapon_sel=<id>`: force the human onto weapon <id> with unlimited ammo. `id`
+    // `?weaponsel=<id>`: force the human onto weapon <id> with unlimited ammo. `id`
     // is the weapon's STABLE 1-based id (database position + 1) — the same number now
     // shown next to it in the arsenal list (`weaponDisplayNumber`), so what you read in
     // the list is exactly what you pass here, regardless of which weapons are disabled.

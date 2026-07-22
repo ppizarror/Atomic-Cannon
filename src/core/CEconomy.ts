@@ -103,7 +103,7 @@ export class CEconomy {
     return this.m_owned[index] === UNLIMITED;
   }
 
-  /** Mark a weapon as unlimited (dev: ?weapon_sel=<id>). */
+  /** Mark a weapon as unlimited (dev: ?weaponsel=<id>). */
   setUnlimited(index: number): void {
     if (index >= 0 && index < this.m_owned.length) this.m_owned[index] = UNLIMITED;
   }

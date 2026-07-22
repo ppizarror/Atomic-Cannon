@@ -29,11 +29,11 @@ exactly; they encode conventions the codebase already relies on.
   | `?battle=1` | Skip the menu, start a fresh battle (use this for shot/explosion/trail screenshots). |
   | `?depot=1` | Start a battle and open the Weapons Depot. |
   | `?pause=1` | Start a battle and open the pause menu. |
-  | `?weapon_test=1` | Start a battle and keep the turn on the human forever (AI never fires, shot timer off) so weapons can be fired back-to-back. |
-  | `?weapon_sel=<id>` | Force the human onto weapon `<id>` with unlimited ammo. **`id` is 1-based** to match the in-game list (`id=1` → first weapon, `id=65` → Machine Gun). Combine with `weapon_test=1` to spam one weapon. |
+  | `?weapontest=1` | Start a battle and keep the turn on the human forever (AI never fires, shot timer off) so weapons can be fired back-to-back. |
+  | `?weaponsel=<id>` | Force the human onto weapon `<id>` with unlimited ammo. **`id` is 1-based** to match the in-game list (`id=1` → first weapon, `id=65` → Machine Gun). Combine with `weapontest=1` to spam one weapon. |
   | `?settings=<id>` | Open the Settings root (`=1`) or a specific option page (e.g. `=gameplay`). |
 
-  Params combine, e.g. `http://localhost:2141/?weapon_test=1&weapon_sel=65`.
+  Params combine, e.g. `http://localhost:2141/?weapontest=1&weaponsel=65`.
 
 ## Architecture — three layers that never touch each other's DOM
 
@@ -96,5 +96,5 @@ Keep this separation. New UI is a Preact component driven by a signal; new gamep
 - To verify anything visual, **drive the real running game**: dev exposes
   `window.atomic = { gameController, compositor, audio }` on port 2141. Load it headlessly
   (system Chrome), reach in via the `m_`-fields, and sample pixels / screenshot. Use the
-  dev-only URL params (see **Stack & commands**) — e.g. `?battle=1`, `?weapon_test=1` — to
+  dev-only URL params (see **Stack & commands**) — e.g. `?battle=1`, `?weapontest=1` — to
   jump straight into states.

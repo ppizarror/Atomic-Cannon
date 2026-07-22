@@ -1,8 +1,8 @@
 /**
- * `?weapon_sel=<id>` selects by STABLE weapon id, and the arsenal list numbers rows
+ * `?weaponsel=<id>` selects by STABLE weapon id, and the arsenal list numbers rows
  * by that same id (`weaponDisplayNumber`), NOT by their position in the (filtered)
  * list. Regression for: with weapons disabled in Game Content, list-position numbering
- * drifted below the id, so `weapon_sel=74` (aiming at "Tracer 5") landed on Barrage.
+ * drifted below the id, so `weaponsel=74` (aiming at "Tracer 5") landed on Barrage.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -14,10 +14,10 @@ import {GameContent} from '../src/core/CGameContent';
 const tracer5 = WEAPON_DATABASE.find(w => w.name === 'Tracer 5')!;
 const barrage = WEAPON_DATABASE.find(w => w.name === 'Barrage')!;
 
-describe('weapon_sel (stable-id selection)', () => {
+describe('weaponsel (stable-id selection)', () => {
   it('display number is the weapon stable id (index + 1)', () => {
     // The displayed number is the weapon's stable id (index + 1) — the value you pass
-    // to ?weapon_sel. So `weapon_sel = weaponDisplayNumber(w)` and `forceWeapon(id-1)`
+    // to ?weaponsel. So `weaponsel = weaponDisplayNumber(w)` and `forceWeapon(id-1)`
     // are inverses: the id you read off the list selects that exact weapon.
     expect(weaponDisplayNumber(tracer5)).toBe(tracer5.index + 1);
   });
@@ -36,8 +36,8 @@ describe('weapon_sel (stable-id selection)', () => {
     for (const w of before) GameContent.weaponsOff.delete(w.index); // restore
   });
 
-  it('weapon_sel=<id> selects that exact weapon end-to-end', () => {
-    // End-to-end: ?weapon_sel=<id> → forceWeapon(id-1) selects that exact weapon even
+  it('weaponsel=<id> selects that exact weapon end-to-end', () => {
+    // End-to-end: ?weaponsel=<id> → forceWeapon(id-1) selects that exact weapon even
     // with earlier weapons disabled (the reported scenario).
     const gc = new CGameController(makeCanvas()) as unknown as {
       startGame(n: number): void;
