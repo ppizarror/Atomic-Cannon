@@ -36,6 +36,8 @@ import {
   closeHelp,
   showFramerate,
   fps,
+  showFrameCount,
+  frameCount,
   POWER_MIN,
   POWER_MAX,
   wrapAngle,
@@ -119,6 +121,9 @@ async function main(): Promise<void> {
     // `?flatland=1`: force a perfectly flat test surface (set BEFORE playNewGame generates
     // terrain) so weapon/terrain effects can be judged without natural slopes in the way.
     if (q.get('flatland') === '1') gameController.setFlatLand(true);
+    // `?frame=1`: show a live frame counter just below the FPS readout (dev timing aid —
+    // read the exact frame an effect starts/ends on).
+    if (q.get('frame') === '1') showFrameCount.value = true;
     if (
       q.get('battle') === '1' ||
       q.get('depot') === '1' ||
@@ -384,6 +389,7 @@ async function main(): Promise<void> {
   // which wobbles (e.g. 119↔120) and reads as flicker. Persists across frames.
   let fpsFrames = 0,
     fpsAccumMs = 0;
+  let frameNum = 0; // raw monotonic frame index for the ?frame=1 counter
   compositor.app.ticker.add(ticker => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
     if (!pausedSignal.value) gameController.update(dt);
@@ -416,6 +422,13 @@ async function main(): Promise<void> {
     } else if (fpsFrames || fpsAccumMs) {
       fpsFrames = 0; // hidden → reset so re-enabling starts a fresh, clean window
       fpsAccumMs = 0;
+    }
+    // Frame counter (?frame=1): a monotonic tick count, published every frame so you can read
+    // the exact frame something happened on. Frozen while paused (a paused game runs no sim
+    // frames), and only publishes while shown.
+    if (!pausedSignal.value) {
+      frameNum++;
+      if (showFrameCount.value && frameNum !== frameCount.peek()) frameCount.value = frameNum;
     }
   });
 

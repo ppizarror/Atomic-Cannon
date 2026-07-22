@@ -224,6 +224,11 @@ export function depotAutoBuy(): void {
 export const showFramerate = signal(false);
 export const fps = signal(0);
 
+// Frame counter (dev: ?frame=1): the toggle + a monotonic count of ticker frames since the
+// flag was enabled, published every frame from the game loop. Sits just below the FPS readout.
+export const showFrameCount = signal(false);
+export const frameCount = signal(0);
+
 // Active taunt speech bubbles (Chatter), projected to screen-fraction positions and
 // pumped each frame; the TauntLayer overlay renders one <Tooltip> per entry.
 export const tauntBubbles = signal<ActiveTaunt[]>([]);

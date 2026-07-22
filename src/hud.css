@@ -571,6 +571,20 @@ canvas {
   pointer-events: none;
 }
 
+/* Frame counter (dev: ?frame=1) — top-right, same corner + font as the FPS readout. Takes the
+   FPS slot when FPS is hidden; drops below it (.below-fps) when both are shown. */
+#frame-hud {
+  position: fixed;
+  top: 8px;
+  right: 10px;
+  z-index: var(--z-hud);
+  pointer-events: none;
+}
+
+#frame-hud.below-fps {
+  top: 30px;
+}
+
 /* Jet-flight indicator — low-centre, above the HUD panel, clear of the top-left
    minimap + status text (which the top-centre placement used to collide with). */
 .flight-hud {

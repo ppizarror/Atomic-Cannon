@@ -18,6 +18,8 @@ import {
   paused,
   showFramerate,
   fps,
+  showFrameCount,
+  frameCount,
   warStandings,
 } from './store';
 import {hexToRgb} from '../math/color';
@@ -136,6 +138,19 @@ function FramerateHud() {
   return (
     <div id="fps-hud">
       <BmpText font="beijing-16-out" text={`FPS ${fps.value}`} spacing={-1} />
+    </div>
+  );
+}
+
+// Frame counter (dev: ?frame=1) — sits just below the FPS readout, same top-right corner
+// and outlined bitmap font. A raw monotonic tick count for pinning down when effects fire.
+function FrameCountHud() {
+  if (!showFrameCount.value) return null;
+  // Sit below the FPS readout when it's shown; otherwise take the FPS slot itself so it
+  // isn't floating with an empty gap above it.
+  return (
+    <div id="frame-hud" class={showFramerate.value ? 'below-fps' : ''}>
+      <BmpText font="beijing-16-out" text={`FRAME ${frameCount.value}`} spacing={-1} />
     </div>
   );
 }
@@ -263,6 +278,7 @@ export function App() {
       <DepotPanel />
       <FlightHud />
       <FramerateHud />
+      <FrameCountHud />
       <ScreenFlash />
       <HudWave />
       <TooSmallOverlay />
