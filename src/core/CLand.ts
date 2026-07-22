@@ -418,8 +418,10 @@ export class CLand {
       const t = Math.abs(dx) < 1e-3 ? 0 : (c - x0) / dx;
       if (t < 0 || t > 1) continue;
       const beamY = y0 + (y1 - y0) * t;
-      const jTop = 3.4 * Math.sin(c * 0.17 + pT1) + 2.0 * Math.sin(c * 0.44 + pT2) + (rnd() - 0.5) * 1.8;
-      const jBot = 3.4 * Math.sin(c * 0.2 + pB1) + 2.0 * Math.sin(c * 0.51 + pB2) + (rnd() - 0.5) * 1.8;
+      const jTop =
+        3.4 * Math.sin(c * 0.17 + pT1) + 2.0 * Math.sin(c * 0.44 + pT2) + (rnd() - 0.5) * 1.8;
+      const jBot =
+        3.4 * Math.sin(c * 0.2 + pB1) + 2.0 * Math.sin(c * 0.51 + pB2) + (rnd() - 0.5) * 1.8;
       this.sliceColumn(c, beamY, Math.max(1, fireHalf + jTop), Math.max(1, fireHalf + jBot));
     }
     this.startSlump(lo, hi); // settle the cut so it never leaves standing nails
@@ -569,7 +571,7 @@ export class CLand {
         const col = left + bx;
         if (col < 0 || col >= W) continue;
         const rgba = img.data[by * bw + bx];
-        if ((rgba >>> 24) === 0) continue; // transparent (magenta-keyed) → keep the dirt fill
+        if (rgba >>> 24 === 0) continue; // transparent (magenta-keyed) → keep the dirt fill
         px[y * W + col] = (rgba | 0xff000000) >>> 0; // opaque structure pixel
       }
     }
@@ -835,7 +837,16 @@ export class CLand {
       const up = radius * (0.3 + Math.random() * 1.3);
       // Reuse a settled chunk from the free pool — after the first big blast the
       // pool is warm, so a nuke allocates zero LandParticle objects (no GC spike).
-      const p: LandParticle = pool.pop() ?? {x: 0, y: 0, vx: 0, vy: 0, color: '', size: 0, spin: 0, age: 0};
+      const p: LandParticle = pool.pop() ?? {
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        color: '',
+        size: 0,
+        spin: 0,
+        age: 0,
+      };
       p.x = x + (Math.random() * 2 - 1) * radius;
       p.y = y + (Math.random() * 2 - 1) * radius * 0.4;
       p.vx = Math.cos(ang) * speed;
@@ -861,7 +872,16 @@ export class CLand {
     for (let i = 0; i < count; i++) {
       let v = 24 + Math.floor(Math.random() * 116); // dirt brown [24,139]
       if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark clods
-      const p: LandParticle = pool.pop() ?? {x: 0, y: 0, vx: 0, vy: 0, color: '', size: 0, spin: 0, age: 0};
+      const p: LandParticle = pool.pop() ?? {
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        color: '',
+        size: 0,
+        spin: 0,
+        age: 0,
+      };
       p.x = x + (Math.random() * 2 - 1) * spread;
       p.y = y + (Math.random() * 2 - 1) * spread * 0.5;
       p.vx = (Math.random() * 2 - 1) * 22; // slight sideways drift
@@ -995,7 +1015,10 @@ export class CLand {
           // Coat the exposed DIRT of the crater face with a thick red band going DOWN INTO the
           // ground (over the visible soil), thicker where the crater is deep — NOT floating up in
           // the excavated VOID above the surface. Purely a glow over the terrain; no terrain change.
-          const c2 = Math.max(0, Math.min(this.m_nWidth - 1, col + (Math.floor(this.rand01() * 4) - 2)));
+          const c2 = Math.max(
+            0,
+            Math.min(this.m_nWidth - 1, col + (Math.floor(this.rand01() * 4) - 2)),
+          );
           const sy = this.getHeightAt(c2);
           const baseH = this.m_baseHeights ? this.m_baseHeights[c2] : sy;
           const craterDepth = Math.max(0, sy - baseH); // >0 inside the crater bowl
@@ -1381,9 +1404,8 @@ export class CLand {
       this.m_patterns = [];
       this.m_terrainDirty = true;
     }
-    return this.m_terrainCanvas.getContext('2d', { willReadFrequently: true })!;
+    return this.m_terrainCanvas.getContext('2d', {willReadFrequently: true})!;
   }
-
 
   /**
    * True while the terrain layer will still change visibly — debris/fallout in
@@ -1409,9 +1431,7 @@ export class CLand {
    *  round should not hand off the turn until this settles. Narrower than
    *  `isAnimating()` (which also covers cosmetic redraw/rebuild flags). */
   isSettling(): boolean {
-    return (
-      this.m_falls.length > 0 || this.m_particles.length > 0 || this.m_dirtBlobs.length > 0
-    );
+    return this.m_falls.length > 0 || this.m_particles.length > 0 || this.m_dirtBlobs.length > 0;
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -1554,7 +1574,14 @@ export class CLand {
   // Impact discs: a round dirt ball baked at each Dirt-weapon contact point (x, surfY, radius).
   // Falling overburden blocks (beam/digger slice collapse): a captured column of pixels (the
   // cap + earth above the cut) sliding DOWN under gravity to land on the substrate below.
-  private m_falls: {col: number; y: number; thick: number; target: number; vel: number; colors: Uint32Array}[] = [];
+  private m_falls: {
+    col: number;
+    y: number;
+    thick: number;
+    target: number;
+    vel: number;
+    colors: Uint32Array;
+  }[] = [];
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
   private m_slumpTimer: number = 0;
   private m_slumpX0: number = 1e9;

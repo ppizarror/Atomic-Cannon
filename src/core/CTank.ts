@@ -965,7 +965,13 @@ export class CTank {
         if (icon) {
           const iw = icon.width, // 12
             ih = icon.height; // 15
-          ctx.drawImage(icon.bitmap, Math.round(bx + bw - 2), Math.round(by + (bh - ih) / 2), iw, ih);
+          ctx.drawImage(
+            icon.bitmap,
+            Math.round(bx + bw - 2),
+            Math.round(by + (bh - ih) / 2),
+            iw,
+            ih,
+          );
         }
       }
       y = by + bh + 1;

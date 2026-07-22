@@ -74,7 +74,10 @@ export function TauntEditor() {
 
       <div class="editor-footer">
         <BmpText font="beijing-16-out" text={meta.desc} />
-        <BmpText font="beijing-16-out" text={`${lines.length} line${lines.length === 1 ? '' : 's'}`} />
+        <BmpText
+          font="beijing-16-out"
+          text={`${lines.length} line${lines.length === 1 ? '' : 's'}`}
+        />
       </div>
 
       <div class="editor-buttons">

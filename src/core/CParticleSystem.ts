@@ -749,7 +749,16 @@ export class CParticleSystem {
       const a = between(-0.5, 0.5); // rad spread around the heading
       const bx = dir.x * Math.cos(a) - dir.y * Math.sin(a);
       const by = dir.x * Math.sin(a) + dir.y * Math.cos(a);
-      this.add(x, y, bx * s, by * s - between(0, 18), c, between(0.12, 0.3), between(1, 2.4), 'disc');
+      this.add(
+        x,
+        y,
+        bx * s,
+        by * s - between(0, 18),
+        c,
+        between(0.12, 0.3),
+        between(1, 2.4),
+        'disc',
+      );
     }
   }
 

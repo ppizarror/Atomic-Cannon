@@ -87,7 +87,10 @@ export function ControlsEditor() {
                 <BmpText font="beijing-16-out" text={a.label} />
               </span>
               <span class="editor-state">
-                <BmpText font="beijing-16-out" text={isArmed ? 'Press a key…' : keyName(map[a.id])} />
+                <BmpText
+                  font="beijing-16-out"
+                  text={isArmed ? 'Press a key…' : keyName(map[a.id])}
+                />
               </span>
             </button>
           );

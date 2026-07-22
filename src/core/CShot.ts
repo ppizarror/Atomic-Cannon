@@ -55,7 +55,8 @@ export class CShot {
 
     const fRadAngle = -((angleDegrees / 180) * Math.PI);
 
-    const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
+    const speed =
+      power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
 
     this.m_vel.x = Math.cos(fRadAngle) * speed;
     this.m_vel.y = Math.sin(fRadAngle) * speed;
@@ -79,7 +80,8 @@ export class CShot {
     this.m_radius = radius;
     this.m_power = power;
 
-    const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
+    const speed =
+      power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
 
     // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
     // Works for every direction, including below-horizon (negative) angles.

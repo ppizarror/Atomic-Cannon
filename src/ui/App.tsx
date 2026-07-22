@@ -147,10 +147,18 @@ function FlightHud() {
   return (
     <div class="flight-hud">
       <div class="flight-fuel">
-        <BmpText font="beijing-20-out" text={`JET FUEL ${jetFuel.value.toFixed(1)}s`} spacing={-1} />
+        <BmpText
+          font="beijing-20-out"
+          text={`JET FUEL ${jetFuel.value.toFixed(1)}s`}
+          spacing={-1}
+        />
       </div>
       <div class="flight-hint">
-        <BmpText font="beijing-16-out" text="Arrows / WASD to fly - Space to cut engine" spacing={-1} />
+        <BmpText
+          font="beijing-16-out"
+          text="Arrows / WASD to fly - Space to cut engine"
+          spacing={-1}
+        />
       </div>
     </div>
   );
