@@ -31,7 +31,7 @@ export function About() {
         <BmpText font="bazouk-28" text="ATOMIC CANNON" />
       </div>
       <div class="about-sub">
-        <BmpText font="beijing-16-out" text="v3.0  ·  a preservation port" />
+        <BmpText font="beijing-16-out" text="v3.0 - a preservation port" />
       </div>
       <ClassicScrollbar class="about-body">{text || 'Loading…'}</ClassicScrollbar>
       <ModalButton label="Back" onClick={backToMenu} class="about-back" />

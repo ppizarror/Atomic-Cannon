@@ -13,7 +13,7 @@ export function PauseMenu() {
   return (
     <div class="overlay pause-overlay">
       <div class="pause-title">
-        <BmpText font="beijing-20-out" text="GAME PAUSED" />
+        <BmpText font="beijing-16-out" text="GAME PAUSED" />
       </div>
       <div class="menu-list">
         <MenuButton label="Resume" onClick={resumeGame} />
