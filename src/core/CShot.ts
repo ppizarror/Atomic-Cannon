@@ -15,6 +15,16 @@ export const SHOT_GRAVITY = 500; // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15; // wind display units -> px/s^2 of sideways drift
 export const SHOT_SPEED_SCALE = 1; // launch speed per unit power
 
+/**
+ * Muzzle speed for a shot of the given power — the SINGLE source of truth shared by real
+ * shots (init/initFromTank), cluster submunitions (WeaponBehavior) and the aim AI (CBotAI),
+ * so a simulated shot matches a real one exactly. Reads GameConfig live (incl. the
+ * √worldScale zoom) so scaled maps stay consistent.
+ */
+export function launchSpeed(power: number): number {
+  return power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
+}
+
 interface TrailPoint {
   x: number;
   y: number;
@@ -54,9 +64,7 @@ export class CShot {
     this.m_power = power;
 
     const fRadAngle = -((angleDegrees / 180) * Math.PI);
-
-    const speed =
-      power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
+    const speed = launchSpeed(power);
 
     this.m_vel.x = Math.cos(fRadAngle) * speed;
     this.m_vel.y = Math.sin(fRadAngle) * speed;
@@ -80,8 +88,7 @@ export class CShot {
     this.m_radius = radius;
     this.m_power = power;
 
-    const speed =
-      power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
+    const speed = launchSpeed(power);
 
     // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
     // Works for every direction, including below-horizon (negative) angles.

@@ -12,7 +12,7 @@
  * random angle/power error that shrinks toward zero at the top level, and steers
  * target/weapon choice from "random" (easy) toward "best" (hard).
  */
-import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_SPEED_SCALE} from './CShot';
+import {SHOT_GRAVITY, SHOT_WIND_ACCEL, launchSpeed} from './CShot';
 import {GameConfig} from './CGameConfig';
 import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE} from './CWeapon';
@@ -88,7 +88,7 @@ export function simulateMiss(
   // Match the REAL launch physics exactly (incl. the √worldScale zoom) so the solver's
   // prediction stays accurate on scaled maps — otherwise bots would over/undershoot.
   const ws = Math.sqrt(GameConfig.worldScale);
-  const speed = power * SHOT_SPEED_SCALE * GameConfig.powerScale * ws;
+  const speed = launchSpeed(power);
   let vx = Math.cos(r) * speed;
   let vy = -Math.sin(r) * speed;
   let x = origin.x,

@@ -457,7 +457,7 @@ function BattleStatus() {
 }
 
 // A single bitmap-font line inside a black side box.
-function LcdLine({text}: {text: string; title?: boolean}) {
+function LcdLine({text}: {text: string}) {
   return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={2} />;
 }
 
@@ -478,7 +478,7 @@ function WeaponDetails1() {
   const w = currentWeapon();
   return (
     <div class="side-lcd wpn" id="weapon-details">
-      <LcdLine title text="WEAPON DETAILS" />
+      <LcdLine text="WEAPON DETAILS" />
       {w && (
         <>
           <LcdLine text={`TYPE ${String(w.type).toUpperCase()}`} />
@@ -506,7 +506,7 @@ function WeaponDetails2() {
     : 0;
   return (
     <div class="side-lcd wpn" id="weapon-details-2">
-      <LcdLine title text="WEAPON DETAILS" />
+      <LcdLine text="WEAPON DETAILS" />
       {w && (
         <>
           <LcdLine text={`EARTH ${w.earth ?? 0}`} />
@@ -527,7 +527,7 @@ function WeaponDetails2() {
 function PlayerStats() {
   return (
     <div class="side-lcd" id="player-stats">
-      <LcdLine title text={playerName.value.toUpperCase()} />
+      <LcdLine text={playerName.value.toUpperCase()} />
       <LcdLine text={`TEAM ${teamId.value}`} />
       <LcdLine text={`LIFE ${life.value}/${maxLife.value}`} />
       <LcdLine text={`SHIELD ${shield.value}/1000`} />
@@ -545,7 +545,7 @@ function WindMeasurements() {
   const f = (n: number) => n.toFixed(2);
   return (
     <div class="side-lcd" id="wind-measurements">
-      <LcdLine title text="WIND MEASUREMENTS" />
+      <LcdLine text="WIND MEASUREMENTS" />
       <LcdLine text={`VEL ${f(windVelX.value)} ${f(windVelY.value)}`} />
       <LcdLine text={`ACC ${f(windAccX.value)} ${f(windAccY.value)}`} />
       {canMoveNow.value ? (

@@ -7,7 +7,7 @@
  * damage-over-time, the `earth` deposit amount) are derived from the data fields.
  */
 import {Vec2} from '../../math/Vec2';
-import {CShot, SHOT_GRAVITY, SHOT_SPEED_SCALE} from '../CShot';
+import {CShot, SHOT_GRAVITY, SHOT_SPEED_SCALE, launchSpeed} from '../CShot';
 import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
@@ -455,7 +455,7 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
   const [startDeg, endDeg] = weapon.getClusterSpread();
   const step = (endDeg - startDeg) / cluNum;
   const childPower = Math.max(1, parent.getPower() * CLUSTER_POWER);
-  const speed = childPower * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale); // prettier-ignore
+  const speed = launchSpeed(childPower);
 
   for (let k = 0; k < cluNum; k++) {
     const aDeg = startDeg - k * step; // fan angle by subtraction
