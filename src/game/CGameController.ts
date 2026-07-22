@@ -1436,79 +1436,84 @@ export class CGameController implements ShotWorld {
     ctx.globalAlpha = 1;
   }
 
-  /**
-   * Draw indicator around current player's tank
-   */
-  /** The winner flag (between battles): a red flag that RAISES up its pole from the
-   *  ground, then WAVES — drawn procedurally (the original's `flags\` asset was cut
-   *  from this build, so there's no sprite to load). */
+  /** The winner flag (between battles): a red flag on a wooden pole that RISES up out
+   *  of the terrain, then WAVES with a moving sheen — drawn procedurally (the original's
+   *  `flags\` asset was cut from this build, so there's no sprite to load). */
   private drawWinnerFlag(ctx: CanvasRenderingContext2D): void {
     const tank = this.getWinnerTank();
     if (!tank) return;
     const pos = tank.getPosition();
     const r = tank.getHitRadius();
-    const fx = pos.x + r + 10; // pole planted just beside the tank
-    const base = pos.y + r * 0.6; // at the tank's foot
-    const top = base - r * 3.6; // top of the pole
+    const fx = pos.x + r + 22; // pole planted a little clear of the tank
+    // Plant the pole ON the terrain (a hair below the surface so it doesn't float),
+    // sampling the ground column right under the pole.
+    const base = this.m_land.getHeightAt(fx) + 2;
+    const poleH = r * 3.6; // full pole height above ground
     const fw = r * 2.0; // flag size
     const fh = r * 1.25;
 
-    // Raise: the flag climbs the pole from the ground to the top over RAISE seconds
-    // (ease-out); after that it just waves.
-    const RAISE = 0.7;
+    // Rise: the whole pole (with the flag at its top) grows up out of the ground over
+    // RAISE seconds (ease-out); after that it just waves. Slower than a flick so the
+    // raise reads as a deliberate planting.
+    const RAISE = 1.8;
     const raise = Math.min(1, this.m_battleEndTime / RAISE);
     const ease = 1 - (1 - raise) * (1 - raise);
-    const flagTop = base - (base - top) * ease; // slides up from base → top
-    const phase = this.m_battleEndTime * 7; // wave speed
+    const poleTop = base - poleH * ease; // current top of the growing pole
+    const flagTop = poleTop + 1; // flag hangs just under the finial
+    const phase = this.m_battleEndTime * 7; // wave speed (unchanged)
     const amp = fh * 0.16 * ease; // no flutter until it's up
 
     ctx.save();
-    // Pole (full height, planted) + finial.
-    ctx.strokeStyle = '#e6e9ec';
-    ctx.lineWidth = 2;
+    // Wooden pole (grows from the ground to poleTop) + a small cap finial.
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#7a4f2a'; // wood brown
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(fx, base);
-    ctx.lineTo(fx, top);
+    ctx.lineTo(fx, poleTop);
     ctx.stroke();
-    ctx.fillStyle = '#e6e9ec';
+    ctx.strokeStyle = 'rgba(255,225,190,0.5)'; // left-edge highlight for a rounded pole
+    ctx.lineWidth = 0.8;
     ctx.beginPath();
-    ctx.arc(fx, top, 2.2, 0, Math.PI * 2);
+    ctx.moveTo(fx - 0.7, base);
+    ctx.lineTo(fx - 0.7, poleTop);
+    ctx.stroke();
+    ctx.fillStyle = '#5a3a1e';
+    ctx.beginPath();
+    ctx.arc(fx, poleTop, 2.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Waving red flag: sample the width, offsetting each column vertically by a sine
-    // that grows toward the free (right) edge — the top and bottom edges ripple in sync.
-    const N = 10;
+    // Waving red flag: each vertical strip is offset by a sine that grows toward the
+    // free (right) edge, and SHADED by the wave's local slope so light plays across the
+    // cloth as it ripples — crests catch the light, troughs fall into shadow.
+    const N = 14;
     const waveAt = (t: number) => Math.sin(t * Math.PI * 2 - phase) * amp * t;
-    ctx.fillStyle = '#e01e1e';
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    const clamp255 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+    for (let i = 0; i < N; i++) {
+      const t0 = i / N,
+        t1 = (i + 1) / N;
+      const mid = (t0 + t1) / 2;
+      // Sheen from the wave's slope (∝ cos of the sine's argument): +1 face-to-light → lit.
+      const shade = Math.cos(mid * Math.PI * 2 - phase) * mid; // stronger toward free edge
+      const l = 0.82 + 0.42 * shade; // brightness multiplier
+      ctx.fillStyle = `rgb(${clamp255(224 * l)},${clamp255(34 * l)},${clamp255(34 * l)})`;
+      ctx.beginPath();
+      ctx.moveTo(fx + fw * t0, flagTop + waveAt(t0));
+      ctx.lineTo(fx + fw * t1 + 0.5, flagTop + waveAt(t1)); // +0.5 overlap hides seams
+      ctx.lineTo(fx + fw * t1 + 0.5, flagTop + fh + waveAt(t1));
+      ctx.lineTo(fx + fw * t0, flagTop + fh + waveAt(t0));
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Thin dark outline along the top + bottom edges for definition.
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(fx, flagTop);
-    for (let i = 1; i <= N; i++) {
-      const t = i / N;
-      ctx.lineTo(fx + fw * t, flagTop + waveAt(t));
-    }
-    for (let i = N; i >= 0; i--) {
-      const t = i / N;
-      ctx.lineTo(fx + fw * t, flagTop + fh + waveAt(t));
-    }
-    ctx.closePath();
-    ctx.fill();
+    for (let i = 1; i <= N; i++) ctx.lineTo(fx + fw * (i / N), flagTop + waveAt(i / N));
+    ctx.moveTo(fx, flagTop + fh);
+    for (let i = 1; i <= N; i++) ctx.lineTo(fx + fw * (i / N), flagTop + fh + waveAt(i / N));
     ctx.stroke();
-    // A darker shading band along the bottom third for a little depth.
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.beginPath();
-    ctx.moveTo(fx, flagTop + fh * 0.66);
-    for (let i = 1; i <= N; i++) {
-      const t = i / N;
-      ctx.lineTo(fx + fw * t, flagTop + fh * 0.66 + waveAt(t));
-    }
-    for (let i = N; i >= 0; i--) {
-      const t = i / N;
-      ctx.lineTo(fx + fw * t, flagTop + fh + waveAt(t));
-    }
-    ctx.closePath();
-    ctx.fill();
     ctx.restore();
   }
 
