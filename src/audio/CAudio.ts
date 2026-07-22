@@ -191,6 +191,11 @@ export class CAudio {
     this.m_sfx.play(s, worldX, {throttle: false});
   }
 
+  /** A supply-crate pickup chime, panned to the crate. */
+  crate(worldX: number): void {
+    this.m_sfx.play('RobotLimb5.wav', worldX, {throttle: false});
+  }
+
   startTankMove(worldX?: number): void {
     this.m_sfx.startLoop(SFX.TANK_MOVING, worldX);
   }

@@ -46,6 +46,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.drawSmoke = S.drawSmoke();
   GameConfig.colorizeTeam = S.colorizeTeam();
   GameConfig.chatter = S.chatter();
+  GameConfig.crateChance = S.crateChance();
   GameConfig.showTeamColor = S.showTeamColor();
   GameConfig.showPowerBars = S.showPowerBars();
   GameConfig.showTankStats = S.showTankStats();

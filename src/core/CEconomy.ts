@@ -131,6 +131,13 @@ export class CEconomy {
     return true;
   }
 
+  /** Grant one round for free (a crate pickup) — adds to stock without charging, and
+   *  never touches unlimited staples. */
+  grant(index: number): void {
+    if (index < 0 || index >= this.m_owned.length || this.isUnlimited(index)) return;
+    this.m_owned[index] = this.getOwned(index) + 1;
+  }
+
   /** True if this weapon can be sold (owned, finite, at least one round). */
   canSell(index: number): boolean {
     return !this.isUnlimited(index) && this.getOwned(index) > 0;

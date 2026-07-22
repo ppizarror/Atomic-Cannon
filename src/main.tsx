@@ -147,6 +147,10 @@ async function main(): Promise<void> {
     }
     // `?setup=1` opens the Play game-setup screen.
     if (q.get('setup') === '1') openPlaySetup();
+    // `?crate=1|weapon|credits|health|bomb`: drop a supply crate onto the human tank to
+    // preview the parachute wobble + pickup (optionally forcing the content kind).
+    const crate = q.get('crate');
+    if (crate !== null) gameController.devDropCrate(crate);
     // `?endtest=battle|war`: jump into a 6-team Deathmatch and force it to end, to preview
     // the standings — `battle` = a between-battles screen (war NOT over), `war` = the war-end
     // screen (Victory! banner + fireworks + "exit to menu"). Forces the game type + battle

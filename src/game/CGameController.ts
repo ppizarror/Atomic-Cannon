@@ -189,7 +189,9 @@ const FW_TRAIL_LIFE = 0.4; // launch-trail spark lifetime (s)
 const BURST_NAMES = ['circle', 'ring', 'star1', 'star2', 'delta', 'pentagon', 'hexagon', 'octagon'];
 // Per-shape sampled lit pixels: offset from the sprite centre + that pixel's colour.
 // null until the bmp loads; filled asynchronously by loadBurstPixels().
-const burstPixels: ({dx: number; dy: number; color: string}[] | null)[] = BURST_NAMES.map(() => null);
+const burstPixels: ({dx: number; dy: number; color: string}[] | null)[] = BURST_NAMES.map(
+  () => null,
+);
 let burstLoadStarted = false;
 
 /** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half
@@ -244,6 +246,42 @@ interface FwRocket {
   y: number;
   vy: number;
   targetY: number;
+}
+
+// Supply crates (Gameplay → Crates). On a per-turn chance a parachute crate drops from
+// the top of the map, descends at a constant speed with a ±5° pendulum wobble, lands on
+// the terrain, and is collected by any tank that comes within reach — granting credits,
+// health, or a weapon. Descent speed, wobble, and the contents split match the original.
+const CRATE_DESCENT = 90; // constant chute descent speed (px/s)
+const CRATE_GRAVITY = 95; // free-fall accel if the chute ever detaches (px/s²)
+const CRATE_WOBBLE_DEG = 5; // pendulum amplitude (±deg), pivot at the canopy top
+const CRATE_WOBBLE_SPEED = 200; // deg/s of the sine argument (≈1.8 s per swing)
+const CRATE_BOX = 32; // landed crate size (px); the pickup reach is CRATE_BOX/2 + tank radius
+const FLOAT_TEXT_LIFE = 2.0; // crate-pickup message lifetime (s)
+
+type CrateKind = 'weapon' | 'credits' | 'health' | 'bomb';
+
+/** A supply crate falling under (then landed without) a parachute. `y` is the crate box's
+ *  position; the parachute assembly is drawn above it and swings about its canopy top. */
+interface Crate {
+  x: number;
+  y: number;
+  vy: number; // free-fall velocity if the chute ever detaches (normally 0)
+  kind: CrateKind;
+  amount: number; // credits / health payload
+  weaponIndex: number; // weapon type (weapon / bomb kinds)
+  landed: boolean;
+  phase: number; // wobble phase offset (deg) so crates don't swing in unison
+  id: number;
+}
+
+/** A short-lived floating pickup message (e.g. "You found 400 credits.") above a tank. */
+interface FloatText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  age: number;
 }
 
 /** A live speech bubble: the speaker (for its screen position) + the rendered
@@ -329,6 +367,8 @@ export class CGameController implements ShotWorld {
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
+    this.m_crates = [];
+    this.m_floatTexts = [];
     this.m_bubbles = [];
     this.m_fireworks = [];
     this.m_rockets = [];
@@ -428,6 +468,9 @@ export class CGameController implements ShotWorld {
     this.m_assets.loadSprite('gui/notch-right', '/assets/gui/notch right.bmp');
     // Booster-jet exhaust flame drawn below a flying tank (black bg → additive glow).
     this.m_assets.loadImage('gui/jet', '/assets/gui/jet.bmp');
+    // Supply crate: the parachute assembly (falling, wobbling) + the bare crate (landed).
+    this.m_assets.loadSprite('gui/crate-chute', '/assets/gui/crate parachute.bmp');
+    this.m_assets.loadSprite('gui/crate', '/assets/gui/crate.bmp');
 
     // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
     // and the additive starburst flare used for trail plumes / fireballs.
@@ -590,6 +633,7 @@ export class CGameController implements ShotWorld {
       this.m_blastCircles = this.m_blastCircles.filter(c => c.age < BLAST_CIRCLE_LIFE);
     }
     this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
+    this.updateCrates(dt); // descend / land / collect supply crates + age pickup text
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
@@ -637,6 +681,8 @@ export class CGameController implements ShotWorld {
     if (!this.m_assets.isReady()) return true; // sprites still popping in
     if (this.m_damageNumbers.length) return true; // floating damage text rising/fading
     if (this.m_blastCircles.length) return true; // blast-circle rings fading
+    if (this.m_crates.length) return true; // parachute crates falling / wobbling
+    if (this.m_floatTexts.length) return true; // crate-pickup messages rising/fading
     for (const s of this.m_shots) if (!s.isDead()) return true;
     for (const m of this.m_mines) if (m.armed > 0) return true; // arming → colour flips
     for (const t of this.m_tanks)
@@ -960,10 +1006,12 @@ export class CGameController implements ShotWorld {
     }
 
     this.drawPlacedEntities(ctx);
+    this.drawCrates(ctx); // supply crates (parachute wobble / landed on the slope)
     this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
+    this.drawFloatTexts(ctx); // crate-pickup messages
 
     // Trail / explosion particles. These use additive ('lighter') blending, so they
     // stay in the world scene (over the opaque backdrop) — moving them to the
@@ -1789,6 +1837,181 @@ export class CGameController implements ShotWorld {
     ctx.restore();
   }
 
+  // ========================================================================
+  // SUPPLY CRATES (Gameplay → Crates)
+  // ========================================================================
+
+  /** On a turn hand-off, roll the Crates chance and — if the field isn't full (max
+   *  2 × live tanks) — drop one parachute crate from the top at a random column. */
+  private maybeSpawnCrate(): void {
+    if (GameConfig.crateChance <= 0) return;
+    if (Math.random() * 100 >= GameConfig.crateChance) return;
+    const aliveTanks = this.m_tanks.filter(t => t.isAlive()).length;
+    if (this.m_crates.length >= 2 * aliveTanks) return;
+    this.addCrate(10 + Math.random() * Math.max(1, this.m_worldWidth - 20));
+  }
+
+  /** Push one crate dropping from the top at column `x`, with contents rolled 50% weapon
+   *  / 20% credits / 20% health / 10% bomb (or a forced `kind` for dev previews). */
+  private addCrate(x: number, forced?: CrateKind): void {
+    const roll = Math.random() * 100;
+    const kind: CrateKind =
+      forced ?? (roll < 50 ? 'weapon' : roll < 70 ? 'credits' : roll < 90 ? 'health' : 'bomb');
+    let amount = 0,
+      weaponIndex = -1;
+    if (kind === 'weapon') weaponIndex = this.randomCrateWeapon();
+    else if (kind === 'credits')
+      amount = (Math.floor(Math.random() * 9) + 1) * 200; // 200..1800
+    else if (kind === 'health')
+      amount = (Math.floor(Math.random() * 9) + 1) * 100; // 100..900
+    else weaponIndex = WEAPON_DATABASE.findIndex(w => w.name === 'Bomb');
+    this.m_crates.push({
+      x,
+      y: 0, // top of the map
+      vy: 0,
+      kind,
+      amount,
+      weaponIndex,
+      landed: false,
+      phase: Math.random() * 360,
+      id: ++this.m_crateSeq,
+    });
+  }
+
+  /** DEV: drop a crate straight onto the human tank's column so it can be previewed
+   *  falling and picked up. Optional forced content kind ('weapon'|'credits'|'health'|'bomb'). */
+  devDropCrate(kind?: string): void {
+    const human = this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0];
+    const forced = (['weapon', 'credits', 'health', 'bomb'] as const).find(k => k === kind);
+    if (human) this.addCrate(human.getPosition().x, forced);
+  }
+
+  /** A random enabled, non-staple weapon index for a weapon crate (falls back to Bomb). */
+  private randomCrateWeapon(): number {
+    const staple = getDefaultWeaponIndex();
+    const pool: number[] = [];
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      if (i !== staple && weaponEnabled(i)) pool.push(i);
+    }
+    return pool.length
+      ? pool[Math.floor(Math.random() * pool.length)]
+      : WEAPON_DATABASE.findIndex(w => w.name === 'Bomb');
+  }
+
+  /** Per-frame crate physics: descend under the chute (constant speed), land on the
+   *  terrain, and get collected by any tank within reach. Also ages pickup messages. */
+  private updateCrates(dt: number): void {
+    if (this.m_crates.length) {
+      const survivors: Crate[] = [];
+      for (const c of this.m_crates) {
+        const ground = this.m_land.getHeightAt(c.x);
+        if (c.y < ground) {
+          if (!c.landed)
+            c.y += CRATE_DESCENT * dt; // constant chute descent (no drift)
+          else {
+            c.vy += CRATE_GRAVITY * dt; // detached chute → free-fall (rarely used)
+            c.y += c.vy * dt;
+          }
+        } else {
+          c.y = ground;
+          c.vy = 0;
+          c.landed = true;
+        }
+        // Pickup: any live tank whose centre is within (crate box + tank radius).
+        const taker = this.m_tanks.find(t => {
+          if (!t.isAlive()) return false;
+          const r = CRATE_BOX / 2 + t.getHitRadius();
+          return t.distanceTo(c.x, c.y) <= r;
+        });
+        if (taker) this.collectCrate(c, taker);
+        else survivors.push(c);
+      }
+      this.m_crates = survivors;
+    }
+    if (this.m_floatTexts.length) {
+      for (const f of this.m_floatTexts) f.age += dt;
+      this.m_floatTexts = this.m_floatTexts.filter(f => f.age < FLOAT_TEXT_LIFE);
+    }
+  }
+
+  /** Award a crate's contents to `tank` and announce it (message shown for the human). */
+  private collectCrate(c: Crate, tank: CTank): void {
+    let msg = '',
+      color = '#ffffff';
+    switch (c.kind) {
+      case 'credits':
+        tank.addCredits(c.amount);
+        this.poolTeamCredits(tank);
+        msg = `You found ${c.amount} credits.`;
+        color = '#ffe27a';
+        break;
+      case 'health': {
+        const gain = Math.max(0, Math.min(c.amount, tank.getMaxLife() - tank.getHealth().nLife));
+        tank.addLife(gain);
+        msg = `You gained ${gain} health.`;
+        color = '#bfe9b0';
+        break;
+      }
+      case 'weapon':
+      case 'bomb':
+        if (tank.isHuman() && c.weaponIndex >= 0) this.m_economy.grant(c.weaponIndex);
+        msg = `You found a ${getWeapon(c.weaponIndex).getName()} weapon.`;
+        color = '#bfe9b0';
+        break;
+    }
+    this.m_audio?.crate(c.x); // RobotLimb5.wav
+    if (tank.isHuman() && msg) {
+      const p = tank.getPosition();
+      this.m_floatTexts.push({x: p.x, y: p.y - 42, text: msg, color, age: 0});
+    }
+    this.markDirty();
+  }
+
+  /** Draw the live crates: falling ones as the wobbling parachute assembly (pendulum
+   *  swing about the canopy top), landed ones as the bare crate tilted to the slope. */
+  private drawCrates(ctx: CanvasRenderingContext2D): void {
+    const chute = this.m_assets.getSprite('gui/crate-chute');
+    const box = this.m_assets.getSprite('gui/crate');
+    for (const c of this.m_crates) {
+      if (!c.landed && chute) {
+        const w = chute.width,
+          h = chute.height;
+        // Pendulum: swing the whole assembly about its canopy top. The crate box hangs
+        // at the bottom, so anchor the sprite's bottom near (x, y) and rotate about top.
+        const rot =
+          Math.sin(((this.m_time * CRATE_WOBBLE_SPEED + c.phase) * Math.PI) / 180) *
+          ((CRATE_WOBBLE_DEG * Math.PI) / 180);
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.translate(c.x, c.y - h); // canopy-top pivot
+        ctx.rotate(rot);
+        ctx.drawImage(chute.bitmap, -w / 2, 0, w, h);
+        ctx.restore();
+      } else if (box) {
+        const w = box.width,
+          h = box.height;
+        const slope = Math.atan2(
+          this.m_land.getHeightAt(c.x + w / 4) - this.m_land.getHeightAt(c.x - w / 4),
+          w / 2,
+        );
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.translate(c.x, c.y);
+        ctx.rotate(slope); // sit flush on the terrain slope
+        ctx.drawImage(box.bitmap, -w / 2, -h, w, h); // bottom edge on the ground
+        ctx.restore();
+      }
+    }
+  }
+
+  /** Draw the floating crate-pickup messages (rising + fading), in a bitmap font. */
+  private drawFloatTexts(ctx: CanvasRenderingContext2D): void {
+    for (const f of this.m_floatTexts) {
+      const t = f.age / FLOAT_TEXT_LIFE;
+      this.drawBmpCentered(ctx, 'beijing-16-out', f.text, f.x, f.y - t * 26, 1 - t);
+    }
+  }
+
   private drawTurnIndicator(ctx: CanvasRenderingContext2D, tank: CTank): void {
     const pos = tank.getPosition();
     const sprite = this.m_assets.getSprite('gui/turn-arrow');
@@ -1855,6 +2078,27 @@ export class CGameController implements ShotWorld {
         }
       }
     }
+
+    // A tank can die DURING the Battle state — from radiation fallout above, or a
+    // mine detonating under a settling tank — not only from a resolving shot. The
+    // shot path declares the winner in the Explosion state (checkBattleEnd); this
+    // covers those passive deaths so the battle ends the instant only one side is
+    // left, instead of stalling until the human fires a needless final shot.
+    this.endBattleIfDecided();
+  }
+
+  /**
+   * End the battle immediately when the field is down to one (or zero) living
+   * tank. No-op while two or more remain. `endTurn` sees `alive.length <= 1` and
+   * hands off to the BattleEnd state (winner flag + win/lose jingle) rather than
+   * passing the turn on, so this only ever finalises the battle — it never skips
+   * a live player's turn.
+   */
+  private endBattleIfDecided(): void {
+    // Only while a turn is live: if the turn timer already forfeited into BattleEnd
+    // earlier this tick, endTurn has run — a second call would double the jingle.
+    if (this.m_gameState !== EGameState.Battle) return;
+    if (this.m_tanks.filter(t => t.isAlive()).length <= 1) this.endTurn();
   }
 
   /**
@@ -2328,6 +2572,8 @@ export class CGameController implements ShotWorld {
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
+    this.m_crates = [];
+    this.m_floatTexts = [];
     this.m_bubbles = [];
     this.m_fireworks = [];
     this.m_rockets = [];
@@ -2342,6 +2588,11 @@ export class CGameController implements ShotWorld {
     this.m_winnerName = '';
     this.m_gameState = EGameState.Battle;
     this.beginTurn();
+    // Start a fresh battle track. This also cuts the previous battle's win/lose
+    // jingle (battleWon/battleLost, played once): starting a new looping bed
+    // replaces whatever the music player was last asked to play, so the victory
+    // music doesn't linger into the next battle.
+    this.m_audio?.battleMusic();
   }
 
   /** Drop all taunt bubbles (leaving the standings → next battle or the menu). */
@@ -2401,6 +2652,9 @@ export class CGameController implements ShotWorld {
     // Only after an actual shot, never a timed-out forfeit.
     if (this.m_firedThisTurn)
       this.tryTaunt('postFire', this.getCurrentTank(), TAUNT_CHANCE_POSTFIRE);
+
+    // On the turn hand-off, roll the chance to drop a new supply crate.
+    this.maybeSpawnCrate();
 
     // Hand off, then pay the between-turn credits. A completed round (turn order
     // wrapped) pays Credit Round to every survivor first, then Credit Turn every
@@ -3429,6 +3683,10 @@ export class CGameController implements ShotWorld {
   private m_rockets: FwRocket[] = [];
   private m_fireworkTimer = 0;
   private m_showFireworks = false;
+  // Supply crates on the field + their pickup messages, and a monotonic id counter.
+  private m_crates: Crate[] = [];
+  private m_floatTexts: FloatText[] = [];
+  private m_crateSeq = 0;
   // Live taunt speech bubbles (Chatter). One per speaker at a time; a new one replaces
   // the old. Aged in update(); rendered as DOM overlays via getActiveTaunts().
   private m_bubbles: TauntBubble[] = [];
