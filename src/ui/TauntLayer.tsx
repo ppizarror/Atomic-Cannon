@@ -29,7 +29,7 @@ export function TauntLayer() {
             class="taunt-bubble"
             style={{left: `${b.xPct * 100}%`, top: `${b.yPct * 100}%`, opacity: b.alpha}}
           >
-            <Tooltip title={title} content={content} tailLeft="14px" />
+            <Tooltip title={title} content={content} tailLeft="14px" animated />
           </div>
         );
       })}

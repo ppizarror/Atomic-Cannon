@@ -16,7 +16,6 @@ export function BmpText({
   text,
   height,
   scale,
-  tint,
   spacing,
   class: cls,
 }: {
@@ -24,7 +23,6 @@ export function BmpText({
   text: string;
   height?: number; // optional forced CSS height (may blur if < native)
   scale?: number; // integer magnification of the native size (crisp)
-  tint?: string;
   spacing?: number;
   class?: string;
 }) {
@@ -36,7 +34,7 @@ export function BmpText({
     const draw = () => {
       const c = ref.current;
       if (!c) return;
-      const src = f.renderCached(text, {tint, spacing});
+      const src = f.renderCached(text, {spacing});
       c.width = src.width;
       c.height = src.height;
       c.getContext('2d')!.drawImage(src, 0, 0);
@@ -46,7 +44,7 @@ export function BmpText({
     };
     draw();
     if (!f.ready) f.onReady(draw);
-  }, [font, text, height, scale, tint, spacing]);
+  }, [font, text, height, scale, spacing]);
 
   return <canvas ref={ref} class={cls} style={{imageRendering: 'pixelated', display: 'block'}} />;
 }

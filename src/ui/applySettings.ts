@@ -11,8 +11,10 @@ import type {CGameController} from '../game/CGameController';
 import {GameConfig} from '../core/CGameConfig';
 import {GameContent} from '../core/CGameContent';
 import {Roster} from '../core/CRoster';
+import {Taunts} from '../core/CTaunts';
 import {gameSettings as S} from './settingsValues';
 import {weaponsOff, landsOff} from './contentStore';
+import {tauntLines} from './tauntsStore';
 import {roster} from './playersStore';
 import {showFramerate} from './store';
 
@@ -43,6 +45,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.hitpoints = S.hitpoints();
   GameConfig.drawSmoke = S.drawSmoke();
   GameConfig.colorizeTeam = S.colorizeTeam();
+  GameConfig.chatter = S.chatter();
   GameConfig.showTeamColor = S.showTeamColor();
   GameConfig.showPowerBars = S.showPowerBars();
   GameConfig.showTankStats = S.showTankStats();
@@ -62,6 +65,14 @@ export function applyGameSettings(c: CGameController): void {
 
   // Player roster (name / model / colour) for the NEXT match (Customize Players).
   Roster.players = roster.value.map(p => ({name: p.name, model: p.model, color: p.color}));
+
+  // Taunt message lists (Customize Taunts) — copy the effective (edited-or-default)
+  // lines into the engine's live pool, dropping any blank editor rows. (Edits also
+  // push live via tauntsStore; this is the boot / new-game safety net.)
+  const clean = (l: string[]) => l.map(s => s.trim()).filter(s => s.length > 0);
+  Taunts.death = clean(tauntLines('death'));
+  Taunts.postFire = clean(tauntLines('postFire'));
+  Taunts.taunt = clean(tauntLines('taunt'));
 
   // Force a repaint: a display toggle (Show AI Stats, High Contrast, …) changes what
   // the scene should draw, but nothing "moved", so the present-on-demand gate would

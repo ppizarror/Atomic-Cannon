@@ -562,6 +562,34 @@ canvas {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
 }
 
+/* ---- Taunt speech bubbles (Chatter) ----------------------------------------
+   The layer overlays the game scene (matches #game-container), and each bubble is
+   absolutely positioned in scene fractions (set inline) so it tracks the tank as the
+   camera scrolls. The bubble is anchored by its tail tip (translate -50%,-100%): it
+   grows UP from the tank with the tail pointing down at it. Pointer-transparent. */
+.taunt-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(100vh - var(--hud-h));
+  z-index: var(--z-hud);
+  pointer-events: none;
+  overflow: hidden; /* a bubble at the map edge clips to the view, never spills */
+}
+
+.taunt-bubble {
+  position: absolute;
+  /* Fixed tail near the left edge (14px, matching the depot). Shift the box left by
+     that much so the tail — not the box centre — sits at the tank's centre, and the
+     bubble grows up-and-right from the tank. */
+  transform: translate(-14px, -100%);
+  max-width: 300px;
+  min-width: 60px;
+  width: max-content;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+}
+
 /* Full-viewport white-out for big blasts (nuke flash) — above everything. */
 .screen-flash {
   position: fixed;
@@ -737,29 +765,52 @@ canvas {
   color: #14171a;
 }
 
-/* Green tooltip — the real zeon dialog.bmp frame, 9-sliced onto a <canvas> by
- * <ZeonFrame> (beveled green box + black rounded corners). The frame fills the
- * box; the text rides above it in .dep-tt-body. Sits ABOVE the cursor (translated
- * up by its own height) so the pointer aims down at the hovered row. drop-shadow
- * (not box-shadow) follows the frame's rounded alpha, not a rectangle. */
-.dep-tooltip {
-  position: fixed;
-  z-index: var(--z-depot-tip);
-  max-width: 340px;
-  pointer-events: none;
-  transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
+/* ===================== SPEECH BUBBLE (shared zeon dialog) =====================
+ * The green gui/dialog.bmp bubble — 9-sliced by <ZeonFrame> into a beveled green
+ * box with a down-pointer tail. Shared by the Weapons Depot tooltip and the in-game
+ * taunt bubble (<Tooltip>). Drop it inside a positioned wrapper (.dep-tooltip /
+ * .taunt-bubble) that places it on screen. */
+.tooltip {
+  position: relative;
   padding: 6px 11px 8px;
-  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
 }
 
-/* Frame + pointer share ONE translucency group: they composite opaquely here,
-   then this group's opacity fades them together — so the pointer overlapping the
-   box never doubles up the alpha (the "transparency over transparency" glitch). */
-.dep-tt-frame {
+/* Taunt-only "pop" on show: the box grows from its centre, then the text is revealed
+   once it's (nearly) full. Show-only — removal is instant, no exit animation. */
+@keyframes tooltip-pop {
+  0% {
+    transform: scale(0);
+  }
+  70% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes tooltip-text-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tooltip.animated {
+  transform-origin: center;
+  animation: tooltip-pop 0.36s ease-out;
+}
+.tooltip.animated .tooltip-body {
+  animation: tooltip-text-in 0.14s ease-out 0.26s both;
+}
+
+/* Frame + tail share ONE translucency group: they composite opaquely here, then
+   this group's opacity fades them together — so the tail overlapping the box never
+   doubles up the alpha (the "transparency over transparency" glitch). */
+.tooltip-frame {
   position: absolute;
   inset: 0;
   z-index: 0;
-  opacity: 0.82;
 }
 
 /* The 9-sliced dialog.bmp frame, filling the box behind the text. */
@@ -773,30 +824,46 @@ canvas {
 }
 
 /* Text rides above the frame canvas. */
-.dep-tt-body {
+.tooltip-body {
   position: relative;
   z-index: 1;
 }
 
-/* Down-pointer: a plain green triangle merging with the box's green fill (no
-   black, no own opacity — the .dep-tt-frame group provides the translucency). */
-.dep-tt-arrow {
+/* Down-pointer tail: a plain green triangle merging with the box's green fill (no
+   black, no own opacity — the .tooltip-frame group provides the translucency).
+   `left` is set inline (centred by default; the depot points it at the row). */
+.tooltip-tail {
   position: absolute;
   top: 100%;
-  left: 14px;
   width: 0;
   height: 0;
-  margin-top: -2px; /* overlap into the box so it reads as one shape */
+  margin-top: -4px; /* overlap into the box so it reads as one shape */
+  transform: translateX(-7px); /* centre the 14px-wide triangle on `left` */
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
   border-top: 8px solid #00ff00;
 }
 
-.dep-tt-desc {
+/* Green tooltip wrapper — positions the shared bubble ABOVE the cursor (translated
+ * up by its own height) so the tail aims down at the hovered row. drop-shadow (not
+ * box-shadow) follows the frame's rounded alpha, not a rectangle. */
+.dep-tooltip {
+  position: fixed;
+  z-index: var(--z-depot-tip);
+  max-width: 340px;
+  pointer-events: none;
+  transform: translateY(-100%); /* anchor the BOTTOM at `top` → renders upward */
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+}
+
+/* Shared <Tooltip> body: a title over a stack of content lines. */
+.tooltip-title {
+  margin-bottom: 3px;
+}
+.tooltip-content {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-top: 3px;
 }
 
 /* Selected-weapon stats popup (the "Stats" button). */
@@ -1298,6 +1365,59 @@ canvas {
   cursor: not-allowed;
 }
 
+/* ==================== Between-battles "winning the war" standings ==================== */
+/* A transparent, click-anywhere overlay over the frozen battle scene (HUD hidden). */
+.war-standings {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-screen);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 3vh 2vw;
+  cursor: pointer;
+  /* every line reads over the scene */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+.war-banner {
+  opacity: 0.95;
+}
+.war-title {
+  margin-bottom: 4px;
+}
+.war-sub {
+  opacity: 0.92;
+}
+.war-table {
+  margin: 2vh 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.war-row {
+  display: grid;
+  grid-template-columns: 200px 64px 74px 64px 92px 110px;
+  gap: 12px;
+  align-items: center;
+}
+.war-table.points .war-row {
+  grid-template-columns: 200px 80px 64px 92px 110px;
+}
+.war-head {
+  margin-bottom: 4px;
+  opacity: 0.95;
+}
+.war-wincond {
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+.war-prompt {
+  margin-top: 3vh;
+  opacity: 0.9;
+}
+
 /* ==================== Game Content enable-list editors (steel) ==================== */
 .editor-screen {
   position: fixed;
@@ -1387,6 +1507,63 @@ canvas {
 .editor-exit {
   margin-left: 44px;
 }
+
+/* ---- Customize Taunts editor ------------------------------------------------ */
+/* Category selector (Taunts / Post-Fire / Death); the active list is highlighted. */
+.taunt-tabs {
+  display: flex;
+  gap: 10px;
+  margin-top: 1.6vh;
+}
+.taunt-tab.active {
+  outline: 2px solid #7bd88f;
+  outline-offset: 1px;
+}
+/* The list scrolls (17+ lines) rather than paging like the enable-list editors. */
+.taunt-edit-list {
+  overflow-y: auto;
+  gap: 4px;
+}
+.taunt-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.taunt-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(120, 220, 140, 0.4);
+  color: #eef2f6;
+  font: 14px/1.4 sans-serif;
+  padding: 3px 7px;
+}
+.taunt-input:focus {
+  outline: none;
+  border-color: #7bd88f;
+  background: rgba(0, 0, 0, 0.55);
+}
+.taunt-del {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(150, 30, 30, 0.55);
+  border: 1px solid rgba(230, 120, 120, 0.5);
+  cursor: pointer;
+  padding: 0;
+}
+.taunt-del:hover {
+  background: rgba(200, 40, 40, 0.7);
+}
+.taunt-empty {
+  margin: auto;
+  text-align: center;
+}
+
 /* Landscapes: fewer, larger thumbnail rows. */
 .editor-lands {
   width: min(560px, 82vw);

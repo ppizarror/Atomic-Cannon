@@ -44,7 +44,8 @@ export function Tooltip({
   title,
   content,
   tailLeft = '50%',
-  opacity = 0.82,
+  opacity = 0.72,
+  animated = false,
 }: {
   title: string;
   content: string;
@@ -52,9 +53,12 @@ export function Tooltip({
   tailLeft?: string;
   /** Frame+tail group opacity (the body stays fully opaque). */
   opacity?: number;
+  /** Grow-from-centre "pop" as it appears (the taunt bubble). Show-only — the
+   *  bubble just vanishes when removed, no exit animation. */
+  animated?: boolean;
 }) {
   return (
-    <div class="tooltip">
+    <div class={`tooltip${animated ? ' animated' : ''}`}>
       <div class="tooltip-frame" style={{opacity}}>
         <ZeonFrame />
         <div class="tooltip-tail" style={{left: tailLeft}} />

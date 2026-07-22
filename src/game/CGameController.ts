@@ -13,6 +13,7 @@ import {CTank, TEAM_COLORS} from '../core/CTank';
 import {Roster} from '../core/CRoster';
 import {CShot} from '../core/CShot';
 import {GameConfig} from '../core/CGameConfig';
+import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
 import {CWeapon, getDefaultWeaponIndex, getWeapon, WEAPON_DATABASE} from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
@@ -65,6 +66,31 @@ export enum EGameType {
   Rounds = 0,
   Deathmatch = 1,
   FastTest = 2,
+}
+
+/** One team's row in the between-battles standings table. */
+export interface WarTeamRow {
+  name: string;
+  color: string;
+  kills: number;
+  deaths: number;
+  lifePct: number;
+  accuracyPct: number;
+  damagePerHit: number;
+  isLeader: boolean;
+  isHuman: boolean;
+}
+
+/** The full between-battles "winning the war" standings, computed at battle end. */
+export interface WarStandings {
+  title: string; // "X is winning the war." / "X wins the war!" / "X wins the battle!"
+  banner: string; // "Victory!" / "Defeat!" / "All tanks are dead!" / ""
+  subtitle: string[]; // ["The War is not over yet.", "Battle N of M completed."]
+  winCondition: string; // "The team with the most kills or life wins." (Deathmatch)
+  rows: WarTeamRow[]; // per-team, leader first
+  pointsMode: boolean; // Rounds/Points → "Points" column instead of Kills/Deaths
+  prompt: string; // "Click anywhere to play next battle." / "…exit to menu."
+  warOver: boolean;
 }
 
 // Bot names
@@ -124,6 +150,42 @@ const DMG_NUM_LIFE = 1.1;
 const DMG_NUM_RISE = 28;
 // "Show Blast Circles": how long each explosion ring lingers (s).
 const BLAST_CIRCLE_LIFE = 1.4;
+
+// Taunt speech bubbles (Tank → Chatter). A bubble stays up TAUNT_LIFE seconds and
+// fades over its last TAUNT_FADE. Trigger chances match the original (RE: FUN_0046b3d0
+// percent gate): 8% post-fire, 30% on death, 60% on the idle interval. The idle timer
+// re-arms to a random gap in [TAUNT_IDLE_MIN, TAUNT_IDLE_MAX] seconds each turn/attempt
+// (the original uses randomized constants we don't have; this is a faithful stand-in).
+const TAUNT_LIFE = 4.0;
+const TAUNT_FADE = 0.6;
+const TAUNT_CHANCE_POSTFIRE = 8;
+const TAUNT_CHANCE_DEATH = 30;
+const TAUNT_CHANCE_IDLE = 60;
+const TAUNT_IDLE_MIN = 7;
+const TAUNT_IDLE_MAX = 15;
+// Screen-space height (px) the bubble's tail floats above the tank's centre — just
+// clear of the turret so the tail points right at the tank.
+const TAUNT_RISE = 20;
+
+/** A live speech bubble: the speaker (for its screen position) + the rendered
+ *  "Name: line" text + its age. Kept controller-side (not on the tank) so a death
+ *  bubble outlives its now-dead speaker. */
+interface TauntBubble {
+  id: number;
+  speaker: CTank;
+  text: string;
+  age: number;
+}
+
+/** A taunt bubble projected for the DOM overlay: fractional screen position (0..1 of
+ *  the view) so it tracks the camera, plus a fade alpha. */
+export interface ActiveTaunt {
+  id: number;
+  text: string;
+  xPct: number;
+  yPct: number;
+  alpha: number;
+}
 
 /**
  * CGameController - Main game controller
@@ -188,6 +250,7 @@ export class CGameController implements ShotWorld {
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
+    this.m_bubbles = [];
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
     // land + bounds if the size changed since the last match.
@@ -199,15 +262,7 @@ export class CGameController implements ShotWorld {
       this.m_particles.setBounds(worldW, this.m_canvas.height);
     }
 
-    // Generate terrain: a DEV flat test surface (`?flatland=1`), a forced landscape shape
-    // (Settings → Land Type), or, for "Random", the usual random landscape.
-    if (this.m_flatLand) {
-      this.m_land.generateFlat();
-    } else if (this.m_landMode >= 0 && this.m_landMode <= 4) {
-      this.m_land.generateTerrainMode(this.m_landMode);
-    } else {
-      this.m_land.generateRandomTerrain();
-    }
+    this.generateTerrain();
 
     // Build the spawn list from the roster (Customize Players): one entry per tank.
     // Each player fields `m_tanksPerTeam` tanks that share the player's colour — colour
@@ -241,19 +296,12 @@ export class CGameController implements ShotWorld {
     // Position the tanks spread across the whole WORLD (not just the view) so a large
     // map is actually used, with a little jitter and clamped to the world.
     const n = spawns.length;
-    const margin = 120;
     for (let i = 0; i < n; i++) {
       const s = spawns[i];
-      const frac = n <= 1 ? 0.5 : i / (n - 1);
-      const xPos = Math.max(
-        60,
-        Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + (Math.random() - 0.5) * 40),
-      );
-
       const pTank = new CTank(s.name, s.team);
       pTank.setColor(s.color); // hull colour (and team identity)
       if (s.model) pTank.setTankType(s.model);
-      pTank.init(xPos, this.m_land);
+      pTank.init(this.tankSpawnX(i, n), this.m_land);
       pTank.setHuman(s.human);
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
       pTank.setCredits(this.m_startCredits); // per-tank starting credits (Economy → Credit Start)
@@ -441,6 +489,10 @@ export class CGameController implements ShotWorld {
           this.checkBattleEnd();
         }
         break;
+
+      case EGameState.BattleEnd:
+        this.m_battleEndTime += dt; // drives the winner flag raise + wave animation
+        break;
     }
 
     // Always update terrain, wind and visual effects
@@ -454,6 +506,7 @@ export class CGameController implements ShotWorld {
       for (const c of this.m_blastCircles) c.age += dt;
       this.m_blastCircles = this.m_blastCircles.filter(c => c.age < BLAST_CIRCLE_LIFE);
     }
+    this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
     this.m_land.update(dt);
     this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
@@ -489,6 +542,8 @@ export class CGameController implements ShotWorld {
       case EGameState.ShotFlying:
       case EGameState.Explosion:
         return true; // shot/flight/blast in progress
+      case EGameState.BattleEnd:
+        return true; // the winner flag keeps raising / waving on the standings
     }
     if (this.m_screenShake.isActive()) return true;
     if (this.m_camX !== this.m_camTargetX) return true; // camera still panning
@@ -799,7 +854,8 @@ export class CGameController implements ShotWorld {
           GameConfig.showTurn &&
           this.getCurrentTank() === tank &&
           this.m_gameState !== EGameState.ShotFlying &&
-          this.m_gameState !== EGameState.Explosion
+          this.m_gameState !== EGameState.Explosion &&
+          this.m_gameState !== EGameState.BattleEnd
         ) {
           this.drawTurnIndicator(ctx, tank);
         }
@@ -810,6 +866,9 @@ export class CGameController implements ShotWorld {
         tank.draw(ctx, this.m_assets);
       }
     }
+
+    // Between battles: plant a flag by the winning tank and show its taunt bubble.
+    if (this.m_gameState === EGameState.BattleEnd) this.drawWinnerFlag(ctx);
 
     this.drawPlacedEntities(ctx);
     this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
@@ -1136,6 +1195,73 @@ export class CGameController implements ShotWorld {
     });
   }
 
+  // ========================================================================
+  // TAUNTS (Chatter) — contextual speech bubbles. Category is driven by the
+  // event (post-fire / death / idle); the line is a uniform random pick inside
+  // that category (see core/CTaunts). Rendered as DOM overlays (App → TauntLayer).
+  // ========================================================================
+
+  /** Try to make `speaker` say a `cat` line: gated by the Chatter setting, the
+   *  Sentry exclusion, a live speaker, and a `chancePct` roll. On success a bubble
+   *  replaces any this speaker already has. */
+  private tryTaunt(cat: TauntCategory, speaker: CTank | null, chancePct: number): void {
+    if (!GameConfig.chatter || !speaker) return;
+    if (speaker.getTankType() === 'Sentry') return; // Sentries never taunt (RE)
+    if (Math.random() * 100 > chancePct) return;
+    const line = pickTaunt(cat);
+    if (!line) return; // list emptied in the editor → nothing to say
+    this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== speaker);
+    this.m_bubbles.push({
+      id: ++this.m_bubbleSeq,
+      speaker,
+      text: `${speaker.getName()}: ${line}`,
+      age: 0,
+    });
+  }
+
+  /** The manual "Chat Taunt" key (bound to Enter): the human's current tank always
+   *  speaks an idle-taunt line (a deliberate press, so no chance roll). */
+  playerTaunt(): void {
+    if (this.m_paused) return;
+    const tank = this.getCurrentTank();
+    if (tank.isHuman() && tank.isAlive()) this.tryTaunt('taunt', tank, 100);
+  }
+
+  /** Age bubbles (dropping the expired) and run the idle-taunt countdown, which only
+   *  ticks while a live tank is waiting to fire (no shot in flight). */
+  private updateTaunts(dt: number): void {
+    if (this.m_bubbles.length) {
+      for (const b of this.m_bubbles) b.age += dt;
+      this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT_LIFE);
+    }
+    if (this.m_gameState !== EGameState.Battle) return; // only during a live turn
+    this.m_tauntTimer -= dt;
+    if (this.m_tauntTimer <= 0) {
+      this.tryTaunt('taunt', this.getCurrentTank(), TAUNT_CHANCE_IDLE);
+      this.m_tauntTimer = TAUNT_IDLE_MIN + Math.random() * (TAUNT_IDLE_MAX - TAUNT_IDLE_MIN);
+    }
+  }
+
+  /** Active taunt bubbles projected to fractional screen coords (0..1 of the view),
+   *  so the DOM overlay tracks the speaker as the camera scrolls. `alpha` fades the
+   *  bubble over its final TAUNT_FADE seconds. */
+  getActiveTaunts(): ActiveTaunt[] {
+    if (!this.m_bubbles.length) return [];
+    const vw = this.m_canvas.width,
+      vh = this.m_canvas.height;
+    return this.m_bubbles.map(b => {
+      const p = b.speaker.getPosition();
+      const remain = TAUNT_LIFE - b.age;
+      return {
+        id: b.id,
+        text: b.text,
+        xPct: (p.x - this.m_camX) / vw,
+        yPct: (p.y - TAUNT_RISE) / vh,
+        alpha: Math.max(0, Math.min(1, remain / TAUNT_FADE)),
+      };
+    });
+  }
+
   /**
    * The drag-aim indicator: a hollow green block-arrow from the tank toward the
    * cursor (no fill). Its length is capped at full power, and its thickness + head
@@ -1313,6 +1439,79 @@ export class CGameController implements ShotWorld {
   /**
    * Draw indicator around current player's tank
    */
+  /** The winner flag (between battles): a red flag that RAISES up its pole from the
+   *  ground, then WAVES — drawn procedurally (the original's `flags\` asset was cut
+   *  from this build, so there's no sprite to load). */
+  private drawWinnerFlag(ctx: CanvasRenderingContext2D): void {
+    const tank = this.getWinnerTank();
+    if (!tank) return;
+    const pos = tank.getPosition();
+    const r = tank.getHitRadius();
+    const fx = pos.x + r + 10; // pole planted just beside the tank
+    const base = pos.y + r * 0.6; // at the tank's foot
+    const top = base - r * 3.6; // top of the pole
+    const fw = r * 2.0; // flag size
+    const fh = r * 1.25;
+
+    // Raise: the flag climbs the pole from the ground to the top over RAISE seconds
+    // (ease-out); after that it just waves.
+    const RAISE = 0.7;
+    const raise = Math.min(1, this.m_battleEndTime / RAISE);
+    const ease = 1 - (1 - raise) * (1 - raise);
+    const flagTop = base - (base - top) * ease; // slides up from base → top
+    const phase = this.m_battleEndTime * 7; // wave speed
+    const amp = fh * 0.16 * ease; // no flutter until it's up
+
+    ctx.save();
+    // Pole (full height, planted) + finial.
+    ctx.strokeStyle = '#e6e9ec';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(fx, base);
+    ctx.lineTo(fx, top);
+    ctx.stroke();
+    ctx.fillStyle = '#e6e9ec';
+    ctx.beginPath();
+    ctx.arc(fx, top, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Waving red flag: sample the width, offsetting each column vertically by a sine
+    // that grows toward the free (right) edge — the top and bottom edges ripple in sync.
+    const N = 10;
+    const waveAt = (t: number) => Math.sin(t * Math.PI * 2 - phase) * amp * t;
+    ctx.fillStyle = '#e01e1e';
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(fx, flagTop);
+    for (let i = 1; i <= N; i++) {
+      const t = i / N;
+      ctx.lineTo(fx + fw * t, flagTop + waveAt(t));
+    }
+    for (let i = N; i >= 0; i--) {
+      const t = i / N;
+      ctx.lineTo(fx + fw * t, flagTop + fh + waveAt(t));
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // A darker shading band along the bottom third for a little depth.
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.moveTo(fx, flagTop + fh * 0.66);
+    for (let i = 1; i <= N; i++) {
+      const t = i / N;
+      ctx.lineTo(fx + fw * t, flagTop + fh * 0.66 + waveAt(t));
+    }
+    for (let i = N; i >= 0; i--) {
+      const t = i / N;
+      ctx.lineTo(fx + fw * t, flagTop + fh + waveAt(t));
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   private drawTurnIndicator(ctx: CanvasRenderingContext2D, tank: CTank): void {
     const pos = tank.getPosition();
     const sprite = this.m_assets.getSprite('gui/turn-arrow');
@@ -1681,7 +1880,15 @@ export class CGameController implements ShotWorld {
   private handleTankDestroyed(tank: CTank): void {
     const pos = tank.getPosition();
 
+    // Standings: the victim earns a death; its killer (last damager, if an enemy) a kill.
+    tank.addDeath();
+    const killer = tank.getLastDamager();
+    if (killer && killer !== tank && killer.getTeamId() !== tank.getTeamId()) killer.addKill();
+
     this.awardKillCredit(tank);
+
+    // The dying tank cries out a random death line (Chatter, 30% — RE: FUN_00474ff0).
+    this.tryTaunt('death', tank, TAUNT_CHANCE_DEATH);
 
     // Create explosion at tank position
     this.m_particles.tankDeath(pos.x, pos.y + 12);
@@ -1734,7 +1941,12 @@ export class CGameController implements ShotWorld {
    *  shooter as the victim's last-damager for kill attribution. */
   private creditDamage(shooter: CTank | null, victim: CTank, lifeRemoved: number): void {
     victim.setLastDamager(shooter);
-    if (!shooter || lifeRemoved <= 0 || shooter.getTeamId() === victim.getTeamId()) return;
+    if (!shooter || lifeRemoved <= 0) return;
+    // Standings: every damaging hit counts toward the shooter's accuracy; friendly /
+    // self damage subtracts from Damage/hit (so it can go negative, as in the original).
+    const friendly = shooter === victim || shooter.getTeamId() === victim.getTeamId();
+    shooter.addHit(friendly ? -lifeRemoved : lifeRemoved);
+    if (friendly) return;
     shooter.addCredits(lifeRemoved * this.m_creditDamage);
     this.poolTeamCredits(shooter);
   }
@@ -1791,6 +2003,11 @@ export class CGameController implements ShotWorld {
     this.m_manualScroll = false;
     this.m_activeShot = null;
 
+    // Re-arm the taunt state for the new turn: no shot yet (gates the post-fire gloat)
+    // and a fresh idle-taunt countdown.
+    this.m_firedThisTurn = false;
+    this.m_tauntTimer = TAUNT_IDLE_MIN + Math.random() * (TAUNT_IDLE_MAX - TAUNT_IDLE_MIN);
+
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
     this.m_turnElapsed = 0;
@@ -1804,19 +2021,100 @@ export class CGameController implements ShotWorld {
     this.markDirty(); // new turn: indicator moves, aim resets → redraw
   }
 
+  /** Generate the battle terrain: a DEV flat test surface (`?flatland=1`), a forced
+   *  landscape shape (Settings → Land Type), or the usual random landscape. */
+  private generateTerrain(): void {
+    if (this.m_flatLand) this.m_land.generateFlat();
+    else if (this.m_landMode >= 0 && this.m_landMode <= 4)
+      this.m_land.generateTerrainMode(this.m_landMode);
+    else this.m_land.generateRandomTerrain();
+  }
+
+  /** Spawn X for tank `i` of `n`: spread across the world with a little jitter. */
+  private tankSpawnX(i: number, n: number): number {
+    const worldW = this.m_worldWidth;
+    const margin = 120;
+    const frac = n <= 1 ? 0.5 : i / (n - 1);
+    return Math.max(
+      60,
+      Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + (Math.random() - 0.5) * 40),
+    );
+  }
+
+  /** Start the next battle of a war: fresh terrain, tanks respawned (cumulative war
+   *  stats + credits kept), turn order reset. No-op once the war is over (the caller
+   *  exits to the menu instead). */
+  nextBattle(): void {
+    if (this.getWarOver()) return;
+    this.m_currentBattle++;
+    this.m_shots = [];
+    this.m_mines = [];
+    this.m_sentries = [];
+    this.m_aimMarkers = [];
+    this.m_damageNumbers = [];
+    this.m_blastCircles = [];
+    this.m_bubbles = [];
+    this.generateTerrain();
+    const n = this.m_tanks.length;
+    this.m_tanks.forEach((t, i) => {
+      t.respawn(this.tankSpawnX(i, n), this.m_land);
+      t.setWeaponIndex(this.m_currentWeaponIndex);
+    });
+    this.m_currentPlayerIndex = 0;
+    this.m_winnerName = '';
+    this.m_gameState = EGameState.Battle;
+    this.beginTurn();
+  }
+
+  /** Drop all taunt bubbles (leaving the standings → next battle or the menu). */
+  clearTaunts(): void {
+    this.m_bubbles = [];
+  }
+
+  /** True once the war's final battle has been played (Deathmatch multi-battle);
+   *  Rounds/Points is a single battle, so it is "over" as soon as it ends. */
+  private getWarOver(): boolean {
+    return this.m_gameType === EGameType.Deathmatch
+      ? this.m_currentBattle >= this.m_totalBattles
+      : true;
+  }
+
   /** End the current turn: declare a winner, or hand off to the next player. */
   private endTurn(): void {
     this.m_turnTimerRunning = false; // the clock never outlives its turn
     const alive = this.m_tanks.filter(t => t.isAlive());
     if (alive.length <= 1) {
       this.m_gameState = EGameState.BattleEnd;
+      this.m_battleEndTime = 0; // restart the winner-flag animation
       this.m_winnerName = alive.length === 1 ? alive[0].getName() : '';
+      // The battle victor (top surviving tank by kills) gloats a random post-fire line
+      // through the taunt-bubble system — it persists on the standings screen because
+      // bubbles only age during a live turn (updateTaunts runs in the Battle state only).
+      const victor = alive.length
+        ? alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a))
+        : null;
+      const victorLine = pickTaunt('postFire');
+      if (victor && victorLine && GameConfig.chatter && victor.getTankType() !== 'Sentry') {
+        this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== victor);
+        this.m_bubbles.push({
+          id: ++this.m_bubbleSeq,
+          speaker: victor,
+          text: `${victor.getName()}: ${victorLine}`,
+          age: 0,
+        });
+      }
       this.m_audio?.stopTankMove();
       // Win/lose jingle — victory if the human survived.
       if (alive.length === 1 && alive[0].isHuman()) this.m_audio?.battleWon();
       else this.m_audio?.battleLost();
       return;
     }
+    // Post-fire gloat: as the turn passes on after a shot, the tank that just fired
+    // may taunt a random post-fire line (Chatter, 8% — RE: FUN_0046b3d0 from the
+    // turn-advance path). Only after an actual shot, never a timed-out forfeit.
+    if (this.m_firedThisTurn)
+      this.tryTaunt('postFire', this.getCurrentTank(), TAUNT_CHANCE_POSTFIRE);
+
     // Hand off, then pay the between-turn credits. A completed round (turn order
     // wrapped) pays Credit Round to every survivor first, then Credit Turn every
     // hand-off. Credits are pooled per team inside the award.
@@ -1879,6 +2177,7 @@ export class CGameController implements ShotWorld {
 
     this.m_turnTimerRunning = false; // committed to a shot — stop the clock
     this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
+    this.m_firedThisTurn = true; // a shot was taken → post-fire gloat is eligible at turn end
 
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
@@ -1922,6 +2221,7 @@ export class CGameController implements ShotWorld {
     }
 
     this.m_shotsFired++; // a real projectile is launched (utilities don't count)
+    tank.addShot(); // per-tank shot count (standings Accuracy denominator)
     // Fresh shot setup wipes the previous shot's transient marks — tracer ranging
     // pins live only until the NEXT round is launched (they aren't a growing history).
     // The tracer we may be firing right now plants its own pins later, in flight.
@@ -2615,6 +2915,116 @@ export class CGameController implements ShotWorld {
     return this.m_winnerName;
   }
 
+  /** The tank the winner flag plants beside — the battle victor (top surviving tank
+   *  by kills), or null in a draw. */
+  getWinnerTank(): CTank | null {
+    const alive = this.m_tanks.filter(t => t.isAlive());
+    if (!alive.length) return null;
+    return alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a));
+  }
+
+  /** DEV (`?warend=1`): fabricate some stats and end the battle so the standings
+   *  screen can be previewed. */
+  devForceBattleEnd(): void {
+    this.m_tanks.forEach((t, i) => {
+      for (let k = 0; k < (this.m_tanks.length - i) * 2; k++) t.addKill();
+      for (let k = 0; k < 12; k++) t.addShot();
+      for (let k = 0; k < 12 + i; k++) t.addHit(60 - i * 8);
+      if (i > 0) {
+        t.addDeath();
+        t.hit(999999); // everyone but the first tank dies
+      }
+    });
+    this.endTurn();
+  }
+
+  /** The between-battles standings: per-team totals, the leading team, the title /
+   *  banner / prompt, and the victor's taunt. Read by the standings overlay. */
+  getWarStandings(): WarStandings {
+    const deathmatch = this.m_gameType === EGameType.Deathmatch;
+    const warOver = this.getWarOver();
+
+    // Group tanks into teams by colour (Sentries are excluded from standings).
+    const teams = new Map<number, CTank[]>();
+    for (const t of this.m_tanks) {
+      if (t.getTankType() === 'Sentry') continue;
+      const arr = teams.get(t.getTeamId());
+      if (arr) arr.push(t);
+      else teams.set(t.getTeamId(), [t]);
+    }
+
+    const rows: WarTeamRow[] = [];
+    for (const members of teams.values()) {
+      let kills = 0,
+        deaths = 0,
+        shots = 0,
+        hits = 0,
+        dmg = 0,
+        lifeSum = 0;
+      for (const m of members) {
+        kills += m.getKills();
+        deaths += m.getDeaths();
+        shots += m.getShotsFired();
+        hits += m.getHitsLanded();
+        dmg += m.getDamageDealt();
+        lifeSum += Math.max(0, Math.min(1, m.getHealth().nLife / m.getMaxLife()));
+      }
+      rows.push({
+        name: members[0].getName(),
+        color: members[0].getColor(),
+        kills,
+        deaths,
+        lifePct: (lifeSum / members.length) * 100,
+        accuracyPct: shots > 0 ? (hits / shots) * 100 : 0,
+        damagePerHit: hits !== 0 ? dmg / hits : 0,
+        isLeader: false,
+        isHuman: members.some(m => m.isHuman()),
+      });
+    }
+
+    // Leader = most kills, ties broken by higher team life% (the original's sort).
+    rows.sort((a, b) => b.kills - a.kills || b.lifePct - a.lifePct);
+    if (rows.length) rows[0].isLeader = true;
+    const leaderName = rows[0]?.name ?? '';
+
+    const title = !leaderName
+      ? ''
+      : !deathmatch
+        ? `${leaderName} wins the battle!`
+        : warOver
+          ? `${leaderName} wins the war!`
+          : `${leaderName} is winning the war.`;
+
+    // Banner: the human's result for the battle just ended.
+    const survivors = this.m_tanks.filter(t => t.isAlive());
+    const anyHuman = this.m_tanks.some(t => t.isHuman());
+    const banner =
+      survivors.length === 0
+        ? 'All tanks are dead!'
+        : !anyHuman
+          ? ''
+          : survivors.some(t => t.isHuman())
+            ? 'Victory!'
+            : 'Defeat!';
+
+    const subtitle: string[] = [];
+    if (deathmatch && !warOver) {
+      subtitle.push('The War is not over yet.');
+      subtitle.push(`Battle ${this.m_currentBattle} of ${this.m_totalBattles} completed.`);
+    }
+
+    return {
+      title,
+      banner,
+      subtitle,
+      winCondition: deathmatch ? 'The team with the most kills or life wins.' : '',
+      rows,
+      pointsMode: !deathmatch,
+      prompt: warOver ? 'Click anywhere to exit to menu.' : 'Click anywhere to play next battle.',
+      warOver,
+    };
+  }
+
   /** Register a callback invoked at each shot impact (world x, y, strength). */
   setImpactListener(cb: (x: number, y: number, strength: number) => void): void {
     this.m_onImpact = cb;
@@ -2714,6 +3124,12 @@ export class CGameController implements ShotWorld {
   private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];
   // "Show Blast Circles": a ring per explosion at its damage radius; fades over BLAST_CIRCLE_LIFE.
   private m_blastCircles: {x: number; y: number; r: number; age: number}[] = [];
+  // Live taunt speech bubbles (Chatter). One per speaker at a time; a new one replaces
+  // the old. Aged in update(); rendered as DOM overlays via getActiveTaunts().
+  private m_bubbles: TauntBubble[] = [];
+  private m_bubbleSeq = 0;
+  private m_tauntTimer = TAUNT_IDLE_MIN; // idle-taunt countdown, re-armed each turn
+  private m_firedThisTurn = false; // gate post-fire taunts to turns where a shot was taken
   // Cached pixel data of structure bitmaps (bunker.bmp / wall.bmp) for buildStructure.
   private m_structImages = new Map<string, {width: number; height: number; data: Uint32Array}>();
 
@@ -2776,6 +3192,10 @@ export class CGameController implements ShotWorld {
     return this.m_totalBattles;
   }
 
+  getTotalRounds(): number {
+    return this.m_totalRounds;
+  }
+
   /** Per-tank life status for the top-left overlay ("%s: %d%% life"). */
   getTankStatuses(): {
     name: string;
@@ -2823,4 +3243,5 @@ export class CGameController implements ShotWorld {
   private m_difficulty: number = AI_DEFAULT_LEVEL; // computer-player skill
 
   private m_winnerName: string = '';
+  private m_battleEndTime = 0; // seconds since the battle ended (winner-flag animation)
 }
