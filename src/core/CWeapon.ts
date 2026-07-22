@@ -120,7 +120,7 @@ export const WEAPON_DATABASE: WeaponDef[] = RAW.map((w, i) => {
 /** The number shown next to a weapon in the arsenal list — its STABLE 1-based id
  *  (database position + 1), NOT its position in the currently-shown (filtered) list.
  *  Because it keys off the weapon's own index it never shifts when weapons are
- *  disabled in Game Content, so it always matches `?weapon_sel=<id>` (which selects
+ *  disabled in Game Content, so it always matches `?weaponsel=<id>` (which selects
  *  `WEAPON_DATABASE[id-1]`). Numbering by list position instead makes the two diverge
  *  the moment any earlier weapon is turned off. */
 export const weaponDisplayNumber = (w: {index: number}): number => w.index + 1;
@@ -253,6 +253,18 @@ export class CWeapon {
   // Terrain shaping: Dirt raises terrain by `earth`; digging types remove it.
   getEarth(): number {
     return this.m_def.earth || 0;
+  }
+
+  // Blast FX intensity (0..~0.7): drives the DEBRIS/ejecta chunk count thrown from the crater
+  // (`fodder`) and the SCORCH/burnt-rim darkening (`crackle`) — the original scales each per
+  // weapon by these fields (a Shell has neither; a nuke throws lots of both). Also the "Fodder"
+  // stat shown in the weapon info.
+  getFodder(): number {
+    return this.m_def.fodder || 0;
+  }
+
+  getCrackle(): number {
+    return this.m_def.crackle || 0;
   }
 
   // Radiation zone (NUKE / DOT): irDmg per second for irTime seconds; irRGB tints it.

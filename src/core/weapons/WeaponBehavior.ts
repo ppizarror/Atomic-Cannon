@@ -333,6 +333,11 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // NOT cut a crater or scorch the ground below — it just rains its fallout down from the air.
   const reachesGround = surfaceY - pos.y < radiusPx;
 
+  // Per-weapon blast-FX intensities: `fodder` = how much dirt ejecta it kicks up, `crackle` =
+  // how much it scorches the ground (both 0 for clean weapons like the Shell).
+  const fodder = weapon.getFodder();
+  const crackle = weapon.getCrackle();
+
   // Terrain effect.
   const earth = weapon.getEarth();
   if (earth > 0) {
@@ -351,11 +356,17 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // surface. Per-column noise keeps the collapse ragged, not flat/circular.
     const craterR = Math.round(radiusPx);
     land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), craterR);
-    land.scorch(Math.floor(pos.x), Math.floor(surfaceY), craterR); // darken the surface rim
+    if (crackle > 0) {
+      land.scorch(
+        Math.floor(pos.x),
+        Math.floor(surfaceY),
+        Math.round(craterR * (0.4 + crackle * 0.85)),
+      );
+    }
     land.addShowerParticles(
       Math.floor(pos.x),
       Math.floor(surfaceY),
-      Math.min(400, craterR * 6 + 20),
+      Math.min(2500, Math.round(fodder * craterR * 100 + craterR * 4)),
       craterR,
     );
   } else if (!isBeam && reachesGround) {
@@ -363,12 +374,19 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
     const craterR = Math.round(radiusPx * (heavy ? 1.35 : 1));
     land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), craterR);
-    land.scorch(Math.floor(pos.x), Math.floor(surfaceY), craterR); // blackened blast rim
-    // Eject a dirt spray scaled by the crater size — the chunks fly out and settle,
-    // each RAISING the column where it lands, so a big blast piles rim mounds
-    // (crater centre down, rim up) rather than just flattening the surface. Nukes
-    // throw a huge amount of ejecta that fills the crater bowl.
-    const chunks = Math.min(6500, Math.round(radiusPx * (heavy ? 42 : 9)) + 40);
+    // SCORCH is driven by the weapon's `crackle` (burnt-rim intensity) — a Shell (crackle 0)
+    // leaves no burn; a nuke (0.7) scorches wide. Scaled by crackle, skipped when it's 0.
+    if (crackle > 0) {
+      land.scorch(
+        Math.floor(pos.x),
+        Math.floor(surfaceY),
+        Math.round(craterR * (0.4 + crackle * 0.85)),
+      );
+    }
+    // DEBRIS/ejecta count is driven by the weapon's `fodder` (how much dirt it kicks up) — a
+    // Shell (fodder 0) throws almost none, a nuke (0.5) throws a huge spray. The chunks fly out
+    // and settle, each RAISING its landing column → rim mounds. (Was: a flat radius-only count.)
+    const chunks = Math.min(6500, Math.round(fodder * radiusPx * 100 + radiusPx * 0.8));
     land.addShowerParticles(
       Math.floor(pos.x),
       Math.floor(Math.min(pos.y, surfaceY)),
@@ -386,7 +404,14 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // Cleaners deal NO damage — they only reshape terrain. Radioactive/DOT rounds count as
   // PIERCING, so a target's Hazmat resistance (not its Armor) applies to them.
   if (!isCleaner)
-    world.applyBlast(pos, radiusPx, shot.getDamage(), shot.getOwner(), isBeam, weapon.isRadioactive());
+    world.applyBlast(
+      pos,
+      radiusPx,
+      shot.getDamage(),
+      shot.getOwner(),
+      isBeam,
+      weapon.isRadioactive(),
+    );
 
   // Radiation zone (NUKE/DOT/Organic/…): irDmg/sec for irTime s, tinted irRGB.
   // The fallout scatters as a speck cloud out of the crater — each speck lands at

@@ -2387,6 +2387,16 @@ export class CGameController implements ShotWorld {
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
     }
+
+    // Any supply crate whose centre is within the blast is destroyed — the original
+    // clears crates in the crater's radius and simply removes them (no reward is spilled,
+    // no debris, no sound; the blast's own fireball is the only visual).
+    if (this.m_crates.length) {
+      const reach = (full ? Math.max(radius, 20) : radius + 1) + CRATE_BOX / 2;
+      this.m_crates = this.m_crates.filter(
+        c => Math.hypot(c.x - pos.x, c.y - pos.y) > reach,
+      );
+    }
   }
 
   private checkBattleEnd(): void {
@@ -2478,7 +2488,7 @@ export class CGameController implements ShotWorld {
   private advanceToNextPlayer(): boolean {
     const nPlayers = this.m_tanks.length;
 
-    // Weapon-test mode (?weapon_test=1): never hand the turn to the AI — keep it on
+    // Weapon-test mode (?weapontest=1): never hand the turn to the AI — keep it on
     // the (living) human so weapons can be fired back-to-back indefinitely.
     if (this.m_weaponTest) {
       const human = this.m_tanks.findIndex(t => t.isHuman() && t.isAlive());
@@ -3356,8 +3366,8 @@ export class CGameController implements ShotWorld {
     }
   }
 
-  /** Dev (?weapon_sel=<id>): grant weapon <id> unlimited ammo and select it on every
-   *  tank so it stays picked across the turn cycle (pairs with ?weapon_test=1). */
+  /** Dev (?weaponsel=<id>): grant weapon <id> unlimited ammo and select it on every
+   *  tank so it stays picked across the turn cycle (pairs with ?weapontest=1). */
   forceWeapon(index: number): void {
     if (index < 0 || index >= WEAPON_DATABASE.length) return;
     this.m_economy.setUnlimited(index);
@@ -3583,7 +3593,7 @@ export class CGameController implements ShotWorld {
     this.m_onImpact = cb;
   }
 
-  /** Weapon-test mode (?weapon_test=1): the AI never takes a turn and the human's
+  /** Weapon-test mode (?weapontest=1): the AI never takes a turn and the human's
    *  shot timer is disabled, so weapons can be fired back-to-back indefinitely. */
   setWeaponTest(on: boolean): void {
     this.m_weaponTest = on;
@@ -3650,7 +3660,7 @@ export class CGameController implements ShotWorld {
   private m_tanks: CTank[] = [];
   private m_shots: CShot[];
   private m_pendingSalvos = 0; // succession salvos still scheduled to fire this shot
-  private m_weaponTest = false; // ?weapon_test=1: AI never takes a turn (endless firing)
+  private m_weaponTest = false; // ?weapontest=1: AI never takes a turn (endless firing)
 
   private m_particles: CParticleSystem;
   private m_weather: CWeather;

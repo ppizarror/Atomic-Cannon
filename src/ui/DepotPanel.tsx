@@ -27,7 +27,13 @@ import {
   game,
   uiClick,
 } from './store';
-import {WEAPON_DATABASE, getDefaultWeaponIndex, weaponPower, type WeaponDef} from '../core/CWeapon';
+import {
+  WEAPON_DATABASE,
+  getDefaultWeaponIndex,
+  weaponPower,
+  weaponDamagePerArea,
+  type WeaponDef,
+} from '../core/CWeapon';
 import {weaponEnabled} from '../core/CGameContent';
 import {UNLIMITED} from '../core/CEconomy';
 
@@ -289,7 +295,9 @@ export function DepotPanel() {
                   ['Type', selW.type],
                   ['Damage', selW.damage],
                   ['Radius', selW.radius],
+                  ['Dmg/area', weaponDamagePerArea(selW).toFixed(0)],
                   ['Variance', (selW.variance ?? 0).toFixed(1)],
+                  ['Fodder', (selW.fodder ?? 0).toFixed(1)],
                   ['Cluster', selW.cluNum > 0 ? selW.cluNum : '-'],
                   ['Cost', `$${selW.cost}`],
                   ['Owned', owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)],
