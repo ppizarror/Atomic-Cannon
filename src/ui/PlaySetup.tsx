@@ -96,11 +96,7 @@ export function PlaySetup() {
         </button>
       </div>
       <div class="settings-subtitle">
-        <BmpText
-          font="msans-14"
-          text={sub ?? (canStart ? 'Play' : NEED_PLAYERS)}
-          tint={sub || canStart ? '#eef2f6' : '#ffcf6b'}
-        />
+        <BmpText font="msans-14" text={sub ?? (canStart ? 'Play' : NEED_PLAYERS)} />
       </div>
     </div>
   );

@@ -67,8 +67,8 @@ export function ControlsEditor() {
 
       <div class="editor-list editor-controls" onClick={e => e.stopPropagation()}>
         <div class="editor-columns">
-          <BmpText font="msans-14" text="Action" tint="#c9d2da" />
-          <BmpText font="msans-14" text="Button" tint="#c9d2da" />
+          <BmpText font="beijing-16-out" text="Action" />
+          <BmpText font="beijing-16-out" text="Button" />
         </div>
         {ACTIONS.map(a => {
           const isArmed = armed === a.id;
@@ -84,14 +84,10 @@ export function ControlsEditor() {
               }}
             >
               <span class="editor-body">
-                <BmpText font="msans-14" text={a.label} tint="#eef2f6" />
+                <BmpText font="beijing-16-out" text={a.label} />
               </span>
               <span class="editor-state">
-                <BmpText
-                  font="msans-14"
-                  text={isArmed ? 'Press a key…' : keyName(map[a.id])}
-                  tint={isArmed ? '#ffe27a' : map[a.id] ? '#bfe9b0' : '#ffb0b0'}
-                />
+                <BmpText font="beijing-16-out" text={isArmed ? 'Press a key…' : keyName(map[a.id])} />
               </span>
             </button>
           );
@@ -101,11 +97,11 @@ export function ControlsEditor() {
       <div class="editor-footer">
         {armed ? (
           <>
-            <BmpText font="msans-14" text={`Press a key to define "${armLabel}".`} tint="#eef2f6" />
-            <BmpText font="msans-14" text="Or click the screen to unassign." tint="#c9d2da" />
+            <BmpText font="beijing-16-out" text={`Press a key to define "${armLabel}".`} />
+            <BmpText font="beijing-16-out" text="Or click the screen to unassign." />
           </>
         ) : (
-          <BmpText font="msans-14" text="Click an action to rebind its key" tint="#eef2f6" />
+          <BmpText font="beijing-16-out" text="Click an action to rebind its key" />
         )}
       </div>
 

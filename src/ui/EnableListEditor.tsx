@@ -51,11 +51,7 @@ function EditorRow({
     <button class={`editor-row ${off ? 'off' : 'on'}`} onClick={onToggle}>
       <span class="editor-body">{children}</span>
       <span class="editor-state">
-        <BmpText
-          font="msans-14"
-          text={off ? 'Disabled' : 'Enabled'}
-          tint={off ? '#ffb0b0' : '#bfe9b0'}
-        />
+        <BmpText font="beijing-16-out" text={off ? 'Disabled' : 'Enabled'} />
       </span>
     </button>
   );
@@ -124,8 +120,8 @@ function Editor({
         {items}
       </div>
       <div class="editor-footer">
-        <BmpText font="msans-14" text={footer} tint="#eef2f6" />
-        <BmpText font="msans-14" text={`Page ${p + 1} of ${pages}`} tint="#c9d2da" />
+        <BmpText font="beijing-16-out" text={footer} />
+        <BmpText font="beijing-16-out" text={`Page ${p + 1} of ${pages}`} />
       </div>
       <div class="editor-buttons">
         <Button label="Prev" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))} />
@@ -153,7 +149,7 @@ export function WeaponsEditor() {
           body: (
             <>
               <WeaponIcon name={w.name} />
-              <BmpText font="msans-14" text={`${w.name} (${w.type})`} tint="#eef2f6" />
+              <BmpText font="beijing-16-out" text={`${w.name} (${w.type})`} />
             </>
           ),
         };
@@ -177,7 +173,7 @@ export function LandscapesEditor() {
         body: (
           <>
             <img class="editor-thumb" src={`/assets/${LANDS[i].bg}`} alt="" />
-            <BmpText font="msans-14" text={`${i + 1}`} tint="#eef2f6" />
+            <BmpText font="beijing-16-out" text={`${i + 1}`} />
           </>
         ),
       })}

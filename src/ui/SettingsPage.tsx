@@ -46,7 +46,7 @@ export function SettingsPage({id}: {id: string}) {
         </button>
       </div>
       <div class="settings-subtitle">
-        <BmpText font="msans-14" text={sub ?? page.header} tint="#eef2f6" />
+        <BmpText font="beijing-16-out" text={sub ?? page.header} />
       </div>
     </div>
   );

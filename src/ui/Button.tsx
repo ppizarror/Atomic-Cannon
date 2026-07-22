@@ -21,21 +21,20 @@ export function Button({
   font = 'msans-14',
   onClick,
   disabled,
-  tint = '#14171a',
   class: cls,
 }: {
   label: string;
   font?: FontId;
   onClick?: () => void;
   disabled?: boolean;
-  /** Label colour (dark ink on the grey button face by default; greyed when disabled). */
-  tint?: string;
   /** Extra class for layout/placement (e.g. `span`, `about-back`). */
   class?: string;
 }) {
+  // The black-baked msans face reads on the grey button metal (no runtime recolour);
+  // the disabled look comes from the CSS grayscale/brightness filter on `.btn:disabled`.
   return (
     <button class={`btn ${cls ?? ''}`} disabled={disabled} onClick={onClick}>
-      <BmpText font={font} text={label} tint={disabled ? '#6b7075' : tint} />
+      <BmpText font={font} text={label} />
     </button>
   );
 }

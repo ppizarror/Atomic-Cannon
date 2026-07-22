@@ -78,7 +78,7 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
 
   return (
     <div class="player-color">
-      <BmpText font="msans-14" text="Color:" tint="#eef2f6" />
+      <BmpText font="beijing-16-out" text="Color:" />
       <span class="player-swatch" style={{background: value}} />
       <span class="player-palette-wrap">
         <img
@@ -127,7 +127,7 @@ export function PlayersEditor() {
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
-          <BmpText font="msans-14" text={`Player ${idx + 1} Name:`} tint="#eef2f6" />
+          <BmpText font="beijing-16-out" text={`Player ${idx + 1} Name:`} />
           <input
             class="player-name"
             type="text"
@@ -148,7 +148,7 @@ export function PlayersEditor() {
               class="player-page"
             />
             <span class="player-model-name">
-              <BmpText font="msans-14" text={cfg.model} tint="#eef2f6" />
+              <BmpText font="beijing-16-out" text={cfg.model} />
             </span>
             <Button label=">" onClick={() => (uiClick(), cycleModel(idx, 1))} class="player-page" />
           </div>
@@ -156,7 +156,7 @@ export function PlayersEditor() {
       </div>
 
       <div class="editor-footer">
-        <BmpText font="msans-14" text="Players sharing a colour are a team" tint="#c9d2da" />
+        <BmpText font="beijing-16-out" text="Players sharing a colour are a team" />
       </div>
 
       <div class="editor-buttons">

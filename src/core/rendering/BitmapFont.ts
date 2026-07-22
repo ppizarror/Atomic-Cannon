@@ -18,7 +18,6 @@ export class BitmapFont {
   private cv: HTMLCanvasElement | null = null;
   private glyphs: {x: number; w: number}[] = []; // index 0 == ASCII 33
   private waiters: (() => void)[] = [];
-  private tinted = new Map<string, HTMLCanvasElement>();
   private rendered = new Map<string, HTMLCanvasElement>();
   private bounds = new Map<string, {top: number; height: number}>();
 
@@ -100,27 +99,10 @@ export class BitmapFont {
     return Math.max(1, w - spacing);
   }
 
-  /** The (cached) glyph atlas, optionally recoloured to `tint` (keeps alpha). */
-  private atlas(tint?: string): HTMLCanvasElement | null {
-    if (!this.cv) return null;
-    if (!tint) return this.cv;
-    let t = this.tinted.get(tint);
-    if (!t) {
-      t = document.createElement('canvas');
-      t.width = this.cv.width;
-      t.height = this.cv.height;
-      const g = t.getContext('2d')!;
-      g.drawImage(this.cv, 0, 0);
-      g.globalCompositeOperation = 'source-in'; // recolour opaque pixels
-      g.fillStyle = tint;
-      g.fillRect(0, 0, t.width, t.height);
-      this.tinted.set(tint, t);
-    }
-    return t;
-  }
-
-  /** Render text to a fresh canvas at native pixel size (transparent bg). */
-  private renderFallback(text: string, tint?: string): HTMLCanvasElement {
+  /** Render text to a fresh canvas at native pixel size (transparent bg).
+   *  Colour comes from the font's baked .bmp — the fallback draws in the font's own
+   *  colour (spec.tint), defaulting to white — so text is never recoloured at runtime. */
+  private renderFallback(text: string): HTMLCanvasElement {
     const {family, size, weight} = this.spec;
     const font = `${weight ? `${weight} ` : ''}${size}px ${family}`;
     const out = document.createElement('canvas');
@@ -129,18 +111,18 @@ export class BitmapFont {
     out.width = Math.max(1, Math.ceil(g.measureText(text).width));
     out.height = Math.max(1, Math.ceil(size * 1.3)); // room for ascenders/descenders
     g.font = font; // resizing the canvas above reset the context state
-    g.fillStyle = tint ?? '#fff';
+    g.fillStyle = this.spec.tint ?? '#fff';
     g.textBaseline = 'middle';
     g.fillText(text, 0, out.height / 2);
     return out;
   }
 
-  render(text: string, opts: {spacing?: number; tint?: string} = {}): HTMLCanvasElement {
+  render(text: string, opts: {spacing?: number} = {}): HTMLCanvasElement {
     const spacing = opts.spacing ?? 1;
-    const src = this.atlas(opts.tint);
+    const src = this.cv; // the glyph atlas, drawn in its own baked colour (no recolour)
     // No atlas yet (still loading, or the `.bmp` failed) → the catalog HTML fallback,
     // so callers always get a real sized canvas and never invent their own font.
-    if (!this.ready || !src) return this.renderFallback(text, opts.tint);
+    if (!this.ready || !src) return this.renderFallback(text);
     const out = document.createElement('canvas');
     out.width = this.measure(text, spacing);
     out.height = this.height || 1;
@@ -161,14 +143,14 @@ export class BitmapFont {
   }
 
   /**
-   * `render()` memoised per (text, spacing, tint) — the single rendered-text cache
-   * for everything that draws bitmap text (the on-canvas tank badge, `<BmpText>`),
-   * so callers no longer keep their own caches. Only stores the result once the font
-   * is ready, so an early empty render never sticks. The returned canvas is shared —
+   * `render()` memoised per (text, spacing) — the single rendered-text cache for
+   * everything that draws bitmap text (the on-canvas tank badge, `<BmpText>`), so
+   * callers no longer keep their own caches. Only stores the result once the font is
+   * ready, so an early empty render never sticks. The returned canvas is shared —
    * blit FROM it, never draw INTO it.
    */
-  renderCached(text: string, opts: {spacing?: number; tint?: string} = {}): HTMLCanvasElement {
-    const key = `${opts.tint ?? ''}|${opts.spacing ?? 1}|${text}`;
+  renderCached(text: string, opts: {spacing?: number} = {}): HTMLCanvasElement {
+    const key = `${opts.spacing ?? 1}|${text}`;
     const hit = this.rendered.get(key);
     if (hit) return hit;
     const cv = this.render(text, opts);
@@ -228,6 +210,11 @@ export interface FontSpec {
   size: number;
   /** Optional CSS weight for the fallback (e.g. `bold`, `900`). */
   weight?: string;
+  /** The colour BAKED INTO the .bmp (its fill). The atlas already carries this, so it
+   *  isn't applied at render time — it's the colour the HTML fallback draws with when
+   *  the .bmp is missing, so a fallback matches the real font instead of always white.
+   *  Defaults to white. Set it for non-white faces (e.g. the `-black` variants). */
+  tint?: string;
 }
 
 export const FONTS = {
@@ -245,7 +232,7 @@ export const FONTS = {
   'trebuchet-9': {file: 'Trebuchet MS 9 bold', family: '"Trebuchet MS", sans-serif', size: 9, weight: 'bold'},
   'trebuchet-18': {file: 'Trebuchet MS 18', family: '"Trebuchet MS", sans-serif', size: 18},
   'silkscreen-8': {file: 'UPF Silkscreen ReMix 8', family: 'monospace', size: 8},
-  'silkscreen-8-black': {file: 'UPF Silkscreen ReMix 8 black', family: 'monospace', size: 8},
+  'silkscreen-8-black': {file: 'UPF Silkscreen ReMix 8 black', family: 'monospace', size: 8, tint: '#000000'},
   'silkscreen-8-out': {file: 'UPF Silkscreen ReMix 8 outlined', family: 'monospace', size: 8},
   'silkscreen-8-white': {file: 'UPF Silkscreen ReMix 8 white', family: 'monospace', size: 8},
   'verdana-10-out': {file: 'Verdana 10 bold outlined', family: 'Verdana, sans-serif', size: 10, weight: 'bold'},

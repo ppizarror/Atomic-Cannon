@@ -16,21 +16,18 @@ export function ModalButton({
   font = 'msans-14',
   onClick,
   disabled,
-  tint = '#14171a',
   class: cls,
 }: {
   label: string;
   font?: FontId;
   onClick?: () => void;
   disabled?: boolean;
-  /** Label colour (dark ink by default; greyed when disabled). */
-  tint?: string;
   /** Extra class for layout/placement (e.g. `span`, `about-back`, `dep-btn`). */
   class?: string;
 }) {
   return (
     <button class={`modal-btn ${cls ?? ''}`} disabled={disabled} onClick={onClick}>
-      <BmpText font={font} text={label} tint={disabled ? '#6b7075' : tint} />
+      <BmpText font={font} text={label} />
     </button>
   );
 }
