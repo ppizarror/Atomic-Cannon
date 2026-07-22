@@ -98,6 +98,21 @@ describe('Settings → game', () => {
     expect(tank.getHealth().nLife).toBe(2500); // Hitpoints → tank spawns full
   });
 
+  it('Show Points + Auto Scroll toggles reach GameConfig (were silent no-ops)', () => {
+    setVal('gfx.showPoints', 0);
+    setVal('gfx.autoScroll', 0);
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    expect(GameConfig.showPoints).toBe(false); // Show Points off is applied
+    expect(GameConfig.autoScroll).toBe(false); // Auto Scroll off is applied
+
+    setVal('gfx.showPoints', 1);
+    setVal('gfx.autoScroll', 1);
+    applyGameSettings(gc);
+    expect(GameConfig.showPoints).toBe(true); // and re-applying picks the new value up
+    expect(GameConfig.autoScroll).toBe(true);
+  });
+
   it('Tank Size (geometry scalar → collision radius) + Draw Smoke', () => {
     setVal('tank.size', 2); // Large → 1.35
     setVal('gfx.smoke', 0); // off

@@ -2393,9 +2393,7 @@ export class CGameController implements ShotWorld {
     // no debris, no sound; the blast's own fireball is the only visual).
     if (this.m_crates.length) {
       const reach = (full ? Math.max(radius, 20) : radius + 1) + CRATE_BOX / 2;
-      this.m_crates = this.m_crates.filter(
-        c => Math.hypot(c.x - pos.x, c.y - pos.y) > reach,
-      );
+      this.m_crates = this.m_crates.filter(c => Math.hypot(c.x - pos.x, c.y - pos.y) > reach);
     }
   }
 

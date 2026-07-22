@@ -707,9 +707,12 @@ export class CLand {
     for (let i = 0; i < n; i++) {
       const ang = this.rand01() * Math.PI * 2;
       const dist = this.rand01() * nRadius; // stays within the crater zone
-      // Thrown mostly UP and a little out, so specks rain back down INSIDE the
-      // crater rather than flying onto the surrounding ridges.
-      const speed = 30 + this.rand01() * 110;
+      // Radial burst from the blast point (the original spawns each speck at
+      // `center + dist·dir` with velocity `speed·dir` along that SAME angle). The
+      // launch SPEED — not a pre-spread position — is what carries them out across
+      // the radius, so every speck traces a visible arc and rains back down, landing
+      // at staggered times as gravity pulls it in.
+      const speed = 60 + this.rand01() * 170;
       // Reuse a faded speck from the free pool — up to 12000 per nuke, so this is
       // the biggest allocation sink; pooling makes a warm blast allocate zero.
       const s: RadSpeck = pool.pop() ?? {
@@ -729,14 +732,17 @@ export class CLand {
         b: 0,
       };
       const originY = speckOriginY ?? y;
-      s.x = x + Math.cos(ang) * dist;
-      s.y = originY + Math.sin(ang) * dist * 0.5; // near the surface, or high in the air (airburst)
+      // Spawn CLUSTERED at the blast point (only a small fraction of `dist`), NOT pre-spread
+      // across the whole radius — otherwise specks materialise already scattered at the surface
+      // and settle on the first frame, with no visible flight. The velocity does the spreading.
+      s.x = x + Math.cos(ang) * dist * 0.3;
+      s.y = originY + Math.sin(ang) * dist * 0.3;
       s.vx = Math.cos(ang) * speed;
-      // Ground blast: thrown RADIALLY outward (the original's `rand·8+2` radial velocity), then
-      // gravity settles each onto the surface. Airburst (raining): biased DOWN so it falls from
-      // the mid-air burst point to the ground.
+      // Ground blast: thrown RADIALLY outward along `ang` (the original's radial launch), so
+      // upward specks arc over the rim and downward ones drop to the crater floor — each with a
+      // real trajectory. Airburst (raining): biased DOWN so it falls from the mid-air burst point.
       s.vy = raining
-        ? Math.sin(ang) * speed * 0.4 + (30 + this.rand01() * 70)
+        ? Math.abs(Math.sin(ang)) * speed * 0.5 + (30 + this.rand01() * 70)
         : Math.sin(ang) * speed;
       s.age = 0;
       s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
@@ -1005,28 +1011,13 @@ export class CLand {
         if (s.vy > 0 && s.y >= this.getHeightAt(col)) {
           s.settled = true;
           s.vx = s.vy = 0;
-          // Scatter the grain THROUGH the fallout pile at this column: from a few px
-          // in the soil (grounded base) up to the pile top, biased low so the crown
-          // thins out. rise = height ABOVE the surface (the grain's pile position).
-          // Settle as a granular CARPET hugging the surface across the WHOLE bowl
-          // (walls + floor + rim) — a small spread
-          // mostly on/just below the ground, a thin fringe above. NOT pooled in the
-          // deposit, so it coats the deep walls, not just the bottom.
-          // Coat the exposed DIRT of the crater face with a thick red band going DOWN INTO the
-          // ground (over the visible soil), thicker where the crater is deep — NOT floating up in
-          // the excavated VOID above the surface. Purely a glow over the terrain; no terrain change.
-          const c2 = Math.max(
-            0,
-            Math.min(this.m_nWidth - 1, col + (Math.floor(this.rand01() * 4) - 2)),
-          );
-          const sy = this.getHeightAt(c2);
-          const baseH = this.m_baseHeights ? this.m_baseHeights[c2] : sy;
-          const craterDepth = Math.max(0, sy - baseH); // >0 inside the crater bowl
-          const bandDepth = Math.min(10 + craterDepth * 0.5, 42); // how deep into the soil the red reaches
-          s.x = c2;
-          // rise < 0 → BELOW the surface (into the dirt); +2 fringe just above so the rim reads.
-          s.rise = 2 - Math.floor(this.rand01() * 4) - this.rand01() * bandDepth;
-          s.y = sy - s.rise;
+          // Settle ON the surface exactly WHERE it fell (the original just flips a settled flag and
+          // stops the speck on the surface height of its column — it does NOT teleport to a jittered
+          // column or bury itself in a band deep in the soil; that invented deep-band snap is what
+          // made the whole bowl repaint in one frame). A tiny ±1px fringe gives a little granular
+          // thickness without moving it.
+          s.rise = 1 - Math.floor(this.rand01() * 3); // -1..+1 around the surface line
+          s.y = this.getHeightAt(col) - s.rise;
         }
       } else {
         // Keep clinging to the surface as craters below it change the height.

@@ -52,6 +52,8 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.showTankStats = S.showTankStats();
   GameConfig.tracking = S.tracking();
   GameConfig.showTurn = S.showTurn();
+  GameConfig.showPoints = S.showPoints(); // floating damage numbers per hit
+  GameConfig.autoScroll = S.autoScroll(); // camera follows the shot / active tank
   GameConfig.showLastAim = S.showLastAim();
   GameConfig.explosionWaves = S.explosionWaves();
   GameConfig.blastCircles = S.blastCircles();

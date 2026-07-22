@@ -71,6 +71,8 @@ export const gameSettings = {
   showTankStats: (): boolean => getVal('gfx.tankStats', 0) !== 0,
   tracking: (): boolean => getVal('gfx.tracking', 1) !== 0,
   showTurn: (): boolean => getVal('gfx.showTurn', 1) !== 0,
+  showPoints: (): boolean => getVal('gfx.showPoints', 1) !== 0,
+  autoScroll: (): boolean => getVal('gfx.autoScroll', 1) !== 0,
   showLastAim: (): boolean => getVal('gfx.lastAim', 1) !== 0,
   explosionWaves: (): boolean => getVal('gfx.expWaves', 1) !== 0,
   blastCircles: (): boolean => getVal('gfx.blastCircles', 0) !== 0,
