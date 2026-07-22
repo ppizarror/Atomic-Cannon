@@ -257,10 +257,32 @@ export class CTank {
     // Tank sits on top of terrain
     this.m_vPos.y = nTerrainHeight - tankHeight();
 
+    // Align the body to the local slope immediately — so a freshly-placed tank already rests
+    // TILTED to the terrain under it (the original does this on placement), not flat at 0° until
+    // the first physics tick runs.
+    this.m_fAngle = this.computeBodyTilt(pLand);
+
     // Check if tank has fallen underground somehow
     if (this.m_vPos.y > nTerrainHeight) {
       this.m_bFalling = true;
     }
+  }
+
+  /** Body tilt = the angle of the AVERAGE terrain normal across the tank's FOOTPRINT (its tread
+   *  span), not a single column — the original averages the normal over the columns under the
+   *  tank. Averaging smooths per-pixel terrain noise so the hull rests stably on the slope instead
+   *  of jittering on bumps. 0 on flat ground. */
+  private computeBodyTilt(pLand: CLand): number {
+    const cx = Math.floor(this.m_vPos.x);
+    const half = Math.max(2, Math.round(tankRadius())); // half the tread footprint
+    let nx = 0,
+      ny = 0;
+    for (let c = cx - half; c <= cx + half; c++) {
+      const n = pLand.getNormal(Math.max(1, Math.min(pLand.width - 2, c)));
+      nx += n.x;
+      ny += n.y;
+    }
+    return Math.atan2(nx, -ny); // average normal → hull tilt (same convention as before)
   }
 
   /**
@@ -318,16 +340,14 @@ export class CTank {
           this.m_vVel = new Vec2(0, 0);
           this.m_bFalling = false;
           this.m_bIsMoving = false;
-          const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
-          this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);
+          this.m_fAngle = this.computeBodyTilt(pLand);
         }
       } else {
         // Grounded, engine idle: rest on the surface but keep the fuel.
         this.m_vPos.y = fRestY;
         this.m_vVel = new Vec2(0, 0);
         this.m_bIsMoving = false;
-        const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
-        this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);
+        this.m_fAngle = this.computeBodyTilt(pLand);
       }
       this.m_fLastTurretAngle = this.m_fTurretAngle;
       return;
@@ -356,8 +376,7 @@ export class CTank {
     } else if (this.m_driveTargetX !== null) {
       // Driving along the surface toward a queued destination (bot reposition).
       this.stepDrive(pLand, dt);
-      const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
-      this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y);
+      this.m_fAngle = this.computeBodyTilt(pLand);
     } else {
       // Resting on the surface: stay glued to it as the terrain deforms,
       // and tilt the body to match the local slope.
@@ -365,9 +384,7 @@ export class CTank {
       this.m_vVel = new Vec2(0, 0);
       this.m_bFalling = false;
       this.m_bIsMoving = false;
-
-      const vNormal = pLand.getNormal(Math.floor(this.m_vPos.x));
-      this.m_fAngle = Math.atan2(vNormal.x, -vNormal.y); // 0 on flat, tilts with the slope
+      this.m_fAngle = this.computeBodyTilt(pLand);
     }
 
     this.m_fLastTurretAngle = this.m_fTurretAngle;
