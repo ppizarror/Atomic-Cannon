@@ -89,8 +89,10 @@ Keep this separation. New UI is a Preact component driven by a signal; new gamep
 
 ## Verifying changes
 
-- `pnpm test` runs `tests/*.test.ts` under `tsx`. There is **no DOM canvas** in tests, so
-  they exercise logic and gradient fallbacks only — **not** real `drawImage`/WebGL paths.
+- `pnpm test` runs `tests/*.test.ts` under **Vitest** (`describe`/`it`/`expect`); `pnpm test:watch`
+  for the watch UI. `tests/_setup.ts` installs the headless DOM stubs before every file. There is
+  **no DOM canvas** in tests, so they exercise logic and gradient fallbacks only — **not** real
+  `drawImage`/WebGL paths.
 - To verify anything visual, **drive the real running game**: dev exposes
   `window.atomic = { gameController, compositor, audio }` on port 2141. Load it headlessly
   (system Chrome), reach in via the `m_`-fields, and sample pixels / screenshot. Use the

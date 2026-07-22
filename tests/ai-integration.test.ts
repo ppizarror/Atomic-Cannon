@@ -2,14 +2,9 @@
  * Integration test: drive a real bot turn through CGameController and confirm the
  * AI aims at the enemy with a proper firing solution (real ballistics + full power
  * scale), not the old naive ~45°/≤100-power guess.
- * Run: pnpm tsx tests/ai-integration.test.ts   (or `pnpm test`)
  */
-import {installDomMocks, makeCanvas} from './_dom';
-installDomMocks();
-
-// Freeze the scheduler so the bot's deferred fire() doesn't cascade — we only want
-// the angle/power it decided on.
-(globalThis as unknown as {setTimeout: unknown}).setTimeout = () => 0;
+import {describe, it, expect, vi} from 'vitest';
+import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
 import {simulateMiss, AI_LEVEL_MAX, type AimField} from '../src/core/CBotAI';
@@ -21,18 +16,6 @@ import {GameConfig} from '../src/core/CGameConfig';
 // spread across a multi-screen map, where engaging takes scrolling/driving, not one
 // shot (that's a separate large-map concern).
 GameConfig.landSize = 1;
-
-let pass = 0,
-  fail = 0;
-function ok(name: string, cond: boolean, extra = '') {
-  if (cond) {
-    pass++;
-    console.log(`  ✓ ${name}`);
-  } else {
-    fail++;
-    console.log(`  ✗ ${name}  ${extra}`);
-  }
-}
 
 type Tank = {
   getPosition(): Vec2;
@@ -53,8 +36,6 @@ type GC = {
   executeBotTurn(): void;
 };
 
-console.log('Bot AI (integration)');
-
 // Run several fresh games (terrain is random) so the check doesn't hinge on one
 // layout; the AI should aim well on the large majority of them.
 let good = 0;
@@ -68,10 +49,9 @@ for (let run = 0; run < RUNS; run++) {
   gc.m_currentPlayerIndex = 1; // hand the turn to the bot
   // Suppress the random reposition (>BOT_MOVE_CHANCE) so the aim is decided
   // synchronously here rather than deferred until after a drive animation.
-  const realRandom = Math.random;
-  Math.random = () => 0.99;
+  const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.99);
   gc.executeBotTurn(); // decides angle + power (fire is deferred/frozen)
-  Math.random = realRandom;
+  rnd.mockRestore();
 
   const power = gc.getPower();
   const angle = gc.getAngle();
@@ -89,14 +69,14 @@ for (let run = 0; run < RUNS; run++) {
   if (miss < 60) good++;
 }
 
-// The old AI capped power at 100 (range ~16px) and never reached a target 600px
-// away; the new one uses the full scale.
-ok('bot fires at real power (140..1000, not the old ≤100 cap)', sawFullPower);
-ok(
-  `bot lands near the enemy on most maps (${good}/${RUNS} within 60px)`,
-  good >= RUNS - 1,
-  `good=${good}/${RUNS}`,
-);
+describe('Bot AI (integration)', () => {
+  it('bot fires at real power (140..1000, not the old ≤100 cap)', () => {
+    expect(sawFullPower).toBe(true);
+  });
 
-console.log(`\n${pass}/${pass + fail} AI integration checks passed`);
-process.exit(fail ? 1 : 0);
+  it('bot lands near the enemy on most maps (within 60px)', () => {
+    // The old AI capped power at 100 (range ~16px) and never reached a target 600px
+    // away; the new one uses the full scale.
+    expect(good).toBeGreaterThanOrEqual(RUNS - 1);
+  });
+});

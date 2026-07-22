@@ -1,32 +1,15 @@
 /**
  * Weapon-selection integrity: each tank keeps its OWN weapon, a bot's pick never
  * clobbers the human's, and the control-weapon lock only restricts the human.
- * Run: pnpm tsx tests/weapon-selection.test.ts   (or `pnpm test`)
+ *
+ * These checks share one game instance and run in sequence — each step builds on
+ * the state the previous one left behind.
  */
-import {installDomMocks, makeCanvas} from './_dom';
+import {describe, it, expect, vi} from 'vitest';
+import {makeCanvas} from './_dom';
 
-installDomMocks();
-
-// Freeze the turn scheduler so nothing auto-cascades; we drive turns by hand.
-const realSetTimeout = globalThis.setTimeout;
-(globalThis as unknown as {setTimeout: unknown}).setTimeout = () => 0;
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 import {CGameController} from '../src/game/CGameController';
 import {getWeapon, WEAPON_DATABASE} from '../src/core/CWeapon';
-
-let pass = 0,
-  fail = 0;
-
-function ok(name: string, cond: boolean, extra = ''): void {
-  if (cond) {
-    pass++;
-    console.log(`  ✓ ${name}`);
-  } else {
-    fail++;
-    console.log(`  ✗ ${name}  ${extra}`);
-  }
-}
 
 const SHELL = WEAPON_DATABASE.findIndex(w => w.name === 'Shell');
 
@@ -53,78 +36,49 @@ const human = gc.m_tanks[0],
 const CTRL = human.getWeaponIndex();
 const CTRL_NAME = WEAPON_DATABASE[CTRL].name;
 
-console.log('Weapon selection');
+describe('Weapon selection', () => {
+  it(`human starts on the control weapon (${CTRL_NAME}), stored on its own tank`, () => {
+    expect(gc.getCurrentWeaponIndex()).toBe(CTRL);
+    expect(human.getWeaponIndex()).toBe(CTRL);
+  });
 
-// 1. Human starts on the control weapon, stored on its own tank.
-ok(
-  `human starts on control weapon (${CTRL_NAME})`,
-  gc.getCurrentWeaponIndex() === CTRL,
-  `got ${gc.getCurrentWeaponIndex()}`,
-);
-ok(
-  'human tank stores its own weapon',
-  human.getWeaponIndex() === CTRL,
-  `got ${human.getWeaponIndex()}`,
-);
+  it('human weapon list reflects the control lock', () => {
+    // A pinned control weapon → the list is just that weapon; otherwise it's the
+    // full arsenal (which always contains whatever the human currently holds).
+    const defs = gc.getWeaponDefs();
+    const locked = defs.length === 1;
+    expect(locked ? defs[0].name === CTRL_NAME : defs.some(d => d.name === CTRL_NAME)).toBe(true);
+  });
 
-// 2. During the human's turn the list reflects the control lock: if a control
-// weapon is pinned the list is just that weapon; otherwise it's the full arsenal
-// (which always contains whatever the human is currently holding).
-{
-  const defs = gc.getWeaponDefs();
-  const locked = defs.length === 1;
-  ok(
-    'human list reflects the control lock',
-    locked ? defs[0].name === CTRL_NAME : defs.some(d => d.name === CTRL_NAME),
-    `got ${defs.length} defs`,
-  );
-}
+  it('selectWeapon persists onto the acting tank', () => {
+    gc.selectWeapon(SHELL);
+    expect(gc.getCurrentWeaponIndex()).toBe(SHELL);
+    expect(human.getWeaponIndex()).toBe(SHELL);
+    gc.selectWeapon(CTRL); // restore for the persistence checks below
+  });
 
-// 3. selectWeapon persists onto the acting tank (not just a shared global).
-gc.selectWeapon(SHELL);
-ok('selectWeapon updates the current index', gc.getCurrentWeaponIndex() === SHELL);
-ok('selectWeapon persists onto the tank', human.getWeaponIndex() === SHELL);
-gc.selectWeapon(CTRL); // restore for the persistence checks
+  it('a bot pick does NOT clobber the human weapon', () => {
+    gc.m_currentPlayerIndex = 1; // hand the turn to the bot
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.99); // >BOT_MOVE_CHANCE → aims/picks
+    gc.executeBotTurn(); // bot picks a weapon (and fires)
+    rnd.mockRestore();
+    expect(typeof bot.getWeaponIndex()).toBe('number');
+    expect(human.getWeaponIndex()).toBe(CTRL);
+  });
 
-// 4. THE BUG: a bot's weapon choice must NOT change the human's weapon.
-gc.m_currentPlayerIndex = 1; // hand the turn to the bot
-const realRandom = Math.random;
-Math.random = () => 0.99; // >BOT_MOVE_CHANCE → bot aims/picks (no reposition)
-gc.executeBotTurn(); // bot picks a weapon (and fires)
-Math.random = realRandom;
-ok('bot chose its own weapon', typeof bot.getWeaponIndex() === 'number');
-ok(
-  'bot pick does NOT clobber the human weapon',
-  human.getWeaponIndex() === CTRL,
-  `human=${human.getWeaponIndex()}`,
-);
+  it('bot turn shows the full arsenal (not the lock)', () => {
+    expect(gc.getWeaponDefs()).toHaveLength(WEAPON_DATABASE.length);
+  });
 
-// 5. During the bot's turn the HUD list is the FULL arsenal (not the lock).
-ok(
-  'bot turn shows the full arsenal',
-  gc.getWeaponDefs().length === WEAPON_DATABASE.length,
-  `len=${gc.getWeaponDefs().length}`,
-);
+  it('human weapon is restored on their turn', () => {
+    gc.m_currentPlayerIndex = 0;
+    gc.beginTurn();
+    expect(gc.getCurrentWeaponIndex()).toBe(CTRL);
+    expect(getWeapon(gc.getCurrentWeaponIndex()).getType()).toBe(WEAPON_DATABASE[CTRL].type);
+  });
 
-// 6. Back to the human → their own weapon is restored (not the bot's).
-gc.m_currentPlayerIndex = 0;
-gc.beginTurn();
-ok(
-  'human weapon restored on their turn',
-  gc.getCurrentWeaponIndex() === CTRL,
-  `got ${gc.getCurrentWeaponIndex()} (bot had ${bot.getWeaponIndex()})`,
-);
-ok(
-  'restored weapon matches the control weapon type',
-  getWeapon(gc.getCurrentWeaponIndex()).getType() === WEAPON_DATABASE[CTRL].type,
-);
-
-// 7. Tanks hold independent weapons at the same time.
-ok(
-  'players keep independent weapon state',
-  human.getWeaponIndex() === CTRL && typeof bot.getWeaponIndex() === 'number',
-);
-
-(globalThis as unknown as {setTimeout: unknown}).setTimeout = realSetTimeout;
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+  it('tanks hold independent weapons at the same time', () => {
+    expect(human.getWeaponIndex()).toBe(CTRL);
+    expect(typeof bot.getWeaponIndex()).toBe('number');
+  });
+});

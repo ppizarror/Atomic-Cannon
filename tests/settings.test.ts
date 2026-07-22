@@ -2,14 +2,9 @@
  * Settings → game: the persisted options actually reach the engine. Drives the real
  * bridge (settingsStore → settingsValues → applyGameSettings → controller) and checks
  * CEconomy's configurable sell rate + reset.
- * Run: pnpm tsx tests/settings.test.ts   (or `pnpm test`)
  */
-import {installDomMocks, makeCanvas} from './_dom';
-
-installDomMocks();
-
-// Freeze the turn scheduler so nothing auto-cascades after startGame.
-(globalThis as unknown as {setTimeout: unknown}).setTimeout = () => 0;
+import {describe, it, expect} from 'vitest';
+import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
 import {CEconomy} from '../src/core/CEconomy';
@@ -17,19 +12,6 @@ import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
-
-let pass = 0,
-  fail = 0;
-
-function ok(name: string, cond: boolean, extra = ''): void {
-  if (cond) {
-    pass++;
-    console.log(`  ✓ ${name}`);
-  } else {
-    fail++;
-    console.log(`  ✗ ${name}  ${extra}`);
-  }
-}
 
 const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
 const nukeCost = WEAPON_DATABASE[NUKE].cost;
@@ -42,118 +24,91 @@ type GCInternals = {
   m_windScale: number;
 };
 
-console.log('Settings → game');
+describe('Settings → game', () => {
+  it('CEconomy reset(startCredits) + configurable sell-back rate', () => {
+    const e = new CEconomy(3000, []);
+    e.reset(1500);
+    expect(e.getCredits()).toBe(1500); // reset sets the start credits
 
-// 1. CEconomy: reset(startCredits) + configurable sell-back rate.
-{
-  const e = new CEconomy(3000, []);
-  e.reset(1500);
-  ok('reset sets the start credits', e.getCredits() === 1500, `cr=${e.getCredits()}`);
+    const e2 = new CEconomy(nukeCost, []);
+    e2.setSellRate(0.8);
+    e2.buy(NUKE);
+    // sell refunds at the configured rate (80%)
+    expect(e2.sell(NUKE)).toBe(true);
+    expect(e2.getCredits()).toBe(Math.round(nukeCost * 0.8));
+  });
 
-  const e2 = new CEconomy(nukeCost, []);
-  e2.setSellRate(0.8);
-  e2.buy(NUKE);
-  ok(
-    'sell refunds at the configured rate (80%)',
-    e2.sell(NUKE) && e2.getCredits() === Math.round(nukeCost * 0.8),
-    `cr=${e2.getCredits()}`,
-  );
-}
+  it('full bridge: stored options → applyGameSettings → controller reflects them', () => {
+    setVal('eco.creditStart', 1234);
+    setVal('gp.battles', 9);
+    setVal('gp.wind', 0); // Disabled
+    setVal('gp.difficulty', 0); // "1. Easiest" → AI level 1
+    setVal('gp.updateScale', 20); // 2.0× game speed
+    setVal('gp.variance', 0); // off
+    setVal('gfx.landType', 0); // Flat (mode 0)
 
-// 2. Full bridge: set stored options → applyGameSettings → controller reflects them.
-{
-  setVal('eco.creditStart', 1234);
-  setVal('gp.battles', 9);
-  setVal('gp.wind', 0); // Disabled
-  setVal('gp.difficulty', 0); // "1. Easiest" → AI level 1
-  setVal('gp.updateScale', 20); // 2.0× game speed
-  setVal('gp.variance', 0); // off
-  setVal('gfx.landType', 0); // Flat (mode 0)
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    gc.startGame(2);
+    const priv = gc as unknown as GCInternals;
 
-  const gc = new CGameController(makeCanvas());
-  applyGameSettings(gc);
-  gc.startGame(2);
-  const priv = gc as unknown as GCInternals;
+    expect(gc.getCredits()).toBe(1234); // Credit Start reaches the match
+    expect(gc.getTotalBattles()).toBe(9); // Battles reaches getTotalBattles
+    expect(gc.getWindValue() === 0).toBe(true); // Wind Disabled → zero wind
+    expect(gc.getDifficulty()).toBe(1); // Difficulty applied (Easiest = level 1)
+    expect(priv.m_speedScale).toBe(2); // Update Scale → 2× speed
+    expect(priv.m_variance).toBe(false); // Variance off is applied
+    expect(priv.m_landMode).toBe(0); // Land Type Flat → mode 0
+  });
 
-  ok('Credit Start reaches the match', gc.getCredits() === 1234, `cr=${gc.getCredits()}`);
-  ok('Battles reaches getTotalBattles', gc.getTotalBattles() === 9, `n=${gc.getTotalBattles()}`);
-  ok('Wind Disabled → zero wind', gc.getWindValue() === 0, `w=${gc.getWindValue()}`);
-  ok('Difficulty applied (Easiest = level 1)', gc.getDifficulty() === 1, `d=${gc.getDifficulty()}`);
-  ok('Update Scale → 2× speed', priv.m_speedScale === 2, `s=${priv.m_speedScale}`);
-  ok('Variance off is applied', priv.m_variance === false, `v=${priv.m_variance}`);
-  ok('Land Type Flat → mode 0', priv.m_landMode === 0, `m=${priv.m_landMode}`);
-}
+  it('live change: re-applying picks up a new value immediately (High wind scalar)', () => {
+    setVal('gp.wind', 3); // High → scalar 1.6
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    const priv = gc as unknown as GCInternals;
+    expect(priv.m_windScale).toBe(1.6); // changing Wind re-applies the scalar
 
-// 3. Live change: re-applying picks up a new value immediately (High wind scalar).
-{
-  setVal('gp.wind', 3); // High → scalar 1.6
-  const gc = new CGameController(makeCanvas());
-  applyGameSettings(gc);
-  const priv = gc as unknown as GCInternals;
-  ok('changing Wind re-applies the scalar', priv.m_windScale === 1.6, `ws=${priv.m_windScale}`);
+    // And a fresh match honours it: |wind| stays within the scaled bound.
+    gc.startGame(2);
+    // wind is seeded within the scaled bound
+    expect(Math.abs(gc.getWindValue())).toBeLessThanOrEqual(5 * 1.6 + 1e-9);
+  });
 
-  // And a fresh match honours it: |wind| stays within the scaled bound.
-  gc.startGame(2);
-  ok(
-    'wind is seeded within the scaled bound',
-    Math.abs(gc.getWindValue()) <= 5 * 1.6 + 1e-9,
-    `w=${gc.getWindValue()}`,
-  );
-}
+  it('GameConfig scalars + render toggles, and Hitpoints on the spawned tank', () => {
+    setVal('tank.hitpoints', 2500);
+    setVal('tank.kickback', 0); // Off → scalar 0
+    setVal('gp.explosionSize', 3); // Massive → 1.8
+    setVal('tank.powerScale', 150); // 1.5×
+    setVal('gfx.showPower', 0); // bars off
+    setVal('gfx.expWaves', 0); // nuke wave off
 
-// 4. GameConfig scalars + render toggles, and Hitpoints on the spawned tank.
-{
-  setVal('tank.hitpoints', 2500);
-  setVal('tank.kickback', 0); // Off → scalar 0
-  setVal('gp.explosionSize', 3); // Massive → 1.8
-  setVal('tank.powerScale', 150); // 1.5×
-  setVal('gfx.showPower', 0); // bars off
-  setVal('gfx.expWaves', 0); // nuke wave off
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    expect(GameConfig.kickbackScale).toBe(0); // Kickback Off → scalar 0
+    expect(GameConfig.explosionScale).toBe(1.8); // Explosion Massive → 1.8
+    expect(GameConfig.powerScale).toBe(1.5); // Power Scale 150% → 1.5
+    expect(GameConfig.showPowerBars).toBe(false); // Show Power off is applied
+    expect(GameConfig.explosionWaves).toBe(false); // Explosion Waves off is applied
 
-  const gc = new CGameController(makeCanvas());
-  applyGameSettings(gc);
-  ok('Kickback Off → scalar 0', GameConfig.kickbackScale === 0, `k=${GameConfig.kickbackScale}`);
-  ok(
-    'Explosion Massive → 1.8',
-    GameConfig.explosionScale === 1.8,
-    `e=${GameConfig.explosionScale}`,
-  );
-  ok('Power Scale 150% → 1.5', GameConfig.powerScale === 1.5, `p=${GameConfig.powerScale}`);
-  ok('Show Power off is applied', GameConfig.showPowerBars === false);
-  ok('Explosion Waves off is applied', GameConfig.explosionWaves === false);
+    gc.startGame(2);
+    const tank = (
+      gc as unknown as {m_tanks: {getMaxLife(): number; getHealth(): {nLife: number}}[]}
+    ).m_tanks[0];
+    expect(tank.getMaxLife()).toBe(2500); // Hitpoints → tank max life
+    expect(tank.getHealth().nLife).toBe(2500); // Hitpoints → tank spawns full
+  });
 
-  gc.startGame(2);
-  const tank = (gc as unknown as {m_tanks: {getMaxLife(): number; getHealth(): {nLife: number}}[]})
-    .m_tanks[0];
-  ok('Hitpoints → tank max life', tank.getMaxLife() === 2500, `max=${tank.getMaxLife()}`);
-  ok(
-    'Hitpoints → tank spawns full',
-    tank.getHealth().nLife === 2500,
-    `life=${tank.getHealth().nLife}`,
-  );
-}
+  it('Tank Size (geometry scalar → collision radius) + Draw Smoke', () => {
+    setVal('tank.size', 2); // Large → 1.35
+    setVal('gfx.smoke', 0); // off
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    expect(GameConfig.tankSizeScale).toBe(1.35); // Player Size Large → scalar 1.35
+    expect(GameConfig.drawSmoke).toBe(false); // Draw Smoke off is applied
 
-// 5. Tank Size (geometry scalar → collision radius) + Draw Smoke.
-{
-  setVal('tank.size', 2); // Large → 1.35
-  setVal('gfx.smoke', 0); // off
-  const gc = new CGameController(makeCanvas());
-  applyGameSettings(gc);
-  ok(
-    'Player Size Large → scalar 1.35',
-    GameConfig.tankSizeScale === 1.35,
-    `s=${GameConfig.tankSizeScale}`,
-  );
-  ok('Draw Smoke off is applied', GameConfig.drawSmoke === false);
-
-  gc.startGame(2);
-  const tank = (gc as unknown as {m_tanks: {getHitRadius(): number}[]}).m_tanks[0];
-  ok(
-    'hit radius scales with size (16 × 1.35)',
-    Math.abs(tank.getHitRadius() - 16 * 1.35) < 1e-9,
-    `r=${tank.getHitRadius()}`,
-  );
-}
-
-console.log(`\n${pass}/${pass + fail} settings checks passed`);
-process.exit(fail ? 1 : 0);
+    gc.startGame(2);
+    const tank = (gc as unknown as {m_tanks: {getHitRadius(): number}[]}).m_tanks[0];
+    // hit radius scales with size (16 × 1.35)
+    expect(Math.abs(tank.getHitRadius() - 16 * 1.35)).toBeLessThan(1e-9);
+  });
+});
