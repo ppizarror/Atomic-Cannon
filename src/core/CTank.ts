@@ -613,14 +613,30 @@ export class CTank {
   }
 
   /**
-   * Apply radiation damage accumulated over dt seconds. Radiation bypasses
-   * shield/armor and burns health directly.
+   * Apply radiation fallout damage-over-time. Radiation is a PIERCING/secondary source, so it
+   * routes through the same pipeline as a piercing hit — SHIELD soaks it first, then HAZMAT
+   * resistance (the whole point of a Hazmat suit), then Armor, then Life. (The original binary has
+   * no fallout DOT consumer at all — radiation is cosmetic there — so this is our interpretation,
+   * following how it treats a piercing weapon: shield → hazmat → armor → life.)
    */
   applyRadiationDamage(fAmount: number, _dt: number): void {
     if (!this.m_bIsAlive) return;
-
     this.m_health.fRadiation += fAmount;
-    this.m_health.nLife -= fAmount;
+
+    let dmg = fAmount;
+    // Shield absorbs the tick first (chips down as it soaks the fallout).
+    if (this.m_health.nShield >= dmg) {
+      this.m_health.nShield -= dmg;
+      dmg = 0;
+    } else {
+      dmg -= this.m_health.nShield;
+      this.m_health.nShield = 0;
+    }
+    if (dmg > 0) {
+      dmg *= 1 - this.m_health.nHazmat / 100; // Hazmat = radiation resistance (piercing resist)
+      dmg *= 1 - this.m_health.nArmor / 100; // Armor
+      this.m_health.nLife -= dmg;
+    }
 
     if (this.m_health.nLife <= 0) {
       this.m_health.nLife = 0;
