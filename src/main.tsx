@@ -7,7 +7,7 @@
  */
 import './hud.css';
 import {render} from 'preact';
-import {CGameController} from './game/CGameController';
+import {CGameController, EGameType} from './game/CGameController';
 import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
@@ -130,11 +130,17 @@ async function main(): Promise<void> {
     }
     // `?setup=1` opens the Play game-setup screen.
     if (q.get('setup') === '1') openPlaySetup();
-    // `?warend=1`: jump into a 6-team battle and force it to end, to preview the standings.
-    if (q.get('warend') === '1') {
+    // `?endtest=battle|war`: jump into a 6-team Deathmatch and force it to end, to preview
+    // the standings — `battle` = a between-battles screen (war NOT over), `war` = the war-end
+    // screen (Victory! banner + fireworks + "exit to menu"). Forces the game type + battle
+    // count so the outcome is deterministic regardless of the persisted settings.
+    const endtest = q.get('endtest');
+    if (endtest === 'battle' || endtest === 'war') {
       playNewGame(); // enter the battle screen
       gameController.setHumanCount(1);
       gameController.startGame(6); // respawn as a 6-team free-for-all
+      gameController.setGameType(EGameType.Deathmatch); // the "war" concept is Deathmatch-only
+      gameController.setTotalBattles(endtest === 'war' ? 1 : 5); // 1 battle = war over → Victory
       gameController.devForceBattleEnd();
     }
   }

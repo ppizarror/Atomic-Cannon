@@ -26,6 +26,7 @@ export const SFX = {
   BATTLE_LOST: 'battle lost.wav',
   CLICK: 'click.wav',
   TYPING: 'typing.wav',
+  FIREWORK: ['Slapthunder1.wav', 'Slapthunder2.wav'] as const,
 } as const;
 
 // Persisted audio preferences (options-menu equivalents).
@@ -181,6 +182,13 @@ export class CAudio {
 
   tankExplode(worldX: number): void {
     this.m_sfx.play(SFX.TANK_EXPLODE, worldX, {throttle: false});
+  }
+
+  /** A victory-fireworks burst — one of the two thunder claps at random, panned to
+   *  the burst's screen column. */
+  firework(worldX: number): void {
+    const s = SFX.FIREWORK[Math.random() < 0.5 ? 0 : 1];
+    this.m_sfx.play(s, worldX, {throttle: false});
   }
 
   startTankMove(worldX?: number): void {

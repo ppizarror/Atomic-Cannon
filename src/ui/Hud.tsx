@@ -20,7 +20,6 @@ import {
   maxLife,
   shield,
   blocked,
-  winner,
   weapons,
   game,
   loadWeaponIcon,
@@ -457,19 +456,6 @@ function BattleStatus() {
   );
 }
 
-// ---- winner banner / side LCDs ---------------------------------------------
-// There's no "X's Turn" popup (the active tank is shown by the bouncing
-// triangle + top-left status), so we only surface the end-of-battle winner.
-function TurnBanner() {
-  const win = winner.value;
-  if (!win) return null;
-  return (
-    <div id="turn-indicator" class="visible">
-      <BmpText font="bazouk-28" text={`${win} WINS!`} />
-    </div>
-  );
-}
-
 // A single bitmap-font line inside a black side box.
 function LcdLine({text}: {text: string; title?: boolean}) {
   return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={2} />;
@@ -578,7 +564,6 @@ export function Hud() {
   return (
     <>
       <BattleStatus />
-      <TurnBanner />
       <div id="hud">
         <WeaponDetails2 />
         <WeaponDetails1 />

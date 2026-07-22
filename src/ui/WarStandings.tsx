@@ -53,7 +53,9 @@ export function WarStandings() {
         <div class="war-banner">
           <BmpText font="bazouk-28" text={s.banner} />
         </div>
-      ) : null}
+      ) : (
+        <div class="war-banner-space" />
+      )}
       <div class="war-title">
         <BmpText font="bazouk-28" text={s.title} />
       </div>

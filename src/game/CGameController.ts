@@ -84,7 +84,7 @@ export interface WarTeamRow {
 /** The full between-battles "winning the war" standings, computed at battle end. */
 export interface WarStandings {
   title: string; // "X is winning the war." / "X wins the war!" / "X wins the battle!"
-  banner: string; // "Victory!" / "Defeat!" / "All tanks are dead!" / ""
+  banner: string; // war-end only: "Victory!" / "Defeat!" / "All tanks are dead!" / ""
   subtitle: string[]; // ["The War is not over yet.", "Battle N of M completed."]
   winCondition: string; // "The team with the most kills or life wins." (Deathmatch)
   rows: WarTeamRow[]; // per-team, leader first
@@ -152,10 +152,9 @@ const DMG_NUM_RISE = 28;
 const BLAST_CIRCLE_LIFE = 1.4;
 
 // Taunt speech bubbles (Tank → Chatter). A bubble stays up TAUNT_LIFE seconds and
-// fades over its last TAUNT_FADE. Trigger chances match the original (RE: FUN_0046b3d0
-// percent gate): 8% post-fire, 30% on death, 60% on the idle interval. The idle timer
-// re-arms to a random gap in [TAUNT_IDLE_MIN, TAUNT_IDLE_MAX] seconds each turn/attempt
-// (the original uses randomized constants we don't have; this is a faithful stand-in).
+// fades over its last TAUNT_FADE. Trigger chances match the original percent gate:
+// 8% post-fire, 30% on death, 60% on the idle interval. The idle timer re-arms to a
+// random gap in [TAUNT_IDLE_MIN, TAUNT_IDLE_MAX] seconds each turn/attempt.
 const TAUNT_LIFE = 4.0;
 const TAUNT_FADE = 0.6;
 const TAUNT_CHANCE_POSTFIRE = 8;
@@ -166,6 +165,86 @@ const TAUNT_IDLE_MAX = 15;
 // Screen-space height (px) the bubble's tail floats above the tank's centre — just
 // clear of the turret so the tail points right at the tank.
 const TAUNT_RISE = 20;
+
+// Victory fireworks (war-end Victory only). A burst appears at a random sky point on a
+// randomized interval; it's one of the 8 `bursts/*.bmp` shapes (circle/ring/star/delta/…),
+// emitting one spark per lit pixel — coloured by that pixel — that flies radially outward
+// then arcs down under gravity + wind and fades. The shape is visible at t=0, then rains
+// down. Speed is uniform (rand01 × scale), so many sparks barely move and hold the shape
+// while a few fly out; positions are at native bmp scale (the wide look comes from the
+// expansion, not upscaling); alpha holds full for the first 60% of life then falls
+// linearly to 0. Particle life is kept short so sparks fade in air on the fixed camera.
+const FW_LIFE = 2.8; // particle lifetime (s)
+const FW_SPEED = 52; // radial launch speed scale (px/s); per-spark speed = rand01 × this
+const FW_GRAVITY = 95; // downward accel (px/s²) — the burst rains down (semi-implicit Euler, no drag)
+const FW_SCALE = 1; // native bmp scale (no position multiplier)
+const FW_HOLD = 0.6; // fraction of life at full alpha before the linear fade begins
+const FW_INTERVAL_MIN = 0.12; // gap between bursts ≈ uniform(0, max)
+const FW_INTERVAL_MAX = 2.4;
+// Launch trail (a deliberate embellishment over the legacy, which just pops the burst
+// in): a rocket rises from the ground trailing sparks, then detonates into the burst.
+const FW_ROCKET_SPEED = 320; // rocket rise speed (px/s)
+const FW_TRAIL_LIFE = 0.4; // launch-trail spark lifetime (s)
+// The 8 shape templates (bursts/<name>.bmp). Loaded + sampled once into `burstPixels`.
+const BURST_NAMES = ['circle', 'ring', 'star1', 'star2', 'delta', 'pentagon', 'hexagon', 'octagon'];
+// Per-shape sampled lit pixels: offset from the sprite centre + that pixel's colour.
+// null until the bmp loads; filled asynchronously by loadBurstPixels().
+const burstPixels: ({dx: number; dy: number; color: string}[] | null)[] = BURST_NAMES.map(() => null);
+let burstLoadStarted = false;
+
+/** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half
+ *  subsampled for particle count) into `burstPixels`. Browser-only (uses Image/canvas). */
+function loadBurstPixels(): void {
+  if (burstLoadStarted || typeof document === 'undefined') return;
+  burstLoadStarted = true;
+  BURST_NAMES.forEach((name, idx) => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = img.width;
+      cv.height = img.height;
+      const g = cv.getContext('2d', {willReadFrequently: true})!;
+      g.drawImage(img, 0, 0);
+      const {data} = g.getImageData(0, 0, img.width, img.height);
+      const hw = img.width / 2,
+        hh = img.height / 2;
+      const pts: {dx: number; dy: number; color: string}[] = [];
+      for (let y = 0; y < img.height; y++) {
+        for (let x = 0; x < img.width; x++) {
+          const i = (y * img.width + x) * 4; // sample every lit pixel — many fine sparks
+          const r = data[i],
+            gg = data[i + 1],
+            b = data[i + 2];
+          if (r > 200 && gg < 80 && b > 200) continue; // magenta colour-key
+          if (r + gg + b < 30) continue; // (near-)black background
+          pts.push({dx: x - hw, dy: y - hh, color: `rgb(${r},${gg},${b})`});
+        }
+      }
+      burstPixels[idx] = pts;
+    };
+    img.src = `/assets/bursts/${name}.bmp`;
+  });
+}
+
+/** One firework spark: world position + velocity, its (bmp-pixel) colour, and age/life. */
+interface Firework {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  color: string;
+  age: number;
+  life: number;
+}
+
+/** A rising launch rocket: climbs from `y` (the ground) to `targetY`, trailing sparks,
+ *  then detonates into a burst at (x, targetY). */
+interface FwRocket {
+  x: number;
+  y: number;
+  vy: number;
+  targetY: number;
+}
 
 /** A live speech bubble: the speaker (for its screen position) + the rendered
  *  "Name: line" text + its age. Kept controller-side (not on the tank) so a death
@@ -251,6 +330,9 @@ export class CGameController implements ShotWorld {
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
     this.m_bubbles = [];
+    this.m_fireworks = [];
+    this.m_rockets = [];
+    this.m_showFireworks = false;
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
     // land + bounds if the size changed since the last match.
@@ -492,6 +574,7 @@ export class CGameController implements ShotWorld {
 
       case EGameState.BattleEnd:
         this.m_battleEndTime += dt; // drives the winner flag raise + wave animation
+        this.updateFireworks(dt); // victory sky fireworks (no-op unless the human won)
         break;
     }
 
@@ -868,7 +951,11 @@ export class CGameController implements ShotWorld {
     }
 
     // Between battles: plant a flag by the winning tank and show its taunt bubble.
-    if (this.m_gameState === EGameState.BattleEnd) this.drawWinnerFlag(ctx);
+    // On a war-end victory, fireworks burst across the sky behind the standings.
+    if (this.m_gameState === EGameState.BattleEnd) {
+      this.drawFireworks(ctx);
+      this.drawWinnerFlag(ctx);
+    }
 
     this.drawPlacedEntities(ctx);
     this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
@@ -1153,7 +1240,7 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Floating "Show Points" damage numbers (RE: FUN_0046bd10, gated on 0x97c) — on a
+   * Floating "Show Points" damage numbers — on a
    * damaging hit, a number rises off the struck tank and fades. Drawn in world space
    * (under the camera) in an outlined bitmap font.
    */
@@ -1206,7 +1293,7 @@ export class CGameController implements ShotWorld {
    *  replaces any this speaker already has. */
   private tryTaunt(cat: TauntCategory, speaker: CTank | null, chancePct: number): void {
     if (!GameConfig.chatter || !speaker) return;
-    if (speaker.getTankType() === 'Sentry') return; // Sentries never taunt (RE)
+    if (speaker.getTankType() === 'Sentry') return; // Sentries never taunt
     if (Math.random() * 100 > chancePct) return;
     const line = pickTaunt(cat);
     if (!line) return; // list emptied in the editor → nothing to say
@@ -1437,8 +1524,7 @@ export class CGameController implements ShotWorld {
   }
 
   /** The winner flag (between battles): a red flag on a wooden pole that RISES up out
-   *  of the terrain, then WAVES with a moving sheen — drawn procedurally (the original's
-   *  `flags\` asset was cut from this build, so there's no sprite to load). */
+   *  of the terrain, then WAVES with a moving sheen — drawn procedurally. */
   private drawWinnerFlag(ctx: CanvasRenderingContext2D): void {
     const tank = this.getWinnerTank();
     if (!tank) return;
@@ -1514,6 +1600,150 @@ export class CGameController implements ShotWorld {
     ctx.moveTo(fx, flagTop + fh);
     for (let i = 1; i <= N; i++) ctx.lineTo(fx + fw * (i / N), flagTop + fh + waveAt(i / N));
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // ========================================================================
+  // VICTORY FIREWORKS (war end, human wins)
+  // ========================================================================
+
+  /** True when the war is over AND the human's team leads the final standings — the
+   *  only case the legacy fires victory fireworks (leader by kills, tie → team life%). */
+  private isHumanWarVictory(): boolean {
+    if (!this.getWarOver()) return false;
+    if (!this.m_tanks.some(t => t.isHuman())) return false;
+    if (!this.m_tanks.some(t => t.isAlive())) return false; // all dead → no victory
+    const teams = new Map<number, {kills: number; life: number; n: number; human: boolean}>();
+    for (const t of this.m_tanks) {
+      if (t.getTankType() === 'Sentry') continue;
+      let e = teams.get(t.getTeamId());
+      if (!e) teams.set(t.getTeamId(), (e = {kills: 0, life: 0, n: 0, human: false}));
+      e.kills += t.getKills();
+      e.life += Math.max(0, Math.min(1, t.getHealth().nLife / t.getMaxLife()));
+      e.n++;
+      if (t.isHuman()) e.human = true;
+    }
+    const leader = [...teams.values()].sort(
+      (a, b) => b.kills - a.kills || b.life / b.n - a.life / a.n,
+    )[0];
+    return leader?.human ?? false;
+  }
+
+  /** Launch a firework: pick a random sky target above the terrain and send a rocket up
+   *  from the ground toward it (it detonates into the burst on arrival). */
+  private launchFirework(): void {
+    if (!burstPixels.some(Boolean)) {
+      loadBurstPixels(); // shapes not sampled yet — kick off the load and skip this beat
+      return;
+    }
+    const vw = this.m_canvas.width;
+    const margin = 32 * FW_SCALE; // keep the whole 64px burst on screen
+    const cx = this.m_camX + margin + Math.random() * Math.max(1, vw - 2 * margin);
+    const ground = this.m_land.getHeightAt(cx); // terrain surface — the launch pad
+    const ceil = Math.max(24, ground - 24);
+    const targetY = 14 + Math.random() * ceil * 0.5; // upper sky
+    this.m_rockets.push({x: cx, y: ground, vy: -FW_ROCKET_SPEED, targetY});
+  }
+
+  /** Detonate a burst at (cx, cy): one spark per lit pixel of a random burst bmp, coloured
+   *  by that pixel, flying radially out at a uniform-random speed (rand01 × scale). */
+  private explodeFirework(cx: number, cy: number): void {
+    const ready = burstPixels.filter((p): p is {dx: number; dy: number; color: string}[] => !!p);
+    if (!ready.length) return;
+    const pts = ready[Math.floor(Math.random() * ready.length)];
+    for (const p of pts) {
+      const dist = Math.hypot(p.dx, p.dy) || 1;
+      const sp = Math.random() * FW_SPEED; // uniform radial speed (rand01 × scale)
+      this.m_fireworks.push({
+        x: cx + p.dx * FW_SCALE,
+        y: cy + p.dy * FW_SCALE,
+        vx: (p.dx / dist) * sp,
+        vy: (p.dy / dist) * sp,
+        color: p.color, // the bmp pixel's own colour
+        age: 0,
+        life: FW_LIFE * (0.8 + Math.random() * 0.4),
+      });
+    }
+    this.m_audio?.firework(cx - this.m_camX); // Slapthunder1/2.wav (the boom), panned
+  }
+
+  /** Tick the victory fireworks: launch on the interval, rise the rockets (trailing
+   *  sparks) until they detonate, then integrate every spark (gravity + wind drift ×0.7),
+   *  dropping the expired / grounded / off-view. */
+  private updateFireworks(dt: number): void {
+    if (!this.m_showFireworks) return;
+    this.m_fireworkTimer -= dt;
+    if (this.m_fireworkTimer <= 0) {
+      this.launchFirework();
+      this.m_fireworkTimer = FW_INTERVAL_MIN + Math.random() * (FW_INTERVAL_MAX - FW_INTERVAL_MIN);
+    }
+    const wx = this.m_wind.x * 0.7,
+      wy = this.m_wind.y * 0.7;
+
+    // Rockets: rise, trail a spark each frame, detonate on reaching the target.
+    if (this.m_rockets.length) {
+      const rising: FwRocket[] = [];
+      for (const r of this.m_rockets) {
+        r.y += r.vy * dt;
+        r.x += wx * dt * 0.3; // slight wind lean
+        this.m_fireworks.push({
+          x: r.x + (Math.random() * 2 - 1) * 1.5,
+          y: r.y + Math.random() * 4, // just below the head
+          vx: (Math.random() * 2 - 1) * 8,
+          vy: (Math.random() * 2 - 1) * 8 + 6,
+          color: 'rgb(255,226,150)', // warm launch spark
+          age: 0,
+          life: FW_TRAIL_LIFE * (0.6 + Math.random() * 0.6),
+        });
+        if (r.y <= r.targetY) this.explodeFirework(r.x, r.targetY);
+        else rising.push(r);
+      }
+      this.m_rockets = rising;
+    }
+
+    // Burst + trail sparks: integrate, then cull.
+    if (this.m_fireworks.length) {
+      for (const p of this.m_fireworks) {
+        p.age += dt;
+        p.vx += wx * dt;
+        p.vy += (FW_GRAVITY + wy) * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+      }
+      this.m_fireworks = this.m_fireworks.filter(
+        p => p.age < p.life && p.y < this.m_land.getHeightAt(p.x),
+      );
+    }
+  }
+
+  /** Draw the fireworks as small glowing sparks coloured by the burst pixel. Additive
+   *  ('lighter') so they read as bright fireworks on any sky (the legacy screenshots show
+   *  bright, glowing sparks — the raw disc primitive is nominally alpha-blended, but the
+   *  particles render as flares). Alpha holds full for the first FW_HOLD of life, then
+   *  falls linearly to 0. A brighter core over a soft glow gives each spark some bloom. */
+  private drawFireworks(ctx: CanvasRenderingContext2D): void {
+    if (!this.m_fireworks.length && !this.m_rockets.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Fine sparks: a 1px bright core over a faint 2px bloom.
+    for (const p of this.m_fireworks) {
+      const t = p.age / p.life;
+      const alpha = t <= FW_HOLD ? 1 : 1 - (t - FW_HOLD) / (1 - FW_HOLD);
+      if (alpha <= 0) continue;
+      const x = Math.round(p.x),
+        y = Math.round(p.y);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = alpha * 0.4;
+      ctx.fillRect(x - 1, y - 1, 2, 2); // faint bloom
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(x, y, 1, 1); // 1px core
+    }
+    // Rocket heads: a bright warm streak climbing to the burst.
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgb(255,240,200)';
+    for (const r of this.m_rockets) {
+      ctx.fillRect(Math.round(r.x) - 1, Math.round(r.y), 2, 3);
+    }
     ctx.restore();
   }
 
@@ -1869,7 +2099,10 @@ export class CGameController implements ShotWorld {
 
       const dx = tank.getPosition().x - pos.x; // kick up and away from the blast
       const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
-      tank.kick(kickDir, Math.min(1, dmg / 400) * 320 * GameConfig.kickbackScale); // Tank → Kickback
+      // Kick magnitude scales with the LIFE ACTUALLY REMOVED (post shield/armor), clamped over
+      // the full 0..1000 life range — matching the original `clamp(removed·0.001,0,1)·kick·60`.
+      // (Was: raw pre-armor damage clamped at 400 → maxed out far too early → nukes over-kicked.)
+      tank.kick(kickDir, Math.min(1, removed * 0.001) * 240 * GameConfig.kickbackScale); // Tank → Kickback
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
     }
@@ -1892,7 +2125,7 @@ export class CGameController implements ShotWorld {
 
     this.awardKillCredit(tank);
 
-    // The dying tank cries out a random death line (Chatter, 30% — RE: FUN_00474ff0).
+    // The dying tank cries out a random death line (Chatter, 30% chance).
     this.tryTaunt('death', tank, TAUNT_CHANCE_DEATH);
 
     // Create explosion at tank position
@@ -2059,6 +2292,9 @@ export class CGameController implements ShotWorld {
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
     this.m_bubbles = [];
+    this.m_fireworks = [];
+    this.m_rockets = [];
+    this.m_showFireworks = false;
     this.generateTerrain();
     const n = this.m_tanks.length;
     this.m_tanks.forEach((t, i) => {
@@ -2074,6 +2310,9 @@ export class CGameController implements ShotWorld {
   /** Drop all taunt bubbles (leaving the standings → next battle or the menu). */
   clearTaunts(): void {
     this.m_bubbles = [];
+    this.m_fireworks = [];
+    this.m_rockets = [];
+    this.m_showFireworks = false;
   }
 
   /** True once the war's final battle has been played (Deathmatch multi-battle);
@@ -2091,6 +2330,12 @@ export class CGameController implements ShotWorld {
     if (alive.length <= 1) {
       this.m_gameState = EGameState.BattleEnd;
       this.m_battleEndTime = 0; // restart the winner-flag animation
+      // Victory-only sky fireworks (war end, the human's team leads the final standings).
+      this.m_showFireworks = this.isHumanWarVictory();
+      this.m_fireworks = [];
+      this.m_rockets = [];
+      this.m_fireworkTimer = 0.35; // first burst shortly after the screen appears
+      if (this.m_showFireworks) loadBurstPixels(); // warm the burst bmps
       this.m_winnerName = alive.length === 1 ? alive[0].getName() : '';
       // The battle victor (top surviving tank by kills) gloats a random post-fire line
       // through the taunt-bubble system — it persists on the standings screen because
@@ -2115,8 +2360,8 @@ export class CGameController implements ShotWorld {
       return;
     }
     // Post-fire gloat: as the turn passes on after a shot, the tank that just fired
-    // may taunt a random post-fire line (Chatter, 8% — RE: FUN_0046b3d0 from the
-    // turn-advance path). Only after an actual shot, never a timed-out forfeit.
+    // may taunt a random post-fire line (Chatter, 8% chance, on the turn hand-off).
+    // Only after an actual shot, never a timed-out forfeit.
     if (this.m_firedThisTurn)
       this.tryTaunt('postFire', this.getCurrentTank(), TAUNT_CHANCE_POSTFIRE);
 
@@ -2377,7 +2622,7 @@ export class CGameController implements ShotWorld {
       const dx = tp.x - muzzle.x;
       t.kick(
         new Vec2(dx >= 0 ? 0.5 : -0.5, -1).normalize(),
-        Math.min(1, weapon.getDamage() / 400) * 260 * GameConfig.kickbackScale,
+        Math.min(1, removed * 0.001) * 240 * GameConfig.kickbackScale, // scale with life removed (0..1000)
       );
       if (!t.isAlive()) this.handleTankDestroyed(t);
     }
@@ -2928,8 +3173,8 @@ export class CGameController implements ShotWorld {
     return alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a));
   }
 
-  /** DEV (`?warend=1`): fabricate some stats and end the battle so the standings
-   *  screen can be previewed. */
+  /** DEV (`?endtest=battle|war`): fabricate some stats and end the battle so the
+   *  standings screen can be previewed. */
   devForceBattleEnd(): void {
     this.m_tanks.forEach((t, i) => {
       for (let k = 0; k < (this.m_tanks.length - i) * 2; k++) t.addKill();
@@ -2941,6 +3186,17 @@ export class CGameController implements ShotWorld {
       }
     });
     this.endTurn();
+  }
+
+  /** DEV (`?taunttest=right`): park the winner hard against the right edge and force a
+   *  battle end, to check the taunt bubble stays on-screen (tail still on the tank). */
+  devTauntEdge(side: 'right' | 'left'): void {
+    const t0 = this.m_tanks[0];
+    if (t0) {
+      // 1-screen land (dev default) → world == view, so the world edge is the view edge.
+      t0.respawn(side === 'right' ? this.m_worldWidth - 24 : 24, this.m_land);
+    }
+    this.devForceBattleEnd();
   }
 
   /** The between-battles standings: per-team totals, the leading team, the title /
@@ -3000,23 +3256,24 @@ export class CGameController implements ShotWorld {
           ? `${leaderName} wins the war!`
           : `${leaderName} is winning the war.`;
 
-    // Banner: the human's result for the battle just ended.
-    const survivors = this.m_tanks.filter(t => t.isAlive());
-    const anyHuman = this.m_tanks.some(t => t.isHuman());
-    const banner =
-      survivors.length === 0
-        ? 'All tanks are dead!'
-        : !anyHuman
-          ? ''
-          : survivors.some(t => t.isHuman())
-            ? 'Victory!'
-            : 'Defeat!';
-
     const subtitle: string[] = [];
     if (deathmatch && !warOver) {
       subtitle.push('The War is not over yet.');
       subtitle.push(`Battle ${this.m_currentBattle} of ${this.m_totalBattles} completed.`);
     }
+
+    // Victory!/Defeat! banner — ONLY when the whole war is over (the legacy war-end
+    // screen). Between battles there is no banner. Reflects the human's outcome: a win
+    // if the human's team leads the final standings.
+    const banner = !warOver
+      ? ''
+      : !this.m_tanks.some(t => t.isAlive())
+        ? 'All tanks are dead!'
+        : !this.m_tanks.some(t => t.isHuman())
+          ? '' // all-bots (demo): no human perspective to declare
+          : rows[0]?.isHuman
+            ? 'Victory!'
+            : 'Defeat!';
 
     return {
       title,
@@ -3129,6 +3386,12 @@ export class CGameController implements ShotWorld {
   private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];
   // "Show Blast Circles": a ring per explosion at its damage radius; fades over BLAST_CIRCLE_LIFE.
   private m_blastCircles: {x: number; y: number; r: number; age: number}[] = [];
+  // Victory fireworks (war-end, human wins). Spawned + aged during BattleEnd; drawn in
+  // the sky behind the standings overlay. `m_showFireworks` is decided once at battle end.
+  private m_fireworks: Firework[] = [];
+  private m_rockets: FwRocket[] = [];
+  private m_fireworkTimer = 0;
+  private m_showFireworks = false;
   // Live taunt speech bubbles (Chatter). One per speaker at a time; a new one replaces
   // the old. Aged in update(); rendered as DOM overlays via getActiveTaunts().
   private m_bubbles: TauntBubble[] = [];
