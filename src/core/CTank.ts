@@ -588,9 +588,9 @@ export class CTank {
     }
 
     if (dmg > 0) {
-      // HAZMAT (+0x64) — a % reducer applied ONLY to piercing/secondary weapons, BEFORE armor.
+      // HAZMAT — a % reducer applied ONLY to piercing/secondary weapons, BEFORE armor.
       if (piercing) dmg *= 1 - this.m_health.nHazmat / 100;
-      // ARMOR (+0x60) — a % reducer applied to EVERY hit. It is NOT extra HP and is never
+      // ARMOR — a % reducer applied to EVERY hit. It is NOT extra HP and is never
       // depleted; it multiplies the through-damage by (1 − armor%).
       dmg *= 1 - this.m_health.nArmor / 100;
       this.m_health.nLife -= dmg;

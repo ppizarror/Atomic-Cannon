@@ -1,20 +1,20 @@
 /**
  * Taunt / speech-bubble message lists.
  *
- * The original ships three loose text files next to the binary — "chat death.txt",
- * "chat post fire.txt", "chat taunt.txt" — each a newline-delimited list of lines a
- * tank can say. A bubble is chosen by picking one line at random from the relevant
- * list (RE: FUN_0046b3d0 → `rand() % count`, with NO weapon/nuke/health weighting;
- * the "glowing / radioactive / melting" lines just live in the death + post-fire
- * lists and surface by the modulo roll). The category is what's contextual:
+ * The original ships three loose text files — "chat death.txt", "chat post fire.txt",
+ * "chat taunt.txt" — each a newline-delimited list of lines a tank can say. A bubble is
+ * chosen by picking one line at random from the relevant list (`rand() % count`, with no
+ * weapon/nuke/health weighting; the "glowing / radioactive / melting" lines just live in
+ * the death + post-fire lists and surface by the modulo roll). The category is what's
+ * contextual:
  *   • death     — the victim's line when its tank is destroyed
  *   • post-fire — the acting tank's gloat as the turn advances after a shot
  *   • taunt     — the idle / manual "Chat Taunt" line
  *
- * In the 2007 game you edited the .txt files to customise these. We can't rewrite
- * files from the browser, so the defaults below (transcribed verbatim from those
- * files) are overridable per-category in localStorage via the Customize Taunts
- * editor. Signal-backed so the editor and the in-game bubbles both react to edits.
+ * In the original you edited the .txt files to customise these. We can't rewrite files
+ * from the browser, so the defaults below (the original lists) are overridable
+ * per-category in localStorage via the Customize Taunts editor. Signal-backed so the
+ * editor and the in-game bubbles both react to edits.
  */
 import {signal} from '@preact/signals';
 import {loadJSON, saveJSON} from '../util/storage';

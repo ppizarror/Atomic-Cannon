@@ -1,6 +1,6 @@
 /**
  * "Customize Taunts" — edit the three speech-bubble message lists (Taunts / Post-Fire
- * / Death). The 2007 game let you edit loose "chat *.txt" files; the browser can't, so
+ * / Death). The original let you edit loose "chat *.txt" files; the browser can't, so
  * each list is editable here and persists (tauntsStore), overriding the shipped
  * defaults. A category selector switches lists; each line is a text field with a
  * delete button; Add appends a blank line; Reset restores that list's defaults.

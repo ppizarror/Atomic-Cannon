@@ -854,7 +854,7 @@ export class CLand {
    * the same deposit path as blast ejecta. This is the "the earth falls in after the
    * beam" collapse: the sliced overburden drops and re-piles noisily, so the cut never
    * reads as a clean geometric slot. (The original ejects the carved earth as
-   * zero-velocity debris that settles over the next ~1 s — see the RE notes.)
+   * zero-velocity debris that settles over the next ~1 s.)
    */
   addFallingDebris(x: number, y: number, count: number, spread: number, color?: string): void {
     const pool = this.m_particlePool;

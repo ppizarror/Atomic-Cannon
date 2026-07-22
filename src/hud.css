@@ -137,22 +137,6 @@ canvas {
   opacity: 0.55;
 }
 
-#turn-indicator {
-  position: absolute;
-  top: 34%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: var(--z-hud);
-  filter: drop-shadow(0 0 12px rgba(255, 200, 0, 0.85));
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-}
-
-#turn-indicator.visible {
-  opacity: 1;
-}
-
 /* ============ HUD bar ============ */
 #hud {
   position: fixed;

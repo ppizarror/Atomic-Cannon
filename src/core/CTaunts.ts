@@ -6,8 +6,8 @@
  * the effective (edited-or-default) lists in here at boot and whenever they change,
  * so the game layer never imports the UI. The engine only reads.
  *
- * Selection is a plain uniform random index within a category (RE: FUN_0046b3d0 →
- * `rand() % count`); the category is what's contextual (see ui/tauntsStore).
+ * Selection is a plain uniform random index within a category (`rand() % count`);
+ * the category is what's contextual (see ui/tauntsStore).
  */
 export type TauntCategory = 'death' | 'postFire' | 'taunt';
 

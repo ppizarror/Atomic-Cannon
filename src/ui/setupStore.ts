@@ -14,7 +14,7 @@ const KEY = 'atomic.setup';
 const DEFAULT_SETUP: Setup = {humans: 1, computers: 1, tanksPerTeam: 1};
 const MIN_PLAYERS = 2;
 
-// Ranges recovered from the binary's Play page (Humans/Computers 0..8, Tanks 1..5).
+// Ranges from the original's Play page (Humans/Computers 0..8, Tanks 1..5).
 export const MAX_HUMANS = 8;
 export const MAX_COMPUTERS = 8;
 export const MIN_TANKS_PER_TEAM = 1;
