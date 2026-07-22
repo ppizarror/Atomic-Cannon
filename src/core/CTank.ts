@@ -657,7 +657,12 @@ export class CTank {
    * Render the tank to the canvas. Uses the loaded hull sprite when available
    * and falls back to a vector silhouette while assets are still loading.
    */
-  draw(ctx: CanvasRenderingContext2D, assets?: ISpriteSource, showDetail = false): void {
+  draw(
+    ctx: CanvasRenderingContext2D,
+    assets?: ISpriteSource,
+    showDetail = false,
+    withBadge = true,
+  ): void {
     if (!this.m_bIsAlive && !this.m_bExploded) return;
 
     const cx = this.m_vPos.x;
@@ -731,8 +736,20 @@ export class CTank {
     // Barrel + turret dome (aim is independent of body tilt)
     if (!this.m_bExploded && this.m_bIsAlive) {
       this.drawBarrel(ctx, assets);
-      this.drawBadge(ctx, surfaceY, showDetail, assets);
+      // The badge (name / life-shield-armour bars / hover stats) is normally drawn
+      // on a SEPARATE overlay layer above the HUD (so a low tank's readouts aren't
+      // clipped at the HUD edge) — see paintBadge + the fx overlay. `withBadge`
+      // stays true only for callers that still want it inline (e.g. wreckage).
+      if (withBadge) this.drawBadge(ctx, surfaceY, showDetail, assets);
     }
+  }
+
+  /** Draw ONLY the on-field badge (name + bars + hover stats) — used by the
+   *  foreground overlay canvas that sits above the HUD, so readouts for a tank low
+   *  on screen render over the HUD instead of being clipped at the world's edge. */
+  paintBadge(ctx: CanvasRenderingContext2D, showDetail: boolean, assets?: ISpriteSource): void {
+    if (this.m_bExploded || !this.m_bIsAlive) return;
+    this.drawBadge(ctx, this.m_vPos.y + tankHeight(), showDetail, assets);
   }
 
   /**

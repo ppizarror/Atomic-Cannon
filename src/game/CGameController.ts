@@ -928,9 +928,11 @@ export class CGameController implements ShotWorld {
     // Draw tanks
     for (const tank of this.m_tanks) {
       if (tank.isAlive()) {
-        // Full stat lines when the mouse hovers this tank.
+        // Hull only — the tank's BADGE (name / life bars / hover stats) is painted
+        // on the foreground overlay (drawOverlay) so it renders over the HUD rather
+        // than being clipped at the world canvas's bottom edge.
         const hover = tank.isPointInside(this.m_mouse.x, this.m_mouse.y);
-        tank.draw(ctx, this.m_assets, hover);
+        tank.draw(ctx, this.m_assets, hover, false);
 
         // Highlight current player's tank with indicator (Graphics → Show Turn)
         if (
@@ -959,12 +961,13 @@ export class CGameController implements ShotWorld {
 
     this.drawPlacedEntities(ctx);
     this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
-    this.drawDamageNumbers(ctx); // Show Points: floating damage text (world space)
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
 
-    // Trail / explosion particles.
+    // Trail / explosion particles. These use additive ('lighter') blending, so they
+    // stay in the world scene (over the opaque backdrop) — moving them to the
+    // transparent fx overlay would turn their black-bg sprites into black boxes.
     this.m_particles.draw(ctx);
 
     // Active projectiles ON TOP of their own trail — so the missile sprite is
@@ -973,8 +976,7 @@ export class CGameController implements ShotWorld {
       if (!shot.isDead()) {
         const wi = shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex;
         const weapon = getWeapon(wi);
-        // A tracer has no missile body — draw just the small white round head (null
-        // sprite → the glowing-dot fallback) leading its white streak.
+        // A tracer has no missile body — draw just the small white round head.
         if (weapon.getExtType() === EXT.TRACER) {
           shot.draw(ctx, '#ffffff', null, weapon.getSize());
           continue;
@@ -983,6 +985,10 @@ export class CGameController implements ShotWorld {
         shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize());
       }
     }
+
+    // NOTE: tank badges (life bars / stats) and damage numbers are NOT drawn here —
+    // they're normal-blended, so they move to the fx overlay (drawOverlay) to render
+    // OVER the HUD instead of being clipped at the world's bottom edge.
 
     ctx.restore(); // end world-space camera transform → back to screen space
 
@@ -993,6 +999,42 @@ export class CGameController implements ShotWorld {
     this.drawMinimap(ctx);
 
     ctx.restore();
+  }
+
+  /**
+   * Foreground overlay — drawn to a SEPARATE full-viewport canvas that sits ABOVE
+   * the HUD (see main.tsx). The original composites everything into one screen
+   * buffer with the HUD blitted in, so tank life-bars, damage numbers and the blast
+   * fireball all appear over the HUD; our world scene stops at the HUD's top edge,
+   * so those dynamic layers move here to render over it. Uses the SAME screen-shake
+   * + camera transform as draw() so it stays pixel-aligned with the world.
+   */
+  drawOverlay(octx: CanvasRenderingContext2D): void {
+    octx.save();
+    const shake = this.m_screenShake.getOffset();
+    octx.translate(shake.x, shake.y);
+    octx.save();
+    octx.translate(-this.m_camX, 0);
+
+    // Only NORMAL-blended readouts live here. Particles/projectile trails use
+    // additive ('lighter') blending, which needs the opaque world backdrop to
+    // compose correctly — on a transparent overlay their black-background sprites
+    // turn into opaque black boxes — so those stay in the world scene (draw()).
+
+    // Tank badges (name / life-shield-armour bars / hover stat lines), so a tank
+    // low on screen shows its readouts over the HUD instead of being clipped.
+    for (const tank of this.m_tanks) {
+      if (tank.isAlive()) {
+        const hover = tank.isPointInside(this.m_mouse.x, this.m_mouse.y);
+        tank.paintBadge(octx, hover, this.m_assets);
+      }
+    }
+
+    // Floating damage numbers (Show Points), world space.
+    this.drawDamageNumbers(octx);
+
+    octx.restore();
+    octx.restore();
   }
 
   /**
@@ -1796,23 +1838,18 @@ export class CGameController implements ShotWorld {
       if (tank.isAlive()) {
         tank.update(this.m_land, dt);
 
-        // Apply radiation damage from nuclear zones — but ONLY where the fallout
-        // deposit still exists at the tank's column. A bomb/terrain-clear that
-        // overran the fallout zeroed the deposit there, so the irradiation is gone.
-        const radZones = this.m_land.getRadiationZones();
-        const irradiated = this.m_land.radDepositAt(tank.getPosition().x) > 0;
-        if (irradiated) {
-          for (const rZone of radZones) {
-            const dist = tank.distanceTo(rZone.x, rZone.y);
-
-            if (dist < rZone.radius + 16) {
-              // TANK_RADIUS
-              tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
-
-              if (!tank.isAlive()) {
-                this.handleTankDestroyed(tank);
-                break;
-              }
+        // Apply radiation fallout DAMAGE-OVER-TIME to any tank standing inside a live radiation
+        // zone (irDmg/sec while inside, for irTime). Gated on the ZONE itself — the old gate keyed
+        // off the fallout DEPOSIT, which no longer exists (radiation makes no terrain change now),
+        // so it silently zeroed all radiation damage.
+        for (const rZone of this.m_land.getRadiationZones()) {
+          const dist = tank.distanceTo(rZone.x, rZone.y);
+          if (dist < rZone.radius + 16) {
+            // + TANK_RADIUS
+            tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
+            if (!tank.isAlive()) {
+              this.handleTankDestroyed(tank);
+              break;
             }
           }
         }

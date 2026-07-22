@@ -59,6 +59,23 @@ async function main(): Promise<void> {
   await compositor.init(scene, container);
   container.appendChild(compositor.app.canvas);
 
+  // Foreground FX overlay: a FULL-viewport 2D canvas layered ABOVE the HUD (see
+  // #fx-overlay in hud.css). The world scene stops at the HUD's top edge, so the
+  // dynamic foreground — tank life-bars/stats, damage numbers, and the blast
+  // fireball/particles — is painted here instead so it renders over the HUD, like
+  // the original's single screen buffer. Pointer-transparent (clicks pass to the HUD).
+  const fx = document.createElement('canvas');
+  fx.id = 'fx-overlay';
+  document.body.appendChild(fx);
+  const fxCtx = fx.getContext('2d')!;
+  const sizeFx = () => {
+    // CSS-pixel backing store, matching the world scene canvas (which is also sized
+    // in CSS px), so foreground draws stay pixel-aligned with the presented world.
+    fx.width = window.innerWidth;
+    fx.height = window.innerHeight;
+  };
+  sizeFx();
+
   const gameController = new CGameController(scene);
   gameController.setImpactListener((x, y, s) => {
     // The impact is in WORLD coords; the compositor warps in scene (screen) pixels,
@@ -343,6 +360,7 @@ async function main(): Promise<void> {
     requestAnimationFrame(() => {
       resizePending = false;
       compositor.resize();
+      sizeFx(); // keep the FX overlay matched to the viewport
     });
   };
   new ResizeObserver(refit).observe(container);
@@ -370,6 +388,12 @@ async function main(): Promise<void> {
     const redraw = gameController.shouldRedraw();
     if (redraw) gameController.draw();
     compositor.update(pausedSignal.value ? 0 : dt, redraw);
+    // Repaint the foreground FX overlay in lockstep with the world (same redraw
+    // gate), clearing first so it's transparent everywhere except its own content.
+    if (redraw) {
+      fxCtx.clearRect(0, 0, fx.width, fx.height);
+      gameController.drawOverlay(fxCtx);
+    }
     syncHud();
     // FPS readout (Show Framerate): average frames over a ~0.5s window so the number is
     // steady (the per-frame value flickers, e.g. 119↔120), updating the counter at most

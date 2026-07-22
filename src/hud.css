@@ -9,6 +9,7 @@
   /* z-index ladder — one ordered scale instead of ad-hoc values sprinkled around.
      Everything that stacks reads from here so the ordering is legible in one place. */
   --z-hud: 10; /* HUD bar, battle status, turn indicator */
+  --z-hud-fx: 12; /* foreground FX canvas (particles/badges) — ABOVE the HUD bar */
   --z-flight: 15; /* jet-flight indicator */
   --z-overlay: 20; /* generic full-screen overlays (placeholder) */
   --z-depot: 21; /* weapons depot */
@@ -103,6 +104,19 @@ canvas {
   left: 0;
   right: 0;
   height: calc(100vh - var(--hud-h));
+}
+
+/* Foreground FX overlay canvas — FULL viewport, layered above the HUD bar so tank
+   life-bars/stats, damage numbers and the blast fireball render over the HUD (the
+   world scene above only reaches the HUD's top edge). Click-through to the HUD. */
+#fx-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-hud-fx);
+  pointer-events: none;
+  image-rendering: pixelated;
 }
 
 #game-container canvas {
