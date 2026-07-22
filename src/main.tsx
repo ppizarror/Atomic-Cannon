@@ -109,6 +109,8 @@ async function main(): Promise<void> {
   // DEV build — a deployed/production bundle ignores them entirely (`import.meta.env.DEV`
   // is statically false there, so this whole block is tree-shaken out).
   if (import.meta.env.DEV) {
+    // Expose the controller for headless review probes (screenshot/inspect the live sim).
+    (window as unknown as {__gc: unknown}).__gc = gameController;
     // `?battle=1` skips the menu into a battle; `?depot=1` / `?pause=1` do that and
     // then open the depot / pause menu; `?settings=1` opens the Settings screen.
     const q = new URLSearchParams(location.search);
