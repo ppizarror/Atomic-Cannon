@@ -44,6 +44,8 @@ interface RadSpeck {
   settled: boolean;
   size: number;
   rise: number; // height ABOVE the surface once settled (position within the fallout pile)
+  phase: number; // random glow-pulse phase (so specks shimmer INDEPENDENTLY, no coherent wave)
+  pw: number; // random glow-pulse angular rate (each speck breathes at its own speed)
   r: number;
   g: number;
   b: number; // tint (from the weapon's irRGB, per zone)
@@ -718,6 +720,8 @@ export class CLand {
         settled: false,
         size: 0,
         rise: 0,
+        phase: 0,
+        pw: 0,
         r: 0,
         g: 0,
         b: 0,
@@ -736,6 +740,8 @@ export class CLand {
       s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
       s.settled = false;
       s.size = 0.85 + this.rand01() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
+      s.phase = this.rand01() * Math.PI * 2; // independent glow phase (no coherent wave/banding)
+      s.pw = 3 + this.rand01() * 4.5; // independent glow rate (each speck breathes at its own speed)
       s.rise = 0;
       s.r = r;
       s.g = g;
@@ -1447,9 +1453,9 @@ export class CLand {
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter'; // saturating additive
       let lastKey = -1;
-      // Sinusoidal GLOW shimmer: modulate each speck's brightness by a sine of time with a
-      // spatial phase on x, so a soft brightness wave travels across the fallout — it reads as a
-      // living radioactive glow (cheap: one sin/speck; the pricier heat-warp is avoided).
+      // Sinusoidal GLOW shimmer: each speck breathes on its OWN random phase AND rate, so the
+      // fallout twinkles independently rather than pulsing in unison (a shared/spatial phase made
+      // coherent brightness WAVES sweep the zone, which read as odd patterns). Cheap: one sin/speck.
       const gt = this.m_radPulseT;
       for (const s of this.m_radSpecks) {
         const fade = 1 - s.age / s.life; // linear: contribution = irRGB · (1 − age/life)
@@ -1459,7 +1465,7 @@ export class CLand {
           ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
           lastKey = key;
         }
-        const pulse = 0.72 + 0.28 * Math.sin(gt * 5 + s.x * 0.11); // 0.44 → 1.0 brightness
+        const pulse = 0.72 + 0.28 * Math.sin(gt * s.pw + s.phase); // per-speck rate+phase → twinkle
         ctx.globalAlpha = fade * pulse;
         const x = Math.round(s.x),
           y = Math.round(s.y);
