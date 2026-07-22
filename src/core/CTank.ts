@@ -171,6 +171,69 @@ export class CTank {
     this.m_maxLife = GameConfig.hitpoints;
     this.m_health.nLife = this.m_maxLife;
     this.m_lastDamager = null; // no attacker yet this match
+    // A fresh tank starts a new war with a clean scorecard.
+    this.resetStats();
+  }
+
+  /** Respawn for the next battle of a war: restore full battle state (life, alive,
+   *  position) but KEEP the cumulative war stats (kills/deaths/accuracy/damage) and
+   *  credits — the standings table totals across the whole war. */
+  respawn(x: number, pLand: CLand): void {
+    this.m_vPos = new Vec2(x, 0);
+    this.computePosition(pLand);
+    this.m_vVel = new Vec2(0, 0);
+    this.m_maxLife = GameConfig.hitpoints;
+    this.m_health.nLife = this.m_maxLife;
+    this.m_health.nShield = 0;
+    this.m_health.nArmor = 0;
+    this.m_health.nHazmat = 0;
+    this.m_health.fRadiation = 0;
+    this.m_lastDamager = null;
+    this.m_bIsAlive = true;
+    this.m_bIsMoving = false;
+    this.m_bFalling = false;
+    this.m_bExploded = false;
+  }
+
+  /** Zero the cumulative war scorecard (called on a fresh tank / new war). */
+  resetStats(): void {
+    this.m_kills = 0;
+    this.m_deaths = 0;
+    this.m_shotsFired = 0;
+    this.m_hitsLanded = 0;
+    this.m_damageDealt = 0;
+  }
+
+  // --- War stats (accumulate across the battles of a war; feed the standings) -----
+  addShot(): void {
+    this.m_shotsFired++;
+  }
+  /** Record a landed hit and the life it removed (signed: self/friendly damage and
+   *  healing shots subtract, so Damage/hit can go negative — matching the original). */
+  addHit(lifeRemoved: number): void {
+    this.m_hitsLanded++;
+    this.m_damageDealt += lifeRemoved;
+  }
+  addKill(): void {
+    this.m_kills++;
+  }
+  addDeath(): void {
+    this.m_deaths++;
+  }
+  getKills(): number {
+    return this.m_kills;
+  }
+  getDeaths(): number {
+    return this.m_deaths;
+  }
+  getShotsFired(): number {
+    return this.m_shotsFired;
+  }
+  getHitsLanded(): number {
+    return this.m_hitsLanded;
+  }
+  getDamageDealt(): number {
+    return this.m_damageDealt;
   }
 
   /** Full/starting life (Hitpoints) — the denominator for life bars/percent. */
@@ -822,7 +885,7 @@ export class CTank {
     // Gated by Graphics → Show Team Color. Native bitmap-font size. ---
     if (GameConfig.showTeamColor) {
       const name = this.m_sName || '-';
-      const lab = getFont(BADGE_FONT).renderCached(name, {tint: '#ffffff'});
+      const lab = getFont(BADGE_FONT).renderCached(name);
       const nameW = lab.width;
       const pad = [3, 2]; // Horizontal, Vertical
       // Pad around the VISIBLE glyph ink, not the font strip (which carries blank
@@ -1175,6 +1238,12 @@ export class CTank {
   private m_sName: string = ''; // Display name (e.g. "Player", "BrainBot")
   private m_credits: number = 0; // Economy credits (per-tank balance; shown in the badge)
   private m_lastDamager: CTank | null = null; // kill-credit attribution ("killer")
+  // War scorecard — accumulates across the battles of a war (standings table).
+  private m_kills: number = 0;
+  private m_deaths: number = 0;
+  private m_shotsFired: number = 0;
+  private m_hitsLanded: number = 0;
+  private m_damageDealt: number = 0; // signed net life removed (self/friendly can subtract)
   private m_weaponIndex: number = 0; // This tank's own selected weapon
   private m_aimAngle: number = 45; // This tank's own aim (UI degrees, 0..180)
   private m_power: number = 500; // This tank's own firing power (10..1000)

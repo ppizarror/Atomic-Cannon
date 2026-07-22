@@ -59,7 +59,7 @@ const R = {
   down: [30.8, 63, 3.5, 18],
   plus: [38.3, 16, 4.6, 19],
   minus: [38.3, 62, 4.6, 18.5],
-  pnum: [38.3, 41, 5.0, 19.2], // black readout box between +/−
+  pnum: [38.3, 40, 5.0, 19.2], // black readout box between +/−
   wicon: [30.8, 34.2, 5.0, 26.7], // 32x32 preview of the selected weapon
   meter: [45.35, 16.3, 4.25, 64.5], // the coloured gradient column only
 
@@ -70,7 +70,7 @@ const R = {
   help: [66.8, 64, 3.2, 18],
   aleft: [75.5, 64, 2.7, 17],
   aright: [84.0, 64, 2.7, 17],
-  anglen: [76.1, 66, 10, 11], // number box, lower-centre of the dial
+  anglen: [76.1, 67, 10, 11], // number box, lower-centre of the dial
   close: [94.6, 14, 3.4, 18],
   wind: [90.6, 42.5, 7.5, 40],
 
@@ -88,9 +88,6 @@ const DIAL_BOX = [75.35, 8.6, 11.5, 61.3] as const;
 // stops short of the ◀/▶ buttons (top ~64%) so it never steals their clicks.
 const DIAL_GRAB = [75.35, 8.6, 11.5, 52] as const;
 const ANGLE_PER_PX = 0.5; // degrees of aim per pixel of horizontal drag
-
-// Readout ink — the panel readouts are white.
-const INK = '#f4f8f4';
 
 const pos = (r: readonly number[]): JSX.CSSProperties => ({
   position: 'absolute',
@@ -127,7 +124,7 @@ function ReadoutBox({r, children}: {r: readonly number[]; children: ComponentChi
 function PanelLabel({r, text, left}: {r: readonly number[]; text: string; left?: boolean}) {
   return (
     <div class="ov readout-box" style={{...pos(r), justifyContent: left ? 'flex-start' : 'center'}}>
-      <BmpText font="msans-14" text={text} tint="#111" />
+      <BmpText font="msans-14" text={text} />
     </div>
   );
 }
@@ -176,7 +173,7 @@ function MeterOverlay() {
         }}
       />
       <ReadoutBox r={R.pnum}>
-        <BmpText font="trebuchet-18" text={String(p)} tint={INK} />
+        <BmpText font="beijing-16-out" text={String(p)} />
       </ReadoutBox>
       <div
         ref={barRef}
@@ -241,7 +238,7 @@ function Needle() {
 function AngleReadout() {
   return (
     <ReadoutBox r={R.anglen}>
-      <BmpText font="msans-12" text={`${angle.value}`} tint={INK} />
+      <BmpText font="beijing-16-out" text={`${angle.value}`} />
     </ReadoutBox>
   );
 }
@@ -281,10 +278,10 @@ function DialGrab() {
 
 function WindReadout() {
   const w = wind.value;
-  const txt = Math.abs(w) < 0.05 ? 'OFF' : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
+  const txt = Math.abs(w) < 0.05 ? 'WIND OFF' : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
   return (
     <ReadoutBox r={R.wind}>
-      <BmpText font="msans-12" text={txt} tint={INK} />
+      <BmpText font="silkscreen-8-white" text={txt} />
     </ReadoutBox>
   );
 }

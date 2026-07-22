@@ -323,13 +323,13 @@ export class CLand {
    * floating tunnel): it takes a slice and the overburden collapses onto it. Returns
    * the thickness removed (0 if the band was entirely in open air here).
    */
-  private sliceColumn(col: number, y: number, half: number): number {
+  private sliceColumn(col: number, y: number, halfTop: number, halfBottom = halfTop): number {
     const h = this.m_arrHeights;
     const px = this.m_pixels;
     if (!h) return 0;
     const surf = h[col];
-    const b0 = Math.max(surf, Math.floor(y - half)); // band top, clamped to the surface
-    const b1 = Math.min(this.m_nHeight, Math.ceil(y + half)); // band bottom
+    const b0 = Math.max(surf, Math.floor(y - halfTop)); // band top, clamped to the surface
+    const b1 = Math.min(this.m_nHeight, Math.ceil(y + halfBottom)); // band bottom
     const removed = b1 - b0;
     if (removed <= 0) return 0; // band is above the surface here → nothing to cut
 
@@ -400,14 +400,25 @@ export class CLand {
     const lo = Math.max(0, Math.floor(Math.min(x0, x1)));
     const hi = Math.min(this.m_nWidth - 1, Math.ceil(Math.max(x0, x1)));
     const dx = x1 - x0;
+    // The original carves with an irregular MASK stencil (jagged silhouette), not a clean band,
+    // and trims the channel a few px per fire. Reproduce that with COHERENT edge noise: two low
+    // sines (random phase per fire) + a tiny per-column wobble on the top AND bottom edges
+    // independently → a jagged, natural channel. Coherent = adjacent columns barely differ, so it
+    // never leaves thin standing "nails" (unlike independent per-column random depth).
+    const rnd = () => this.rand01();
+    const TAU = Math.PI * 2;
+    const pT1 = rnd() * TAU,
+      pT2 = rnd() * TAU,
+      pB1 = rnd() * TAU,
+      pB2 = rnd() * TAU;
+    const fireHalf = Math.max(2, halfWidth - rnd() * 3); // per-fire width reduction (mask − rand)
     for (let c = lo; c <= hi; c++) {
       const t = Math.abs(dx) < 1e-3 ? 0 : (c - x0) / dx;
       if (t < 0 || t > 1) continue;
       const beamY = y0 + (y1 - y0) * t;
-      // Cut a SMOOTH band (no per-column random depth — that leaves thin standing "nail"
-      // columns). The capped overburden falls in under gravity (a block, in sliceColumn);
-      // the post-cut slump below adds a little natural raggedness while settling any spikes.
-      this.sliceColumn(c, beamY, halfWidth);
+      const jTop = 3.4 * Math.sin(c * 0.17 + pT1) + 2.0 * Math.sin(c * 0.44 + pT2) + (rnd() - 0.5) * 1.8;
+      const jBot = 3.4 * Math.sin(c * 0.2 + pB1) + 2.0 * Math.sin(c * 0.51 + pB2) + (rnd() - 0.5) * 1.8;
+      this.sliceColumn(c, beamY, Math.max(1, fireHalf + jTop), Math.max(1, fireHalf + jBot));
     }
     this.startSlump(lo, hi); // settle the cut so it never leaves standing nails
     // Only the fallout specks the ray actually PASSES THROUGH are vaporised — the
@@ -724,7 +735,7 @@ export class CLand {
       s.age = 0;
       s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
       s.settled = false;
-      s.size = 0.8 + this.rand01() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
+      s.size = 0.85 + this.rand01() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
       s.rise = 0;
       s.r = r;
       s.g = g;
@@ -871,6 +882,8 @@ export class CLand {
 
   update(dt: number): void {
     const GRAVITY = 500;
+
+    this.m_radPulseT += dt; // drives the sinusoidal glow shimmer on the radiation specks
 
     this.stepFalls(dt); // advance any beam/digger overburden falling under gravity
     this.stepDirtBlobs(dt); // grow any Dirt-weapon deposit domes into place
@@ -1362,7 +1375,7 @@ export class CLand {
       this.m_patterns = [];
       this.m_terrainDirty = true;
     }
-    return this.m_terrainCanvas.getContext('2d')!;
+    return this.m_terrainCanvas.getContext('2d', { willReadFrequently: true })!;
   }
 
 
@@ -1434,6 +1447,10 @@ export class CLand {
       const prevOp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter'; // saturating additive
       let lastKey = -1;
+      // Sinusoidal GLOW shimmer: modulate each speck's brightness by a sine of time with a
+      // spatial phase on x, so a soft brightness wave travels across the fallout — it reads as a
+      // living radioactive glow (cheap: one sin/speck; the pricier heat-warp is avoided).
+      const gt = this.m_radPulseT;
       for (const s of this.m_radSpecks) {
         const fade = 1 - s.age / s.life; // linear: contribution = irRGB · (1 − age/life)
         if (fade <= 0) continue;
@@ -1442,7 +1459,8 @@ export class CLand {
           ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
           lastKey = key;
         }
-        ctx.globalAlpha = fade;
+        const pulse = 0.72 + 0.28 * Math.sin(gt * 5 + s.x * 0.11); // 0.44 → 1.0 brightness
+        ctx.globalAlpha = fade * pulse;
         const x = Math.round(s.x),
           y = Math.round(s.y);
         ctx.fillRect(x, y - 1, 1, 3); // vertical arm
@@ -1503,6 +1521,7 @@ export class CLand {
   private m_particles: LandParticle[] = [];
   private m_radParticles: RadParticle[] = [];
   private m_radSpecks: RadSpeck[] = [];
+  private m_radPulseT = 0; // clock for the sinusoidal glow shimmer on the fallout
   // Free lists of dead particle objects, refilled on removal and drained on emit, so a
   // repeat blast reuses objects instead of allocating thousands (kills the GC hitch).
   private m_particlePool: LandParticle[] = [];
