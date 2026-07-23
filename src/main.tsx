@@ -9,6 +9,7 @@ import './hud.css';
 import {render} from 'preact';
 import {effect} from '@preact/signals';
 import {CGameController, EGameType} from './game/CGameController';
+import {CLand} from './core/CLand';
 import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
@@ -123,6 +124,9 @@ async function main(): Promise<void> {
     // `?flatland=1`: force a perfectly flat test surface (set BEFORE playNewGame generates
     // terrain) so weapon/terrain effects can be judged without natural slopes in the way.
     if (q.get('flatland') === '1') gameController.setFlatLand(true);
+    // `?skiptexture=1`: material-debug terrain — land grayscale, dirt green, radiation red, sky
+    // cyan — so deposits/craters/fallout are unambiguous (no texture guessing).
+    if (q.get('skiptexture') === '1') CLand.debugMaterials = true;
     if (
       q.get('battle') === '1' ||
       q.get('depot') === '1' ||
