@@ -4109,7 +4109,7 @@ export class CGameController implements ShotWorld {
   // Top-left status counters ("Battle %d of %d - Shot %d").
   private m_shotsFired = 0;
   private m_currentBattle = 1;
-  private m_totalBattles = 5;
+  private m_totalBattles = 2; // original default (overridden by Settings → Battles)
   private m_totalRounds = 10; // rounds in a Point game (Play → Rounds)
 
   // Gameplay config pushed from the Settings menu (see ui/applySettings). Start-time
