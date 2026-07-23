@@ -4,6 +4,7 @@
  * Handles tank state, movement on terrain, damage, rendering
  */
 
+import {strings, fmt} from '../i18n';
 import {Vec2} from '../math/Vec2';
 import {clamp, clamp01, TWO_PI} from '../math/num';
 import {hexToRgb} from '../math/color';
@@ -896,7 +897,7 @@ export class CTank {
     // box, hanging off its LEFT edge (as in the original), NOT crammed inside next to the name.
     // Gated by Graphics → Show Team Color. Native bitmap-font size. ---
     if (GameConfig.showTeamColor) {
-      const name = this.m_sName || '-';
+      const name = this.m_sName || strings.value.game.noName;
       const lab = getFont(BADGE_FONT).renderCached(name);
       const nameW = lab.width;
       const pad = [3, 2]; // Horizontal, Vertical
@@ -947,14 +948,16 @@ export class CTank {
       (GameConfig.showTankStats && !this.isBot()) ||
       (GameConfig.showAiStats && this.isBot())
     ) {
-      y = line(`Team ${this.m_nTeamId + 1}`, y);
-      y = line(`Life ${Math.round(this.m_health.nLife)}`, y);
-      if (armor > 0) y = line(`Armor ${Math.round(armor)}%`, y);
-      if (this.m_health.nShield > 0) y = line(`Shield ${Math.round(this.m_health.nShield)}`, y);
+      const g = strings.value.game;
+      y = line(fmt(g.tankTeam, {n: this.m_nTeamId + 1}), y);
+      y = line(fmt(g.tankLife, {n: Math.round(this.m_health.nLife)}), y);
+      if (armor > 0) y = line(fmt(g.tankArmor, {n: Math.round(armor)}), y);
+      if (this.m_health.nShield > 0)
+        y = line(fmt(g.tankShield, {n: Math.round(this.m_health.nShield)}), y);
       // Floored (not rounded) to match the depot's credit readout and affordability —
       // credits accumulate fractional damage-based earnings, but only whole credits are
       // spendable, so show the whole part.
-      y = line(`Credits ${Math.floor(this.m_credits)}`, y);
+      y = line(fmt(g.tankCredits, {n: Math.floor(this.m_credits)}), y);
     }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

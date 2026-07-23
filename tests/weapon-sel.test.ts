@@ -8,11 +8,11 @@ import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
-import {WEAPON_DATABASE, weaponDisplayNumber} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, weaponDisplayNumber, weaponName} from '../src/core/CWeapon';
 import {GameContent} from '../src/core/CGameContent';
 
-const tracer5 = WEAPON_DATABASE.find(w => w.name === 'Tracer 5')!;
-const barrage = WEAPON_DATABASE.find(w => w.name === 'Barrage')!;
+const tracer5 = WEAPON_DATABASE.find(w => weaponName(w) === 'Tracer 5')!;
+const barrage = WEAPON_DATABASE.find(w => weaponName(w) === 'Barrage')!;
 
 describe('weaponsel (stable-id selection)', () => {
   it('display number is the weapon stable id (index + 1)', () => {

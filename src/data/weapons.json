@@ -1,6 +1,7 @@
 [
   {
-    "name": "Magma Beam",
+    "id": "magma.beam",
+    "icon": "Magma Beam",
     "flareParam": 3,
     "bitmap": "magma.bmp",
     "size": 16,
@@ -44,11 +45,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": ""
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Blue Beam",
+    "id": "blue.beam",
+    "icon": "Blue Beam",
     "flareParam": 3,
     "bitmap": "blue.bmp",
     "size": 32,
@@ -92,11 +93,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": ""
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Wave Beam",
+    "id": "wave.beam",
+    "icon": "Wave Beam",
     "flareParam": 3,
     "bitmap": "wave.bmp",
     "size": 50,
@@ -140,11 +141,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": ""
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Grate Beam",
+    "id": "grate.beam",
+    "icon": "Grate Beam",
     "flareParam": 3,
     "bitmap": "grate.bmp",
     "size": 40,
@@ -188,11 +189,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": ""
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Cluster Bomb",
+    "id": "cluster.bomb",
+    "icon": "Cluster Bomb",
     "flareParam": 1,
     "bitmap": "bomb.bmp",
     "size": 14,
@@ -236,11 +237,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/19.bmp",
-    "desc": "When first contact is made several bombs are spawned damaging a larger area."
+    "expBitmap": "flares/19.bmp"
   },
   {
-    "name": "Runway Bomb",
+    "id": "runway.bomb",
+    "icon": "Runway Bomb",
     "flareParam": 2,
     "bitmap": "bomb.bmp",
     "size": 14,
@@ -284,11 +285,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/07.bmp",
-    "desc": "Bombs are dropped as the bomb decends."
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Grave Digger",
+    "id": "grave.digger",
+    "icon": "Grave Digger",
     "flareParam": 3,
     "bitmap": "bomb.bmp",
     "size": 14,
@@ -332,11 +333,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/09.bmp",
-    "desc": "On contact creates a series of new bombs directed down."
+    "expBitmap": "flares/09.bmp"
   },
   {
-    "name": "Black Rain",
+    "id": "black.rain",
+    "icon": "Black Rain",
     "flareParam": 3,
     "bitmap": "bomb.bmp",
     "size": 8,
@@ -380,11 +381,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/06.bmp",
-    "desc": "Bombs are dropped as the bomb decends."
+    "expBitmap": "flares/06.bmp"
   },
   {
-    "name": "Hex Bomb",
+    "id": "hex.bomb",
+    "icon": "Hex Bomb",
     "flareParam": 4,
     "bitmap": "bomb.bmp",
     "size": 8,
@@ -428,11 +429,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/31.bmp",
-    "desc": "When first contact is made several bombs are spawned damaging a larger area."
+    "expBitmap": "flares/31.bmp"
   },
   {
-    "name": "Porcupine",
+    "id": "porcupine",
+    "icon": "Porcupine",
     "flareParam": 5,
     "bitmap": "bomb.bmp",
     "size": 10,
@@ -476,11 +477,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/30.bmp",
-    "desc": "When first contact is made several bombs are spawned damaging a larger area."
+    "expBitmap": "flares/30.bmp"
   },
   {
-    "name": "Spreader",
+    "id": "spreader",
+    "icon": "Spreader",
     "flareParam": 5,
     "bitmap": "artillery.bmp",
     "size": 10,
@@ -524,11 +525,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Shoots 3 artillery shells in a spread."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Bomb",
+    "id": "bomb",
+    "icon": "Bomb",
     "flareParam": 6,
     "bitmap": "bomb.bmp",
     "size": 18,
@@ -572,11 +573,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/07.bmp",
-    "desc": ""
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Blow Fish",
+    "id": "blow.fish",
+    "icon": "Blow Fish",
     "flareParam": 6,
     "bitmap": "bomb.bmp",
     "size": 12,
@@ -620,11 +621,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/30.bmp",
-    "desc": "When first contact is made several bombs are spawned damaging a larger area."
+    "expBitmap": "flares/30.bmp"
   },
   {
-    "name": "Cleaner",
+    "id": "cleaner",
+    "icon": "Cleaner",
     "flareParam": 1,
     "bitmap": "destroy.bmp",
     "size": 8,
@@ -668,11 +669,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": "Useful when you are underground and need out."
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Plower",
+    "id": "plower",
+    "icon": "Plower",
     "flareParam": 2,
     "bitmap": "destroy.bmp",
     "size": 6,
@@ -716,11 +717,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": "Useful when you are underground and need out."
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Dirt Destroy",
+    "id": "dirt.destroy",
+    "icon": "Dirt Destroy",
     "flareParam": 4,
     "bitmap": "destroy.bmp",
     "size": 10,
@@ -764,11 +765,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": "Useful when you are underground and need out."
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Earth Destroy",
+    "id": "earth.destroy",
+    "icon": "Earth Destroy",
     "flareParam": 5,
     "bitmap": "destroy.bmp",
     "size": 12,
@@ -812,11 +813,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": "Useful when you are underground and need out."
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Six Under",
+    "id": "six.under",
+    "icon": "Six Under",
     "flareParam": 6,
     "bitmap": "destroy.bmp",
     "size": 14,
@@ -860,11 +861,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/05.bmp",
-    "desc": "Digs a hole with 6 blasts directed down."
+    "expBitmap": "flares/05.bmp"
   },
   {
-    "name": "Burial Mound",
+    "id": "burial.mound",
+    "icon": "Burial Mound",
     "flareParam": 2,
     "bitmap": "create.bmp",
     "size": 14,
@@ -908,11 +909,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/05.bmp",
-    "desc": "Creates a huge landmass."
+    "expBitmap": "flares/05.bmp"
   },
   {
-    "name": "Cremation",
+    "id": "cremation",
+    "icon": "Cremation",
     "flareParam": 7,
     "bitmap": "bomb.bmp",
     "size": 14,
@@ -956,11 +957,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/07.bmp",
-    "desc": ""
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Ashes",
+    "id": "ashes",
+    "icon": "Ashes",
     "flareParam": 2,
     "bitmap": "bomb.bmp",
     "size": 14,
@@ -1004,11 +1005,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/13.bmp",
-    "desc": ""
+    "expBitmap": "flares/13.bmp"
   },
   {
-    "name": "Toxic Grave",
+    "id": "toxic.grave",
+    "icon": "Toxic Grave",
     "flareParam": 2,
     "bitmap": "bomb.bmp",
     "size": 14,
@@ -1052,11 +1053,11 @@
     "irGreen": 128,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/05.bmp",
-    "desc": "Creates a narrow hole which is surrounded with radiation."
+    "expBitmap": "flares/05.bmp"
   },
   {
-    "name": "Digger",
+    "id": "digger",
+    "icon": "Digger",
     "flareParam": 1,
     "bitmap": "bore.bmp",
     "size": 10,
@@ -1100,11 +1101,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/03.bmp",
-    "desc": ""
+    "expBitmap": "flares/03.bmp"
   },
   {
-    "name": "Excavator",
+    "id": "excavator",
+    "icon": "Excavator",
     "flareParam": 2,
     "bitmap": "bore.bmp",
     "size": 16,
@@ -1148,11 +1149,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/03.bmp",
-    "desc": ""
+    "expBitmap": "flares/03.bmp"
   },
   {
-    "name": "Dirty Boy",
+    "id": "dirty.boy",
+    "icon": "Dirty Boy",
     "flareParam": 2,
     "bitmap": "create.bmp",
     "size": 7,
@@ -1196,11 +1197,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": ""
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Dirt Cloud",
+    "id": "dirt.cloud",
+    "icon": "Dirt Cloud",
     "flareParam": 5,
     "bitmap": "create.bmp",
     "size": 6,
@@ -1244,11 +1245,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": "New dirt cloud bombs are dropped as the weapon decends."
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Dirtox",
+    "id": "dirtox",
+    "icon": "Dirtox",
     "flareParam": 1,
     "bitmap": "create.bmp",
     "size": 6,
@@ -1292,11 +1293,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": ""
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Mountain",
+    "id": "mountain",
+    "icon": "Mountain",
     "flareParam": 6,
     "bitmap": "create.bmp",
     "size": 10,
@@ -1340,11 +1341,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": ""
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Land Fill",
+    "id": "land.fill",
+    "icon": "Land Fill",
     "flareParam": 8,
     "bitmap": "create.bmp",
     "size": 6,
@@ -1388,11 +1389,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": ""
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Dirty Duo",
+    "id": "dirty.duo",
+    "icon": "Dirty Duo",
     "flareParam": 5,
     "bitmap": "create.bmp",
     "size": 6,
@@ -1436,11 +1437,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": ""
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Ground Hog",
+    "id": "ground.hog",
+    "icon": "Ground Hog",
     "flareParam": 5,
     "bitmap": "create.bmp",
     "size": 8,
@@ -1484,11 +1485,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/02.bmp",
-    "desc": ""
+    "expBitmap": "flares/02.bmp"
   },
   {
-    "name": "Acid Rocket",
+    "id": "acid.rocket",
+    "icon": "Acid Rocket",
     "flareParam": 1,
     "bitmap": "chemical.bmp",
     "size": 18,
@@ -1532,11 +1533,11 @@
     "irGreen": 64,
     "irBlue": 8,
     "expType": 3,
-    "expBitmap": "flares/03.bmp",
-    "desc": ""
+    "expBitmap": "flares/03.bmp"
   },
   {
-    "name": "Anthrax",
+    "id": "anthrax",
+    "icon": "Anthrax",
     "flareParam": 5,
     "bitmap": "chemical.bmp",
     "size": 16,
@@ -1580,11 +1581,11 @@
     "irGreen": 64,
     "irBlue": 64,
     "expType": 2,
-    "expBitmap": "flares/11.bmp",
-    "desc": ""
+    "expBitmap": "flares/11.bmp"
   },
   {
-    "name": "Plasma",
+    "id": "plasma",
+    "icon": "Plasma",
     "flareParam": 5,
     "bitmap": "plasma.bmp",
     "size": 16,
@@ -1628,11 +1629,11 @@
     "irGreen": 0,
     "irBlue": 128,
     "expType": 3,
-    "expBitmap": "flares/05.bmp",
-    "desc": ""
+    "expBitmap": "flares/05.bmp"
   },
   {
-    "name": "Plasma Bomb",
+    "id": "plasma.bomb",
+    "icon": "Plasma Bomb",
     "flareParam": 4,
     "bitmap": "plasma.bmp",
     "size": 16,
@@ -1676,11 +1677,11 @@
     "irGreen": 8,
     "irBlue": 64,
     "expType": 3,
-    "expBitmap": "flares/05.bmp",
-    "desc": ""
+    "expBitmap": "flares/05.bmp"
   },
   {
-    "name": "Escaper",
+    "id": "escaper",
+    "icon": "Escaper",
     "flareParam": 1,
     "bitmap": "bore.bmp",
     "size": 12,
@@ -1724,11 +1725,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/12.bmp",
-    "desc": ""
+    "expBitmap": "flares/12.bmp"
   },
   {
-    "name": "Breakout",
+    "id": "breakout",
+    "icon": "Breakout",
     "flareParam": 2,
     "bitmap": "bore.bmp",
     "size": 16,
@@ -1772,11 +1773,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/12.bmp",
-    "desc": ""
+    "expBitmap": "flares/12.bmp"
   },
   {
-    "name": "Hellfire",
+    "id": "hellfire",
+    "icon": "Hellfire",
     "flareParam": 1,
     "bitmap": "rocketblk.bmp",
     "size": 12,
@@ -1820,11 +1821,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/09.bmp",
-    "desc": "A rapid fire set of small rockets with low accuracy."
+    "expBitmap": "flares/09.bmp"
   },
   {
-    "name": "Stingers",
+    "id": "stingers",
+    "icon": "Stingers",
     "flareParam": 3,
     "bitmap": "rocket.bmp",
     "size": 15,
@@ -1868,11 +1869,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/06.bmp",
-    "desc": ""
+    "expBitmap": "flares/06.bmp"
   },
   {
-    "name": "Hydrogen Nuke",
+    "id": "hydrogen.nuke",
+    "icon": "Hydrogen Nuke",
     "flareParam": 5,
     "bitmap": "nuke.bmp",
     "size": 14,
@@ -1916,11 +1917,11 @@
     "irGreen": 0,
     "irBlue": 128,
     "expType": 4,
-    "expBitmap": "flares/00.bmp",
-    "desc": "The entry level nuke.  Creates radioactive fallout which does damage over time."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Plutonium Nuke",
+    "id": "plutonium.nuke",
+    "icon": "Plutonium Nuke",
     "flareParam": 6,
     "bitmap": "nuke.bmp",
     "size": 14,
@@ -1964,11 +1965,11 @@
     "irGreen": 128,
     "irBlue": 0,
     "expType": 4,
-    "expBitmap": "flares/00.bmp",
-    "desc": "Creates radioactive fallout which does damage over time."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Uranium Nuke",
+    "id": "uranium.nuke",
+    "icon": "Uranium Nuke",
     "flareParam": 6,
     "bitmap": "nuke.bmp",
     "size": 14,
@@ -2012,11 +2013,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 4,
-    "expBitmap": "flares/00.bmp",
-    "desc": "The most powerful nuke.  Does massive radioactive damage over time."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "A Bomb",
+    "id": "a.bomb",
+    "icon": "A Bomb",
     "flareParam": 1,
     "bitmap": "bomb.bmp",
     "size": 20,
@@ -2060,11 +2061,11 @@
     "irGreen": 150,
     "irBlue": 0,
     "expType": 4,
-    "expBitmap": "flares/00.bmp",
-    "desc": "A small nuke.  Creates radioactive fallout which does damage over time."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Isotope 244",
+    "id": "isotope.244",
+    "icon": "Isotope 244",
     "flareParam": 7,
     "bitmap": "nuke.bmp",
     "size": 14,
@@ -2108,11 +2109,11 @@
     "irGreen": 255,
     "irBlue": 0,
     "expType": 4,
-    "expBitmap": "flares/00.bmp",
-    "desc": "The most powerful weapon in the game.  It can kill a tank with full power in one shot and has 25 times the radioactive power of the Uranium Nuke."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Pig Blaster",
+    "id": "pig.blaster",
+    "icon": "Pig Blaster",
     "flareParam": 8,
     "bitmap": "pig.bmp",
     "size": 24,
@@ -2156,11 +2157,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/00.bmp",
-    "desc": "Oink"
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Cowinator",
+    "id": "cowinator",
+    "icon": "Cowinator",
     "flareParam": 8,
     "bitmap": "cow.bmp",
     "size": 24,
@@ -2204,11 +2205,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/00.bmp",
-    "desc": "Moo"
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Toxic Cow",
+    "id": "toxic.cow",
+    "icon": "Toxic Cow",
     "flareParam": 8,
     "bitmap": "cow.bmp",
     "size": 24,
@@ -2252,11 +2253,11 @@
     "irGreen": 128,
     "irBlue": 128,
     "expType": 3,
-    "expBitmap": "flares/00.bmp",
-    "desc": "A cow born near Chernoble."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Defiled Pig",
+    "id": "defiled.pig",
+    "icon": "Defiled Pig",
     "flareParam": 8,
     "bitmap": "pig.bmp",
     "size": 24,
@@ -2300,11 +2301,11 @@
     "irGreen": 100,
     "irBlue": 64,
     "expType": 3,
-    "expBitmap": "flares/00.bmp",
-    "desc": ""
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Rebounder",
+    "id": "rebounder",
+    "icon": "Rebounder",
     "flareParam": 3,
     "bitmap": "bore.bmp",
     "size": 12,
@@ -2348,11 +2349,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/11.bmp",
-    "desc": ""
+    "expBitmap": "flares/11.bmp"
   },
   {
-    "name": "Seeker",
+    "id": "seeker",
+    "icon": "Seeker",
     "flareParam": 3,
     "bitmap": "bore.bmp",
     "size": 16,
@@ -2396,11 +2397,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/11.bmp",
-    "desc": ""
+    "expBitmap": "flares/11.bmp"
   },
   {
-    "name": "Rocket",
+    "id": "rocket",
+    "icon": "Rocket",
     "flareParam": 6,
     "bitmap": "rocket.bmp",
     "size": 16,
@@ -2444,11 +2445,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/09.bmp",
-    "desc": ""
+    "expBitmap": "flares/09.bmp"
   },
   {
-    "name": "Strikers",
+    "id": "strikers",
+    "icon": "Strikers",
     "flareParam": 7,
     "bitmap": "missile.bmp",
     "size": 16,
@@ -2492,11 +2493,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/07.bmp",
-    "desc": ""
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Sabot",
+    "id": "sabot",
+    "icon": "Sabot",
     "flareParam": 3,
     "bitmap": "sabot.bmp",
     "size": 14,
@@ -2540,11 +2541,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/07.bmp",
-    "desc": ""
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Black Brat",
+    "id": "black.brat",
+    "icon": "Black Brat",
     "flareParam": 1,
     "bitmap": "rocketblk.bmp",
     "size": 30,
@@ -2588,11 +2589,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/17.bmp",
-    "desc": ""
+    "expBitmap": "flares/17.bmp"
   },
   {
-    "name": "Tallboy",
+    "id": "tallboy",
+    "icon": "Tallboy",
     "flareParam": 3,
     "bitmap": "rocket.bmp",
     "size": 24,
@@ -2636,11 +2637,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/09.bmp",
-    "desc": ""
+    "expBitmap": "flares/09.bmp"
   },
   {
-    "name": "Gas Rocket",
+    "id": "gas.rocket",
+    "icon": "Gas Rocket",
     "flareParam": 4,
     "bitmap": "chemical.bmp",
     "size": 18,
@@ -2684,11 +2685,11 @@
     "irGreen": 128,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/12.bmp",
-    "desc": ""
+    "expBitmap": "flares/12.bmp"
   },
   {
-    "name": "Hercules",
+    "id": "hercules",
+    "icon": "Hercules",
     "flareParam": 4,
     "bitmap": "missile.bmp",
     "size": 22,
@@ -2732,11 +2733,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/11.bmp",
-    "desc": ""
+    "expBitmap": "flares/11.bmp"
   },
   {
-    "name": "Avenger",
+    "id": "avenger",
+    "icon": "Avenger",
     "flareParam": 4,
     "bitmap": "missile.bmp",
     "size": 16,
@@ -2780,11 +2781,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/11.bmp",
-    "desc": ""
+    "expBitmap": "flares/11.bmp"
   },
   {
-    "name": "RX2",
+    "id": "rx2",
+    "icon": "RX2",
     "flareParam": 4,
     "bitmap": "rocket.bmp",
     "size": 24,
@@ -2828,11 +2829,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/24.bmp",
-    "desc": ""
+    "expBitmap": "flares/24.bmp"
   },
   {
-    "name": "Tomcat",
+    "id": "tomcat",
+    "icon": "Tomcat",
     "flareParam": 2,
     "bitmap": "rocket.bmp",
     "size": 14,
@@ -2876,11 +2877,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/16.bmp",
-    "desc": ""
+    "expBitmap": "flares/16.bmp"
   },
   {
-    "name": "Retro Rocket",
+    "id": "retro.rocket",
+    "icon": "Retro Rocket",
     "flareParam": 3,
     "bitmap": "rocket.bmp",
     "size": 22,
@@ -2924,11 +2925,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/09.bmp",
-    "desc": ""
+    "expBitmap": "flares/09.bmp"
   },
   {
-    "name": "Roller",
+    "id": "roller",
+    "icon": "Roller",
     "flareParam": 1,
     "bitmap": "ball.bmp",
     "size": 8,
@@ -2972,11 +2973,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/25.bmp",
-    "desc": ""
+    "expBitmap": "flares/25.bmp"
   },
   {
-    "name": "Big Wheel",
+    "id": "big.wheel",
+    "icon": "Big Wheel",
     "flareParam": 2,
     "bitmap": "ball.bmp",
     "size": 14,
@@ -3020,11 +3021,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/25.bmp",
-    "desc": ""
+    "expBitmap": "flares/25.bmp"
   },
   {
-    "name": "Shell",
+    "id": "shell",
+    "icon": "Shell",
     "flareParam": 1,
     "bitmap": "artillery.bmp",
     "size": 10,
@@ -3068,11 +3069,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/13.bmp",
-    "desc": "The basic artillery round, it is free and never runs out, it is the weakest weapon."
+    "expBitmap": "flares/13.bmp"
   },
   {
-    "name": "Machine Gun",
+    "id": "machine.gun",
+    "icon": "Machine Gun",
     "flareParam": 1,
     "bitmap": "bullet.bmp",
     "size": 8,
@@ -3116,11 +3117,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/13.bmp",
-    "desc": "A very effective weapon at close range and can be used from under ground."
+    "expBitmap": "flares/13.bmp"
   },
   {
-    "name": "Artillery",
+    "id": "artillery",
+    "icon": "Artillery",
     "flareParam": 2,
     "bitmap": "artillery.bmp",
     "size": 12,
@@ -3164,11 +3165,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": ""
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Shotgun",
+    "id": "shotgun",
+    "icon": "Shotgun",
     "flareParam": 3,
     "bitmap": "buckshot.bmp",
     "size": 2,
@@ -3212,11 +3213,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 0,
-    "expBitmap": "flares/13.bmp",
-    "desc": ""
+    "expBitmap": "flares/13.bmp"
   },
   {
-    "name": "Rail Gun",
+    "id": "rail.gun",
+    "icon": "Rail Gun",
     "flareParam": 3,
     "bitmap": "rail.bmp",
     "size": 30,
@@ -3260,11 +3261,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/01.bmp",
-    "desc": ""
+    "expBitmap": "flares/01.bmp"
   },
   {
-    "name": "Rail Slice",
+    "id": "rail.slice",
+    "icon": "Rail Slice",
     "flareParam": 4,
     "bitmap": "rail.bmp",
     "size": 24,
@@ -3308,11 +3309,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/04.bmp",
-    "desc": ""
+    "expBitmap": "flares/04.bmp"
   },
   {
-    "name": "Cannon",
+    "id": "cannon",
+    "icon": "Cannon",
     "flareParam": 3,
     "bitmap": "buckshot.bmp",
     "size": 2,
@@ -3356,11 +3357,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 0,
-    "expBitmap": "flares/13.bmp",
-    "desc": ""
+    "expBitmap": "flares/13.bmp"
   },
   {
-    "name": "Gatlun Gun",
+    "id": "gatlun.gun",
+    "icon": "Gatlun Gun",
     "flareParam": 4,
     "bitmap": "bullet.bmp",
     "size": 8,
@@ -3404,11 +3405,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/13.bmp",
-    "desc": ""
+    "expBitmap": "flares/13.bmp"
   },
   {
-    "name": "Penetrator",
+    "id": "penetrator",
+    "icon": "Penetrator",
     "flareParam": 3,
     "bitmap": "sabot.bmp",
     "size": 24,
@@ -3452,11 +3453,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/07.bmp",
-    "desc": ""
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Cannon Ball",
+    "id": "cannon.ball",
+    "icon": "Cannon Ball",
     "flareParam": 4,
     "bitmap": "ball.bmp",
     "size": 12,
@@ -3500,11 +3501,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/18.bmp",
-    "desc": ""
+    "expBitmap": "flares/18.bmp"
   },
   {
-    "name": "Barrage",
+    "id": "barrage",
+    "icon": "Barrage",
     "flareParam": 1,
     "bitmap": "ball.bmp",
     "size": 6,
@@ -3548,11 +3549,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/18.bmp",
-    "desc": ""
+    "expBitmap": "flares/18.bmp"
   },
   {
-    "name": "Trojan",
+    "id": "trojan",
+    "icon": "Trojan",
     "flareParam": 6,
     "bitmap": "ball.bmp",
     "size": 8,
@@ -3596,11 +3597,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/18.bmp",
-    "desc": ""
+    "expBitmap": "flares/18.bmp"
   },
   {
-    "name": "Contra",
+    "id": "contra",
+    "icon": "Contra",
     "flareParam": 5,
     "bitmap": "ball.bmp",
     "size": 8,
@@ -3644,11 +3645,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/18.bmp",
-    "desc": ""
+    "expBitmap": "flares/18.bmp"
   },
   {
-    "name": "Tracer 3",
+    "id": "tracer.3",
+    "icon": "Tracer 3",
     "flareParam": 1,
     "bitmap": "artillery.bmp",
     "size": 12,
@@ -3692,11 +3693,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/23.bmp",
-    "desc": "Very useful for determining the correct angle to fire a shot, leaves smoke trails and creates angles of incidence on contact with the ground."
+    "expBitmap": "flares/23.bmp"
   },
   {
-    "name": "Tracer 5",
+    "id": "tracer.5",
+    "icon": "Tracer 5",
     "flareParam": 2,
     "bitmap": "artillery.bmp",
     "size": 12,
@@ -3740,11 +3741,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/23.bmp",
-    "desc": "Very useful for determining the correct angle to fire a shot, leaves smoke trails and creates angles of incidence on contact with the ground."
+    "expBitmap": "flares/23.bmp"
   },
   {
-    "name": "Light Armor",
+    "id": "light.armor",
+    "icon": "Light Armor",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -3788,11 +3789,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Armor reduces the damage by any shot by the percentage of the armor's power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Heavy Armor",
+    "id": "heavy.armor",
+    "icon": "Heavy Armor",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -3836,11 +3837,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Armor reduces the damage by any shot by the percentage of the armor's power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Light Shield",
+    "id": "light.shield",
+    "icon": "Light Shield",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -3884,11 +3885,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Any damage done to the tank is first subtracted from the shields power.  Armor will reduce the hit to a shield."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Heavy Shield",
+    "id": "heavy.shield",
+    "icon": "Heavy Shield",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -3932,11 +3933,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Any damage done to the tank is first subtracted from the shields power.  Armor will reduce the hit to a shield."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Repairs",
+    "id": "repairs",
+    "icon": "Repairs",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -3980,11 +3981,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "When used will add the amount of power directly to the tanks health."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Medkit",
+    "id": "medkit",
+    "icon": "Medkit",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4028,11 +4029,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "When used will add the amount of power directly to the tanks health."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Medical Supply",
+    "id": "medical.supply",
+    "icon": "Medical Supply",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4076,11 +4077,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "When used will add the amount of power directly to the tanks health."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Move Near",
+    "id": "move.near",
+    "icon": "Move Near",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4124,11 +4125,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "The maximum distance of a move is the landscapes width times the moves power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Move Mid",
+    "id": "move.mid",
+    "icon": "Move Mid",
     "flareParam": 1,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4172,11 +4173,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "The maximum distance of a move is the landscapes width times the moves power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Move Far",
+    "id": "move.far",
+    "icon": "Move Far",
     "flareParam": 5,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4220,11 +4221,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "The maximum distance of a move is the landscapes width times the moves power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Light Hazmat",
+    "id": "light.hazmat",
+    "icon": "Light Hazmat",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4268,11 +4269,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Hazmat armor reduces the damage by chemical, radioactive, and biological weapons by the percentage of the armor's power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Heavy Hazmat",
+    "id": "heavy.hazmat",
+    "icon": "Heavy Hazmat",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4316,11 +4317,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Hazmat armor reduces the damage by chemical, radioactive, and biological weapons by the percentage of the armor's power."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Bunker",
+    "id": "bunker",
+    "icon": "Bunker",
     "flareParam": 1,
     "bitmap": "bunker.bmp",
     "size": 1,
@@ -4364,11 +4365,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "A wall is erected the direction you are facing which can help protect you from enemy fire."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Wall",
+    "id": "wall",
+    "icon": "Wall",
     "flareParam": 4,
     "bitmap": "wall.bmp",
     "size": 1,
@@ -4412,11 +4413,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "A wall is erected the direction you are facing which can help protect you from enemy fire."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Mighty Roller",
+    "id": "mighty.roller",
+    "icon": "Mighty Roller",
     "flareParam": 6,
     "bitmap": "ball.bmp",
     "size": 8,
@@ -4460,11 +4461,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/25.bmp",
-    "desc": ""
+    "expBitmap": "flares/25.bmp"
   },
   {
-    "name": "Sky Bomb",
+    "id": "sky.bomb",
+    "icon": "Sky Bomb",
     "flareParam": 6,
     "bitmap": "bomb.bmp",
     "size": 22,
@@ -4508,11 +4509,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 2,
-    "expBitmap": "flares/07.bmp",
-    "desc": ""
+    "expBitmap": "flares/07.bmp"
   },
   {
-    "name": "Glowing Rain",
+    "id": "glowing.rain",
+    "icon": "Glowing Rain",
     "flareParam": 3,
     "bitmap": "bomb.bmp",
     "size": 20,
@@ -4556,11 +4557,11 @@
     "irGreen": 128,
     "irBlue": 255,
     "expType": 4,
-    "expBitmap": "flares/00.bmp",
-    "desc": "A nuke with a huge blast radius showering the ground with radioactive fallout in a large area which does damage over time."
+    "expBitmap": "flares/00.bmp"
   },
   {
-    "name": "Shrapnel",
+    "id": "shrapnel",
+    "icon": "Shrapnel",
     "flareParam": 5,
     "bitmap": "buckshot.bmp",
     "size": 2,
@@ -4604,11 +4605,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/30.bmp",
-    "desc": "Blankets the ground below with metal shrapnel."
+    "expBitmap": "flares/30.bmp"
   },
   {
-    "name": "Sky Cluster",
+    "id": "sky.cluster",
+    "icon": "Sky Cluster",
     "flareParam": 1,
     "bitmap": "bomb.bmp",
     "size": 16,
@@ -4652,11 +4653,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 3,
-    "expBitmap": "flares/19.bmp",
-    "desc": "Several bombs are spawned at the apex damaging a large area below."
+    "expBitmap": "flares/19.bmp"
   },
   {
-    "name": "Mine",
+    "id": "mine",
+    "icon": "Mine",
     "flareParam": 1,
     "bitmap": "mine.bmp",
     "size": 12,
@@ -4700,11 +4701,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/30.bmp",
-    "desc": ""
+    "expBitmap": "flares/30.bmp"
   },
   {
-    "name": "Minefield",
+    "id": "minefield",
+    "icon": "Minefield",
     "flareParam": 5,
     "bitmap": "mine.bmp",
     "size": 10,
@@ -4748,11 +4749,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/30.bmp",
-    "desc": ""
+    "expBitmap": "flares/30.bmp"
   },
   {
-    "name": "Super Mine",
+    "id": "super.mine",
+    "icon": "Super Mine",
     "flareParam": 5,
     "bitmap": "mine.bmp",
     "size": 16,
@@ -4796,11 +4797,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/30.bmp",
-    "desc": ""
+    "expBitmap": "flares/30.bmp"
   },
   {
-    "name": "Booster Jet",
+    "id": "booster.jet",
+    "icon": "Booster Jet",
     "flareParam": 1,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4844,11 +4845,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "A jet with 5 seconds of fuel.  Jets allow you to fly anywhere on the map and are useful for avoiding mines."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Jump Jet",
+    "id": "jump.jet",
+    "icon": "Jump Jet",
     "flareParam": 4,
     "bitmap": "create.bmp",
     "size": 1,
@@ -4892,11 +4893,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "A jet with 15 seconds of fuel.  Jets allow you to fly anywhere on the map and are useful for avoiding mines."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Sentry Turret",
+    "id": "sentry.turret",
+    "icon": "Sentry Turret",
     "flareParam": 1,
     "bitmap": "sentry.bmp",
     "size": 16,
@@ -4940,11 +4941,11 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "Sentries fire at their nearest enemy, they can only fire in a direct line."
+    "expBitmap": "flares/28.bmp"
   },
   {
-    "name": "Sentry Minigun",
+    "id": "sentry.minigun",
+    "icon": "Sentry Minigun",
     "flareParam": 4,
     "bitmap": "sentry.bmp",
     "size": 16,
@@ -4988,7 +4989,6 @@
     "irGreen": 0,
     "irBlue": 0,
     "expType": 1,
-    "expBitmap": "flares/28.bmp",
-    "desc": "A sentry with more health and it will use a machine gun if you have one.  Sentries fire at their nearest enemy, they can only fire in a direct line."
+    "expBitmap": "flares/28.bmp"
   }
 ]

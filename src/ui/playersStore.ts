@@ -8,6 +8,7 @@
  */
 import {PLAYER_TANKS, TEAM_COLORS} from '../core/CTank';
 import type {PlayerCfg} from '../core/CRoster';
+import {strings} from '../i18n';
 import {createPersistedSignal} from './persistedSignal';
 
 export type {PlayerCfg};
@@ -17,23 +18,13 @@ export const MAX_PLAYERS = 16;
 
 const KEY = 'atomic.players';
 
-// Default bot names (player 0 is "Player"); cycled if the roster runs past the list.
-const BOT_NAMES = [
-  'Whopper',
-  'BrainBot',
-  'RandBot',
-  'AlphaBot',
-  'MechaBot',
-  'FlashBot',
-  'GammaBot',
-  'ShazBot',
-  'BetaBot',
-  'DeltaBot',
-];
-
+// Default names come from i18n: player 0 is the localised "Player", the rest cycle the
+// bot-name list (repeating if the roster runs past it). These seed a fresh roster only;
+// once a name is edited/persisted it is stored verbatim.
 function defaultPlayer(i: number): PlayerCfg {
+  const bots = strings.value.botNames;
   return {
-    name: i === 0 ? 'Player' : BOT_NAMES[(i - 1) % BOT_NAMES.length],
+    name: i === 0 ? strings.value.game.defaultPlayer : bots[(i - 1) % bots.length],
     model: PLAYER_TANKS[i % PLAYER_TANKS.length],
     color: TEAM_COLORS[i] ?? '#0000ff',
   };

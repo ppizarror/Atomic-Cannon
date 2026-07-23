@@ -1,29 +1,28 @@
 /**
- * Single source of truth for every PERSISTED Settings option: its default value, and —
- * for enum options — the display labels plus (where the engine needs one) the index→scalar
- * table, CO-LOCATED so labels and scalars can't drift in length.
+ * Single source of truth for every PERSISTED Settings option: its default value and —
+ * for the enums the engine reads as a scalar — the index→scalar table.
  *
- * Three files used to repeat this: settingsPages (widget default + enum labels),
- * settingsValues (default again + the scalar tables), and PlaySetup (a few rows verbatim).
- * Now they all read from here — `settingsStore.getVal(id)` returns `SETTINGS[id].default`,
- * a widget/getter for an unregistered id is a COMPILE error (`id: SettingId`), and an enum's
- * labels and scalars sit side by side.
+ * Enum DISPLAY labels used to live here too, but they are localised copy, so they now
+ * live in i18n (`strings.settings.<page>.<row>.options`), index-aligned with the `scale`
+ * table below. Keep an enum's i18n `options` the same length as its `scale` here — the
+ * index the widget stores is shared between them.
  *
- * Only STORED settings live here. Audio (Sound / Music / volumes) binds straight to CAudio
- * and Full Screen reads the document, so they aren't remembered options and aren't listed.
+ * Only STORED settings live here. Audio (Sound / Music / volumes), Full Screen (reads the
+ * document) and Language (lives on the i18n signal) aren't remembered options and aren't
+ * listed. `settingsStore.getVal(id)` returns `SETTINGS[id].default`; a widget/getter for
+ * an unregistered id is a COMPILE error (`id: SettingId`).
  */
 export interface SettingMeta {
   /** Value until the player changes it — raw stored units (enum index / stepper value / 0|1). */
   default: number;
-  /** Enum display labels, index 0 first (enum widgets only). */
-  options?: readonly string[];
-  /** Enum index → engine scalar (e.g. Wind index → wind multiplier). Same length as `options`. */
+  /** Enum index → engine scalar (e.g. Wind index → wind multiplier). Same length as the
+   *  matching i18n `options` array. */
   scale?: readonly number[];
 }
 
 const CATALOG = {
   // ── Economy ──
-  'eco.buyTime': {default: 0, options: ['Anytime', 'Round', 'Start', 'Automatic']},
+  'eco.buyTime': {default: 0},
   'eco.creditStart': {default: 3000},
   'eco.creditRound': {default: 1000},
   'eco.creditTurn': {default: 0},
@@ -32,8 +31,8 @@ const CATALOG = {
   'eco.sellBack': {default: 50},
 
   // ── Tank ── (kickback / player-size carry engine scalars; index → multiplier)
-  'tank.kickback': {default: 2, options: ['Off', 'Low', 'Normal', 'High'], scale: [0, 0.6, 1, 1.5]},
-  'tank.size': {default: 1, options: ['Small', 'Normal', 'Large'], scale: [0.72, 1, 1.35]},
+  'tank.kickback': {default: 2, scale: [0, 0.6, 1, 1.5]},
+  'tank.size': {default: 1, scale: [0.72, 1, 1.35]},
   'tank.relTurrets': {default: 0},
   'tank.bury': {default: 0},
   'tank.powerScale': {default: 100},
@@ -44,30 +43,12 @@ const CATALOG = {
   // ── Gameplay ──
   'gp.battles': {default: 5},
   'gp.rounds': {default: 10},
-  'gp.gameType': {default: 1, options: ['Rounds', 'Deathmatch']},
-  'gp.landSize': {default: 0, options: ['1 Screen', '2x', '3x', '4x', '5x']},
-  'gp.difficulty': {
-    default: 4,
-    options: [
-      '1. Easiest',
-      '2. Very Easy',
-      '3. Easy',
-      '4. Moderate',
-      '5. Fun',
-      '6. Challenging',
-      '7. Hard',
-      '8. Very Hard',
-      '9. Mastery',
-      '10. Elite',
-    ],
-  },
-  'gp.wind': {default: 2, options: ['Disabled', 'Low', 'Medium', 'High'], scale: [0, 0.5, 1, 1.6]},
-  'gp.changeWind': {default: 0, options: ['Per game', 'After round', 'After shot', 'Anytime']},
-  'gp.explosionSize': {
-    default: 1,
-    options: ['Small', 'Normal', 'Large', 'Massive'],
-    scale: [0.7, 1, 1.35, 1.8],
-  },
+  'gp.gameType': {default: 1},
+  'gp.landSize': {default: 0},
+  'gp.difficulty': {default: 4},
+  'gp.wind': {default: 2, scale: [0, 0.5, 1, 1.6]},
+  'gp.changeWind': {default: 0},
+  'gp.explosionSize': {default: 1, scale: [0.7, 1, 1.35, 1.8]},
   'gp.variance': {default: 1},
   'gp.utilTurn': {default: 0},
   'gp.randTurns': {default: 0},
@@ -79,7 +60,7 @@ const CATALOG = {
   'gfx.tracking': {default: 1},
   'gfx.smoke': {default: 1},
   'gfx.highContrast': {default: 0},
-  'gfx.landType': {default: 5, options: ['Flat', 'Hill', 'Gulley', 'Plateau', 'Slope', 'Random']},
+  'gfx.landType': {default: 5},
   'gfx.aiStats': {default: 0},
   'gfx.teamColor': {default: 1},
   'gfx.smallBuy': {default: 0},
@@ -94,12 +75,8 @@ const CATALOG = {
   'gfx.lastAim': {default: 1},
   'gfx.expWaves': {default: 1},
   'gfx.camShake': {default: 1},
-  'gfx.framerate': {default: 0, options: ['Off', 'FPS', 'Full']},
-  'gfx.fpsCap': {
-    default: 0,
-    options: ['No Limit', '30 FPS', '60 FPS', '120 FPS', '144 FPS'],
-    scale: [0, 30, 60, 120, 144],
-  },
+  'gfx.framerate': {default: 0},
+  'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144]},
   'gfx.demo': {default: 0},
 
   // ── Audio ── (only the stereo toggle is remembered; volumes/enable live on CAudio)

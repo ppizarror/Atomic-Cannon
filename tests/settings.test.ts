@@ -14,8 +14,9 @@ import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
 import {showFramerate, showFrameCount, maxFps} from '../src/ui/store';
 import {SETTINGS} from '../src/ui/settingsCatalog';
+import {en} from '../src/i18n/en';
 
-const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
+const NUKE = WEAPON_DATABASE.findIndex(w => w.id === 'uranium.nuke');
 const nukeCost = WEAPON_DATABASE[NUKE].cost;
 
 // Private-field view for asserting the bridge pushed live values.
@@ -164,11 +165,21 @@ describe('Settings → game', () => {
 });
 
 describe('settings catalog (single source)', () => {
-  it('every enum with an engine scale table has matching option/scale lengths', () => {
+  it('every enum with an engine scale table has matching i18n option-label lengths', () => {
+    // Enum labels live in i18n now; the catalog only carries the scale table. Each scaled
+    // enum's i18n `options` array must stay index-aligned (same length) with its scale.
+    const optionsForScaledId: Record<string, readonly string[]> = {
+      'tank.kickback': en.settings.tank.kickback.options!,
+      'tank.size': en.settings.tank.size.options!,
+      'gp.wind': en.settings.gameplay.wind.options!,
+      'gp.explosionSize': en.settings.gameplay.explosionSize.options!,
+      'gfx.fpsCap': en.settings.graphics.fpsCap.options!,
+    };
     for (const [id, meta] of Object.entries(SETTINGS)) {
       if (meta.scale) {
-        expect(meta.options, `${id} has a scale table but no option labels`).toBeDefined();
-        expect(meta.scale.length, `${id}: option/scale length mismatch`).toBe(meta.options!.length);
+        const options = optionsForScaledId[id];
+        expect(options, `${id} has a scale table but no i18n option labels`).toBeDefined();
+        expect(meta.scale.length, `${id}: option/scale length mismatch`).toBe(options.length);
       }
     }
   });

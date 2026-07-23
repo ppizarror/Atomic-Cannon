@@ -5,7 +5,7 @@ import {describe, it, expect} from 'vitest';
 
 import {CLand} from '../src/core/CLand';
 import {CShot} from '../src/core/CShot';
-import {WEAPON_DATABASE, getWeapon} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, getWeapon, weaponName} from '../src/core/CWeapon';
 import {Vec2} from '../src/math/Vec2';
 import {
   weaponFlyStep,
@@ -15,7 +15,7 @@ import {
 } from '../src/core/weapons/WeaponBehavior';
 
 function idxOf(name: string): number {
-  const i = WEAPON_DATABASE.findIndex(w => w.name === name);
+  const i = WEAPON_DATABASE.findIndex(w => weaponName(w) === name);
   if (i < 0) throw new Error(`weapon not found: ${name}`);
   return i;
 }

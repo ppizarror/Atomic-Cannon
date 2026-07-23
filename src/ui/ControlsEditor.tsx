@@ -13,6 +13,7 @@ import {EditorScreen} from './EditorScreen';
 import {openSettingsPage, uiClick} from './store';
 import {ACTIONS, type ActionId, keyName} from '../core/CControls';
 import {bindings, rebind, unassign, resetDefaults} from './controlsStore';
+import {strings, fmt} from '../i18n';
 
 // Sweep order for the guided "Customize" pass and the row list: every action, in
 // registered order.
@@ -48,6 +49,7 @@ export function ControlsEditor() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [armed, sweep]);
 
+  const e = strings.value.editors.controls;
   const armLabel = armed ? ACTIONS.find(a => a.id === armed)?.label : '';
 
   // Clicking the screen while armed unassigns the armed action (matching the editor's
@@ -62,36 +64,36 @@ export function ControlsEditor() {
 
   return (
     <EditorScreen
-      title="Customize Controls"
+      title={e.title}
       onClick={onScreenClick}
       footer={
         armed ? (
           <>
-            <BmpText font="beijing-16-out" text={`Press a key to define "${armLabel}".`} />
-            <BmpText font="beijing-16-out" text="Or click the screen to unassign." />
+            <BmpText font="beijing-16-out" text={fmt(e.promptDefine, {action: armLabel ?? ''})} />
+            <BmpText font="beijing-16-out" text={e.promptUnassign} />
           </>
         ) : (
-          <BmpText font="beijing-16-out" text="Click an action to rebind its key" />
+          <BmpText font="beijing-16-out" text={e.idle} />
         )
       }
       actions={
         <>
           <Button
-            label="Customize"
+            label={e.customize}
             onClick={() => (uiClick(), setSweep(true), setArmed(firstAction()))}
           />
           <Button
-            label="Defaults"
+            label={e.defaults}
             onClick={() => (uiClick(), setArmed(null), setSweep(false), resetDefaults())}
           />
-          <Button label="Done" onClick={() => openSettingsPage('root')} class="editor-exit" />
+          <Button label={e.done} onClick={() => openSettingsPage('root')} class="editor-exit" />
         </>
       }
     >
       <div class="editor-list editor-controls" onClick={e => e.stopPropagation()}>
         <div class="editor-columns">
-          <BmpText font="beijing-16-out" text="Action" />
-          <BmpText font="beijing-16-out" text="Button" />
+          <BmpText font="beijing-16-out" text={e.colAction} />
+          <BmpText font="beijing-16-out" text={e.colButton} />
         </div>
         {ACTIONS.map(a => {
           const isArmed = armed === a.id;
@@ -110,10 +112,7 @@ export function ControlsEditor() {
                 <BmpText font="beijing-16-out" text={a.label} />
               </span>
               <span class="editor-state">
-                <BmpText
-                  font="beijing-16-out"
-                  text={isArmed ? 'Press a key…' : keyName(map[a.id])}
-                />
+                <BmpText font="beijing-16-out" text={isArmed ? e.pressKey : keyName(map[a.id])} />
               </span>
             </button>
           );

@@ -16,18 +16,18 @@ import {BmpText} from './BmpText';
 import {BattleMedals} from './BattleMedals';
 
 function Board({entries, valueHeader}: {entries: HeroEntry[]; valueHeader: string}) {
-  const s = strings.value;
+  const s = strings.value.heroes;
   if (entries.length === 0) {
     return (
       <div class="hs-empty">
-        <BmpText font="beijing-16-out" text={s.heroesEmpty} />
+        <BmpText font="beijing-16-out" text={s.empty} />
       </div>
     );
   }
   return (
     <div class="hs-table">
       <div class="hs-row hs-head">
-        <BmpText font="beijing-20-out" text={s.heroesCallsign} />
+        <BmpText font="beijing-20-out" text={s.callsign} />
         <BmpText font="beijing-20-out" text={valueHeader} />
       </div>
       {entries.map((e, i) => (
@@ -41,17 +41,17 @@ function Board({entries, valueHeader}: {entries: HeroEntry[]; valueHeader: strin
 }
 
 export function HighScores() {
-  const s = strings.value;
+  const s = strings.value.heroes;
   const d = heroData.value;
   // Points/Rounds (game type 0) shows the Score board; Deathmatch the Kills board.
   const pointsMode = S.gameType() === 0;
   const entries = pointsMode ? d.score : d.kills;
-  const valueHeader = pointsMode ? s.heroesScore : s.heroesKills;
+  const valueHeader = pointsMode ? s.score : s.kills;
 
   return (
     <div class="highscores" onClick={backToMenu}>
       <div class="hs-title">
-        <BmpText font="bazouk-28" text={s.heroesTitle} />
+        <BmpText font="bazouk-28" text={s.title} />
       </div>
 
       <Board entries={entries} valueHeader={valueHeader} />
@@ -59,7 +59,7 @@ export function HighScores() {
       <BattleMedals />
 
       <div class="hs-prompt">
-        <BmpText font="beijing-16-out" text={s.heroesPrompt} />
+        <BmpText font="beijing-16-out" text={s.prompt} />
       </div>
     </div>
   );

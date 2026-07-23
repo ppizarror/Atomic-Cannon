@@ -10,10 +10,12 @@ import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
 import {CLand} from '../src/core/CLand';
-import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 
-const idxOf = (name: string) => WEAPON_DATABASE.findIndex(w => w.name === name);
+// Weapon display names now come from i18n (data/weapons.json carries only the id slug),
+// so look weapons up by their localised name.
+const idxOf = (name: string) => WEAPON_DATABASE.findIndex(w => weaponName(w) === name);
 const SENTRY_TURRET = idxOf('Sentry Turret');
 const SENTRY_MINIGUN = idxOf('Sentry Minigun');
 const SHELL = idxOf('Shell');

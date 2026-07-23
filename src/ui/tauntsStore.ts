@@ -18,67 +18,24 @@
  */
 import {signal} from '@preact/signals';
 import {loadJSON, saveJSON} from '../util/storage';
+import {strings} from '../i18n';
 import {Taunts, type TauntCategory} from '../core/CTaunts';
 
 export type {TauntCategory};
 
-export const TAUNT_CATEGORIES: {id: TauntCategory; label: string; desc: string}[] = [
-  {id: 'taunt', label: 'Taunts', desc: 'Said on a whim during a turn (and on the Chat Taunt key)'},
-  {id: 'postFire', label: 'Post-Fire', desc: 'Gloated after a shot, as the turn passes on'},
-  {id: 'death', label: 'Death', desc: 'Cried out by a tank as it is destroyed'},
-];
-
-// Defaults transcribed verbatim from the original "chat *.txt" files (double
-// spaces preserved). These are the fallback; the editor overrides them per list.
-const DEFAULTS: Record<TauntCategory, string[]> = {
-  death: [
-    "I knew I shouldn't have left home today.",
-    "I'll be back, muhahhaha!",
-    'And I just got a new paint job for this thing :(',
-    "That wasn't very nice of you.",
-    "Why don't you pick on someone your own size?",
-    "The admiral isn't going to be happy about this :(",
-    "I'll get you next time, you'll see.",
-    'You must of been cheating.',
-    'Well at least the radioactive glow will keep me warm :)',
-    "Ahhhh, I'm glowing!",
-    "I'm melting, melting...",
-    "It's the tanks fault I lost, stupid tank, time for a new one.",
-  ],
-  postFire: [
-    'Clean up in aisle four.',
-    'Was that a blast from the past?',
-    "That's gonna leave a mark.",
-    "If you beg for mercy I'll go easy on you on next time.",
-    'So many weapons and such little time.',
-    'What color would you like to glow next round?',
-    "You can run but you can't hide.",
-    "You're making this win easy.",
-    "Just give up, it's only a matter of time before I win.",
-    'Does your pretty tank have a scratch on it now?',
-    "Why don't you just die already?",
-    "That's right!",
-  ],
-  taunt: [
-    "Is that all you've got?",
-    'You can do better than that!',
-    "You're going to lose this one.",
-    'Who ordered the NUKE?',
-    'Which weapon shall I destroy you with this time?',
-    'Your aim is as weak as your armor!',
-    "Surrender now and you won't face humiliation.",
-    "You're going down!",
-    "Why don't you just save us both some time and blow yourself up?",
-    'You will be exterminated.',
-    'That radioactive glow looks good on you!',
-    "You should save your credits and just buy a win, because it won't happen with skill ;)",
-    'I taunt you a second time!',
-    'Your mother wears combat boots :p',
-    'Any weapon requests?  I own them all.',
-    "What's taking so long?  Searching for the self destruct button again?",
-    'Resistance is futile!',
-  ],
+/** Editor tab order + copy (label/description), sourced from i18n. */
+export const TAUNT_CATEGORIES = (): {id: TauntCategory; label: string; desc: string}[] => {
+  const c = strings.value.editors.taunts.categories;
+  return [
+    {id: 'taunt', label: c.taunt.label, desc: c.taunt.sub},
+    {id: 'postFire', label: c.postFire.label, desc: c.postFire.sub},
+    {id: 'death', label: c.death.label, desc: c.death.sub},
+  ];
 };
+
+// Shipped default lines (the original "chat *.txt" content) live in i18n so they are
+// translatable; this is the fallback the editor overrides per list.
+const DEFAULTS = (cat: TauntCategory): string[] => strings.value.taunts[cat].slice();
 
 const KEY = 'atomic.taunts';
 
@@ -102,12 +59,12 @@ function pushToEngine(cat: TauntCategory): void {
 /** The effective (edited-or-default) lines for a category — the raw editor draft
  *  (may include a blank line being typed). */
 export function tauntLines(cat: TauntCategory): string[] {
-  return overrides.value[cat] ?? DEFAULTS[cat];
+  return overrides.value[cat] ?? DEFAULTS(cat);
 }
 
 /** The verbatim shipped defaults (for the "Reset to defaults" action). */
 export function defaultTaunts(cat: TauntCategory): string[] {
-  return DEFAULTS[cat].slice();
+  return DEFAULTS(cat);
 }
 
 /** Replace a category's list (the raw editor draft — blanks are kept for editing but

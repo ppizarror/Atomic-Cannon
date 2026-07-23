@@ -9,6 +9,7 @@
  * header line shows there instead.
  */
 import {useEffect, useState} from 'preact/hooks';
+import {strings} from '../i18n';
 import {settingsPageBack} from './store';
 import {BmpText} from './BmpText';
 import {getSettingsPage} from './settingsPages';
@@ -39,11 +40,11 @@ export function SettingsPage({id}: {id: string}) {
           ))}
           <button
             class="settings-row srow-done menu-btn"
-            onMouseEnter={() => setSub('Return to the settings menu')}
+            onMouseEnter={() => setSub(strings.value.settings.pageDoneSub)}
             onMouseLeave={() => setSub(null)}
             onClick={settingsPageBack}
           >
-            <BmpText font="bazouk-28" text="Done" />
+            <BmpText font="bazouk-28" text={strings.value.settings.pageDone} />
           </button>
         </div>
       </ClassicScrollbar>

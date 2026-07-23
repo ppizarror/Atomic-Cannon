@@ -7,18 +7,20 @@
 import {showPause, resumeGame, quitToMenu, openSettings} from './store';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
+import {strings} from '../i18n';
 
 export function PauseMenu() {
   if (!showPause.value) return null;
+  const p = strings.value.pause;
   return (
     <div class="overlay pause-overlay">
       <div class="pause-title">
-        <BmpText font="beijing-16-out" text="GAME PAUSED" />
+        <BmpText font="beijing-16-out" text={p.title} />
       </div>
       <div class="menu-list">
-        <MenuButton label="Resume" onClick={resumeGame} />
-        <MenuButton label="Settings" onClick={() => openSettings('pause')} />
-        <MenuButton label="Quit" onClick={quitToMenu} />
+        <MenuButton label={p.resume} onClick={resumeGame} />
+        <MenuButton label={p.settings} onClick={() => openSettings('pause')} />
+        <MenuButton label={p.quit} onClick={quitToMenu} />
       </div>
     </div>
   );

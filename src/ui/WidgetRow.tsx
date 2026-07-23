@@ -4,6 +4,7 @@
  * frame the value with `<` / `>` cycle arrows; nav rows are a whole-row button with a
  * trailing `>`. Hovering a row reports its tooltip to `onHover`.
  */
+import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {type Widget} from './settingsPages';
 import {clamp, wrapIndex} from '../math/num';
@@ -65,7 +66,10 @@ export function WidgetRow({
           <BmpText font={ROW_FONT} text={w.label} />
         </button>
         <button class="srow-half srow-right" onClick={() => change(1)}>
-          <BmpText font={ROW_FONT} text={val ? 'ON' : 'OFF'} />
+          <BmpText
+            font={ROW_FONT}
+            text={val ? strings.value.common.on : strings.value.common.off}
+          />
         </button>
       </div>
     );

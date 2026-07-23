@@ -9,6 +9,7 @@
 import {BmpText} from './BmpText';
 import {BattleMedals} from './BattleMedals';
 import {warStandings, advanceWar} from './store';
+import {strings} from '../i18n';
 import type {WarTeamRow} from '../game/CGameController';
 
 const pct = (v: number) => `${Math.round(v)}%`;
@@ -20,20 +21,21 @@ function Cell({text}: {text: string}) {
 }
 
 function Table({rows, pointsMode}: {rows: WarTeamRow[]; pointsMode: boolean}) {
+  const w = strings.value.warStandings;
   return (
     <div class={`war-table ${pointsMode ? 'points' : ''}`}>
       <div class="war-row war-head">
-        <Cell text="Name" />
-        <Cell text={pointsMode ? 'Points' : 'Kills'} />
-        {!pointsMode && <Cell text="Deaths" />}
-        <Cell text="Life" />
-        <Cell text="Accuracy" />
-        <Cell text="Damage/hit" />
+        <Cell text={w.name} />
+        <Cell text={pointsMode ? w.points : w.kills} />
+        {!pointsMode && <Cell text={w.deaths} />}
+        <Cell text={w.life} />
+        <Cell text={w.accuracy} />
+        <Cell text={w.damageHit} />
       </div>
       {rows.map((r, i) => (
         <div key={i} class="war-row">
           <Cell text={r.name} />
-          <Cell text={String(r.kills)} />
+          <Cell text={String(pointsMode ? r.points : r.kills)} />
           {!pointsMode && <Cell text={String(r.deaths)} />}
           <Cell text={pct(r.lifePct)} />
           <Cell text={pct(r.accuracyPct)} />
@@ -75,7 +77,7 @@ export function WarStandings() {
 
       {/* War-over victory only: the local player's Battles Won/Lost + medal stack
           (the same shared footer as the High Scores screen). */}
-      {s.warOver && s.banner === 'Victory!' ? <BattleMedals /> : null}
+      {s.warOver && s.banner === strings.value.warStandings.victory ? <BattleMedals /> : null}
 
       <div class="war-prompt">
         <BmpText font="beijing-16-out" text={s.prompt} />

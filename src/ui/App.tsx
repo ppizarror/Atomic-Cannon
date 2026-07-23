@@ -23,6 +23,7 @@ import {
   warStandings,
 } from './store';
 import {hexToRgb} from '../math/color';
+import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
@@ -137,7 +138,11 @@ function FramerateHud() {
   if (!showFramerate.value) return null;
   return (
     <div id="fps-hud">
-      <BmpText font="beijing-16-out" text={`FPS ${fps.value}`} spacing={-1} />
+      <BmpText
+        font="beijing-16-out"
+        text={fmt(strings.value.app.fps, {n: fps.value})}
+        spacing={-1}
+      />
     </div>
   );
 }
@@ -147,7 +152,11 @@ function FrameCountHud() {
   if (!showFrameCount.value) return null;
   return (
     <div id="frame-hud">
-      <BmpText font="beijing-16-out" text={`FRAME ${frameCount.value}`} spacing={-1} />
+      <BmpText
+        font="beijing-16-out"
+        text={fmt(strings.value.app.frame, {n: frameCount.value})}
+        spacing={-1}
+      />
     </div>
   );
 }
@@ -161,16 +170,12 @@ function FlightHud() {
       <div class="flight-fuel">
         <BmpText
           font="beijing-20-out"
-          text={`JET FUEL ${jetFuel.value.toFixed(1)}s`}
+          text={fmt(strings.value.app.jetFuel, {s: jetFuel.value.toFixed(1)})}
           spacing={-1}
         />
       </div>
       <div class="flight-hint">
-        <BmpText
-          font="beijing-16-out"
-          text="Arrows / WASD to fly - Space to cut engine"
-          spacing={-1}
-        />
+        <BmpText font="beijing-16-out" text={strings.value.app.flyHint} spacing={-1} />
       </div>
     </div>
   );
@@ -197,25 +202,26 @@ function TooSmallOverlay() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
   if (!small) return null;
+  const a = strings.value.app;
   // All text is the game's bitmap fonts (ASCII 33..126, no wrapping) on the
   // `atomic/dialog.bmp` panel — same chrome as the Help overlay, no CSS text.
   return (
     <div class="overlay too-small">
       <div class="too-small-card dialog-frame">
         <div class="too-small-title">
-          <BmpText font="bazouk-28" text="RESOLUTION TOO SMALL" />
+          <BmpText font="bazouk-28" text={a.tooSmallTitle} />
         </div>
         <div class="too-small-msg">
-          <BmpText font="beijing-16-out" text="Atomic Cannon needs a window of at least" />
+          <BmpText font="beijing-16-out" text={a.tooSmallLead} />
         </div>
         <div class="too-small-msg">
-          <BmpText font="beijing-16-out" text={`${MIN_W} x ${MIN_H} pixels to play.`} />
+          <BmpText font="beijing-16-out" text={fmt(a.tooSmallSize, {w: MIN_W, h: MIN_H})} />
         </div>
         <div class="too-small-sub">
-          <BmpText font="arial-14-out" text="Enlarge the window to continue." />
+          <BmpText font="arial-14-out" text={a.tooSmallEnlarge} />
         </div>
         <div class="too-small-size">
-          <BmpText font="arial-14-out" text={`Current:  ${size.w} x ${size.h}`} />
+          <BmpText font="arial-14-out" text={fmt(a.tooSmallCurrent, {w: size.w, h: size.h})} />
         </div>
       </div>
     </div>

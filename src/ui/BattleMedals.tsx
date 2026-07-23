@@ -10,7 +10,7 @@
  */
 import {loadUiBmp} from './store';
 import {heroData} from './highscoresStore';
-import {strings} from '../i18n';
+import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 import {useAsyncImage} from './useAsyncImage';
 
@@ -47,9 +47,7 @@ function MedalStack({won}: {won: number}) {
 
 export function BattleMedals() {
   const d = heroData.value;
-  const record = strings.value.heroesRecord
-    .replace('{won}', String(d.won))
-    .replace('{lost}', String(d.lost));
+  const record = fmt(strings.value.heroes.record, {won: d.won, lost: d.lost});
   return (
     <div class="battle-medals">
       <div class="hs-record">

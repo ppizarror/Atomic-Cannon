@@ -50,11 +50,11 @@ export function MainMenu() {
     <div class="mainmenu">
       <MenuTargets />
       <div class="menu-list">
-        <MenuButton label="Play" onClick={openPlaySetup} />
-        <MenuButton label="Quick Play" onClick={quickPlay} />
-        <MenuButton label={strings.value.highScores} onClick={openHighScores} />
-        <MenuButton label="Settings" onClick={() => openSettings('menu')} />
-        <MenuButton label="About" onClick={openAbout} />
+        <MenuButton label={strings.value.menu.play} onClick={openPlaySetup} />
+        <MenuButton label={strings.value.menu.quickPlay} onClick={quickPlay} />
+        <MenuButton label={strings.value.menu.highScores} onClick={openHighScores} />
+        <MenuButton label={strings.value.menu.settings} onClick={() => openSettings('menu')} />
+        <MenuButton label={strings.value.menu.about} onClick={openAbout} />
       </div>
       <a
         class="mainmenu-repo"
@@ -63,7 +63,7 @@ export function MainMenu() {
         rel="noopener noreferrer"
         title={__REPO_URL__}
       >
-        <BmpText font="beijing-16-out" text={strings.value.repoLabel} />
+        <BmpText font="beijing-16-out" text={strings.value.menu.repoLabel} />
         <AtomLogo />
       </a>
       <div class="mainmenu-version">

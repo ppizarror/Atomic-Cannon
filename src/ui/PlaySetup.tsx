@@ -10,6 +10,8 @@
  * colour / tank come from Customize Players.
  */
 import {useState} from 'preact/hooks';
+import {strings, fmt} from '../i18n';
+import type {RowCopy} from '../i18n';
 import {BmpText} from './BmpText';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
@@ -26,14 +28,13 @@ import {
 
 // A stepper bound to one field of the per-match setup (Humans / Computers / Tanks).
 const countRow = (
-  label: string,
-  tip: string,
+  c: RowCopy,
   key: 'humans' | 'computers' | 'tanksPerTeam',
   min: number,
   max: number,
 ): Widget => ({
-  label,
-  tip,
+  label: c.label,
+  tip: c.tip,
   kind: 'stepper',
   min,
   max,
@@ -42,31 +43,24 @@ const countRow = (
   set: v => setSetup({...setup.value, [key]: v}),
 });
 
-const NEED_PLAYERS = `Add at least ${MIN_PLAYERS} players (humans + computers) to start`;
-
 export function PlaySetup() {
   const bump = useForceRender();
   const [sub, setSub] = useState<string | null>(null);
 
+  const p = strings.value.play;
   const s = setup.value; // subscribe so the Start Game guard updates as counts change
   const canStart = s.humans + s.computers >= MIN_PLAYERS;
 
   const rows: Widget[] = [
-    countRow('Humans', 'Number of human players', 'humans', 0, MAX_HUMANS),
-    countRow('Computers', 'Number of computer AI players', 'computers', 0, MAX_COMPUTERS),
-    countRow(
-      'Tanks',
-      "Number of tanks per player's team",
-      'tanksPerTeam',
-      MIN_TANKS_PER_TEAM,
-      MAX_TANKS_PER_TEAM,
-    ),
-    enumW('Game Type', 'What type of battle', 'gp.gameType'),
-    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 1, 50, 1),
-    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 1, 50, 1),
-    enumW('Land Size', 'How large the battle landscape is', 'gp.landSize'),
-    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty'),
-    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind'),
+    countRow(p.humans, 'humans', 0, MAX_HUMANS),
+    countRow(p.computers, 'computers', 0, MAX_COMPUTERS),
+    countRow(p.tanks, 'tanksPerTeam', MIN_TANKS_PER_TEAM, MAX_TANKS_PER_TEAM),
+    enumW(p.gameType, 'gp.gameType'),
+    stepper(p.battles, 'gp.battles', 1, 50, 1),
+    stepper(p.rounds, 'gp.rounds', 1, 50, 1),
+    enumW(p.landSize, 'gp.landSize'),
+    enumW(p.difficulty, 'gp.difficulty'),
+    enumW(p.wind, 'gp.wind'),
   ];
 
   return (
@@ -75,11 +69,11 @@ export function PlaySetup() {
         <button
           class="settings-row srow-done menu-btn"
           disabled={!canStart}
-          onMouseEnter={() => setSub('Start the game')}
+          onMouseEnter={() => setSub(p.startHint)}
           onMouseLeave={() => setSub(null)}
           onClick={startBattle}
         >
-          <BmpText font="bazouk-28" text="Start Game" />
+          <BmpText font="bazouk-28" text={p.startGame} />
         </button>
 
         {rows.map((w, i) => (
@@ -88,17 +82,17 @@ export function PlaySetup() {
 
         <button
           class="settings-row srow-done menu-btn"
-          onMouseEnter={() => setSub('Return to the main menu')}
+          onMouseEnter={() => setSub(p.cancelHint)}
           onMouseLeave={() => setSub(null)}
           onClick={backToMenu}
         >
-          <BmpText font="bazouk-28" text="Cancel" />
+          <BmpText font="bazouk-28" text={p.cancel} />
         </button>
       </div>
       <div class="settings-subtitle">
         <BmpText
           font="beijing-16-out"
-          text={sub ?? (canStart ? 'Play' : NEED_PLAYERS)}
+          text={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))}
           spacing={-1}
         />
       </div>

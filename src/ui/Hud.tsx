@@ -44,7 +44,14 @@ import {
   windAccY,
   canMoveNow,
 } from './store';
-import {weaponPower, weaponDamagePerArea, weaponDisplayNumber} from '../core/CWeapon';
+import {
+  weaponPower,
+  weaponDamagePerArea,
+  weaponDisplayNumber,
+  weaponName,
+  weaponTypeName,
+} from '../core/CWeapon';
+import {strings} from '../i18n';
 import {clamp, wrapIndex} from '../math/num';
 import {WeaponIcon} from './WeaponIcon';
 import {usePointerDrag} from './usePointerDrag';
@@ -164,7 +171,7 @@ function MeterOverlay() {
         ref={barRef}
         class={`ov meter-drag${blocked.value ? ' blocked' : ''}`}
         style={pos(R.meter)}
-        title="Drag to set power (top 1000 · bottom 10)"
+        title={strings.value.hud.powerTitle}
         {...drag}
       />
     </>
@@ -182,7 +189,7 @@ function FireButton() {
         if (game().isPlayerTurn()) game().fire();
       }}
     >
-      <BmpText font="fire" text="FIRE" height={38} />
+      <BmpText font="fire" text={strings.value.hud.fire} height={38} />
     </button>
   );
 }
@@ -244,7 +251,7 @@ function DialGrab() {
     <div
       class={`ov dial-drag${blocked.value ? ' blocked' : ''}`}
       style={pos(DIAL_GRAB)}
-      title="Drag left/right to aim"
+      title={strings.value.hud.aimTitle}
       {...handlers}
     />
   );
@@ -252,7 +259,10 @@ function DialGrab() {
 
 function WindReadout() {
   const w = wind.value;
-  const txt = Math.abs(w) < 0.05 ? 'WIND OFF' : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
+  const txt =
+    Math.abs(w) < 0.05
+      ? strings.value.hud.windOff
+      : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
   return (
     <ReadoutBox r={R.wind}>
       <BmpText font="silkscreen-8-white" text={txt} />
@@ -268,7 +278,7 @@ function WeaponPreview() {
   const wp = weapons.value.find(w => w.index === weaponIndex.value) ?? weapons.value[0];
   return (
     <div class="ov weapon-preview" style={pos(R.wicon)}>
-      {wp && <WeaponIcon name={wp.name} size={32} cls="wbig" />}
+      {wp && <WeaponIcon name={wp.icon} size={32} cls="wbig" />}
     </div>
   );
 }
@@ -331,18 +341,18 @@ function WeaponList() {
         const active = wp.index === idx;
         return (
           <div
-            key={wp.name}
+            key={wp.id}
             class={`wrow${active ? ' active' : ''}`}
             onClick={() => {
               uiClick();
               game().selectWeapon(wp.index);
             }}
           >
-            <WeaponIcon name={wp.name} size={16} cls="wicon" />
+            <WeaponIcon name={wp.icon} size={16} cls="wicon" />
             <BmpText
               class="wtext"
               font="beijing-16-out"
-              text={`${weaponDisplayNumber(wp)}. ${wp.name}`}
+              text={`${weaponDisplayNumber(wp)}. ${weaponName(wp)}`}
               spacing={-1}
             />
           </div>
@@ -360,40 +370,41 @@ function ControlPanel() {
   // ▲/▼ step through the displayed list with wrap-around (see stepWeapon), the
   // same path the list's mouse-wheel uses.
   const dW = stepWeapon;
+  const h = strings.value.hud;
 
   return (
     <div id="hud-panel">
       <img class="panel-bg" src="/assets/gui/gui.bmp" alt="" />
       <WeaponList />
       <WeaponPreview />
-      <Hotspot r={R.up} title="Previous weapon" onClick={() => dW(-1)} />
-      <Hotspot r={R.down} title="Next weapon" onClick={() => dW(1)} />
-      <Hotspot r={R.plus} title="Power up" onClick={() => dP(50)} />
-      <Hotspot r={R.minus} title="Power down" onClick={() => dP(-50)} />
+      <Hotspot r={R.up} title={h.prevWeapon} onClick={() => dW(-1)} />
+      <Hotspot r={R.down} title={h.nextWeapon} onClick={() => dW(1)} />
+      <Hotspot r={R.plus} title={h.powerUp} onClick={() => dP(50)} />
+      <Hotspot r={R.minus} title={h.powerDown} onClick={() => dP(-50)} />
       <MeterOverlay />
       <FireButton />
       <TurnTimerBar />
-      <Hotspot r={R.buy} title="Weapons depot" onClick={openDepot} />
+      <Hotspot r={R.buy} title={h.depot} onClick={openDepot} />
       <Hotspot
         r={R.reset}
-        title="Reset to last shot"
+        title={h.resetShot}
         onClick={() => {
           uiClick();
           game().resetAim();
         }}
       />
-      <Hotspot r={R.help} title="Help" onClick={openHelp} />
+      <Hotspot r={R.help} title={h.help} onClick={openHelp} />
       <Needle />
       <AngleReadout />
       <DialGrab />
-      <Hotspot r={R.aleft} title="Aim left (+)" onClick={() => dA(2)} />
-      <Hotspot r={R.aright} title="Aim right (-)" onClick={() => dA(-2)} />
+      <Hotspot r={R.aleft} title={h.aimLeft} onClick={() => dA(2)} />
+      <Hotspot r={R.aright} title={h.aimRight} onClick={() => dA(-2)} />
       <WindReadout />
-      <Hotspot r={R.close} title="Menu" onClick={openPauseMenu} />
-      <PanelLabel r={R.lblWeapon} text="Select Weapon" left />
-      <PanelLabel r={R.lblPower} text="Power" />
-      <PanelLabel r={R.lblAngle} text="Angle" />
-      <PanelLabel r={R.lblWind} text="Wind" />
+      <Hotspot r={R.close} title={h.menu} onClick={openPauseMenu} />
+      <PanelLabel r={R.lblWeapon} text={h.selectWeapon} left />
+      <PanelLabel r={R.lblPower} text={h.power} />
+      <PanelLabel r={R.lblAngle} text={h.angle} />
+      <PanelLabel r={R.lblWind} text={h.wind} />
     </div>
   );
 }
@@ -445,18 +456,19 @@ function currentWeapon() {
 // (see weaponPower/weaponDamagePerArea); Fodder is the raw fraction shown as a %.
 function WeaponDetails1() {
   const w = currentWeapon();
+  const h = strings.value.hud;
   return (
     <div class="side-lcd wpn" id="weapon-details">
-      <LcdLine text="WEAPON DETAILS" />
+      <LcdLine text={h.weaponDetails} />
       {w && (
         <>
-          <LcdLine text={`TYPE ${String(w.type).toUpperCase()}`} />
-          <LcdLine text={`POWER ${weaponPower(w)}`} />
-          <LcdLine text={`DAMAGE ${w.damage}`} />
-          <LcdLine text={`RADIUS ${w.radius}`} />
-          <LcdLine text={`VARIANCE ${(w.variance ?? 0).toFixed(1)}`} />
-          <LcdLine text={`FODDER ${Math.round((w.fodder ?? 0) * 100)}%`} />
-          <LcdLine text={`DAMAGE PER AREA ${weaponDamagePerArea(w)}`} />
+          <LcdLine text={`${h.lcd.type} ${weaponTypeName(w.type)}`} />
+          <LcdLine text={`${h.lcd.power} ${weaponPower(w)}`} />
+          <LcdLine text={`${h.lcd.damage} ${w.damage}`} />
+          <LcdLine text={`${h.lcd.radius} ${w.radius}`} />
+          <LcdLine text={`${h.lcd.variance} ${(w.variance ?? 0).toFixed(1)}`} />
+          <LcdLine text={`${h.lcd.fodder} ${Math.round((w.fodder ?? 0) * 100)}%`} />
+          <LcdLine text={`${h.lcd.dmgPerArea} ${weaponDamagePerArea(w)}`} />
         </>
       )}
     </div>
@@ -473,18 +485,19 @@ function WeaponDetails2() {
       ? Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse))
       : (w.cluNum ?? 0)
     : 0;
+  const h = strings.value.hud;
   return (
     <div class="side-lcd wpn" id="weapon-details-2">
-      <LcdLine text="WEAPON DETAILS" />
+      <LcdLine text={h.weaponDetails} />
       {w && (
         <>
-          <LcdLine text={`EARTH ${w.earth ?? 0}`} />
-          <LcdLine text={`SPAWN ${w.spawn ?? 0}`} />
-          <LcdLine text={`CLUSTER ${cluster}`} />
-          <LcdLine text={`SUCCESSION ${(w.sucNum ?? 0) + 1}`} />
-          <LcdLine text={`BATTERY ${w.batSec ?? 0}`} />
+          <LcdLine text={`${h.lcd.earth} ${w.earth ?? 0}`} />
+          <LcdLine text={`${h.lcd.spawn} ${w.spawn ?? 0}`} />
+          <LcdLine text={`${h.lcd.cluster} ${cluster}`} />
+          <LcdLine text={`${h.lcd.succession} ${(w.sucNum ?? 0) + 1}`} />
+          <LcdLine text={`${h.lcd.battery} ${w.batSec ?? 0}`} />
           <LcdLine
-            text={`RADIATION ${Math.round((w.irDmg ?? 0) * (w.fodder ?? 0) * w.radius * 100)}`}
+            text={`${h.lcd.radiation} ${Math.round((w.irDmg ?? 0) * (w.fodder ?? 0) * w.radius * 100)}`}
           />
         </>
       )}
@@ -494,16 +507,17 @@ function WeaponDetails2() {
 
 // R1 — tank stats (innermost right), titled with the acting tank's name.
 function PlayerStats() {
+  const s = strings.value.hud.stat;
   return (
     <div class="side-lcd" id="player-stats">
       <LcdLine text={playerName.value.toUpperCase()} />
-      <LcdLine text={`TEAM ${teamId.value}`} />
-      <LcdLine text={`LIFE ${life.value}/${maxLife.value}`} />
-      <LcdLine text={`SHIELD ${shield.value}/1000`} />
-      <LcdLine text={`ARMOR ${armor.value}%`} />
-      <LcdLine text={`HAZMAT ${hazmat.value}%`} />
-      <LcdLine text={`CREDITS ${credits.value}`} />
-      <LcdLine text={`POSITION ${posX.value} ${posY.value}`} />
+      <LcdLine text={`${s.team} ${teamId.value}`} />
+      <LcdLine text={`${s.life} ${life.value}/${maxLife.value}`} />
+      <LcdLine text={`${s.shield} ${shield.value}/1000`} />
+      <LcdLine text={`${s.armor} ${armor.value}%`} />
+      <LcdLine text={`${s.hazmat} ${hazmat.value}%`} />
+      <LcdLine text={`${s.credits} ${credits.value}`} />
+      <LcdLine text={`${s.position} ${posX.value} ${posY.value}`} />
     </div>
   );
 }
@@ -512,17 +526,18 @@ function PlayerStats() {
 // whether the acting tank is free to move (else it's stuck underground).
 function WindMeasurements() {
   const f = (n: number) => n.toFixed(2);
+  const h = strings.value.hud;
   return (
     <div class="side-lcd" id="wind-measurements">
-      <LcdLine text="WIND MEASUREMENTS" />
-      <LcdLine text={`VEL ${f(windVelX.value)} ${f(windVelY.value)}`} />
-      <LcdLine text={`ACC ${f(windAccX.value)} ${f(windAccY.value)}`} />
+      <LcdLine text={h.windMeasurements} />
+      <LcdLine text={`${h.vel} ${f(windVelX.value)} ${f(windVelY.value)}`} />
+      <LcdLine text={`${h.acc} ${f(windAccX.value)} ${f(windAccY.value)}`} />
       {canMoveNow.value ? (
-        <LcdLine text="CAN MOVE" />
+        <LcdLine text={h.canMove} />
       ) : (
         <>
-          <LcdLine text="CAN'T MOVE" />
-          <LcdLine text="UNDERGROUND" />
+          <LcdLine text={h.cantMove} />
+          <LcdLine text={h.underground} />
         </>
       )}
     </div>

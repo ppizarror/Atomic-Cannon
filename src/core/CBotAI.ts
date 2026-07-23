@@ -194,10 +194,11 @@ export function pickTarget(
   return Math.floor(rnd() * enemies.length);
 }
 
-/** Indices of the Move utilities (Move Near/Mid/Far), in range order. */
+/** Indices of the Move utilities (Move Near/Mid/Far), in range order. Matched on the
+ *  stable weapon id, never the localised display name. */
 export function moveWeaponIndices(): number[] {
-  return ['Move Near', 'Move Mid', 'Move Far']
-    .map(n => WEAPON_DATABASE.findIndex(w => w.name === n))
+  return ['move.near', 'move.mid', 'move.far']
+    .map(id => WEAPON_DATABASE.findIndex(w => w.id === id))
     .filter(i => i >= 0);
 }
 

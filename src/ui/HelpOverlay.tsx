@@ -11,20 +11,7 @@ import {showHelp, closeHelp} from './store';
 import {BmpText} from './BmpText';
 import {Modal} from './Modal';
 import {ModalButton} from './ModalButton';
-
-// One row per panel control, each with a short description of what the control does.
-const CONTROLS: {name: string; desc: string}[] = [
-  {name: 'Select Weapon', desc: 'Choose from the list, or step with the arrows.'},
-  {name: 'Power', desc: 'How hard you fire, 10 to 1000. Drag or +/-.'},
-  {name: 'Angle', desc: 'Aim your barrel. Drag the dial or use arrows.'},
-  {name: 'FIRE', desc: 'Launch the weapon at your power and angle.'},
-  {name: 'Click to Aim', desc: 'Drag near your tank to set angle and power.'},
-  {name: 'Reset', desc: 'Set power and angle back to your last shot.'},
-  {name: 'Buy  $', desc: 'Open the Weapons Depot to buy weapons.'},
-  {name: 'Menu  X', desc: 'Open the game menu: settings and quit.'},
-  {name: 'Wind', desc: 'Wind strength and direction, when enabled.'},
-  {name: 'Shot Timer', desc: 'The bar under FIRE counts down your turn.'},
-];
+import {strings} from '../i18n';
 
 // All text uses the game's OUTLINED bitmap fonts (baked white glyph + black
 // outline), so it stays legible on the light dialog metal at any contrast.
@@ -33,6 +20,21 @@ const CONTROLS: {name: string; desc: string}[] = [
 // the name, a clean Arial for the description.
 export function HelpOverlay() {
   if (!showHelp.value) return null;
+  const h = strings.value.help;
+  // One row per panel control, each with a short description of what the control does.
+  // Built during render so it reads strings.value reactively.
+  const CONTROLS: {name: string; desc: string}[] = [
+    {...h.controls.selectWeapon},
+    {...h.controls.power},
+    {...h.controls.angle},
+    {...h.controls.fire},
+    {...h.controls.clickAim},
+    {...h.controls.reset},
+    {...h.controls.buy},
+    {...h.controls.menu},
+    {...h.controls.wind},
+    {...h.controls.shotTimer},
+  ];
   return (
     <Modal
       backdrop="scrim"
@@ -42,10 +44,10 @@ export function HelpOverlay() {
       class="help-card"
     >
       <div class="help-head">
-        <BmpText font="bazouk-28" text="HELP" />
+        <BmpText font="bazouk-28" text={h.title} />
       </div>
       <div class="help-sub">
-        <BmpText font="arial-14-out" text="Battle Controls" />
+        <BmpText font="arial-14-out" text={h.subtitle} />
       </div>
       <div class="help-list">
         {CONTROLS.map(c => (
@@ -59,7 +61,7 @@ export function HelpOverlay() {
           </div>
         ))}
       </div>
-      <ModalButton label="Close" onClick={closeHelp} class="help-close" />
+      <ModalButton label={h.close} onClick={closeHelp} class="help-close" />
     </Modal>
   );
 }

@@ -13,7 +13,7 @@ import {Button} from './Button';
 import {openSettingsPage, uiClick} from './store';
 import {WeaponIcon} from './WeaponIcon';
 import {EditorScreen} from './EditorScreen';
-import {WEAPON_DATABASE} from '../core/CWeapon';
+import {WEAPON_DATABASE, weaponName, weaponTypeName} from '../core/CWeapon';
 import landData from '../data/land.json';
 import {
   isWeaponOff,
@@ -23,6 +23,7 @@ import {
   weaponsOff,
   landsOff,
 } from './contentStore';
+import {strings, fmt} from '../i18n';
 
 const LANDS = landData as {bg: string}[];
 
@@ -39,7 +40,14 @@ function EditorRow({
     <button class={`editor-row ${off ? 'off' : 'on'}`} onClick={onToggle}>
       <span class="editor-body">{children}</span>
       <span class="editor-state">
-        <BmpText font="beijing-16-out" text={off ? 'Disabled' : 'Enabled'} />
+        <BmpText
+          font="beijing-16-out"
+          text={
+            off
+              ? strings.value.editors.enableList.disabled
+              : strings.value.editors.enableList.enabled
+          }
+        />
       </span>
     </button>
   );
@@ -89,6 +97,7 @@ function Editor({
   const p = Math.min(page, pages - 1);
   const start = p * perPage;
 
+  const e = strings.value.editors.enableList;
   const items = [];
   for (let i = start; i < Math.min(start + perPage, count); i++) {
     const r = row(i);
@@ -105,14 +114,14 @@ function Editor({
       footer={
         <>
           <BmpText font="beijing-16-out" text={footer} />
-          <BmpText font="beijing-16-out" text={`Page ${p + 1} of ${pages}`} />
+          <BmpText font="beijing-16-out" text={fmt(e.pagination, {page: p + 1, pages})} />
         </>
       }
       actions={
         <>
-          <Button label="Prev" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))} />
-          <Button label="Next" onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))} />
-          <Button label="Exit" onClick={() => openSettingsPage('content')} class="editor-exit" />
+          <Button label={e.prev} onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))} />
+          <Button label={e.next} onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))} />
+          <Button label={e.exit} onClick={() => openSettingsPage('content')} class="editor-exit" />
         </>
       }
     >
@@ -127,8 +136,8 @@ export function WeaponsEditor() {
   void weaponsOff.value; // subscribe so toggles re-render
   return (
     <Editor
-      title="Define Weapons"
-      footer="Click a weapon to enable or disable it"
+      title={strings.value.editors.enableList.weaponsTitle}
+      footer={strings.value.editors.enableList.weaponsFooter}
       count={WEAPON_DATABASE.length}
       rowHeight={25}
       layout="weapons"
@@ -139,8 +148,11 @@ export function WeaponsEditor() {
           toggle: () => (toggleWeapon(i), uiClick()),
           body: (
             <>
-              <WeaponIcon name={w.name} size={16} cls="editor-icon" />
-              <BmpText font="beijing-16-out" text={`${w.name} (${w.type})`} />
+              <WeaponIcon name={w.icon} size={16} cls="editor-icon" />
+              <BmpText
+                font="beijing-16-out"
+                text={`${weaponName(w)} (${weaponTypeName(w.type)})`}
+              />
             </>
           ),
         };
@@ -153,8 +165,8 @@ export function LandscapesEditor() {
   void landsOff.value; // subscribe so toggles re-render
   return (
     <Editor
-      title="Define Landscapes"
-      footer="Click a landscape to enable or disable it"
+      title={strings.value.editors.enableList.landscapesTitle}
+      footer={strings.value.editors.enableList.landscapesFooter}
       count={LANDS.length}
       rowHeight={56}
       layout="lands"

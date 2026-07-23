@@ -10,6 +10,7 @@
  * Players open their dedicated editor screens (key bindings / the player roster).
  */
 import {useState} from 'preact/hooks';
+import {strings} from '../i18n';
 import {closeSettings, settingsOrigin, settingsPage, openSettingsPage} from './store';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
@@ -27,53 +28,29 @@ interface Entry {
   onClick: () => void;
 }
 
-// The root categories, with their exact hover subtitles. The Audio "razzle
-// dazzle" line and the "(quits current game)" warnings are intentional game
-// strings — quirks and all. Each opens its option page; Customize Controls and
-// Customize Players open their dedicated editor screens.
-const CATEGORIES: Entry[] = [
-  {
-    label: 'Economy Options',
-    sub: 'Adjust economic settings',
-    onClick: () => openSettingsPage('economy'),
-  },
-  {label: 'Tank Options', sub: 'Adjust tank settings', onClick: () => openSettingsPage('tank')},
-  {
-    label: 'Gameplay Options',
-    sub: 'Adjust gameplay settings',
-    onClick: () => openSettingsPage('gameplay'),
-  },
-  {
-    label: 'Graphics Options',
-    sub: 'Adjust graphics settings',
-    onClick: () => openSettingsPage('graphics'),
-  },
-  {
-    label: 'Audio Options',
-    sub: 'In game razzle dazzle soundfecta',
-    onClick: () => openSettingsPage('audio'),
-  },
-  {
-    label: 'Game Content',
-    sub: 'Enable specific weapons and landscapes',
-    onClick: () => openSettingsPage('content'),
-  },
-  {
-    label: 'Customize Controls',
-    sub: 'Define custom buttons for game actions',
-    onClick: () => openSettingsPage('controls'),
-  },
-  {
-    label: 'Customize Players',
-    sub: 'Define custom names and colors (quits current game)',
-    onClick: () => openSettingsPage('players'),
-  },
-  {
-    label: 'Customize Taunts',
-    sub: 'Edit what the tanks say when they fire, die, and gloat',
-    onClick: () => openSettingsPage('taunts'),
-  },
-];
+// The root categories, sourced from i18n (label + hover subtitle). The Audio "razzle
+// dazzle" line and the "(quits current game)" warnings are intentional game strings —
+// quirks and all. Each opens its option page; Customize Controls / Players / Taunts open
+// their dedicated editor screens.
+function categories(): Entry[] {
+  const c = strings.value.settings.categories;
+  const item = (e: {label: string; sub: string}, page: string): Entry => ({
+    label: e.label,
+    sub: e.sub,
+    onClick: () => openSettingsPage(page),
+  });
+  return [
+    item(c.economy, 'economy'),
+    item(c.tank, 'tank'),
+    item(c.gameplay, 'gameplay'),
+    item(c.graphics, 'graphics'),
+    item(c.audio, 'audio'),
+    item(c.content, 'content'),
+    item(c.controls, 'controls'),
+    item(c.players, 'players'),
+    item(c.taunts, 'taunts'),
+  ];
+}
 
 function SettingsItem({entry, onHover}: {entry: Entry; onHover: (s: string) => void}) {
   return (
@@ -103,16 +80,17 @@ function SettingsRoot() {
   // Done closes Settings. The default subtitle is "Return to the main menu"; when we
   // reached Settings from the in-game pause it returns to the game instead, so the
   // hint follows where Done actually goes.
+  const s = strings.value.settings;
   const done: Entry = {
-    label: 'Done',
-    sub: settingsOrigin.value === 'pause' ? 'Return to the game' : 'Return to the main menu',
+    label: s.done,
+    sub: settingsOrigin.value === 'pause' ? s.doneSubGame : s.doneSubMenu,
     onClick: closeSettings,
   };
   return (
     <div class="settings-screen">
       <ClassicScrollbar class="settings-scroll">
         <div class="menu-list settings-list">
-          {CATEGORIES.map(e => (
+          {categories().map(e => (
             <SettingsItem key={e.label} entry={e} onHover={setSub} />
           ))}
           <SettingsItem key="Done" entry={done} onHover={setSub} />

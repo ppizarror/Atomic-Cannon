@@ -21,6 +21,7 @@ import {
   type TauntCategory,
 } from './tauntsStore';
 import {useState} from 'preact/hooks';
+import {strings, fmt} from '../i18n';
 
 export function TauntEditor() {
   const [cat, setCat] = useState<TauntCategory>('taunt');
@@ -30,35 +31,40 @@ export function TauntEditor() {
   const editLine = (i: number, v: string) => commit(lines.map((l, j) => (j === i ? v : l)));
   const removeLine = (i: number) => (uiClick(), commit(lines.filter((_, j) => j !== i)));
   const addLine = () => (uiClick(), commit([...lines, '']));
-  const meta = TAUNT_CATEGORIES.find(c => c.id === cat)!;
+  const meta = TAUNT_CATEGORIES().find(c => c.id === cat)!;
+  const e = strings.value.editors.taunts;
 
   return (
     <EditorScreen
-      title="Customize Taunts"
+      title={e.title}
       footer={
         <>
           <BmpText font="beijing-16-out" text={meta.desc} />
           <BmpText
             font="beijing-16-out"
-            text={`${lines.length} line${lines.length === 1 ? '' : 's'}`}
+            text={
+              lines.length === 1
+                ? fmt(e.lineOne, {n: lines.length})
+                : fmt(e.lineMany, {n: lines.length})
+            }
           />
         </>
       }
       actions={
         <>
-          <Button label="Add" onClick={addLine} />
+          <Button label={e.add} onClick={addLine} />
           <Button
-            label="Reset"
+            label={e.reset}
             onClick={() => (uiClick(), resetTauntLines(cat))}
             class={tauntsEdited(cat) ? '' : 'editor-exit'}
           />
-          <Button label="Done" onClick={() => openSettingsPage('root')} class="editor-exit" />
+          <Button label={e.done} onClick={() => openSettingsPage('root')} class="editor-exit" />
         </>
       }
     >
       {/* Category selector: one button per list, the active one highlighted. */}
       <div class="taunt-tabs">
-        {TAUNT_CATEGORIES.map(c => (
+        {TAUNT_CATEGORIES().map(c => (
           <Button
             key={c.id}
             label={c.label}
@@ -76,17 +82,17 @@ export function TauntEditor() {
               type="text"
               maxLength={120}
               value={l}
-              placeholder="(empty — will be ignored)"
+              placeholder={e.emptyPlaceholder}
               onInput={e => editLine(i, (e.currentTarget as HTMLInputElement).value)}
             />
-            <button class="taunt-del" title="Delete line" onClick={() => removeLine(i)}>
+            <button class="taunt-del" title={e.deleteLine} onClick={() => removeLine(i)}>
               <BmpText font="beijing-16-out" text="X" />
             </button>
           </div>
         ))}
         {lines.length === 0 ? (
           <div class="taunt-empty">
-            <BmpText font="beijing-16-out" text="No lines — Add one or Reset to defaults." />
+            <BmpText font="beijing-16-out" text={e.empty} />
           </div>
         ) : null}
       </div>

@@ -9,6 +9,7 @@
 import weaponsRaw from '../data/weapons.json';
 import particlesRaw from '../data/particles.json';
 import {rgbToHex} from '../math/color';
+import {strings} from '../i18n';
 import {type ExtType, toExtType} from './weapons/ExtType';
 import {EXP, type ExpType, toExpType} from './weapons/ExpType';
 
@@ -38,7 +39,11 @@ export type WeaponType =
 
 /** One row of data/weapons.json (46-column schema from weapons.txt). */
 export interface RawWeapon {
-  name: string;
+  /** Stable slug (e.g. "magma.beam") — the engine/AI match key and the i18n key for the
+   *  weapon's display name/description. NEVER localised, so game logic can rely on it. */
+  id: string;
+  /** Icon asset basename under assets/icons/<size>/ (lower-cased at load; e.g. "Magma Beam"). */
+  icon: string;
   type: WeaponType;
   bitmap: string;
   size: number;
@@ -79,7 +84,6 @@ export interface RawWeapon {
   irBlue: number;
   expType: number;
   expBitmap: string;
-  desc: string;
 
   [k: string]: unknown;
 }
@@ -118,6 +122,15 @@ export const WEAPON_DATABASE: WeaponDef[] = RAW.map((w, i) => {
   return def;
 });
 
+/** Localised display name for a weapon def (active locale), falling back to its id. */
+export const weaponName = (w: {id: string}): string => strings.value.weapons[w.id]?.name ?? w.id;
+
+/** Localised depot description for a weapon def (active locale), or '' when it has none. */
+export const weaponDesc = (w: {id: string}): string => strings.value.weapons[w.id]?.desc ?? '';
+
+/** Localised label for a weapon category (`type` discriminant), falling back to the type. */
+export const weaponTypeName = (type: string): string => strings.value.weaponTypes[type] ?? type;
+
 /** The number shown next to a weapon in the arsenal list — its STABLE 1-based id
  *  (database position + 1), NOT its position in the currently-shown (filtered) list.
  *  Because it keys off the weapon's own index it never shifts when weapons are
@@ -152,8 +165,14 @@ export class CWeapon {
     return this.m_def;
   }
 
+  /** Stable, never-localised match key (data/weapons.json `id`). */
+  getId(): string {
+    return this.m_def.id;
+  }
+
+  /** Localised display name for the active locale (falls back to the id). */
   getName(): string {
-    return this.m_def.name;
+    return weaponName(this.m_def);
   }
 
   getIndex(): number {
@@ -191,7 +210,7 @@ export class CWeapon {
   }
 
   getDescription(): string {
-    return this.m_def.desc;
+    return weaponDesc(this.m_def);
   }
 
   isNuclear(): boolean {

@@ -19,6 +19,7 @@ import {usePointerDrag} from './usePointerDrag';
 import {EditorScreen} from './EditorScreen';
 import {useAsyncImage} from './useAsyncImage';
 import {useAsyncValue} from './useAsyncValue';
+import {strings, fmt} from '../i18n';
 
 function TankPreview({model, color}: {model: string; color: string}) {
   const src = useAsyncImage(() => recolorTankPreview(model, color), [model, color]);
@@ -54,16 +55,17 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
     onMove: e => pickAt(e.clientX, e.clientY),
   });
 
+  const e = strings.value.editors.players;
   return (
     <div class="player-color">
-      <BmpText font="beijing-16-out" text="Color:" />
+      <BmpText font="beijing-16-out" text={e.color} />
       <span class="player-swatch" style={{background: value}} />
       <span class="player-palette-wrap">
         <img
           ref={imgRef}
           class="player-palette"
           src="/assets/gui/color pallette.bmp"
-          alt="colour palette"
+          alt={e.palette}
           {...drag}
         />
         {mark ? (
@@ -86,6 +88,7 @@ export function PlayersEditor() {
   const count = Math.min(MAX_PLAYERS, list.length);
   const idx = Math.min(p, count - 1);
   const cfg = list[idx];
+  const e = strings.value.editors.players;
 
   const page = (d: number) => {
     uiClick();
@@ -94,15 +97,15 @@ export function PlayersEditor() {
 
   return (
     <EditorScreen
-      title="Player Settings"
-      footer={<BmpText font="beijing-16-out" text="Players sharing a colour are a team" />}
-      actions={<Button label="Done" onClick={() => openSettingsPage('root')} />}
+      title={e.title}
+      footer={<BmpText font="beijing-16-out" text={e.footer} />}
+      actions={<Button label={e.done} onClick={() => openSettingsPage('root')} />}
     >
       <div class="player-card">
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
-          <BmpText font="beijing-16-out" text={`Player ${idx + 1} Name:`} />
+          <BmpText font="beijing-16-out" text={fmt(e.playerName, {n: idx + 1})} />
           <input
             class="player-name"
             type="text"

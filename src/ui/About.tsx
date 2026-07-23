@@ -15,17 +15,17 @@ import {Modal} from './Modal';
 import {ModalButton} from './ModalButton';
 
 export function About() {
-  const s = strings.value;
+  const s = strings.value.about;
   return (
     <Modal backdrop="steel" width="min(680px, 92vw)" maxHeight="86vh" class="about-card">
       <div class="about-head">
-        <BmpText font="bazouk-28" text={s.aboutTitle} />
+        <BmpText font="bazouk-28" text={s.title} />
       </div>
       <div class="about-sub">
-        <BmpText font="beijing-16-out" text={s.aboutSubtitle} />
+        <BmpText font="beijing-16-out" text={s.subtitle} />
       </div>
       <ClassicScrollbar class="about-body">
-        {s.about.map((sec, i) => (
+        {s.sections.map((sec, i) => (
           <section key={i} class="about-section">
             {sec.heading && (
               <div class="about-sec-head">

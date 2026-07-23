@@ -75,14 +75,12 @@ describe('Winning the war', () => {
     expect(s.warOver).toBe(true);
   });
 
-  it('rounds mode → "wins the battle!" with no war subtitle', () => {
+  it('rounds mode → "wins the battle!" with no war subtitle (scored by points)', () => {
     const gc = newGame();
     gc.setGameType(EGameType.Rounds);
     const t = (gc as unknown as Priv).m_tanks;
-    t[0].addKill();
-    t[1].hit(999999);
-    t[2].hit(999999);
-    (gc as unknown as Priv).endTurn();
+    // Rounds/Points is decided by POINTS (net damage dealt), not kills or last-standing.
+    t[0].addHit(300); // t[0]'s team leads the points table
     const s = gc.getWarStandings();
     expect(s.title).toBe(`${t[0].getName()} wins the battle!`);
     expect(s.pointsMode).toBe(true); // uses the Points column

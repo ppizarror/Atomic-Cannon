@@ -9,16 +9,16 @@ import {describe, it, expect, vi} from 'vitest';
 import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
-import {getWeapon, WEAPON_DATABASE} from '../src/core/CWeapon';
+import {getWeapon, WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 
-const SHELL = WEAPON_DATABASE.findIndex(w => w.name === 'Shell');
+const SHELL = WEAPON_DATABASE.findIndex(w => weaponName(w) === 'Shell');
 
 // Standalone accessor view (see ai-integration.test.ts): intersecting the class,
 // which has private members, would collapse the type to `never`.
 type GC = {
   startGame(numTanks: number): void;
   getCurrentWeaponIndex(): number;
-  getWeaponDefs(): {name: string}[];
+  getWeaponDefs(): {id: string}[];
   selectWeapon(index: number): void;
   m_tanks: {getWeaponIndex(): number; isHuman(): boolean; isBot(): boolean}[];
   m_currentPlayerIndex: number;
@@ -34,7 +34,7 @@ const human = gc.m_tanks[0],
 // The human starts on whatever weapon the control lock is set to — derive it
 // rather than hardcoding, so the test survives changing the FX-test control weapon.
 const CTRL = human.getWeaponIndex();
-const CTRL_NAME = WEAPON_DATABASE[CTRL].name;
+const CTRL_NAME = weaponName(WEAPON_DATABASE[CTRL]);
 
 describe('Weapon selection', () => {
   it(`human starts on the control weapon (${CTRL_NAME}), stored on its own tank`, () => {
@@ -47,7 +47,9 @@ describe('Weapon selection', () => {
     // full arsenal (which always contains whatever the human currently holds).
     const defs = gc.getWeaponDefs();
     const locked = defs.length === 1;
-    expect(locked ? defs[0].name === CTRL_NAME : defs.some(d => d.name === CTRL_NAME)).toBe(true);
+    expect(
+      locked ? weaponName(defs[0]) === CTRL_NAME : defs.some(d => weaponName(d) === CTRL_NAME),
+    ).toBe(true);
   });
 
   it('selectWeapon persists onto the acting tank', () => {

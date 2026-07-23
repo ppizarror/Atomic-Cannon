@@ -3,14 +3,17 @@
  * labels + hover tooltips. Each row is a `Widget`: a toggle (ON/OFF), an int/float stepper,
  * an enum cycle, or a nav row.
  *
- * Stored rows get their id's DEFAULT and enum LABELS from `settingsCatalog` (SETTINGS) — the
- * builders below only carry presentation (label / tip / stepper range). Audio rows are the
- * exception: they read/write CAudio directly (one live source of truth), so they're spelled
- * out by hand. A row's game effect is wired via `applyGameSettings`; the rest are persisted
- * UI whose hooks land as the matching systems come online.
+ * All presentation copy (labels / tips / enum value labels / page headers) comes from i18n
+ * (`strings.settings.*`); the builders read it at call time, so the whole tree re-renders
+ * in the new language when the locale changes. Stored rows get their id's DEFAULT and enum
+ * SCALE from `settingsCatalog` (SETTINGS). Audio rows read/write CAudio directly and the
+ * Language row drives the i18n locale signal — one live source of truth each. A row's game
+ * effect is wired via `applyGameSettings`.
  */
+import {strings, fmt, locale, setLocale, availableLocales, localeName} from '../i18n';
+import type {RowCopy} from '../i18n';
 import {getVal, setVal} from './settingsStore';
-import {SETTINGS, type SettingId} from './settingsCatalog';
+import {type SettingId} from './settingsCatalog';
 import {game, openSettingsPage} from './store';
 import {applyGameSettings} from './applySettings';
 
@@ -23,7 +26,7 @@ export interface Widget {
   kind: WidgetKind;
   get: () => number; // current value (enum index / raw stepper / 0-1 toggle)
   set?: (v: number) => void;
-  options?: readonly string[]; // enum labels (from the catalog)
+  options?: readonly string[]; // enum labels (from i18n)
   min?: number;
   max?: number;
   step?: number;
@@ -38,12 +41,13 @@ export interface PageSpec {
   rows: Widget[];
 }
 
-const pct = (v: number) => `${v}%`;
+/** Percent formatter for stepper values (localised suffix). */
+const pct = (v: number): string => fmt(strings.value.settings.percent, {n: v});
 
 // ── stored-preference widget builders ────────────────────────────────────────
-// Default + enum labels come from SETTINGS[id]; only presentation is passed in. Every
-// stored change persists AND re-applies live, so wired options (difficulty, wind, variance,
-// …) take effect immediately and start-time ones are ready for the next game.
+// Default + enum scale come from SETTINGS[id]; label/tip/options come from the passed
+// i18n `RowCopy`. Every stored change persists AND re-applies live, so wired options take
+// effect immediately and start-time ones are ready for the next game.
 export const bind = (id: SettingId) => ({
   get: () => getVal(id),
   set: (v: number) => {
@@ -51,143 +55,109 @@ export const bind = (id: SettingId) => ({
     applyGameSettings(game());
   },
 });
-const toggle = (label: string, tip: string, id: SettingId): Widget => ({
-  label,
-  tip,
+const toggle = (c: RowCopy, id: SettingId): Widget => ({
+  label: c.label,
+  tip: c.tip,
   kind: 'toggle',
   ...bind(id),
 });
-export const enumW = (label: string, tip: string, id: SettingId): Widget => ({
-  label,
-  tip,
+export const enumW = (c: RowCopy, id: SettingId): Widget => ({
+  label: c.label,
+  tip: c.tip,
   kind: 'enum',
-  options: SETTINGS[id].options,
+  options: c.options,
   ...bind(id),
 });
 export const stepper = (
-  label: string,
-  tip: string,
+  c: RowCopy,
   id: SettingId,
   min: number,
   max: number,
   step: number,
-  fmt?: (v: number) => string,
-): Widget => ({label, tip, kind: 'stepper', min, max, step, fmt, ...bind(id)});
+  fmtFn?: (v: number) => string,
+): Widget => ({
+  label: c.label,
+  tip: c.tip,
+  kind: 'stepper',
+  min,
+  max,
+  step,
+  fmt: fmtFn,
+  ...bind(id),
+});
 
 // ── pages ────────────────────────────────────────────────────────────────────
 function economyRows(): Widget[] {
+  const s = strings.value.settings.economy;
   return [
-    enumW(
-      'Buy Time',
-      'When players are allowed to buy, set to automatic for randomly assigned weapons',
-      'eco.buyTime',
-    ),
-    stepper(
-      'Credit Start',
-      'Credits given to each player at match start (default 3000)',
-      'eco.creditStart',
-      0,
-      20000,
-      500,
-    ),
-    stepper(
-      'Credit Round',
-      'Credits given to each player each round (default 1000)',
-      'eco.creditRound',
-      0,
-      10000,
-      250,
-    ),
-    stepper(
-      'Credit Turn',
-      'Credits given to each player per turn (default 0)',
-      'eco.creditTurn',
-      0,
-      5000,
-      100,
-    ),
-    stepper(
-      'Credit Kill',
-      'Credits given to each player per kill (default 500)',
-      'eco.creditKill',
-      0,
-      5000,
-      100,
-    ),
-    stepper(
-      'Credit Damage',
-      'Credits given to each player per damage done (default 1)',
-      'eco.creditDamage',
-      0,
-      100,
-      1,
-    ),
-    stepper(
-      'Sell Back Rate',
-      'Rate at which weapons are sold back to depot (default 50%)',
-      'eco.sellBack',
-      0,
-      100,
-      5,
-      pct,
-    ),
+    enumW(s.buyTime, 'eco.buyTime'),
+    stepper(s.creditStart, 'eco.creditStart', 0, 20000, 500),
+    stepper(s.creditRound, 'eco.creditRound', 0, 10000, 250),
+    stepper(s.creditTurn, 'eco.creditTurn', 0, 5000, 100),
+    stepper(s.creditKill, 'eco.creditKill', 0, 5000, 100),
+    stepper(s.creditDamage, 'eco.creditDamage', 0, 100, 1),
+    stepper(s.sellBack, 'eco.sellBack', 0, 100, 5, pct),
   ];
 }
 
 function tankRows(): Widget[] {
+  const s = strings.value.settings.tank;
   return [
-    enumW('Kickback', 'How much explosions move the tanks.', 'tank.kickback'),
-    enumW('Player Size', 'How big the tanks are.', 'tank.size'),
-    toggle('Relative Turrets', 'Aiming it relative to the tank', 'tank.relTurrets'),
-    toggle('Bury Tanks', 'Tanks can be underground', 'tank.bury'),
-    stepper(
-      'Power Scale',
-      'This affects how far a shot will go based on power',
-      'tank.powerScale',
-      10,
-      300,
-      10,
-      pct,
-    ),
-    stepper('Hitpoints', 'Number of points tank starts with', 'tank.hitpoints', 100, 5000, 100),
-    toggle('Chatter', 'Tanks talk to each other', 'tank.chatter'),
-    toggle('Colorize Team', 'Tanks are team color', 'tank.colorize'),
+    enumW(s.kickback, 'tank.kickback'),
+    enumW(s.size, 'tank.size'),
+    toggle(s.relTurrets, 'tank.relTurrets'),
+    toggle(s.bury, 'tank.bury'),
+    stepper(s.powerScale, 'tank.powerScale', 10, 300, 10, pct),
+    stepper(s.hitpoints, 'tank.hitpoints', 100, 5000, 100),
+    toggle(s.chatter, 'tank.chatter'),
+    toggle(s.colorize, 'tank.colorize'),
   ];
 }
 
 function gameplayRows(): Widget[] {
+  const s = strings.value.settings.gameplay;
   return [
-    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 1, 50, 1),
-    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 1, 50, 1),
+    stepper(s.battles, 'gp.battles', 1, 50, 1),
+    stepper(s.rounds, 'gp.rounds', 1, 50, 1),
     // Difficulty is a stored preference (persisted + applied via applyGameSettings →
     // controller.setDifficulty); index 0..9 maps to AI level 1..10.
-    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty'),
-    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind'),
-    enumW('Change Wind', 'Defines when the wind changes direction', 'gp.changeWind'),
-    enumW('Explosion Size', 'How big the explosions are.', 'gp.explosionSize'),
-    toggle('Variance', 'All weapons have a different random variance when shot', 'gp.variance'),
-    toggle('Utility Turn', 'If a utility item use counts as turn', 'gp.utilTurn'),
-    toggle('Randomize Turns', 'Randomly assings the turn order each battle', 'gp.randTurns'),
-    stepper('Crates', 'Chance to drop a crate each round', 'gp.crates', 0, 100, 5, pct),
-    stepper(
-      'Update Scale',
-      'The speed at which the game is animated (default 10)',
-      'gp.updateScale',
-      1,
-      30,
-      1,
-    ),
-    toggle('Right Click Fires', 'If you are accidentally firing disable this', 'gp.rcFires'),
+    enumW(s.difficulty, 'gp.difficulty'),
+    enumW(s.wind, 'gp.wind'),
+    enumW(s.changeWind, 'gp.changeWind'),
+    enumW(s.explosionSize, 'gp.explosionSize'),
+    toggle(s.variance, 'gp.variance'),
+    toggle(s.utilTurn, 'gp.utilTurn'),
+    toggle(s.randTurns, 'gp.randTurns'),
+    stepper(s.crates, 'gp.crates', 0, 100, 5, pct),
+    stepper(s.updateScale, 'gp.updateScale', 1, 30, 1),
+    toggle(s.rcFires, 'gp.rcFires'),
   ];
 }
 
+/** Language cycle — a live row backed by the i18n locale signal (not a stored SettingId).
+ *  Options are the shipped locales in their own names; index = current locale's slot. */
+function languageRow(s: RowCopy): Widget {
+  return {
+    label: s.label,
+    tip: s.tip,
+    kind: 'enum',
+    options: availableLocales.map(localeName),
+    get: () => Math.max(0, availableLocales.indexOf(locale.value)),
+    set: (v: number) => {
+      const code = availableLocales[v];
+      if (code) setLocale(code);
+    },
+  };
+}
+
 function graphicsRows(): Widget[] {
+  const s = strings.value.settings.graphics;
   return [
     {
       // Real fullscreen via the Fullscreen API; reads the live document state so it
       // stays reactive (leaving fullscreen with Esc flips it back to OFF on its own).
-      label: 'Full Screen',
-      tip: 'Toggle the game between full screen and windowed modes',
+      label: s.fullScreen.label,
+      tip: s.fullScreen.tip,
       kind: 'toggle',
       get: () => (typeof document !== 'undefined' && document.fullscreenElement ? 1 : 0),
       set: (v: number) => {
@@ -196,16 +166,17 @@ function graphicsRows(): Widget[] {
         else void document.exitFullscreen?.();
       },
     },
-    toggle('Tracking', 'Draws a notch for off screen shots', 'gfx.tracking'),
-    toggle('Draw Smoke', 'Draws smoking plumes on ground', 'gfx.smoke'),
-    toggle('High Contrast', 'Outlines objects with white', 'gfx.highContrast'),
-    enumW('Land Type', 'Select different landscapes', 'gfx.landType'),
-    toggle('Show AI Stats', "Show the computer's stats", 'gfx.aiStats'),
-    toggle('Show Team Color', 'Display each tanks name and team color', 'gfx.teamColor'),
-    toggle('Small Buy Fonts', 'Use a smaller font on the buy menu', 'gfx.smallBuy'),
+    languageRow(s.language),
+    toggle(s.tracking, 'gfx.tracking'),
+    toggle(s.smoke, 'gfx.smoke'),
+    toggle(s.highContrast, 'gfx.highContrast'),
+    enumW(s.landType, 'gfx.landType'),
+    toggle(s.aiStats, 'gfx.aiStats'),
+    toggle(s.teamColor, 'gfx.teamColor'),
+    toggle(s.smallBuy, 'gfx.smallBuy'),
     {
-      label: 'More Graphics Options',
-      tip: 'Adjust graphics settings',
+      label: s.more.label,
+      tip: s.more.tip,
       kind: 'nav',
       get: () => 0,
       onClick: () => openSettingsPage('graphics2'),
@@ -214,47 +185,45 @@ function graphicsRows(): Widget[] {
 }
 
 function graphics2Rows(): Widget[] {
+  const s = strings.value.settings.graphics;
   return [
-    toggle('Show Turn', 'Display an arrow when its your turn', 'gfx.showTurn'),
-    toggle('Show Blast Circles', 'Display bounds of explosions', 'gfx.blastCircles'),
-    toggle('Show Points', 'Display damage points for each shot', 'gfx.showPoints'),
-    toggle('Show Power', 'Display power bars for each tank', 'gfx.showPower'),
-    toggle('Show Tank Stats', 'Display stats of each tank', 'gfx.tankStats'),
-    toggle('Auto Scroll', 'Automatically scrolls during game events', 'gfx.autoScroll'),
-    toggle('Show Last Aim', 'Show last power and angle position', 'gfx.lastAim'),
-    toggle('Explosion Waves', 'A very cool refractive wave effect for nukes', 'gfx.expWaves'),
-    toggle('Camera Shake', 'Shake the screen on big and nuclear explosions', 'gfx.camShake'),
-    enumW('Show Framerate', 'Off, the FPS counter, or FPS + a frame count (Full)', 'gfx.framerate'),
-    enumW(
-      'Max Framerate',
-      'Cap the frame rate to save CPU / battery (No Limit = the display refresh rate)',
-      'gfx.fpsCap',
-    ),
-    toggle('Demo Mode', 'Game automatically plays itself', 'gfx.demo'),
+    toggle(s.showTurn, 'gfx.showTurn'),
+    toggle(s.blastCircles, 'gfx.blastCircles'),
+    toggle(s.showPoints, 'gfx.showPoints'),
+    toggle(s.showPower, 'gfx.showPower'),
+    toggle(s.tankStats, 'gfx.tankStats'),
+    toggle(s.autoScroll, 'gfx.autoScroll'),
+    toggle(s.lastAim, 'gfx.lastAim'),
+    toggle(s.expWaves, 'gfx.expWaves'),
+    toggle(s.camShake, 'gfx.camShake'),
+    enumW(s.framerate, 'gfx.framerate'),
+    enumW(s.fpsCap, 'gfx.fpsCap'),
+    toggle(s.demo, 'gfx.demo'),
   ];
 }
 
 function audioRows(): Widget[] {
+  const s = strings.value.settings.audio;
   const a = game().getAudio();
   return [
     {
-      label: 'Sound',
-      tip: 'Toggle sound effects on and off',
+      label: s.sound.label,
+      tip: s.sound.tip,
       kind: 'toggle',
       get: () => (a?.isSfxEnabled() ? 1 : 0),
       set: (v: number) => a?.setSfxEnabled(!!v),
     },
     {
-      label: 'Music',
-      tip: 'Toggle music on and off',
+      label: s.music.label,
+      tip: s.music.tip,
       kind: 'toggle',
       get: () => (a?.isMusicEnabled() ? 1 : 0),
       set: (v: number) => a?.setMusicEnabled(!!v),
     },
     {
       // CAudio volumes are already 0..100 (percent) — pass through, don't rescale.
-      label: 'Sound Volume',
-      tip: 'Sound effects volume',
+      label: s.soundVol.label,
+      tip: s.soundVol.tip,
       kind: 'stepper',
       min: 0,
       max: 100,
@@ -264,8 +233,8 @@ function audioRows(): Widget[] {
       set: (v: number) => a?.setSfxVolume(v),
     },
     {
-      label: 'Music Volume',
-      tip: 'Music soundtrack volume',
+      label: s.musicVol.label,
+      tip: s.musicVol.tip,
       kind: 'stepper',
       min: 0,
       max: 100,
@@ -274,23 +243,24 @@ function audioRows(): Widget[] {
       get: () => Math.round(a?.getMusicVolume() ?? 100),
       set: (v: number) => a?.setMusicVolume(v),
     },
-    toggle('Stereo', 'Enable stereo sound', 'aud.stereo'),
+    toggle(s.stereo, 'aud.stereo'),
   ];
 }
 
 function contentRows(): Widget[] {
   // Weapons / Landscapes open dedicated enable-list editors (over the steel plate).
+  const s = strings.value.settings.content;
   return [
     {
-      label: 'Weapons',
-      tip: 'Enable only the weapons you want (quits current game)',
+      label: s.weapons.label,
+      tip: s.weapons.tip,
       kind: 'nav',
       get: () => 0,
       onClick: () => openSettingsPage('content.weapons'),
     },
     {
-      label: 'Landscapes',
-      tip: 'Enable only the landscapes you want (quits current game)',
+      label: s.landscapes.label,
+      tip: s.landscapes.tip,
       kind: 'nav',
       get: () => 0,
       onClick: () => openSettingsPage('content.landscapes'),
@@ -299,21 +269,22 @@ function contentRows(): Widget[] {
 }
 
 export function getSettingsPage(id: string): PageSpec | null {
+  const s = strings.value.settings;
   switch (id) {
     case 'economy':
-      return {id, header: 'Adjust economic settings', rows: economyRows()};
+      return {id, header: s.economy.header, rows: economyRows()};
     case 'tank':
-      return {id, header: 'Adjust tank settings', rows: tankRows()};
+      return {id, header: s.tank.header, rows: tankRows()};
     case 'gameplay':
-      return {id, header: 'Adjust gameplay settings', rows: gameplayRows()};
+      return {id, header: s.gameplay.header, rows: gameplayRows()};
     case 'graphics':
-      return {id, header: 'Adjust graphics settings', rows: graphicsRows()};
+      return {id, header: s.graphics.header, rows: graphicsRows()};
     case 'graphics2':
-      return {id, header: 'Adjust graphics settings', rows: graphics2Rows()};
+      return {id, header: s.graphics.header, rows: graphics2Rows()};
     case 'audio':
-      return {id, header: 'Adjust sound and music settings', rows: audioRows()};
+      return {id, header: s.audio.header, rows: audioRows()};
     case 'content':
-      return {id, header: 'Enable specific weapons and landscapes', rows: contentRows()};
+      return {id, header: s.content.header, rows: contentRows()};
     default:
       return null;
   }

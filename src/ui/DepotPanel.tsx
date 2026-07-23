@@ -32,8 +32,12 @@ import {
   getDefaultWeaponIndex,
   weaponPower,
   weaponDamagePerArea,
+  weaponName,
+  weaponDesc,
+  weaponTypeName,
   type WeaponDef,
 } from '../core/CWeapon';
+import {strings} from '../i18n';
 import {weaponEnabled} from '../core/CGameContent';
 import {UNLIMITED} from '../core/CEconomy';
 
@@ -96,8 +100,8 @@ function WeaponTip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
   return (
     <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
       <Tooltip
-        title={w.name}
-        content={w.desc || 'No description available.'}
+        title={weaponName(w)}
+        content={weaponDesc(w) || strings.value.depot.noDescription}
         tailLeft="14px"
         tipPosition="down"
       />
@@ -139,6 +143,7 @@ export function DepotPanel() {
 
   const owned = ownedCounts.value;
   const creds = credits.value;
+  const d = strings.value.depot;
 
   // The catalog, sorted by the active column. Rebuilt only when sort/owned change.
   const rows = useMemo(() => {
@@ -147,7 +152,7 @@ export function DepotPanel() {
         case 'qty':
           return owned[w.index] ?? 0;
         case 'name':
-          return w.name.toLowerCase();
+          return weaponName(w).toLowerCase();
         case 'type':
           return String(w.type).toLowerCase();
         case 'power':
@@ -188,16 +193,16 @@ export function DepotPanel() {
     <div class="overlay dep-overlay" onClick={closeDepot}>
       <div class="dep-card" onClick={e => e.stopPropagation()}>
         <div class="dep-head">
-          <BmpText font={TITLE_FONT} text="WEAPONS DEPOT" />
+          <BmpText font={TITLE_FONT} text={d.title} />
           <div class="dep-sub">
-            <BmpText font={SUB_FONT} text="CLICK ICON FOR DESCRIPTIONS" spacing={-1} />
+            <BmpText font={SUB_FONT} text={d.subtitle} spacing={-1} />
           </div>
         </div>
 
         <div class="dep-cols">
           <Header
             k="qty"
-            label="Qty"
+            label={d.col.qty}
             cls="c-qty"
             activeKey={sort.key}
             dir={sort.dir}
@@ -205,7 +210,7 @@ export function DepotPanel() {
           />
           <Header
             k="name"
-            label="Name"
+            label={d.col.name}
             cls="c-name"
             activeKey={sort.key}
             dir={sort.dir}
@@ -213,7 +218,7 @@ export function DepotPanel() {
           />
           <Header
             k="type"
-            label="Type"
+            label={d.col.type}
             cls="c-type"
             activeKey={sort.key}
             dir={sort.dir}
@@ -221,7 +226,7 @@ export function DepotPanel() {
           />
           <Header
             k="power"
-            label="Power"
+            label={d.col.power}
             cls="c-num"
             activeKey={sort.key}
             dir={sort.dir}
@@ -229,7 +234,7 @@ export function DepotPanel() {
           />
           <Header
             k="cost"
-            label="Cost"
+            label={d.col.cost}
             cls="c-num"
             activeKey={sort.key}
             dir={sort.dir}
@@ -261,11 +266,11 @@ export function DepotPanel() {
                   )}
                 </span>
                 <span class="c-name">
-                  <WeaponIcon name={w.name} size={16} cls="dep-icon" />
-                  <BmpText font={TABLE_FONT} text={w.name} spacing={-1} />
+                  <WeaponIcon name={w.icon} size={16} cls="dep-icon" />
+                  <BmpText font={TABLE_FONT} text={weaponName(w)} spacing={-1} />
                 </span>
                 <span class="c-type">
-                  <BmpText font={TABLE_FONT} text={String(w.type)} spacing={-1} />
+                  <BmpText font={TABLE_FONT} text={weaponTypeName(w.type)} spacing={-1} />
                 </span>
                 <span class="c-num">
                   <BmpText font={TABLE_FONT} text={String(powerOf(w))} spacing={-1} />
@@ -283,19 +288,19 @@ export function DepotPanel() {
         )}
         {showStats && selW && (
           <div class="dep-stats" onClick={() => setShowStats(false)}>
-            <BmpText font={BIG_FONT} text={selW.name} />
+            <BmpText font={BIG_FONT} text={weaponName(selW)} />
             <div class="dep-stat-grid">
               {(
                 [
-                  ['Type', selW.type],
-                  ['Damage', selW.damage],
-                  ['Radius', selW.radius],
-                  ['Dmg/area', weaponDamagePerArea(selW).toFixed(0)],
-                  ['Variance', (selW.variance ?? 0).toFixed(1)],
-                  ['Fodder', (selW.fodder ?? 0).toFixed(1)],
-                  ['Cluster', selW.cluNum > 0 ? selW.cluNum : '-'],
-                  ['Cost', `$${selW.cost}`],
-                  ['Owned', owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)],
+                  [d.stat.type, weaponTypeName(selW.type)],
+                  [d.stat.damage, selW.damage],
+                  [d.stat.radius, selW.radius],
+                  [d.stat.dmgArea, weaponDamagePerArea(selW).toFixed(0)],
+                  [d.stat.variance, (selW.variance ?? 0).toFixed(1)],
+                  [d.stat.fodder, (selW.fodder ?? 0).toFixed(1)],
+                  [d.stat.cluster, selW.cluNum > 0 ? selW.cluNum : '-'],
+                  [d.stat.cost, `$${selW.cost}`],
+                  [d.stat.owned, owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)],
                 ] as const
               ).map(([k, v]) => (
                 <div class="dep-stat-row" key={k}>
@@ -305,7 +310,7 @@ export function DepotPanel() {
               ))}
             </div>
             <div class="dep-hint">
-              <BmpText font={SMALL_FONT} text="click to close" />
+              <BmpText font={SMALL_FONT} text={d.clickToClose} />
             </div>
           </div>
         )}
@@ -316,26 +321,26 @@ export function DepotPanel() {
               <BmpText font={STATUS_FONT} text={playerName.value} spacing={-1} />
             </div>
             <div class="dep-credits">
-              <BmpText font={STATUS_FONT} text={`Credits ${creds}`} spacing={-1} />
+              <BmpText font={STATUS_FONT} text={`${d.credits} ${creds}`} spacing={-1} />
             </div>
           </div>
           <div class="dep-btns">
             {/* Left cluster: Buy | Sell on top, Auto Buy spanning both beneath. */}
             <div class="dep-btn-col left">
-              <DepBtn label="Buy" disabled={!canBuy} onClick={() => depotBuy(sel)} />
-              <DepBtn label="Sell" disabled={!canSell} onClick={() => depotSell(sel)} />
-              <DepBtn label="Auto Buy" span onClick={depotAutoBuy} />
+              <DepBtn label={d.buy} disabled={!canBuy} onClick={() => depotBuy(sel)} />
+              <DepBtn label={d.sell} disabled={!canSell} onClick={() => depotSell(sel)} />
+              <DepBtn label={d.autoBuy} span onClick={depotAutoBuy} />
             </div>
             {/* Right cluster: Stats over Close. */}
             <div class="dep-btn-col right">
               <DepBtn
-                label="Stats"
+                label={d.stats}
                 onClick={() => {
                   uiClick();
                   setShowStats(s => !s);
                 }}
               />
-              <DepBtn label="Close" onClick={closeDepot} />
+              <DepBtn label={d.close} onClick={closeDepot} />
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@
  * (menu / settings / depot) switch on `screen`.
  */
 import {signal} from '@preact/signals';
+import {strings, fmt} from '../i18n';
 import {
   EGameState,
   type CGameController,
@@ -419,13 +420,14 @@ export function syncHud(): void {
 
   // Top-left status text — only re-publish when it actually changes so the
   // bitmap-font lines don't re-render every frame.
+  const g = strings.value.game;
   const lines = c.getTankStatuses().map(s => ({
-    text: `${s.name}: ${s.lifePct}% life`,
+    text: fmt(g.statusLife, {name: s.name, pct: s.lifePct}),
     color: s.color,
     dead: !s.alive,
     active: s.active,
   }));
-  const battle = `Battle ${c.getBattleNum()} of ${c.getTotalBattles()} - Shot ${c.getShotCount()}`;
+  const battle = c.getStatusLine(); // "Round N of M" (Rounds) or "Battle N of M - Shot X"
   const sig = lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle;
   if (sig !== lastBattleSig) {
     lastBattleSig = sig;
