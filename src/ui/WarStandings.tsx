@@ -7,6 +7,7 @@
  * scene, next to the winning tank.
  */
 import {BmpText} from './BmpText';
+import {BattleMedals} from './BattleMedals';
 import {warStandings, advanceWar} from './store';
 import type {WarTeamRow} from '../game/CGameController';
 
@@ -71,6 +72,10 @@ export function WarStandings() {
           <BmpText font="silkscreen-8-out" text={s.winCondition} />
         </div>
       ) : null}
+
+      {/* War-over victory only: the local player's Battles Won/Lost + medal stack
+          (the same shared footer as the High Scores screen). */}
+      {s.warOver && s.banner === 'Victory!' ? <BattleMedals /> : null}
 
       <div class="war-prompt">
         <BmpText font="beijing-16-out" text={s.prompt} />

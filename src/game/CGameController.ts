@@ -77,6 +77,14 @@ export enum EGameType {
   FastTest = 2,
 }
 
+/** One team's Battle Heroes submission: the callsign plus both board values (kills for
+ *  Deathmatch, average damage-per-tank "score" for Points games). */
+export interface BattleHeroTeam {
+  name: string;
+  score: number;
+  kills: number;
+}
+
 /** One team's row in the between-battles standings table. */
 export interface WarTeamRow {
   name: string;
@@ -2731,8 +2739,15 @@ export class CGameController implements ShotWorld {
       }
       this.m_audio?.stopTankMove();
       // Win/lose jingle — victory if the human survived.
-      if (alive.length === 1 && alive[0].isHuman()) this.m_audio?.battleWon();
+      const humanWon = alive.length === 1 && alive[0].isHuman();
+      if (humanWon) this.m_audio?.battleWon();
       else this.m_audio?.battleLost();
+      // Record this battle's outcome for the local human's Battle Heroes tally — only in
+      // matches a human is actually playing (skip all-AI demo games). The UI consumes it
+      // once (takeBattleOutcome) to advance the persisted won/lost counters.
+      if (this.m_tanks.some(t => t.isHuman())) {
+        this.m_pendingBattleOutcome = humanWon ? 'won' : 'lost';
+      }
       return;
     }
     // Post-fire gloat: as the turn passes on after a shot, the tank that just fired
@@ -3743,6 +3758,32 @@ export class CGameController implements ShotWorld {
     };
   }
 
+  /** Per-team Battle Heroes values, submitted to the hall of fame at war end: each
+   *  team's total kills (the Kills board) and its average damage-dealt per tank (the
+   *  Score board). One entry per team; the callsign is the team's name. */
+  getBattleHeroes(): BattleHeroTeam[] {
+    const teams = this.groupTanksByTeam(t => t.getTankType() !== 'Sentry');
+    const out: BattleHeroTeam[] = [];
+    for (const members of teams.values()) {
+      let kills = 0,
+        dmg = 0;
+      for (const m of members) {
+        kills += m.getKills();
+        dmg += m.getDamageDealt();
+      }
+      out.push({name: members[0].getName(), score: Math.round(dmg / members.length), kills});
+    }
+    return out;
+  }
+
+  /** Consume the last battle's win/lose outcome for the local human (once). Returns
+   *  null when there's nothing pending, so the UI can poll it each frame. */
+  takeBattleOutcome(): 'won' | 'lost' | null {
+    const o = this.m_pendingBattleOutcome;
+    this.m_pendingBattleOutcome = null;
+    return o;
+  }
+
   /** Register a callback invoked at each shot impact (world x, y, strength). */
   setImpactListener(cb: (x: number, y: number, strength: number) => void): void {
     this.m_onImpact = cb;
@@ -3976,4 +4017,7 @@ export class CGameController implements ShotWorld {
 
   private m_winnerName: string = '';
   private m_battleEndTime = 0; // seconds since the battle ended (winner-flag animation)
+  // Last battle's outcome for the local human, pending pickup by the UI (Battle Heroes
+  // won/lost tally). Set once at battle end, cleared when consumed via takeBattleOutcome.
+  private m_pendingBattleOutcome: 'won' | 'lost' | null = null;
 }

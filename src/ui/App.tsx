@@ -31,6 +31,7 @@ import {PauseMenu} from './PauseMenu';
 import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
 import {About} from './About';
+import {HighScores} from './HighScores';
 import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
 import {WarStandings} from './WarStandings';
@@ -230,6 +231,8 @@ function CurrentScreen() {
       return <MainMenu />;
     case 'about':
       return <About />;
+    case 'highscores':
+      return <HighScores />;
     case 'settings':
       return <Settings />;
     case 'setup':

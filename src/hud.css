@@ -1161,6 +1161,100 @@ canvas {
   opacity: 1;
 }
 
+/* ===================== BATTLE HEROES (High Scores) ======================= */
+/* A full steel-plate screen (like War Standings, but standalone): title, Top-10
+   board, medal footer. Click anywhere to return to the menu. */
+.highscores {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-screen);
+  background: var(--steel-plate);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 5vh 2vw calc(var(--hud-h) + 3vh);
+  cursor: pointer;
+  overflow: hidden;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+}
+
+.hs-title {
+  margin-bottom: 2vh;
+}
+
+.hs-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(520px, 82vw);
+}
+
+.hs-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 40px;
+  align-items: center;
+}
+
+/* Right column (Score / Kills) is right-aligned under its header. */
+.hs-row > :last-child {
+  justify-self: end;
+}
+
+.hs-head {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.85); /* the legacy header rule */
+}
+
+.hs-empty {
+  margin: 6vh 0;
+  opacity: 0.92;
+}
+
+/* Footer: "N Battles Won, N Lost" plus the place-value medal stack. Shared by the
+   High Scores screen and the war-over victory standings. */
+.battle-medals {
+  margin-top: 3vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hs-medals {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.hs-medal-row {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.hs-medal {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* Click-to-return prompt on the bottom black HUD bar (mirrors the war-standings prompt). */
+.hs-prompt {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--hud-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+}
+
 /* =================== RESOLUTION-TOO-SMALL GATE =================== */
 /* Covers the whole viewport (above every other layer) when the window drops below
    the minimum playable size — the brushed-steel plate backdrop with the game's

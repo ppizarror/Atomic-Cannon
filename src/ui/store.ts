@@ -14,9 +14,10 @@ import {
 import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
+import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
 import {wrapIndex} from '../math/num';
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup';
+export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup' | 'highscores';
 
 export const screen = signal<Screen>('battle');
 
@@ -187,6 +188,12 @@ export function openAbout(): void {
   screen.value = 'about';
   uiClick();
 }
+
+/** Main menu → High Scores (the Battle Heroes hall of fame). */
+export function openHighScores(): void {
+  screen.value = 'highscores';
+  uiClick();
+}
 export function backToMenu(): void {
   screen.value = 'menu';
   uiClick();
@@ -282,8 +289,11 @@ export function advanceWar(): void {
   warStandings.value = null;
   uiClick();
   game().clearTaunts(); // drop the victor's bubble before leaving the standings
-  if (s.warOver) goToMenu();
-  else game().nextBattle();
+  if (s.warOver) {
+    // War over: record every team on the Battle Heroes boards before leaving.
+    submitBattleHeroes(game().getBattleHeroes());
+    goToMenu();
+  } else game().nextBattle();
 }
 export const screenFlash = signal(0); // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff'); // flash tint (the bomb's colour)
@@ -394,6 +404,10 @@ export function syncHud(): void {
   const atBattleEnd = c.getState() === EGameState.BattleEnd;
   if (atBattleEnd && !warStandings.value) warStandings.value = c.getWarStandings();
   else if (!atBattleEnd && warStandings.value) warStandings.value = null;
+  // Battle Heroes won/lost tally: advance once per battle end (the controller hands
+  // the outcome over exactly once, so polling here is safe).
+  const outcome = c.takeBattleOutcome();
+  if (outcome) recordBattleOutcome(outcome === 'won');
   screenFlash.value = c.getScreenFlash();
   screenFlashColor.value = c.getScreenFlashColor();
 
@@ -438,7 +452,7 @@ const bmpCache = new Map<string, Promise<string | null>>();
 
 // Colour-key predicates. The zeon dialog art keys grey (64,64,64) as its outside
 // (so the rounded corners cut out), while its arrows key pure green (0,255,0).
-export type BmpKey = 'magenta' | 'green' | 'grey' | 'greyblack';
+export type BmpKey = 'magenta' | 'green' | 'grey' | 'greyblack' | 'black';
 const isGrey = (p: Uint8ClampedArray, i: number) =>
   Math.abs(p[i] - 64) < 26 && Math.abs(p[i + 1] - 64) < 26 && Math.abs(p[i + 2] - 64) < 26;
 const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
@@ -448,6 +462,9 @@ const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
   // grey outside + black corner outline both keyed — the zeon dialog with its
   // black rounded-corner border stripped (these tooltips have no black border).
   greyblack: (p, i) => isGrey(p, i) || (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40),
+  // pure black background only (the Battle Heroes medal badges sit on 0,0,0) — a tight
+  // threshold so the medals' own dark edges survive.
+  black: (p, i) => p[i] < 24 && p[i + 1] < 24 && p[i + 2] < 24,
 };
 
 /** Shared core: load an /assets image, knock out every pixel the `hit` predicate

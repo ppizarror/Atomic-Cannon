@@ -9,6 +9,14 @@ export const en: Strings = {
   aboutSubtitle: 'A web preservation port',
   repoLabel: 'Source on GitHub',
   back: 'Back',
+  highScores: 'High Scores',
+  heroesTitle: 'Battle Heroes',
+  heroesCallsign: 'Callsign',
+  heroesScore: 'Score',
+  heroesKills: 'Kills',
+  heroesEmpty: 'No heroes yet.',
+  heroesRecord: '{won} Battles Won, {lost} Lost',
+  heroesPrompt: 'Click anywhere to return.',
   about: [
     {
       heading: 'The Story',

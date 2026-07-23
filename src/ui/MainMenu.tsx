@@ -5,7 +5,7 @@
  * and the atom logo in the corner. Play opens the game-setup screen; Quick Play starts
  * immediately with the last-used setup; Settings/About navigate.
  */
-import {openPlaySetup, quickPlay, openSettings, openAbout} from './store';
+import {openPlaySetup, quickPlay, openSettings, openAbout, openHighScores} from './store';
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
@@ -52,6 +52,7 @@ export function MainMenu() {
       <div class="menu-list">
         <MenuButton label="Play" onClick={openPlaySetup} />
         <MenuButton label="Quick Play" onClick={quickPlay} />
+        <MenuButton label={strings.value.highScores} onClick={openHighScores} />
         <MenuButton label="Settings" onClick={() => openSettings('menu')} />
         <MenuButton label="About" onClick={openAbout} />
       </div>

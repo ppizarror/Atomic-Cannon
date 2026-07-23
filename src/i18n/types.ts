@@ -26,6 +26,24 @@ export interface Strings {
   repoLabel: string;
   /** Generic "back" action label (About card). */
   back: string;
+
+  // --- Battle Heroes / High Scores screen ---
+  /** Main-menu item that opens the hall of fame. */
+  highScores: string;
+  /** The screen's title. */
+  heroesTitle: string;
+  /** Left column header (player name). */
+  heroesCallsign: string;
+  /** Right column header for Points/Rounds games. */
+  heroesScore: string;
+  /** Right column header for Deathmatch games. */
+  heroesKills: string;
+  /** Shown when a board has no entries yet. */
+  heroesEmpty: string;
+  /** Footer tally; `{won}` / `{lost}` are substituted. */
+  heroesRecord: string;
+  /** Click-anywhere-to-return prompt. */
+  heroesPrompt: string;
 }
 
 /** Codes of the locales that ship with the game. Extend as tables are added. */
