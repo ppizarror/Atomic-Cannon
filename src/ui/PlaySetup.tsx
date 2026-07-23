@@ -13,7 +13,7 @@ import {useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {WidgetRow} from './WidgetRow';
 import {backToMenu, startBattle, MIN_PLAYERS} from './store';
-import {type Widget, stepper, enumW, GAME_TYPE, LAND_SIZE, DIFFICULTY, WIND} from './settingsPages';
+import {type Widget, stepper, enumW} from './settingsPages';
 import {
   setup,
   setSetup,
@@ -61,12 +61,12 @@ export function PlaySetup() {
       MIN_TANKS_PER_TEAM,
       MAX_TANKS_PER_TEAM,
     ),
-    enumW('Game Type', 'What type of battle', 'gp.gameType', 1, GAME_TYPE),
-    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 5, 1, 50, 1),
-    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 10, 1, 50, 1),
-    enumW('Land Size', 'How large the battle landscape is', 'gp.landSize', 0, LAND_SIZE),
-    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty', 4, DIFFICULTY),
-    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind', 2, WIND),
+    enumW('Game Type', 'What type of battle', 'gp.gameType'),
+    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 1, 50, 1),
+    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 1, 50, 1),
+    enumW('Land Size', 'How large the battle landscape is', 'gp.landSize'),
+    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty'),
+    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind'),
   ];
 
   return (

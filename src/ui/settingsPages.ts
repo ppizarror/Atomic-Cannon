@@ -1,15 +1,16 @@
 /**
- * Option-page specs for the Settings tree — the widget rows for each category,
- * with their labels + hover tooltips. Each row is a `Widget`: a toggle (ON/OFF), an
- * int/float stepper, an enum cycle, or a nav row.
+ * Option-page specs for the Settings tree — the widget rows for each category, with their
+ * labels + hover tooltips. Each row is a `Widget`: a toggle (ON/OFF), an int/float stepper,
+ * an enum cycle, or a nav row.
  *
- * Values bind two ways. Audio and Difficulty drive live subsystems, so their rows
- * read/write CAudio / the controller directly (one source of truth). Everything else
- * is a remembered preference in `settingsStore`. A row's game effect is wired where
- * possible; the rest are persisted UI whose hooks land as the matching
- * systems come online.
+ * Stored rows get their id's DEFAULT and enum LABELS from `settingsCatalog` (SETTINGS) — the
+ * builders below only carry presentation (label / tip / stepper range). Audio rows are the
+ * exception: they read/write CAudio directly (one live source of truth), so they're spelled
+ * out by hand. A row's game effect is wired via `applyGameSettings`; the rest are persisted
+ * UI whose hooks land as the matching systems come online.
  */
 import {getVal, setVal} from './settingsStore';
+import {SETTINGS, type SettingId} from './settingsCatalog';
 import {game, openSettingsPage} from './store';
 import {applyGameSettings} from './applySettings';
 
@@ -22,7 +23,7 @@ export interface Widget {
   kind: WidgetKind;
   get: () => number; // current value (enum index / raw stepper / 0-1 toggle)
   set?: (v: number) => void;
-  options?: string[]; // enum labels
+  options?: readonly string[]; // enum labels (from the catalog)
   min?: number;
   max?: number;
   step?: number;
@@ -37,70 +38,41 @@ export interface PageSpec {
   rows: Widget[];
 }
 
-// ── enum option pools, in the game's own index-0 (value = min) first order. ──
-export const DIFFICULTY = [
-  '1. Easiest',
-  '2. Very Easy',
-  '3. Easy',
-  '4. Moderate',
-  '5. Fun',
-  '6. Challenging',
-  '7. Hard',
-  '8. Very Hard',
-  '9. Mastery',
-  '10. Elite',
-];
-const CHANGE_WIND = ['Per game', 'After round', 'After shot', 'Anytime'];
-const LAND_TYPE = ['Flat', 'Hill', 'Gulley', 'Plateau', 'Slope', 'Random'];
-export const WIND = ['Disabled', 'Low', 'Medium', 'High'];
-// Play menu — Game Type (Fast Test is hidden here) and Land Size (world-width ×).
-export const GAME_TYPE = ['Rounds', 'Deathmatch'];
-export const LAND_SIZE = ['1 Screen', '2x', '3x', '4x', '5x'];
-const KICKBACK = ['Off', 'Low', 'Normal', 'High'];
-const PLAYER_SIZE = ['Small', 'Normal', 'Large'];
-// Framerate overlay mode: Off / FPS only / Full (FPS + frame count).
-const FRAMERATE = ['Off', 'FPS', 'Full'];
-// Max framerate cap (see FPS_CAP_VALUES in settingsValues) — index 0 = No Limit.
-const FPS_CAP = ['No Limit', '30 FPS', '60 FPS', '120 FPS', '144 FPS'];
-const EXPLOSION_SIZE = ['Small', 'Normal', 'Large', 'Massive'];
-const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
-
 const pct = (v: number) => `${v}%`;
 
 // ── stored-preference widget builders ────────────────────────────────────────
-// Every stored change persists AND re-applies live, so wired options (difficulty,
-// wind, variance, …) take effect immediately and start-time ones are ready for the
-// next game.
-export const bind = (id: string, dflt: number) => ({
-  get: () => getVal(id, dflt),
+// Default + enum labels come from SETTINGS[id]; only presentation is passed in. Every
+// stored change persists AND re-applies live, so wired options (difficulty, wind, variance,
+// …) take effect immediately and start-time ones are ready for the next game.
+export const bind = (id: SettingId) => ({
+  get: () => getVal(id),
   set: (v: number) => {
     setVal(id, v);
     applyGameSettings(game());
   },
 });
-const toggle = (label: string, tip: string, id: string, dflt: number): Widget => ({
+const toggle = (label: string, tip: string, id: SettingId): Widget => ({
   label,
   tip,
   kind: 'toggle',
-  ...bind(id, dflt),
+  ...bind(id),
 });
-export const enumW = (
-  label: string,
-  tip: string,
-  id: string,
-  dflt: number,
-  options: string[],
-): Widget => ({label, tip, kind: 'enum', options, ...bind(id, dflt)});
+export const enumW = (label: string, tip: string, id: SettingId): Widget => ({
+  label,
+  tip,
+  kind: 'enum',
+  options: SETTINGS[id].options,
+  ...bind(id),
+});
 export const stepper = (
   label: string,
   tip: string,
-  id: string,
-  dflt: number,
+  id: SettingId,
   min: number,
   max: number,
   step: number,
   fmt?: (v: number) => string,
-): Widget => ({label, tip, kind: 'stepper', min, max, step, fmt, ...bind(id, dflt)});
+): Widget => ({label, tip, kind: 'stepper', min, max, step, fmt, ...bind(id)});
 
 // ── pages ────────────────────────────────────────────────────────────────────
 function economyRows(): Widget[] {
@@ -109,14 +81,11 @@ function economyRows(): Widget[] {
       'Buy Time',
       'When players are allowed to buy, set to automatic for randomly assigned weapons',
       'eco.buyTime',
-      0,
-      BUY_TIME,
     ),
     stepper(
       'Credit Start',
       'Credits given to each player at match start (default 3000)',
       'eco.creditStart',
-      3000,
       0,
       20000,
       500,
@@ -125,7 +94,6 @@ function economyRows(): Widget[] {
       'Credit Round',
       'Credits given to each player each round (default 1000)',
       'eco.creditRound',
-      1000,
       0,
       10000,
       250,
@@ -135,7 +103,6 @@ function economyRows(): Widget[] {
       'Credits given to each player per turn (default 0)',
       'eco.creditTurn',
       0,
-      0,
       5000,
       100,
     ),
@@ -143,7 +110,6 @@ function economyRows(): Widget[] {
       'Credit Kill',
       'Credits given to each player per kill (default 500)',
       'eco.creditKill',
-      500,
       0,
       5000,
       100,
@@ -152,7 +118,6 @@ function economyRows(): Widget[] {
       'Credit Damage',
       'Credits given to each player per damage done (default 1)',
       'eco.creditDamage',
-      1,
       0,
       100,
       1,
@@ -161,7 +126,6 @@ function economyRows(): Widget[] {
       'Sell Back Rate',
       'Rate at which weapons are sold back to depot (default 50%)',
       'eco.sellBack',
-      50,
       0,
       100,
       5,
@@ -172,64 +136,48 @@ function economyRows(): Widget[] {
 
 function tankRows(): Widget[] {
   return [
-    enumW('Kickback', 'How much explosions move the tanks.', 'tank.kickback', 2, KICKBACK),
-    enumW('Player Size', 'How big the tanks are.', 'tank.size', 1, PLAYER_SIZE),
-    toggle('Relative Turrets', 'Aiming it relative to the tank', 'tank.relTurrets', 0),
-    toggle('Bury Tanks', 'Tanks can be underground', 'tank.bury', 0),
+    enumW('Kickback', 'How much explosions move the tanks.', 'tank.kickback'),
+    enumW('Player Size', 'How big the tanks are.', 'tank.size'),
+    toggle('Relative Turrets', 'Aiming it relative to the tank', 'tank.relTurrets'),
+    toggle('Bury Tanks', 'Tanks can be underground', 'tank.bury'),
     stepper(
       'Power Scale',
       'This affects how far a shot will go based on power',
       'tank.powerScale',
-      100,
       10,
       300,
       10,
       pct,
     ),
-    stepper(
-      'Hitpoints',
-      'Number of points tank starts with',
-      'tank.hitpoints',
-      1000,
-      100,
-      5000,
-      100,
-    ),
-    toggle('Chatter', 'Tanks talk to each other', 'tank.chatter', 1),
-    toggle('Colorize Team', 'Tanks are team color', 'tank.colorize', 1),
+    stepper('Hitpoints', 'Number of points tank starts with', 'tank.hitpoints', 100, 5000, 100),
+    toggle('Chatter', 'Tanks talk to each other', 'tank.chatter'),
+    toggle('Colorize Team', 'Tanks are team color', 'tank.colorize'),
   ];
 }
 
 function gameplayRows(): Widget[] {
   return [
-    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 5, 1, 50, 1),
-    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 10, 1, 50, 1),
+    stepper('Battles', 'How many battles per Deathmatch', 'gp.battles', 1, 50, 1),
+    stepper('Rounds', 'How many rounds in a Point game', 'gp.rounds', 1, 50, 1),
     // Difficulty is a stored preference (persisted + applied via applyGameSettings →
     // controller.setDifficulty); index 0..9 maps to AI level 1..10.
-    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty', 4, DIFFICULTY),
-    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind', 2, WIND),
-    enumW(
-      'Change Wind',
-      'Defines when the wind changes direction',
-      'gp.changeWind',
-      0,
-      CHANGE_WIND,
-    ),
-    enumW('Explosion Size', 'How big the explosions are.', 'gp.explosionSize', 1, EXPLOSION_SIZE),
-    toggle('Variance', 'All weapons have a different random variance when shot', 'gp.variance', 1),
-    toggle('Utility Turn', 'If a utility item use counts as turn', 'gp.utilTurn', 0),
-    toggle('Randomize Turns', 'Randomly assings the turn order each battle', 'gp.randTurns', 0),
-    stepper('Crates', 'Chance to drop a crate each round', 'gp.crates', 20, 0, 100, 5, pct),
+    enumW('Difficulty', 'How badly the computer will dominate you', 'gp.difficulty'),
+    enumW('Wind', 'How the wind affects the trajectories', 'gp.wind'),
+    enumW('Change Wind', 'Defines when the wind changes direction', 'gp.changeWind'),
+    enumW('Explosion Size', 'How big the explosions are.', 'gp.explosionSize'),
+    toggle('Variance', 'All weapons have a different random variance when shot', 'gp.variance'),
+    toggle('Utility Turn', 'If a utility item use counts as turn', 'gp.utilTurn'),
+    toggle('Randomize Turns', 'Randomly assings the turn order each battle', 'gp.randTurns'),
+    stepper('Crates', 'Chance to drop a crate each round', 'gp.crates', 0, 100, 5, pct),
     stepper(
       'Update Scale',
       'The speed at which the game is animated (default 10)',
       'gp.updateScale',
-      10,
       1,
       30,
       1,
     ),
-    toggle('Right Click Fires', 'If you are accidentally firing disable this', 'gp.rcFires', 1),
+    toggle('Right Click Fires', 'If you are accidentally firing disable this', 'gp.rcFires'),
   ];
 }
 
@@ -248,13 +196,13 @@ function graphicsRows(): Widget[] {
         else void document.exitFullscreen?.();
       },
     },
-    toggle('Tracking', 'Draws a notch for off screen shots', 'gfx.tracking', 1),
-    toggle('Draw Smoke', 'Draws smoking plumes on ground', 'gfx.smoke', 1),
-    toggle('High Contrast', 'Outlines objects with white', 'gfx.highContrast', 0),
-    enumW('Land Type', 'Select different landscapes', 'gfx.landType', 5, LAND_TYPE),
-    toggle('Show AI Stats', "Show the computer's stats", 'gfx.aiStats', 0),
-    toggle('Show Team Color', 'Display each tanks name and team color', 'gfx.teamColor', 1),
-    toggle('Small Buy Fonts', 'Use a smaller font on the buy menu', 'gfx.smallBuy', 0),
+    toggle('Tracking', 'Draws a notch for off screen shots', 'gfx.tracking'),
+    toggle('Draw Smoke', 'Draws smoking plumes on ground', 'gfx.smoke'),
+    toggle('High Contrast', 'Outlines objects with white', 'gfx.highContrast'),
+    enumW('Land Type', 'Select different landscapes', 'gfx.landType'),
+    toggle('Show AI Stats', "Show the computer's stats", 'gfx.aiStats'),
+    toggle('Show Team Color', 'Display each tanks name and team color', 'gfx.teamColor'),
+    toggle('Small Buy Fonts', 'Use a smaller font on the buy menu', 'gfx.smallBuy'),
     {
       label: 'More Graphics Options',
       tip: 'Adjust graphics settings',
@@ -267,29 +215,21 @@ function graphicsRows(): Widget[] {
 
 function graphics2Rows(): Widget[] {
   return [
-    toggle('Show Turn', 'Display an arrow when its your turn', 'gfx.showTurn', 1),
-    toggle('Show Blast Circles', 'Display bounds of explosions', 'gfx.blastCircles', 0),
-    toggle('Show Points', 'Display damage points for each shot', 'gfx.showPoints', 1),
-    toggle('Show Power', 'Display power bars for each tank', 'gfx.showPower', 1),
-    toggle('Show Tank Stats', 'Display stats of each tank', 'gfx.tankStats', 0),
-    toggle('Auto Scroll', 'Automatically scrolls during game events', 'gfx.autoScroll', 1),
-    toggle('Show Last Aim', 'Show last power and angle position', 'gfx.lastAim', 1),
-    toggle('Explosion Waves', 'A very cool refractive wave effect for nukes', 'gfx.expWaves', 1),
-    enumW(
-      'Show Framerate',
-      'Off, the FPS counter, or FPS + a frame count (Full)',
-      'gfx.framerate',
-      0,
-      FRAMERATE,
-    ),
+    toggle('Show Turn', 'Display an arrow when its your turn', 'gfx.showTurn'),
+    toggle('Show Blast Circles', 'Display bounds of explosions', 'gfx.blastCircles'),
+    toggle('Show Points', 'Display damage points for each shot', 'gfx.showPoints'),
+    toggle('Show Power', 'Display power bars for each tank', 'gfx.showPower'),
+    toggle('Show Tank Stats', 'Display stats of each tank', 'gfx.tankStats'),
+    toggle('Auto Scroll', 'Automatically scrolls during game events', 'gfx.autoScroll'),
+    toggle('Show Last Aim', 'Show last power and angle position', 'gfx.lastAim'),
+    toggle('Explosion Waves', 'A very cool refractive wave effect for nukes', 'gfx.expWaves'),
+    enumW('Show Framerate', 'Off, the FPS counter, or FPS + a frame count (Full)', 'gfx.framerate'),
     enumW(
       'Max Framerate',
       'Cap the frame rate to save CPU / battery (No Limit = the display refresh rate)',
       'gfx.fpsCap',
-      0,
-      FPS_CAP,
     ),
-    toggle('Demo Mode', 'Game automatically plays itself', 'gfx.demo', 0),
+    toggle('Demo Mode', 'Game automatically plays itself', 'gfx.demo'),
   ];
 }
 
@@ -333,7 +273,7 @@ function audioRows(): Widget[] {
       get: () => Math.round(a?.getMusicVolume() ?? 100),
       set: (v: number) => a?.setMusicVolume(v),
     },
-    toggle('Stereo', 'Enable stereo sound', 'aud.stereo', 1),
+    toggle('Stereo', 'Enable stereo sound', 'aud.stereo'),
   ];
 }
 

@@ -1,87 +1,85 @@
 /**
- * Engine-facing view of the persisted option values — each getter returns a value
- * in the units the game wants (fractions, scalars, AI levels), derived from the raw
- * `settingsStore` map. `applyGameSettings` (applySettings.ts) reads these and pushes
- * them into the controller; the UI never lets the engine touch localStorage directly.
+ * Engine-facing view of the persisted option values — each getter returns a value in the
+ * units the game wants (fractions, scalars, AI levels), derived from the raw `settingsStore`
+ * map. `applyGameSettings` (applySettings.ts) reads these and pushes them into the
+ * controller; the UI never lets the engine touch localStorage directly.
  *
- * Defaults here MIRROR the widget defaults in settingsPages.ts — keep them in sync.
+ * Ids + defaults + enum scalar tables all come from `settingsCatalog` (SETTINGS) — no values
+ * are repeated here, so there is nothing to keep in sync with the widgets.
  */
 import {getVal} from './settingsStore';
+import {SETTINGS, type SettingId} from './settingsCatalog';
 
-// Enum → scalar tables. The default index maps to 1.0 so the out-of-the-box feel
-// is the neutral baseline.
-const WIND_SCALE = [0, 0.5, 1, 1.6]; // Disabled/Low/Medium(1.0)/High
-const KICKBACK_SCALE = [0, 0.6, 1, 1.5]; // Off/Low/Normal(1.0)/High
-const EXPLOSION_SCALE = [0.7, 1, 1.35, 1.8]; // Small/Normal(1.0)/Large/Massive
-const PLAYER_SIZE_SCALE = [0.72, 1, 1.35]; // Small/Normal(1.0)/Large
-const FPS_CAP_VALUES = [0, 30, 60, 120, 144]; // No Limit(0 = uncapped)/30/60/120/144
+/** Engine scalar for an enum setting at its current index (e.g. Wind → wind multiplier),
+ *  read from the catalog's co-located `scale` table; `fallback` when there's no entry. */
+const scale = (id: SettingId, fallback = 1): number => SETTINGS[id].scale?.[getVal(id)] ?? fallback;
 
 export const gameSettings = {
   /** Credits each player starts a match with. */
-  creditStart: (): number => getVal('eco.creditStart', 3000),
+  creditStart: (): number => getVal('eco.creditStart'),
   /** Depot sell-back refund as a fraction (0..1). */
-  sellRate: (): number => getVal('eco.sellBack', 50) / 100,
+  sellRate: (): number => getVal('eco.sellBack') / 100,
   /** Credits earned per point of life removed. */
-  creditDamage: (): number => getVal('eco.creditDamage', 1),
+  creditDamage: (): number => getVal('eco.creditDamage'),
   /** Credits earned per kill (Deathmatch). */
-  creditKill: (): number => getVal('eco.creditKill', 500),
+  creditKill: (): number => getVal('eco.creditKill'),
   /** Credits each survivor earns per turn. */
-  creditTurn: (): number => getVal('eco.creditTurn', 0),
+  creditTurn: (): number => getVal('eco.creditTurn'),
   /** Credits each survivor earns per round. */
-  creditRound: (): number => getVal('eco.creditRound', 1000),
+  creditRound: (): number => getVal('eco.creditRound'),
   /** Battles per match. */
-  battles: (): number => getVal('gp.battles', 5),
+  battles: (): number => getVal('gp.battles'),
   /** Rounds in a Point/Rounds game. */
-  rounds: (): number => getVal('gp.rounds', 10),
+  rounds: (): number => getVal('gp.rounds'),
   /** Game Type enum index → EGameType (0 = Rounds, 1 = Deathmatch). */
-  gameType: (): number => getVal('gp.gameType', 1),
+  gameType: (): number => getVal('gp.gameType'),
   /** Land Size: world-width multiplier (enum index 0..4 → 1..5 screens). */
-  landSize: (): number => getVal('gp.landSize', 0) + 1,
+  landSize: (): number => getVal('gp.landSize') + 1,
   /** Per-shot inaccuracy on/off. */
-  variance: (): boolean => getVal('gp.variance', 1) !== 0,
+  variance: (): boolean => getVal('gp.variance') !== 0,
   /** Game-speed multiplier (Update Scale 10 → 1.0 normal). */
-  gameSpeed: (): number => getVal('gp.updateScale', 10) / 10,
+  gameSpeed: (): number => getVal('gp.updateScale') / 10,
   /** Wind strength scalar (0 = disabled). */
-  windScale: (): number => WIND_SCALE[getVal('gp.wind', 2)] ?? 1,
+  windScale: (): number => scale('gp.wind'),
   /** Forced landscape shape 0..4, or -1 for a random landscape ("Random"). */
   landMode: (): number => {
-    const i = getVal('gfx.landType', 5);
+    const i = getVal('gfx.landType');
     return i >= 0 && i <= 4 ? i : -1;
   },
   /** Computer AI level 1..10 (difficulty enum index 0..9 → level index+1). */
-  difficulty: (): number => getVal('gp.difficulty', 4) + 1,
+  difficulty: (): number => getVal('gp.difficulty') + 1,
 
   /** Blast knockback scalar (Off = 0). */
-  kickbackScale: (): number => KICKBACK_SCALE[getVal('tank.kickback', 2)] ?? 1,
+  kickbackScale: (): number => scale('tank.kickback'),
   /** Explosion radius scalar. */
-  explosionScale: (): number => EXPLOSION_SCALE[getVal('gp.explosionSize', 1)] ?? 1,
+  explosionScale: (): number => scale('gp.explosionSize'),
   /** Shot launch-speed scalar (Power Scale %). */
-  powerScale: (): number => getVal('tank.powerScale', 100) / 100,
+  powerScale: (): number => getVal('tank.powerScale') / 100,
   /** Tank geometry scalar (Player Size). */
-  tankSizeScale: (): number => PLAYER_SIZE_SCALE[getVal('tank.size', 1)] ?? 1,
+  tankSizeScale: (): number => scale('tank.size'),
   /** Tank starting life. */
-  hitpoints: (): number => getVal('tank.hitpoints', 1000),
+  hitpoints: (): number => getVal('tank.hitpoints'),
 
-  drawSmoke: (): boolean => getVal('gfx.smoke', 1) !== 0,
-  colorizeTeam: (): boolean => getVal('tank.colorize', 1) !== 0,
-  chatter: (): boolean => getVal('tank.chatter', 1) !== 0,
+  drawSmoke: (): boolean => getVal('gfx.smoke') !== 0,
+  colorizeTeam: (): boolean => getVal('tank.colorize') !== 0,
+  chatter: (): boolean => getVal('tank.chatter') !== 0,
   /** Supply-crate drop chance per turn (0..100 %). */
-  crateChance: (): number => getVal('gp.crates', 20),
-  showTeamColor: (): boolean => getVal('gfx.teamColor', 1) !== 0,
-  showPowerBars: (): boolean => getVal('gfx.showPower', 1) !== 0,
-  showTankStats: (): boolean => getVal('gfx.tankStats', 0) !== 0,
-  tracking: (): boolean => getVal('gfx.tracking', 1) !== 0,
-  showTurn: (): boolean => getVal('gfx.showTurn', 1) !== 0,
-  showPoints: (): boolean => getVal('gfx.showPoints', 1) !== 0,
-  autoScroll: (): boolean => getVal('gfx.autoScroll', 1) !== 0,
-  showLastAim: (): boolean => getVal('gfx.lastAim', 1) !== 0,
-  explosionWaves: (): boolean => getVal('gfx.expWaves', 1) !== 0,
-  blastCircles: (): boolean => getVal('gfx.blastCircles', 0) !== 0,
-  highContrast: (): boolean => getVal('gfx.highContrast', 0) !== 0,
-  showAiStats: (): boolean => getVal('gfx.aiStats', 0) !== 0,
-  demo: (): boolean => getVal('gfx.demo', 0) !== 0,
+  crateChance: (): number => getVal('gp.crates'),
+  showTeamColor: (): boolean => getVal('gfx.teamColor') !== 0,
+  showPowerBars: (): boolean => getVal('gfx.showPower') !== 0,
+  showTankStats: (): boolean => getVal('gfx.tankStats') !== 0,
+  tracking: (): boolean => getVal('gfx.tracking') !== 0,
+  showTurn: (): boolean => getVal('gfx.showTurn') !== 0,
+  showPoints: (): boolean => getVal('gfx.showPoints') !== 0,
+  autoScroll: (): boolean => getVal('gfx.autoScroll') !== 0,
+  showLastAim: (): boolean => getVal('gfx.lastAim') !== 0,
+  explosionWaves: (): boolean => getVal('gfx.expWaves') !== 0,
+  blastCircles: (): boolean => getVal('gfx.blastCircles') !== 0,
+  highContrast: (): boolean => getVal('gfx.highContrast') !== 0,
+  showAiStats: (): boolean => getVal('gfx.aiStats') !== 0,
+  demo: (): boolean => getVal('gfx.demo') !== 0,
   /** Framerate overlay mode: 0 = Off, 1 = FPS only, 2 = Full (FPS + frame count). */
-  framerate: (): number => getVal('gfx.framerate', 0),
+  framerate: (): number => getVal('gfx.framerate'),
   /** Max framerate cap (ticker.maxFPS): 0 = uncapped (display refresh rate). */
-  maxFps: (): number => FPS_CAP_VALUES[getVal('gfx.fpsCap', 0)] ?? 0,
+  maxFps: (): number => scale('gfx.fpsCap', 0),
 };

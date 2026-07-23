@@ -13,6 +13,7 @@ import {GameConfig} from '../src/core/CGameConfig';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
 import {showFramerate, showFrameCount, maxFps} from '../src/ui/store';
+import {SETTINGS} from '../src/ui/settingsCatalog';
 
 const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
 const nukeCost = WEAPON_DATABASE[NUKE].cost;
@@ -159,5 +160,27 @@ describe('Settings → game', () => {
     const tank = (gc as unknown as {m_tanks: {getHitRadius(): number}[]}).m_tanks[0];
     // hit radius scales with size (16 × 1.35)
     expect(Math.abs(tank.getHitRadius() - 16 * 1.35)).toBeLessThan(1e-9);
+  });
+});
+
+describe('settings catalog (single source)', () => {
+  it('every enum with an engine scale table has matching option/scale lengths', () => {
+    for (const [id, meta] of Object.entries(SETTINGS)) {
+      if (meta.scale) {
+        expect(meta.options, `${id} has a scale table but no option labels`).toBeDefined();
+        expect(meta.scale.length, `${id}: option/scale length mismatch`).toBe(meta.options!.length);
+      }
+    }
+  });
+
+  it('defaults + scalar tables match the known values (regression guard)', () => {
+    expect(SETTINGS['eco.creditStart'].default).toBe(3000);
+    expect(SETTINGS['gp.difficulty'].default).toBe(4);
+    expect(SETTINGS['tank.hitpoints'].default).toBe(1000);
+    expect(SETTINGS['gp.wind'].scale).toEqual([0, 0.5, 1, 1.6]);
+    expect(SETTINGS['tank.kickback'].scale).toEqual([0, 0.6, 1, 1.5]);
+    expect(SETTINGS['gp.explosionSize'].scale).toEqual([0.7, 1, 1.35, 1.8]);
+    expect(SETTINGS['tank.size'].scale).toEqual([0.72, 1, 1.35]);
+    expect(SETTINGS['gfx.fpsCap'].scale).toEqual([0, 30, 60, 120, 144]);
   });
 });
