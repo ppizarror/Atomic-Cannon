@@ -135,10 +135,11 @@ async function main(): Promise<void> {
       weaponSel !== null
     )
       playNewGame();
-    if (q.get('depot') === '1') openDepot();
-    if (q.get('pause') === '1') openPauseMenu();
+    // Configure the inventory/ammo BEFORE opening any screen, so an auto-opened depot
+    // reflects it (its Qty snapshot is taken on open).
     // `?weapontest=1`: start a battle and keep the turn on the human forever (the AI
-    // never fires, the shot timer is off) so weapons can be tried back-to-back.
+    // never fires, the shot timer is off) so weapons can be tried back-to-back — with
+    // unlimited ammo across the whole arsenal.
     if (weaponTest) gameController.setWeaponTest(true);
     // `?weaponsel=<id>`: force the human onto weapon <id> with unlimited ammo. `id`
     // is the weapon's STABLE 1-based id (database position + 1) — the same number now
@@ -148,6 +149,8 @@ async function main(): Promise<void> {
       const id = parseInt(weaponSel, 10);
       if (Number.isInteger(id) && id >= 1) gameController.forceWeapon(id - 1);
     }
+    if (q.get('depot') === '1') openDepot();
+    if (q.get('pause') === '1') openPauseMenu();
     // `?settings=1` opens the Settings root; `?settings=<pageId>` (e.g. gameplay)
     // opens that option page directly.
     const settingsArg = q.get('settings');

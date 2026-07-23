@@ -2121,20 +2121,28 @@ export class CGameController implements ShotWorld {
     }
   }
 
+  /** Distinct teams that still have a living player tank. Sentries are excluded — they
+   *  fight for their owner's team but don't keep it "alive" — so a lone survivor plus
+   *  their own sentry is still one team. The battle is decided when this reaches ≤ 1. */
+  private livingTeamCount(): number {
+    const teams = new Set<number>();
+    for (const t of this.m_tanks) {
+      if (t.isAlive() && t.getTankType() !== 'Sentry') teams.add(t.getTeamId());
+    }
+    return teams.size;
+  }
+
   /**
-   * End the battle immediately when the field is down to one (or zero) living
-   * tank. No-op while two or more remain. `endTurn` sees `alive.length <= 1` and
-   * hands off to the BattleEnd state (winner flag + win/lose jingle) rather than
-   * passing the turn on, so this only ever finalises the battle — it never skips
-   * a live player's turn.
+   * End the battle immediately when only one TEAM (or none) is left standing. No-op
+   * while two or more teams remain. `endTurn` re-checks the same condition and hands off
+   * to the BattleEnd state (winner flag + win/lose jingle) rather than passing the turn
+   * on, so this only ever finalises the battle — it never skips a live player's turn.
    */
   private endBattleIfDecided(): void {
     // Only while a turn is live: if the turn timer already forfeited into BattleEnd
     // earlier this tick, endTurn has run — a second call would double the jingle.
     if (this.m_gameState !== EGameState.Battle) return;
-    // Count living PLAYERS only — a lone survivor plus their own sentry still ends the battle.
-    const players = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
-    if (players.length <= 1) this.endTurn();
+    if (this.livingTeamCount() <= 1) this.endTurn();
   }
 
   /**
@@ -2271,11 +2279,12 @@ export class CGameController implements ShotWorld {
         expType,
         expBitmap,
         deposit,
+        isCleaner,
       );
       // Stage 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
       // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
       // It inherits the weapon's colour (uranium reads red, plutonium green, …).
-      // Full-screen white-out is a NUKE (style-4) thing in the original. A big conventional blast
+      // Full-screen white-out is a NUKE thing in the original. A big conventional blast
       // gets a lighter half-flash (port embellishment) — but a Cleaner is an earth-remover, not a
       // fiery blast, so it never flashes.
       if (expType === EXP.NUKE || nuclear) this.flashScreen(1, color ?? '#ffffff');
@@ -2726,7 +2735,9 @@ export class CGameController implements ShotWorld {
     // The battle is decided by the living PLAYERS — deployed sentries don't count toward
     // (or win) the battle, and are cleared at the next battle regardless.
     const alive = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
-    if (alive.length <= 1) {
+    // Decided when ≤ 1 TEAM survives — so a squad ends the battle when every enemy team is
+    // wiped, even if it still fields several tanks (not only when one tank is left).
+    if (this.livingTeamCount() <= 1) {
       this.m_gameState = EGameState.BattleEnd;
       this.m_battleEndTime = 0; // restart the winner-flag animation
       // Victory-only sky fireworks (war end, the human's team leads the final standings).
@@ -2735,13 +2746,14 @@ export class CGameController implements ShotWorld {
       this.m_rockets = [];
       this.m_fireworkTimer = 0.35; // first burst shortly after the screen appears
       if (this.m_showFireworks) loadBurstPixels(); // warm the burst bmps
-      this.m_winnerName = alive.length === 1 ? alive[0].getName() : '';
-      // The battle victor (top surviving tank by kills) gloats a random post-fire line
-      // through the taunt-bubble system — it persists on the standings screen because
-      // bubbles only age during a live turn (updateTaunts runs in the Battle state only).
+      // The battle victor: the winning team's top tank by kills (all survivors are one
+      // team here). It names the winner banner, plants the flag, and gloats a post-fire
+      // line through the taunt-bubble system — the bubble persists on the standings screen
+      // because bubbles only age during a live turn (updateTaunts runs in Battle only).
       const victor = alive.length
         ? alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a))
         : null;
+      this.m_winnerName = victor ? victor.getName() : '';
       const victorLine = pickTaunt('postFire');
       if (victor && victorLine && GameConfig.chatter && victor.getTankType() !== 'Sentry') {
         this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== victor);
@@ -2753,8 +2765,8 @@ export class CGameController implements ShotWorld {
         });
       }
       this.m_audio?.stopTankMove();
-      // Win/lose jingle — victory if the human survived.
-      const humanWon = alive.length === 1 && alive[0].isHuman();
+      // Win/lose jingle — victory if the surviving team is the human's (any survivor human).
+      const humanWon = alive.some(t => t.isHuman());
       if (humanWon) this.m_audio?.battleWon();
       else this.m_audio?.battleLost();
       // Record this battle's outcome for the local human's Battle Heroes tally — only in
@@ -3235,7 +3247,8 @@ export class CGameController implements ShotWorld {
     // In Demo Mode the AI also drives the human tank, so allow a non-bot through then.
     if (!botTank.isAlive() || (!botTank.isBot() && !GameConfig.demo)) return;
 
-    if (this.m_tanks.filter(t => t !== botTank && t.isAlive()).length === 0) {
+    // Nothing to shoot at if no ENEMY-team tank is left alive (teammates aren't targets).
+    if (this.m_tanks.every(t => !t.isAlive() || t.getTeamId() === botTank.getTeamId())) {
       this.endTurn();
       return;
     }
@@ -3293,7 +3306,8 @@ export class CGameController implements ShotWorld {
   /** Pick a target + weapon, solve the firing arc, degrade by difficulty, and fire. */
   private botAimAndFire(botTank: CTank): void {
     if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
-    const enemies = this.m_tanks.filter(t => t !== botTank && t.isAlive());
+    // Target only ENEMY teams — a squad bot must never aim at its own teammates.
+    const enemies = this.m_tanks.filter(t => t.isAlive() && t.getTeamId() !== botTank.getTeamId());
     if (enemies.length === 0) {
       this.endTurn();
       return;
