@@ -21,6 +21,7 @@ import {stepWeapon} from './ui/Hud';
 import {
   setController,
   syncHud,
+  screen,
   canFire,
   openDepot,
   closeDepot,
@@ -198,13 +199,30 @@ async function main(): Promise<void> {
           ? 'right'
           : null;
 
+  // These shortcuts are GAMEPLAY-only. Anywhere else — the menus, the lobby, any
+  // Settings/editor text field — the keystroke belongs to the UI (typing a room
+  // code, a player name, a taunt), so the handler must not touch it. We gate on the
+  // battle screen AND on focus being in an editable element (belt-and-suspenders for
+  // in-battle inputs like Phase 2 chat).
+  const isTypingTarget = (t: EventTarget | null): boolean => {
+    const el = t as HTMLElement | null;
+    if (!el || !el.tagName) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  };
+  const gameplayKeys = (e: KeyboardEvent): boolean =>
+    screen.value === 'battle' && !isTypingTarget(e.target);
+
   // Keyboard shortcuts (the on-screen controls live in the Preact HUD). Gameplay
   // actions are resolved through the player's key bindings (Customize Controls); the
   // pressed key maps to an action, so rebinding takes effect immediately.
   document.addEventListener('keydown', e => {
+    if (!gameplayKeys(e)) return;
     const action = resolveAction(bindings.value, e.code);
 
-    if (e.code === 'KeyP') {
+    // Dev-only screenshot freeze on Ctrl/Cmd+P (bare P is left free for normal use /
+    // typing; the player-facing pause is Escape → the pause menu).
+    if (import.meta.env.DEV && e.code === 'KeyP' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       const p = !pausedSignal.value;
       gameController.setPaused(p);
@@ -277,8 +295,11 @@ async function main(): Promise<void> {
     }
   });
 
-  // Release thrust keys (and clear all thrust when flight ends).
+  // Release thrust keys (and clear all thrust when flight ends). Gameplay-only, in
+  // step with the keydown gate so a key pressed in the battle but released elsewhere
+  // (or vice-versa) can't strand thrust on.
   document.addEventListener('keyup', e => {
+    if (!gameplayKeys(e)) return;
     const dir = thrustKey(e.code);
     if (dir) {
       thrust[dir] = false;

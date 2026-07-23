@@ -1761,14 +1761,29 @@ canvas {
 }
 
 /* ── Network / multiplayer lobby ─────────────────────────────────────────── */
+/* Full-screen overlay like the other menus: fixed + backdrop so it hides the game
+   underneath, and (being an opaque covering layer) captures pointer input so a
+   drag can't aim/fire the battle behind it. Same darkened title plate as Settings. */
 .net-screen {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-screen);
+  background: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow-y: auto;
+}
+/* The centered content column inside the overlay. */
+.net-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
   width: min(460px, 88vw);
-  margin: 0 auto;
-  padding-top: clamp(24px, 8vh, 96px);
+  margin: auto;
+  padding: clamp(24px, 6vh, 72px) 0;
 }
 .net-field {
   display: flex;

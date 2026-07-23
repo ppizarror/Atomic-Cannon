@@ -46,7 +46,7 @@ function Entry() {
   const n = strings.value.net;
   const [code, setCode] = useState('');
   return (
-    <div class="net-screen">
+    <div class="net-panel">
       <BmpText font="bazouk-28" text={n.title} />
 
       <div class="net-field">
@@ -88,7 +88,7 @@ function Connecting() {
   const s = netState.value;
   const label = s.code ? n.status.connecting : n.creating;
   return (
-    <div class="net-screen">
+    <div class="net-panel">
       <BmpText font="bazouk-28" text={n.title} />
       <BmpText font="beijing-16-out" text={label} spacing={-1} />
       <BigButton label={n.back} onClick={toMenu} />
@@ -147,7 +147,7 @@ function Lobby() {
   const canStart = s.isHost && connected >= s.settings.minPlayers;
 
   return (
-    <div class="net-screen">
+    <div class="net-panel">
       <BmpText font="bazouk-28" text={n.lobbyTitle} />
       <StatusPill />
       <CodeDisplay code={s.code} />
@@ -208,7 +208,7 @@ function Lobby() {
 function Playing() {
   const n = strings.value.net;
   return (
-    <div class="net-screen">
+    <div class="net-panel">
       <BmpText font="bazouk-28" text={n.lobbyTitle} />
       <BmpText font="beijing-16-out" text={n.status.open} spacing={-1} />
       <BigButton label={n.leave} onClick={leaveRoom} />
@@ -220,7 +220,7 @@ function ErrorCard() {
   const n = strings.value.net;
   const err = netState.value.lastError;
   return (
-    <div class="net-screen">
+    <div class="net-panel">
       <BmpText font="bazouk-28" text={n.errorTitle} />
       {err && <BmpText font="beijing-16-out" text={err.message} spacing={-1} />}
       <BigButton label={n.retry} onClick={toMenu} />
@@ -228,7 +228,7 @@ function ErrorCard() {
   );
 }
 
-export function Network() {
+function Inner() {
   switch (netState.value.phase) {
     case 'connecting':
       return <Connecting />;
@@ -243,4 +243,12 @@ export function Network() {
     default:
       return <Entry />;
   }
+}
+
+export function Network() {
+  return (
+    <div class="net-screen">
+      <Inner />
+    </div>
+  );
 }
