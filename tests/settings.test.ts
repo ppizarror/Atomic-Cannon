@@ -12,7 +12,7 @@ import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
-import {showFramerate, showFrameCount} from '../src/ui/store';
+import {showFramerate, showFrameCount, maxFps} from '../src/ui/store';
 
 const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
 const nukeCost = WEAPON_DATABASE[NUKE].cost;
@@ -116,6 +116,20 @@ describe('Settings → game', () => {
     applyGameSettings(gc);
     expect(showFramerate.value).toBe(true);
     expect(showFrameCount.value).toBe(true);
+  });
+
+  it('Max Framerate enum maps to a ticker FPS cap (No Limit = 0)', () => {
+    const gc = new CGameController(makeCanvas());
+    const expect_ = (idx: number, cap: number) => {
+      setVal('gfx.fpsCap', idx);
+      applyGameSettings(gc);
+      expect(maxFps.value).toBe(cap);
+    };
+    expect_(0, 0); // No Limit → uncapped
+    expect_(1, 30);
+    expect_(2, 60);
+    expect_(3, 120);
+    expect_(4, 144);
   });
 
   it('Show Points + Auto Scroll toggles reach GameConfig (were silent no-ops)', () => {

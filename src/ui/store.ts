@@ -223,6 +223,9 @@ export function depotAutoBuy(): void {
 // value, published from the game loop.
 export const showFramerate = signal(false);
 export const fps = signal(0);
+// Max framerate cap (More Graphics → Max Framerate): the ticker's maxFPS (0 = uncapped).
+// The game loop applies it to the Pixi ticker.
+export const maxFps = signal(0);
 
 // Frame counter (dev: ?frame=1): the toggle + a monotonic count of ticker frames since the
 // flag was enabled, published every frame from the game loop. Sits just below the FPS readout.

@@ -14,6 +14,7 @@ const WIND_SCALE = [0, 0.5, 1, 1.6]; // Disabled/Low/Medium(1.0)/High
 const KICKBACK_SCALE = [0, 0.6, 1, 1.5]; // Off/Low/Normal(1.0)/High
 const EXPLOSION_SCALE = [0.7, 1, 1.35, 1.8]; // Small/Normal(1.0)/Large/Massive
 const PLAYER_SIZE_SCALE = [0.72, 1, 1.35]; // Small/Normal(1.0)/Large
+const FPS_CAP_VALUES = [0, 30, 60, 120, 144]; // No Limit(0 = uncapped)/30/60/120/144
 
 export const gameSettings = {
   /** Credits each player starts a match with. */
@@ -81,4 +82,6 @@ export const gameSettings = {
   demo: (): boolean => getVal('gfx.demo', 0) !== 0,
   /** Framerate overlay mode: 0 = Off, 1 = FPS only, 2 = Full (FPS + frame count). */
   framerate: (): number => getVal('gfx.framerate', 0),
+  /** Max framerate cap (ticker.maxFPS): 0 = uncapped (display refresh rate). */
+  maxFps: (): number => FPS_CAP_VALUES[getVal('gfx.fpsCap', 0)] ?? 0,
 };

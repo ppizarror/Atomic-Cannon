@@ -7,6 +7,7 @@
  */
 import './hud.css';
 import {render} from 'preact';
+import {effect} from '@preact/signals';
 import {CGameController, EGameType} from './game/CGameController';
 import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
@@ -38,6 +39,7 @@ import {
   fps,
   showFrameCount,
   frameCount,
+  maxFps,
   POWER_MIN,
   POWER_MAX,
   wrapAngle,
@@ -386,7 +388,14 @@ async function main(): Promise<void> {
   // which wobbles (e.g. 119↔120) and reads as flicker. Persists across frames.
   let fpsFrames = 0,
     fpsAccumMs = 0;
-  let frameNum = 0; // raw monotonic frame index for the ?frame=1 counter
+  let frameNum = 0; // raw monotonic frame index for the frame counter
+
+  // Max Framerate (More Graphics): cap the Pixi ticker so a high-refresh display doesn't
+  // burn CPU running the loop at 120/144 Hz. maxFPS = 0 means uncapped (display rate).
+  effect(() => {
+    compositor.app.ticker.maxFPS = maxFps.value;
+  });
+
   compositor.app.ticker.add(ticker => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
     if (!pausedSignal.value) gameController.update(dt);

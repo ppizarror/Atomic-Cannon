@@ -16,7 +16,7 @@ import {gameSettings as S} from './settingsValues';
 import {weaponsOff, landsOff} from './contentStore';
 import {tauntLines} from './tauntsStore';
 import {roster} from './playersStore';
-import {showFramerate, showFrameCount} from './store';
+import {showFramerate, showFrameCount, maxFps} from './store';
 
 export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.
@@ -64,6 +64,7 @@ export function applyGameSettings(c: CGameController): void {
   const frameMode = S.framerate();
   showFramerate.value = frameMode >= 1;
   showFrameCount.value = frameMode >= 2;
+  maxFps.value = S.maxFps(); // ticker FPS cap (0 = uncapped) — the loop applies it
 
   // Active weapon/landscape selection for the NEXT match (Game Content editors).
   GameContent.weaponsOff = new Set(weaponsOff.value);

@@ -60,6 +60,8 @@ const KICKBACK = ['Off', 'Low', 'Normal', 'High'];
 const PLAYER_SIZE = ['Small', 'Normal', 'Large'];
 // Framerate overlay mode: Off / FPS only / Full (FPS + frame count).
 const FRAMERATE = ['Off', 'FPS', 'Full'];
+// Max framerate cap (see FPS_CAP_VALUES in settingsValues) — index 0 = No Limit.
+const FPS_CAP = ['No Limit', '30 FPS', '60 FPS', '120 FPS', '144 FPS'];
 const EXPLOSION_SIZE = ['Small', 'Normal', 'Large', 'Massive'];
 const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
 
@@ -279,6 +281,13 @@ function graphics2Rows(): Widget[] {
       'gfx.framerate',
       0,
       FRAMERATE,
+    ),
+    enumW(
+      'Max Framerate',
+      'Cap the frame rate to save CPU / battery (No Limit = the display refresh rate)',
+      'gfx.fpsCap',
+      0,
+      FPS_CAP,
     ),
     toggle('Demo Mode', 'Game automatically plays itself', 'gfx.demo', 0),
   ];
