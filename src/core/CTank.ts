@@ -669,7 +669,7 @@ export class CTank {
     ctx.rotate(this.m_fAngle); // tilt to terrain slope
 
     if (sprite) {
-      const w = tankWidth();
+      const w = hullDrawWidth(sprite);
       const h = (sprite.height / sprite.width) * w;
       // Recolour the hull (not the wreck) to the tank's own colour, keeping its
       // shading (Tank → Colorize Team).
@@ -705,7 +705,7 @@ export class CTank {
     // The body is drawn rotated about its GROUND-CONTACT pivot (cx, surfaceY), so on a slope its
     // sprite centre swings out — track that rotated centre so the bubble stays concentric.
     if (this.m_bIsAlive && this.m_health.nShield > 0) {
-      const bodyH = sprite ? (sprite.height / sprite.width) * tankWidth() : tankHeight();
+      const bodyH = sprite ? (sprite.height / sprite.width) * hullDrawWidth(sprite) : tankHeight();
       const halfH = bodyH * 0.5;
       const a = this.m_fAngle;
       this.drawShieldDome(ctx, cx + halfH * Math.sin(a), surfaceY - halfH * Math.cos(a));
@@ -1282,6 +1282,13 @@ const TSZ_H = 24; // Approximate height in pixels
 const TSZ_TLEN = 20; // Turret barrel length for muzzle calc
 const TSZ_THGT = 15; // Turret pivot height above the ground line
 const TSZ_W = 46; // On-screen hull width in pixels
+// Native width (px) of the reference hull bitmap (the standard tanks are ~64–70). Every
+// hull is drawn at TSZ_W wide, EXCEPT sprites narrower than this reference — e.g. the
+// compact Sentry (37px) — which keep their true proportion instead of being scaled up to
+// full tank width. Wider sprites still clamp to TSZ_W, so the player hulls are unchanged.
+const REF_HULL_W = 64;
+const hullDrawWidth = (sprite: {width: number}) =>
+  tankWidth() * Math.min(1, sprite.width / REF_HULL_W);
 const tankRadius = () => TSZ_R * GameConfig.tankSizeScale;
 const tankHeight = () => TSZ_H * GameConfig.tankSizeScale;
 const turretLen = () => TSZ_TLEN * GameConfig.tankSizeScale;

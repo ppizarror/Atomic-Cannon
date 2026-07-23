@@ -2355,7 +2355,10 @@ export class CGameController implements ShotWorld {
     const w = getWeapon(weaponIndex);
     const minigun = w.getName() === 'Sentry Minigun';
     const team = owner ? owner.getTeamId() : 0;
-    const sentry = new CTank('Sentry', team);
+    // The badge shows the OWNER's name (a sentry inherits its deployer's display name);
+    // "Sentry" is only the internal TYPE — it drives the sprites + the behaviour guards
+    // (turn/standings/taunt exclusions), never the on-field label.
+    const sentry = new CTank(owner ? owner.getName() : 'Sentry', team);
     sentry.setTankType('Sentry'); // Sentry body/turret/wreck sprites
     if (owner) sentry.setColor(owner.getColor()); // team identity + tint
     sentry.setHuman(false);
@@ -2364,6 +2367,11 @@ export class CGameController implements ShotWorld {
     sentry.setMaxLife(minigun ? GameConfig.hitpoints * 2 : GameConfig.hitpoints);
     if (minigun) this.m_sentryMinigun.add(sentry); // → fires "Machine Gun" on its turn
     this.m_tanks.push(sentry);
+    // Preload the Sentry hull/turret/wreck sprites — the startGame preload ran before this
+    // tank existed, so without this the renderer would stay on the vector-hull fallback.
+    for (const s of sentry.getRequiredSprites()) {
+      this.m_assets.loadSprite(s.name, s.file);
+    }
     this.markDirty();
   }
 
@@ -2394,7 +2402,14 @@ export class CGameController implements ShotWorld {
       // bomb/nuke-scale blasts; a small proximity charge just pops).
       if (w.isBigBlast(w.getRadius())) this.shake(8, 0.3);
       this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
-      this.m_land.scorch(Math.floor(m.x), Math.floor(m.y), w.getRadius());
+      // Scorch is crackle-gated + scaled, matching weaponDetonate (a clean charge leaves no burn).
+      const mineCrackle = w.getCrackle();
+      if (mineCrackle > 0)
+        this.m_land.scorch(
+          Math.floor(m.x),
+          Math.floor(m.y),
+          Math.round(w.getRadius() * (0.4 + mineCrackle * 0.85)),
+        );
       this.applyBlast(new Vec2(m.x, m.y), w.getRadius(), w.getDamage(), m.owner, false);
     }
   }
