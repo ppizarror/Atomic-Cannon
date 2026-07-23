@@ -473,9 +473,14 @@ export class CParticleSystem {
     // A hot white-out flash is a NUKE thing ONLY — never a conventional or Cleaner blast.
     if (big) this.spawnFlash(x, y, r * 2.4, {r: 255, g: 255, b: 255}, 0.3);
 
-    // Dirt/deposit weapons (Dirty Boy, Mountain, …) DEPOSIT earth rather than cut a crater — just
-    // the flare burst + puff, no firework/fire/ejecta. Stop here.
-    if (deposit) return;
+    // Dirt/deposit weapons (Dirty Boy, Mountain, …) get the coloured FIREBALL + crater fumes (the
+    // original's blast over the small crater they cut) but skip the heavy fire/ejecta of a fiery bomb.
+    if (deposit) {
+      if (preset) this.emitPreset(x, y, r, preset);
+      else this.emitRadial(x, y, Math.round(r * 1.2) + 22, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare'); // prettier-ignore
+      this.emitCraterFumes(x, y, r);
+      return;
+    }
 
     // Compact spark puff for small rounds, then stop — no firework/rings/fire/ejecta.
     if (small) {
@@ -506,6 +511,8 @@ export class CParticleSystem {
       } else {
         this.emitBox(x, y, Math.round(r * 0.7) + 16, 90, 0.4, 1.0, 1.5, toward255(c, 0.2), 'disc');
       }
+      // Rising DUST/ember streamers thrown up off the fresh crater — a fiery-blast effect only.
+      this.emitCraterStreamers(x, y, r, c);
     }
 
     // Fumes rising from the crater FLOOR (the earth), not the blast centre — a faint fire flicker +
@@ -564,6 +571,29 @@ export class CParticleSystem {
       // drifts up and out of the bowl. No additive fire: the original gates crater fire OFF for a
       // clean earth-remover, and it would only re-light the hollow centre.
       this.add(fx, fy, between(-8, 8), between(-52, -20), {r: 150, g: 150, b: 150}, between(1.0, 2.0), between(3, 6), 'smoke'); // prettier-ignore
+    }
+  }
+
+  /**
+   * Rising DUST/ember STREAMERS off a fresh crater. The original seeds one rising fire
+   * streamer at each CHANGED crater column, stepping every ~6px, its length scaled to the
+   * blast radius (source: the crater driver's streamer loop, gated on a fire-detail toggle
+   * and a minimum blast size). We step the analytic bowl — the same stand-in emitCraterFumes
+   * uses — and emit an additive 'flare' per column from the crater interior, its RISE SPEED
+   * ∝ radius so bigger craters throw taller plumes. Gated behind the same FX-detail (smoke)
+   * toggle as the fumes, and the fiery-blast path only (cleaners/deposits stay clean).
+   */
+  private emitCraterStreamers(x: number, y: number, r: number, c: RGB): void {
+    if (!smokeEnabled()) return; // Graphics → Draw Smoke (+ Detail gating) = the FX-detail toggle
+    const hot = toward255(c, 0.45);
+    for (let dx = -r; dx <= r; dx += 6) {
+      // ^ the original walks the changed columns every 6px
+      const arc = Math.sqrt(Math.max(0, r * r - dx * dx)); // bowl depth at this column
+      if (arc < 4) continue; // skip the featherweight rim columns
+      const fx = x + dx + between(-2, 2);
+      const fy = y + arc * 0.6; // born on the crater interior, streaming up and out
+      const rise = -between(0.85, 1.5) * (36 + r); // length ∝ radius (the original's [r, 2r])
+      this.add(fx, fy, between(-16, 16), rise, hot, between(0.5, 1.0), between(2.5, 4), 'flare');
     }
   }
 

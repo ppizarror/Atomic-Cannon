@@ -145,21 +145,27 @@ export function weaponFlyStep(
       if (hit) return 'detonate';
       if (belowSurface) {
         if (!shot.isMovingDown()) return 'detonate'; // (c) buried, not descending
-        if (shot.digEntryY < 0) shot.digEntryY = p.y; // latch where it broke the surface
-        // Descending through the mass: keep tunnelling (its sprite draws over the terrain
-        // so you SEE it bore through) a solid depth below where it entered, then detonate.
-        // The descent does NOT cut terrain — a heightmap can't hold a real tunnel (a void
-        // with soil above), so only the detonation crater changes the ground.
-        if (p.y < diggerDetonateY(shot, land)) return 'continue';
+        if (shot.digEntryY < 0) shot.digEntryY = p.y; // anchor the fractional dig-depth calc
+        // Descending through the mass: cut a NARROW disc at the current position each step and
+        // let the soil cave straight back in — a continuous bore that wipes a thin channel which
+        // immediately fills (no open tunnel; no damage while travelling), then detonate at depth.
+        if (p.y < diggerDetonateY(shot, land)) {
+          digCarve(shot, weapon, land, p);
+          return 'continue';
+        }
         return 'detonate'; // reached its dig depth (or the world floor)
       }
       return 'continue'; // open air: before entry OR emerged on the far side — keep arcing
 
     case EXT.ESCAPE:
-      // Mirror of Digger: penetrates the mass while RISING (tunnels up and out); detonate
-      // once it starts falling. Descent doesn't cut terrain (see Digger).
+      // Mirror of Digger: bores through the mass while RISING (tunnels up and out), carving the
+      // same continuous narrow channel; detonates once it starts falling.
       if (hit) return 'detonate';
-      if (belowSurface) return shot.isMovingDown() ? 'detonate' : 'continue';
+      if (belowSurface) {
+        if (shot.isMovingDown()) return 'detonate';
+        digCarve(shot, weapon, land, p);
+        return 'continue';
+      }
       return 'continue';
 
     case EXT.ROLLER:
@@ -199,6 +205,22 @@ export function weaponFlyStep(
 function diggerDetonateY(shot: CShot, land: CLand): number {
   if (shot.digDepth < 0) shot.digDepth = 0.45 + Math.random() * 0.25; // fraction to the floor
   return shot.digEntryY + (land.height - shot.digEntryY) * shot.digDepth;
+}
+
+/** Continuous burrow carve. Each step a Digger/Escape shot spends underground it cuts a NARROW
+ *  disc at its current ballistic position — radius = the small `size` field (NOT the big blast
+ *  `radius`) — and the soil above caves straight back in, so the channel is a thin, arc-following
+ *  trench that fills as fast as it's dug (the original cuts one such crater every frame). The carve
+ *  runs with slump OFF: the overburden drops straight down by the removed thickness (grass ends up
+ *  that much lower) and the walls stay put — with slump on, the steep bore avalanches sideways and
+ *  stacks into a wide funnel. Throttled to ~half a disc of travel so overlapping cuts stay clean. */
+function digCarve(shot: CShot, weapon: CWeapon, land: CLand, p: Vec2): void {
+  const r = Math.max(
+    3,
+    weapon.getSize() * GameConfig.explosionScale * Math.sqrt(GameConfig.worldScale),
+  );
+  const cols = (shot.digCols ??= new Set<number>());
+  land.carveBore(p.x, p.y, r, cols);
 }
 
 function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank | null): FlyAction {
@@ -333,8 +355,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // Terrain effect.
   const earth = weapon.getEarth();
   if (earth > 0) {
-    // Dirt: remove NOTHING. Throw a cloud of earth that arcs up and rains back down,
-    // piling up and slumping into a natural slope — never a crater, never a hard blob.
+    // Dirt: the original cuts a SMALL crater at the impact and THEN throws the earth
+    // cloud that arcs up and rains back down, piling into a mound. The crater is the "dirt replace"
+    // at the landing point; the debris overtops it, so the mound wins.
+    if (reachesGround) {
+      land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), Math.round(radiusPx * 0.35));
+    }
     land.depositDirt(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (isCleaner) {
     // Cleaner: carve out its (large) radius — remove terrain, nothing else. No scorch (it isn't a
@@ -347,6 +373,9 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // soil and the ground ABOVE caves IN under gravity to fill it — so the surface sags
     // by ~the crater size, it does NOT strip the whole column from the blast up to the
     // surface. Per-column noise keeps the collapse ragged, not flat/circular.
+    // The burrow channel itself is already carved step-by-step during flight (digCarve); here
+    // we only cut the final, WIDER detonation crater at the shot's resting depth (big blast
+    // `radius`, vs the narrow `size` bore) and let its overburden cave in.
     const craterR = Math.round(radiusPx);
     land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), craterR);
     if (crackle > 0) {
@@ -356,11 +385,15 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
         Math.round(craterR * (0.4 + crackle * 0.85)),
       );
     }
+    // Cosmetic dirt spray only (deposit=false): a BURIED digger blast displaces its dirt into
+    // its own cave-in crater, it doesn't fountain depositing earth onto the surface. Depositing
+    // chunks here landed on the still-caving crater/trench columns and stranded as "floating dirt".
     land.addShowerParticles(
       Math.floor(pos.x),
       Math.floor(surfaceY),
       Math.min(2500, Math.round(fodder * craterR * 100 + craterR * 4)),
       craterR,
+      false,
     );
   } else if (!isBeam && reachesGround) {
     // Nukes (expType 4) blow a much wider crater than their base radius.

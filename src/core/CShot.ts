@@ -368,4 +368,5 @@ export class CShot {
   batteryApex: number = -1; // age at first descent (battery drop cadence anchor); -1 = not yet
   digDepth: number = -1; // per-shot randomised digger bore depth (px); -1 = not yet chosen
   digEntryY: number = -1; // shot Y where it first went below the surface; -1 = not yet
+  digCols: Set<number> | null = null; // columns already bored (each dug ONCE → trench backfills, no re-cave)
 }
