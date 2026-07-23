@@ -47,12 +47,12 @@ export function openDepot(): void {
   if (controller && !controller.canOpenDepot()) return;
   refreshEconomy();
   showDepot.value = true;
-  uiClick();
+  uiOpen();
 }
 
 export function closeDepot(): void {
   showDepot.value = false;
-  uiClick();
+  uiClose();
 }
 
 // Pause menu — an overlay over the frozen battle (Resume / Settings / Quit).
@@ -65,7 +65,7 @@ export function openPauseMenu(): void {
   game().setPaused(true);
   paused.value = true;
   showPause.value = true;
-  uiClick();
+  uiOpen();
 }
 
 /** Resume: close the pause menu and unfreeze the sim. */
@@ -73,7 +73,7 @@ export function resumeGame(): void {
   showPause.value = false;
   game().setPaused(false);
   paused.value = false;
-  uiClick();
+  uiClose();
 }
 
 // Help overlay — the "?" panel button. Shows a modal control reference. Freeze the
@@ -86,7 +86,7 @@ export function openHelp(): void {
   game().setPaused(true);
   paused.value = true;
   showHelp.value = true;
-  uiClick();
+  uiOpen();
 }
 
 /** Close Help and unfreeze the sim. */
@@ -94,7 +94,7 @@ export function closeHelp(): void {
   showHelp.value = false;
   game().setPaused(false);
   paused.value = false;
-  uiClick();
+  uiClose();
 }
 
 // Where the Settings screen returns to when done — the pause menu or the main menu.
@@ -110,7 +110,7 @@ export function openSettings(from: 'pause' | 'menu'): void {
   settingsPage.value = 'root';
   showPause.value = false;
   screen.value = 'settings';
-  uiClick();
+  uiOpen();
 }
 
 /** Enter a category's option page (from the Settings root). */
@@ -133,7 +133,7 @@ export function closeSettings(): void {
   } else {
     screen.value = 'menu';
   }
-  uiClick();
+  uiClose();
 }
 
 /** Enter the main menu: freeze the battle behind it and play menu music. We freeze
@@ -156,6 +156,7 @@ function enterBattle(players: number, humans: number, tanksPerTeam: number): voi
   applyGameSettings(game()); // honour the saved options for this match
   game().setHumanCount(humans);
   game().setTanksPerTeam(tanksPerTeam);
+  game().getAudio()?.startGameSound(); // the "chunk" as the battle launches
   game().startGame(players); // also starts the battle music
   screen.value = 'battle';
   game().setPaused(false);
@@ -368,6 +369,18 @@ export function game(): CGameController {
 /** UI button click (click.wav) — used by menu-style HUD controls. */
 export function uiClick(): void {
   controller?.getAudio()?.uiClick();
+}
+/** A screen / dialog panel opening (Panel1.wav). */
+export function uiOpen(): void {
+  controller?.getAudio()?.uiOpen();
+}
+/** …and closing (Panel3.wav). */
+export function uiClose(): void {
+  controller?.getAudio()?.uiClose();
+}
+/** A keystroke while typing a name (typing.wav). */
+export function uiTyping(): void {
+  controller?.getAudio()?.typingSound();
 }
 
 /** Copy the current game state into the signals (called each frame). */

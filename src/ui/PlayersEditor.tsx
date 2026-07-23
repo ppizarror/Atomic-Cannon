@@ -12,7 +12,7 @@
 import {useEffect, useRef, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Button} from './Button';
-import {openSettingsPage, uiClick} from './store';
+import {openSettingsPage, uiClick, uiTyping} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
 import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
 import {usePointerDrag} from './usePointerDrag';
@@ -112,6 +112,10 @@ export function PlayersEditor() {
             maxLength={16}
             value={cfg.name}
             onInput={e => setName(idx, (e.currentTarget as HTMLInputElement).value)}
+            // typing.wav per keystroke, matching the original's on-screen keyboard.
+            onKeyDown={e => {
+              if (e.key.length === 1 || e.key === 'Backspace') uiTyping();
+            }}
           />
         </div>
 

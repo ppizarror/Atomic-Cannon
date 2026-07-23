@@ -26,6 +26,9 @@ export const SFX = {
   BATTLE_LOST: 'battle lost.wav',
   CLICK: 'click.wav',
   TYPING: 'typing.wav',
+  PANEL_OPEN: 'Panel1.wav', // a screen / dialog panel opens
+  PANEL_CLOSE: 'Panel3.wav', // …and closes
+  START_GAME: 'Mechanismus4.wav', // the Start Game "chunk" as a battle launches
   FIREWORK: ['Slapthunder1.wav', 'Slapthunder2.wav'] as const,
 } as const;
 
@@ -223,6 +226,26 @@ export class CAudio {
 
   uiClick(): void {
     this.m_sfx.play(SFX.CLICK);
+  }
+
+  /** A screen / dialog panel opening (menu, settings, depot, pause, help). */
+  uiOpen(): void {
+    this.m_sfx.play(SFX.PANEL_OPEN);
+  }
+
+  /** …and the same panel closing. */
+  uiClose(): void {
+    this.m_sfx.play(SFX.PANEL_CLOSE);
+  }
+
+  /** The Start Game "chunk" as a battle launches. */
+  startGameSound(): void {
+    this.m_sfx.play(SFX.START_GAME);
+  }
+
+  /** A keystroke while typing a name (Customize Players). */
+  typingSound(): void {
+    this.m_sfx.play(SFX.TYPING);
   }
 
   // ── Music ────────────────────────────────────────────────────────────────

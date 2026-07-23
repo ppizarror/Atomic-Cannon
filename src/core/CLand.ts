@@ -742,8 +742,10 @@ export class CLand {
       for (let col = x0; col <= x1; col++) {
         const dx = (col - blob.x) / curR; // -1..1 across the current mound
         if (dx <= -1 || dx >= 1) continue;
-        // Cosine dome: 1 at centre, 0 at the rim, smooth (zero slope) at both — a rounded hill.
-        const dome = 0.5 * (1 + Math.cos(Math.PI * dx));
+        // Rounded DOME (elliptical, sqrt(1-dx²)): full convex flanks + a continuously-curved top,
+        // round like the weapon icon — no raised-cosine inflection (whose concave skirt read as a
+        // flat "long tail"). Height `curH` sets how tall vs. a true hemisphere.
+        const dome = Math.sqrt(Math.max(0, 1 - dx * dx));
         const want = Math.round(curH * dome); // mound height at this column
         const idx = col - (blob.x - blob.R);
         if (idx < 0 || idx >= blob.base.length) continue;
