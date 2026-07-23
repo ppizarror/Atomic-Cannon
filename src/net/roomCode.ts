@@ -58,3 +58,15 @@ export function formatRoomCode(code: string): string {
   const c = code.toUpperCase();
   return c.length === CODE_LEN ? `${c.slice(0, 3)}-${c.slice(3)}` : c;
 }
+
+/**
+ * Format a code as it's typed into an input: uppercase, keep only code chars, and
+ * insert a single hyphen after the 3rd letter (ABC → ABC-D23). A paste is passed
+ * through (just uppercased/clipped) so it isn't reshaped — `normalizeRoomCode`
+ * handles it on submit either way.
+ */
+export function formatCodeInput(raw: string, isPaste: boolean): string {
+  if (isPaste) return raw.toUpperCase().slice(0, CODE_LEN + 1);
+  const clean = normalizeRoomCode(raw);
+  return clean.length > 3 ? `${clean.slice(0, 3)}-${clean.slice(3)}` : clean;
+}

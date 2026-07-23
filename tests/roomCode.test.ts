@@ -5,7 +5,13 @@
  */
 import {describe, it, expect} from 'vitest';
 import {Prng} from '../src/math/prng';
-import {newRoomCode, normalizeRoomCode, isValidRoomCode, formatRoomCode} from '../src/net/roomCode';
+import {
+  newRoomCode,
+  normalizeRoomCode,
+  isValidRoomCode,
+  formatRoomCode,
+  formatCodeInput,
+} from '../src/net/roomCode';
 
 const seededRandInt = (p: Prng) => (n: number) => p.int(n);
 
@@ -48,6 +54,19 @@ describe('roomCode', () => {
   it('formats with a mid-group hyphen', () => {
     expect(formatRoomCode('ABCD23')).toBe('ABC-D23');
     expect(formatRoomCode('abcd23')).toBe('ABC-D23');
+  });
+
+  it('auto-hyphenates while typing (but leaves a paste alone)', () => {
+    // Typing: hyphen appears once past the 3rd char; ≤3 stays plain (so backspace works).
+    expect(formatCodeInput('ab', false)).toBe('AB');
+    expect(formatCodeInput('abc', false)).toBe('ABC');
+    expect(formatCodeInput('abcd', false)).toBe('ABC-D');
+    expect(formatCodeInput('abcd23', false)).toBe('ABC-D23');
+    // Backspacing "ABC-" → "ABC" must not re-add the dash (no stuck state).
+    expect(formatCodeInput('ABC', false)).toBe('ABC');
+    // A paste is passed through (normalizeRoomCode handles it on submit).
+    expect(formatCodeInput('ABC-D23', true)).toBe('ABC-D23');
+    expect(formatCodeInput('abcd23', true)).toBe('ABCD23');
   });
 
   it('normalize→validate round-trips a formatted code', () => {

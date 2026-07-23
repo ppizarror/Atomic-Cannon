@@ -39,6 +39,8 @@ export interface RoomClientState {
 
 export interface RoomClientOptions {
   identity: RoomIdentity;
+  /** App build version, sent on hello so a room stays single-version. */
+  appVersion: string;
   /** Build a transport for a room URL (default: WebSocketTransport). */
   transportFactory?: (url: string) => NetTransport;
   /** Mint a fresh room code (default: GET /api/new). */
@@ -118,6 +120,7 @@ export class RoomClient {
       const hello: ClientMessage = {
         t: 'hello',
         v: PROTOCOL_VERSION,
+        app: this.opts.appVersion,
         name: this.opts.identity.name,
         color: this.opts.identity.color,
         reconnect: this.m_reconnectToken ?? undefined,

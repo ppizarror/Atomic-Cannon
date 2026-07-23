@@ -8,7 +8,7 @@ import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 import {goToMenu} from './store';
-import {formatRoomCode} from '../net/roomCode';
+import {formatRoomCode, formatCodeInput} from '../net/roomCode';
 import {
   netState,
   playerName,
@@ -72,7 +72,11 @@ function Entry() {
           maxLength={7}
           placeholder={n.codePlaceholder}
           value={code}
-          onInput={e => setCode((e.currentTarget as HTMLInputElement).value)}
+          onInput={e => {
+            const it = (e as InputEvent).inputType;
+            const paste = it === 'insertFromPaste' || it === 'insertFromDrop';
+            setCode(formatCodeInput((e.currentTarget as HTMLInputElement).value, paste));
+          }}
         />
       </div>
       <BigButton label={n.join} onClick={() => joinRoom(code)} disabled={!code.trim()} />

@@ -56,6 +56,8 @@ export type ClientMessage =
   | {
       readonly t: 'hello';
       readonly v: number;
+      /** App build version — a room must be single-version so game logic agrees. */
+      readonly app: string;
       readonly name: string;
       readonly color?: string;
       readonly reconnect?: string;

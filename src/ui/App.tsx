@@ -36,6 +36,7 @@ import {HighScores} from './HighScores';
 import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
 import {Network} from './Network';
+import {NetStatusBanner} from './NetStatusBanner';
 import {WarStandings} from './WarStandings';
 
 /**
@@ -255,6 +256,7 @@ export function App() {
   return (
     <>
       <CurrentScreen />
+      <NetStatusBanner />
       <TauntLayer />
       <PauseMenu />
       <HelpOverlay />

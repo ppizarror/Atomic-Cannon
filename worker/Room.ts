@@ -43,6 +43,8 @@ interface RoomState {
   turnIdx: number;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
+  /** App build version of the room (first player's) — all players must match. */
+  appVersion: string | null;
 }
 
 interface Attachment {
@@ -63,6 +65,7 @@ function freshState(code: string): RoomState {
     order: [],
     turnIdx: 0,
     snapshot: null,
+    appVersion: null,
   };
 }
 
@@ -201,6 +204,15 @@ export class Room {
         message: `server speaks protocol ${PROTOCOL_VERSION}`,
       });
     }
+    // A room is single-version: once the first player sets it, everyone must match so
+    // the (client-authoritative) game logic agrees. Mismatch → reload for the new build.
+    if (s.appVersion && msg.app !== s.appVersion) {
+      return this.send(ws, {
+        t: 'error',
+        code: 'version_mismatch',
+        message: `this room runs game v${s.appVersion} — reload to update`,
+      });
+    }
 
     // Reconnect: a valid token rebinds an existing (typically dropped) slot.
     if (msg.reconnect) {
@@ -231,7 +243,10 @@ export class Room {
 
     const id = s.nextId++;
     const isHost = s.hostId === null;
-    if (isHost) s.hostId = id;
+    if (isHost) {
+      s.hostId = id;
+      s.appVersion = msg.app; // first player fixes the room's version
+    }
     const player: StoredPlayer = {
       id,
       name: (msg.name || `Player ${id}`).slice(0, 24),
@@ -368,11 +383,23 @@ export class Room {
 
   private async onLeave(ws: WebSocket, s: RoomState, pid: number): Promise<void> {
     await this.dropPlayer(s, pid, /*removeSlot=*/ s.phase === 'lobby');
+    // An explicit leave mid-match that leaves fewer than two players ends the game, so
+    // the last player sees the result instead of waiting forever. (A transient socket
+    // drop keeps the slot for reconnect — that path is webSocketClose, handled below.)
+    if (s.phase === 'playing' && this.connectedCount(s) < 2) {
+      s.phase = 'ended';
+      await this.save(s);
+      this.broadcast({t: 'gameOver'});
+    }
     try {
       ws.close(1000, 'left');
     } catch {
       /* ignore */
     }
+  }
+
+  private connectedCount(s: RoomState): number {
+    return Object.values(s.players).filter(p => p.connected).length;
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {

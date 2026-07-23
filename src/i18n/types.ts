@@ -99,6 +99,11 @@ export interface Strings {
     status: {connecting: string; open: string; reconnecting: string; closed: string};
     errorTitle: string;
     retry: string;
+    /** In-battle banners. `{name}` / `{n}` substituted. */
+    ownReconnecting: string;
+    playerDropped: string;
+    playersDropped: string;
+    endMatch: string;
   };
 
   // ── About card ────────────────────────────────────────────────────────────

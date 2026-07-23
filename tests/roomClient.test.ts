@@ -62,6 +62,7 @@ function harness(over: Partial<RoomClientOptions> = {}) {
   const states: RoomClientState[] = [];
   const client = new RoomClient({
     identity: {name: 'Ada', color: '#f00'},
+    appVersion: 'test',
     origin: 'https://example.com',
     mintCode: async () => 'ABCD23',
     transportFactory: (url: string) => {
@@ -97,7 +98,14 @@ describe('RoomClient', () => {
     const t = transports[0];
 
     t.setStatus('open');
-    expect(t.sent[0]).toEqual({t: 'hello', v: 1, name: 'Ada', color: '#f00', reconnect: undefined});
+    expect(t.sent[0]).toEqual({
+      t: 'hello',
+      v: 1,
+      app: 'test',
+      name: 'Ada',
+      color: '#f00',
+      reconnect: undefined,
+    });
 
     t.recv({
       t: 'welcome',
@@ -132,7 +140,14 @@ describe('RoomClient', () => {
     t.setStatus('reconnecting');
     t.setStatus('open');
     const lastHello = t.sent.filter(m => m.t === 'hello').at(-1);
-    expect(lastHello).toEqual({t: 'hello', v: 1, name: 'Ada', color: '#f00', reconnect: 'tok-2'});
+    expect(lastHello).toEqual({
+      t: 'hello',
+      v: 1,
+      app: 'test',
+      name: 'Ada',
+      color: '#f00',
+      reconnect: 'tok-2',
+    });
   });
 
   it('recomputes host from roster updates (host leaves → next becomes host)', async () => {

@@ -39,6 +39,20 @@ describe('network match boot', () => {
     const gc = netController(0);
     expect(gc.getNetSnapshot().tanks).toHaveLength(2);
   });
+
+  it('ignores local dev switches (flatland/weapontest) so clients stay identical', () => {
+    // One client has ?flatland + ?weapontest set; the match must ignore both.
+    const dirty = new CGameController(makeCanvas());
+    dirty.setFlatLand(true);
+    dirty.setWeaponTest(true);
+    dirty.startNetworkGame({seed: 777, players: 2, localIndex: 0, roster: ROSTER});
+
+    const clean = new CGameController(makeCanvas());
+    clean.startNetworkGame({seed: 777, players: 2, localIndex: 1, roster: ROSTER});
+
+    // Same seed → identical (non-flat) terrain despite the dirty client's switches.
+    expect(dirty.getNetSnapshot().heights).toEqual(clean.getNetSnapshot().heights);
+  });
 });
 
 describe('turn ownership', () => {

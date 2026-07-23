@@ -52,6 +52,10 @@ export const en: Strings = {
     },
     errorTitle: 'Connection problem',
     retry: 'Back',
+    ownReconnecting: 'Connection lost — reconnecting…',
+    playerDropped: '{name} lost connection — waiting to reconnect…',
+    playersDropped: '{n} players disconnected — waiting…',
+    endMatch: 'End match',
   },
 
   about: {

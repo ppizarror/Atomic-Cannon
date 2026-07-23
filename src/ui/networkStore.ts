@@ -10,7 +10,7 @@ import {NetGame} from '../net/netGame';
 import {normalizeRoomCode, isValidRoomCode} from '../net/roomCode';
 import {createPersistedSignal} from './persistedSignal';
 import {roster} from './playersStore';
-import {game, screen, paused} from './store';
+import {game, screen, paused, goToMenu} from './store';
 
 const initialState: RoomClientState = {
   phase: 'idle',
@@ -41,6 +41,7 @@ function makeClient(): RoomClient {
   client?.close();
   const c = new RoomClient({
     identity: {name: playerName.value.trim() || 'Player', color: roster.value[0]?.color},
+    appVersion: __APP_VERSION__,
     onState: s => {
       netState.value = s;
     },
@@ -98,4 +99,10 @@ export function resetNet(): void {
   client = null;
   netGame = null;
   netState.value = initialState;
+}
+
+/** End the current networked match: leave the room and return to the main menu. */
+export function leaveMatch(): void {
+  leaveRoom();
+  goToMenu();
 }
