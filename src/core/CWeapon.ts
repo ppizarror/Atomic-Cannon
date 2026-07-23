@@ -131,6 +131,12 @@ export function getDefaultWeaponIndex(): number {
   return i >= 0 ? i : 0;
 }
 
+/** Blast radius (px) at/above which a detonation counts as "big" — triggers the heavy
+ *  camera shake / screen-flash / wide-fallout FX (the tier nuke-class weapons always hit).
+ *  Below it (machine-gun r8, shell/cannon r≈20) the impact is silent-camera; bombs/rockets
+ *  (r≈50) and nukes shake. */
+export const BIG_BLAST_RADIUS = 45;
+
 export class CWeapon {
   private m_def: WeaponDef;
 
@@ -189,6 +195,18 @@ export class CWeapon {
 
   isNuclear(): boolean {
     return this.m_def.type === 'NUKE';
+  }
+
+  /** "Nuke-class" blast — the top explosion tier (expType 4) or an actual NUKE. Drives the
+   *  heavy shake / full-screen flash / big-fallout branches. */
+  isNukeClass(): boolean {
+    return this.getExpType() === 4 || this.isNuclear();
+  }
+
+  /** Big enough for the heavy blast FX: nuke-class, or a wide conventional hit
+   *  (radiusPx ≥ BIG_BLAST_RADIUS). */
+  isBigBlast(radiusPx: number): boolean {
+    return this.isNukeClass() || radiusPx >= BIG_BLAST_RADIUS;
   }
 
   isRadioactive(): boolean {
@@ -363,14 +381,17 @@ function impactMultiplier(w: RawWeapon): number {
   return m;
 }
 
-/** Post-override Power: `m × damage`, `+200` if the weapon irradiates,
- *  or just `damage` for Utility weapons (a heal/move amount, not an attack). */
+/** Post-override Power BEFORE rounding: `m × damage`, `+200` if the weapon irradiates,
+ *  or just `damage` for Utility weapons (a heal/move amount, not an attack). Shared by
+ *  weaponPower + weaponDamagePerArea so the derivation can't drift between them. */
+function basePower(w: RawWeapon, m: number): number {
+  if (w.type === 'Utility') return w.damage; // Utility overrides: the raw heal/move amount
+  return m * w.damage + ((w.iradiate ?? 0) > 0 ? 200 : 0);
+}
+
+/** Power stat shown in the weapon-details LCD / depot. */
 export function weaponPower(w: RawWeapon): number {
-  const m = impactMultiplier(w);
-  let power = m * w.damage;
-  if ((w.iradiate ?? 0) > 0) power += 200; // iradiate > 0
-  if (w.type === 'Utility') power = w.damage; // type == "Utility"
-  return Math.round(power);
+  return Math.round(basePower(w, impactMultiplier(w)));
 }
 
 /** Damage-per-area: `Power·10000 / (radius² · m · 6.28)` — power density
@@ -378,10 +399,7 @@ export function weaponPower(w: RawWeapon): number {
 export function weaponDamagePerArea(w: RawWeapon): number {
   const m = impactMultiplier(w);
   if (m <= 0 || w.radius <= 0) return 0;
-  let power = m * w.damage;
-  if ((w.iradiate ?? 0) > 0) power += 200;
-  if (w.type === 'Utility') power = w.damage;
-  return Math.round((power * 10000) / (w.radius * w.radius * m * 6.28));
+  return Math.round((basePower(w, m) * 10000) / (w.radius * w.radius * m * 6.28));
 }
 
 export function getWeapon(index: number): CWeapon {

@@ -18,6 +18,9 @@ import type {Vec2} from '../math/Vec2';
 import type {ISpriteSource} from './rendering/sprites';
 import particlesRaw from '../data/particles.json';
 import {GameConfig} from './CGameConfig';
+import {between} from '../math/random';
+import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
+import {TWO_PI, deg2rad} from '../math/num';
 
 // Per-weapon explosion presets from weapons.txt's ParticleEffectTable: each
 // weapon's `blast`/`trail` names one of these (colour, count, speed, life,
@@ -43,12 +46,6 @@ const PRESETS = particlesRaw as unknown as Record<string, ParticlePreset>;
 // 'plume' = the bright starburst flare used along a projectile trail (real
 // flares/04.bmp sprite, additive). 'smoke' = grey puff (real gui/smoke.bmp).
 type RenderKind = 'disc' | 'flare' | 'flash' | 'smoke' | 'plume';
-
-interface RGB {
-  r: number;
-  g: number;
-  b: number;
-}
 
 interface Particle {
   x: number;
@@ -89,27 +86,16 @@ const KIND_WIND: Record<RenderKind, number> = {
 // (r≥~20) get the full sequence. See `blast`.
 const SMALL_BLAST_R = 14;
 
-const DEG = Math.PI / 180;
 const rnd = () => Math.random();
-/** Uniform in [a, b]. */
-const between = (a: number, b: number) => a + (b - a) * rnd();
 
 /** Parse `#rrggbb` (falls back to a warm orange). */
 function parseColor(s: string): RGB {
-  if (s.startsWith('#') && s.length === 7) {
-    const n = parseInt(s.slice(1), 16);
-    return {r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff};
-  }
-  return {r: 255, g: 136, b: 0};
+  return s.startsWith('#') && s.length === 7 ? hexToRgb(s) : {r: 255, g: 136, b: 0};
 }
 
 /** Nudge a colour toward white (0..1) — hot cores read brighter than the tint. */
 function toward255(c: RGB, t: number): RGB {
-  return {
-    r: c.r + (255 - c.r) * t,
-    g: c.g + (255 - c.g) * t,
-    b: c.b + (255 - c.b) * t,
-  };
+  return mixToward(c, WHITE, t);
 }
 
 // An instantaneous beam flash: the weapon's ray sprite stretched from muzzle to impact,
@@ -344,7 +330,7 @@ export class CParticleSystem {
     upBias = 0,
   ): void {
     for (let i = 0; i < count; i++) {
-      const a = rnd() * 360 * DEG;
+      const a = rnd() * TWO_PI;
       const sp = between(smin, smax);
       this.add(
         x,
@@ -536,7 +522,7 @@ export class CParticleSystem {
     // the rim while the bowl carves below it, so this fills the whole crater.
     const cy = y + r * 0.35;
     for (let i = 0; i < count; i++) {
-      const a = rnd() * Math.PI * 2;
+      const a = rnd() * TWO_PI;
       // Spread to ≈1.5·r (the crater edge), only lightly centre-biased so blobs
       // reach the rim AND the bottom of the bowl — not just a ball in the middle.
       const life = between(0.4, 0.85);
@@ -563,7 +549,7 @@ export class CParticleSystem {
   private emitEjectaRing(x: number, y: number, r: number): void {
     const n = Math.round(r * 4.5) + 50;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + between(-0.06, 0.06); // evenly around the circle
+      const a = (i / n) * TWO_PI + between(-0.06, 0.06); // evenly around the circle
       const sp = between(320, 520); // narrow band → a clean, wide shell
       const g = 100 + Math.floor(rnd() * 110); // brighter, warmer dirt
       this.add(
@@ -590,7 +576,7 @@ export class CParticleSystem {
       t1 = Math.max(p.minTheta, p.maxTheta);
     const size = r * 0.12 + 2;
     for (let i = 0; i < count; i++) {
-      const theta = (t0 + rnd() * (t1 - t0)) * DEG;
+      const theta = deg2rad(t0 + rnd() * (t1 - t0));
       const speed = (p.minv + rnd() * (p.maxv - p.minv)) * 14 + 20; // preset units → px/s
       const life = (p.minlife + rnd() * (p.maxlife - p.minlife)) * 0.16 + 0.25;
       const jc = (base: number) => Math.max(0, Math.min(255, base + (rnd() * 2 - 1) * p.colorVar));
@@ -839,7 +825,7 @@ export class CParticleSystem {
    */
   private emitShrinkBurst(x: number, y: number, r: number, sprite: string, count: number): void {
     for (let i = 0; i < count; i++) {
-      const ang = Math.random() * Math.PI * 2;
+      const ang = Math.random() * TWO_PI;
       const off = Math.random() * r * 0.55; // born within the blast disc
       const size = r * (0.9 + Math.random() * 1.0); // starts BIG (≈ blast diameter)
       const life = 0.32 + Math.random() * 0.22;
@@ -927,7 +913,7 @@ export class CParticleSystem {
         const a = 1 - t;
         ctx.fillStyle = `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${a})`;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, Math.max(0.6, p.size * (0.5 + a * 0.5)), 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, Math.max(0.6, p.size * (0.5 + a * 0.5)), 0, TWO_PI);
         ctx.fill();
       } else if (p.kind === 'smoke') {
         // Grey puff: starts SMALL and SWELLS strongly over its life (the fumes
@@ -957,7 +943,7 @@ export class CParticleSystem {
           g.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.fillStyle = g;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, d / 2, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, d / 2, 0, TWO_PI);
           ctx.fill();
         }
       }
@@ -989,7 +975,7 @@ export class CParticleSystem {
         g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, d / 2, 0, Math.PI * 2);
+        ctx.arc(e.x, e.y, d / 2, 0, TWO_PI);
         ctx.fill();
       }
     }
@@ -1013,7 +999,7 @@ export class CParticleSystem {
         g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, d / 2, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, d / 2, 0, TWO_PI);
         ctx.fill();
       }
     }
@@ -1042,7 +1028,7 @@ export class CParticleSystem {
         g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, glow, 0, TWO_PI);
         ctx.fill();
       }
     }
@@ -1108,7 +1094,7 @@ export class CParticleSystem {
       if (grow < 1) {
         ctx.fillStyle = `rgba(255,255,255,${a})`;
         ctx.beginPath();
-        ctx.arc(ex, ey, Math.max(4, b.width * 0.4) * a + 2, 0, Math.PI * 2);
+        ctx.arc(ex, ey, Math.max(4, b.width * 0.4) * a + 2, 0, TWO_PI);
         ctx.fill();
       }
     }

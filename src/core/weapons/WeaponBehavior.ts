@@ -12,12 +12,12 @@ import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
 import {GameConfig} from '../CGameConfig';
-import {EXT} from './ExtType';
+import {EXT, isBeamExt} from './ExtType';
 
 // `EXT` / `ExtType` / `toExtType` — the authoritative behaviour-selector table — live in
 // ./ExtType so `CWeapon.getExtType()` can return the typed value without a circular import.
 // Re-exported here because this dispatcher is the natural place callers look for them.
-export {EXT} from './ExtType';
+export {EXT, isBeamExt} from './ExtType';
 export type {ExtType} from './ExtType';
 
 // Submunition launch power = 0.5x firing power.
@@ -26,10 +26,6 @@ const CLUSTER_POWER = 0.5;
 const ROLL_SPEED = 260;
 // Max shot lifetime before it self-detonates (10.0s).
 const MAX_LIFE = 10;
-// Blast radius (px) at/above which a detonation shakes the camera. Below it (machine
-// gun r8, shell/cannon r≈20) the impact is silent-camera; bombs/rockets (r≈50) and
-// nukes shake. See weaponDetonate.
-const BIG_BLAST_RADIUS = 45;
 
 /** The world a shot behaves against — implemented by the game controller. */
 export interface ShotWorld {
@@ -107,7 +103,7 @@ export function weaponFlyStep(
   if (p.x < -60 || p.x > land.width + 60 || p.y > land.height + 80) return 'consumed';
 
   const ext = weapon.getExtType();
-  const isBeam = ext === EXT.BEAM || ext === EXT.BEAM_ALT;
+  const isBeam = isBeamExt(ext);
 
   // Battery: primary shots drop a bomblet straight down every batSec while descending.
   if (!isBeam) batteryTick(shot, weapon, world, dt);
@@ -286,7 +282,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // on the far side). It is NOT relocated to the surface.
   const pos = shot.getPosition();
   const isPrimary = shot.getGeneration() === 0;
-  const isBeam = ext === EXT.BEAM || ext === EXT.BEAM_ALT;
+  const isBeam = isBeamExt(ext);
   // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
   // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
   const isCleaner = weapon.getType() === 'Cleaner';
@@ -325,7 +321,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // only warps the screen for nukes). So reserve it for genuinely BIG blasts: nukes
   // and bomb/rocket-scale craters (radius ≥ 45). Small rounds — machine gun, shells,
   // cannon — land with no shake, matching how they read in the original.
-  const bigBlast = weapon.isNuclear() || weapon.getExpType() === 4 || radiusPx >= BIG_BLAST_RADIUS;
+  const bigBlast = weapon.isBigBlast(radiusPx);
   if (!isCleaner && bigBlast) world.shake(isPrimary ? 8 : 4, 0.3);
 
   // A blast only craters/scorches the GROUND when its radius spans the gap from the detonation
@@ -371,7 +367,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     );
   } else if (!isBeam && reachesGround) {
     // Nukes (expType 4) blow a much wider crater than their base radius.
-    const heavy = weapon.getExpType() === 4 || weapon.isNuclear();
+    const heavy = weapon.isNukeClass();
     const craterR = Math.round(radiusPx * (heavy ? 1.35 : 1));
     land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), craterR);
     // SCORCH is driven by the weapon's `crackle` (burnt-rim intensity) — a Shell (crackle 0)
@@ -396,7 +392,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   }
 
   // The screen refraction / shockwave warp is a NUKE-only effect.
-  if (isPrimary && (weapon.isNuclear() || weapon.getExpType() === 4)) {
+  if (isPrimary && weapon.isNukeClass()) {
     world.ripple(pos.x, pos.y, 2.6 + radiusPx / 120);
   }
 
@@ -422,7 +418,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // wider field, tracking their heavier (×1.35) crater.
   const rad = weapon.getRadiation();
   if (rad.time > 0 && rad.dmg > 0) {
-    const big = weapon.getExpType() === 4 || weapon.isNuclear();
+    const big = weapon.isNukeClass();
     const zoneR = Math.round(radiusPx * (big ? 1.4 : 1));
     // The damage zone + ground glow settle on the SURFACE; but for an airburst the fallout is
     // thrown from the mid-air burst point and RAINS down onto the ground (not up out of a crater).

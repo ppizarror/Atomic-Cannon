@@ -71,3 +71,6 @@ const EXT_VALUES: ReadonlySet<number> = new Set(Object.values(EXT_CODES));
 export function toExtType(n: number): ExtType {
   return (EXT_VALUES.has(n) ? n : EXT_CODES.BALLISTIC) as unknown as ExtType;
 }
+
+/** Beam-family behaviour (an instant carving ray) — BEAM or the reserved BEAM_ALT. */
+export const isBeamExt = (ext: ExtType): boolean => ext === EXT.BEAM || ext === EXT.BEAM_ALT;

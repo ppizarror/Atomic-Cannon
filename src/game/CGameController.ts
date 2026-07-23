@@ -15,7 +15,13 @@ import {CShot} from '../core/CShot';
 import {GameConfig} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
-import {CWeapon, getDefaultWeaponIndex, getWeapon, WEAPON_DATABASE} from '../core/CWeapon';
+import {
+  BIG_BLAST_RADIUS,
+  CWeapon,
+  getDefaultWeaponIndex,
+  getWeapon,
+  WEAPON_DATABASE,
+} from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem} from '../core/CParticleSystem';
 import {ScreenShake} from '../core/rendering/ScreenShake';
@@ -42,6 +48,7 @@ import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {
   EXT,
+  isBeamExt,
   type ExtType,
   type ShotWorld,
   weaponDetonate,
@@ -604,12 +611,16 @@ export class CGameController implements ShotWorld {
         break;
 
       case EGameState.Explosion:
-        // Wait for explosion effects to complete — including a beam-slice
-        // collapse still falling / debris still settling (m_land.isSettling).
+        // Tanks keep falling/settling into the fresh craters while the blast animates.
+        this.updateTanks(dt);
+        // Hand off only once the effects AND every tank have come to rest — the blast's
+        // fireball / particles / screen-shake, a beam-slice collapse or debris still
+        // settling (m_land.isSettling), and any tank still falling/sliding from the blast.
         if (
           !this.m_particles.hasActiveExplosions() &&
           !this.m_screenShake.isActive() &&
-          !this.m_land.isSettling()
+          !this.m_land.isSettling() &&
+          !this.m_tanks.some(t => t.isAlive() && (t.isFalling() || t.isMoving()))
         ) {
           this.checkBattleEnd();
         }
@@ -779,7 +790,7 @@ export class CGameController implements ShotWorld {
    */
   private updateFlying(dt: number): void {
     const tank = this.getCurrentTank();
-    for (const t of this.m_tanks) if (t.isAlive()) t.update(this.m_land, dt);
+    this.updateTanks(dt);
     this.updateMines(dt);
     // Back to the aim phase once the jet is spent and the tank has settled.
     if (!tank.hasJetFuel() && !tank.isMoving() && !tank.isFalling()) {
@@ -2055,36 +2066,39 @@ export class CGameController implements ShotWorld {
   private updateBattle(dt: number): void {
     this.updateTurnTimer(dt);
     this.updateMines(dt);
+    this.updateTanks(dt);
 
-    // Update tanks on terrain (for falling/movement animations)
+    // A tank can die DURING the Battle state — from radiation fallout, or a mine
+    // detonating under a settling tank — not only from a resolving shot. The shot path
+    // declares the winner in the Explosion state (checkBattleEnd); this covers those
+    // passive deaths so the battle ends the instant only one side is left, instead of
+    // stalling until the human fires a needless final shot.
+    this.endBattleIfDecided();
+  }
+
+  /** Per-tank physics (gravity/fall/settle/drive/jet) + radiation damage-over-time,
+   *  run EVERY frame in every in-battle state. A tank over a freshly-carved crater must
+   *  begin falling within one frame — the explosion's fireball / particles / screen-shake
+   *  never gate the fall (they only gate the turn hand-off). */
+  private updateTanks(dt: number): void {
     for (const tank of this.m_tanks) {
-      if (tank.isAlive()) {
-        tank.update(this.m_land, dt);
+      if (!tank.isAlive()) continue;
+      tank.update(this.m_land, dt);
 
-        // Apply radiation fallout DAMAGE-OVER-TIME to any tank standing inside a live radiation
-        // zone (irDmg/sec while inside, for irTime). Gated on the ZONE itself — the old gate keyed
-        // off the fallout DEPOSIT, which no longer exists (radiation makes no terrain change now),
-        // so it silently zeroed all radiation damage.
-        for (const rZone of this.m_land.getRadiationZones()) {
-          const dist = tank.distanceTo(rZone.x, rZone.y);
-          if (dist < rZone.radius + 16) {
-            // + TANK_RADIUS
-            tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
-            if (!tank.isAlive()) {
-              this.handleTankDestroyed(tank);
-              break;
-            }
+      // Radiation fallout DAMAGE-OVER-TIME for any tank inside a live radiation zone
+      // (irDmg/sec while inside, for irTime).
+      for (const rZone of this.m_land.getRadiationZones()) {
+        const dist = tank.distanceTo(rZone.x, rZone.y);
+        if (dist < rZone.radius + 16) {
+          // + TANK_RADIUS
+          tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
+          if (!tank.isAlive()) {
+            this.handleTankDestroyed(tank);
+            break;
           }
         }
       }
     }
-
-    // A tank can die DURING the Battle state — from radiation fallout above, or a
-    // mine detonating under a settling tank — not only from a resolving shot. The
-    // shot path declares the winner in the Explosion state (checkBattleEnd); this
-    // covers those passive deaths so the battle ends the instant only one side is
-    // left, instead of stalling until the human fires a needless final shot.
-    this.endBattleIfDecided();
   }
 
   /**
@@ -2105,6 +2119,9 @@ export class CGameController implements ShotWorld {
    * Update shot that is currently in flight
    */
   private updateShotInFlight(dt: number): void {
+    // Tanks keep falling/settling while the shot resolves — a crater carved this frame
+    // must drop its tank next frame, not wait for the shot/explosion to finish.
+    this.updateTanks(dt);
     const activeShots = this.m_shots.filter(s => !s.isDead());
 
     if (activeShots.length === 0) {
@@ -2236,7 +2253,7 @@ export class CGameController implements ShotWorld {
       // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
       // It inherits the weapon's colour (uranium reads red, plutonium green, …).
       if (expType === 4 || nuclear) this.flashScreen(1, color ?? '#ffffff');
-      else if ((radiusPx ?? 0) >= 45) this.flashScreen(0.45, color ?? '#ffffff');
+      else if ((radiusPx ?? 0) >= BIG_BLAST_RADIUS) this.flashScreen(0.45, color ?? '#ffffff');
     } else this.m_particles.explode(x, y, scale);
   }
 
@@ -2345,7 +2362,7 @@ export class CGameController implements ShotWorld {
       );
       // Only big mines shake the camera (see weaponDetonate — shake is reserved for
       // bomb/nuke-scale blasts; a small proximity charge just pops).
-      if (w.isNuclear() || w.getExpType() === 4 || w.getRadius() >= 45) this.shake(8, 0.3);
+      if (w.isBigBlast(w.getRadius())) this.shake(8, 0.3);
       this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
       this.m_land.scorch(Math.floor(m.x), Math.floor(m.y), w.getRadius());
       this.applyBlast(new Vec2(m.x, m.y), w.getRadius(), w.getDamage(), m.owner, false);
@@ -2378,12 +2395,7 @@ export class CGameController implements ShotWorld {
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
       this.spawnDamageNumber(tank, removed); // Show Points: floating damage text
 
-      const dx = tank.getPosition().x - pos.x; // kick up and away from the blast
-      const kickDir = new Vec2(dx >= 0 ? 0.6 : -0.6, -1).normalize();
-      // Kick magnitude scales with the LIFE ACTUALLY REMOVED (post shield/armor), clamped over
-      // the full 0..1000 life range — matching the original `clamp(removed·0.001,0,1)·kick·60`.
-      // (Was: raw pre-armor damage clamped at 400 → maxed out far too early → nukes over-kicked.)
-      tank.kick(kickDir, Math.min(1, removed * 0.001) * 240 * GameConfig.kickbackScale); // Tank → Kickback
+      this.kickTank(tank, pos.x, removed, 0.6); // Tank → Kickback; up-and-away from the blast
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
     }
@@ -2446,17 +2458,32 @@ export class CGameController implements ShotWorld {
     }
   }
 
-  /** Award `perTank` to every alive tank (Turn / Round). Credits are shared per team,
-   *  so a team's balance rises by `perTank × (its alive members)`. No-op at rate 0. */
-  private awardSurvivorCredit(perTank: number): void {
-    if (perTank <= 0) return;
+  /** Group the roster into teams (by team id / colour), keeping only tanks that pass
+   *  `include`. The get-or-create-array idiom, in one place. */
+  private groupTanksByTeam(include: (t: CTank) => boolean): Map<number, CTank[]> {
     const teams = new Map<number, CTank[]>();
     for (const t of this.m_tanks) {
-      if (!t.isAlive()) continue;
+      if (!include(t)) continue;
       const arr = teams.get(t.getTeamId());
       if (arr) arr.push(t);
       else teams.set(t.getTeamId(), [t]);
     }
+    return teams;
+  }
+
+  /** Throw `tank` up and away from a blast/beam centred at `fromX`: the lateral sign
+   *  points away from the source; magnitude scales with the LIFE actually removed (post
+   *  shield/armor, clamped over the full 0..1000 range) × the Kickback setting. */
+  private kickTank(tank: CTank, fromX: number, removed: number, lateral: number): void {
+    const dir = new Vec2(tank.getPosition().x - fromX >= 0 ? lateral : -lateral, -1).normalize();
+    tank.kick(dir, Math.min(1, removed * 0.001) * 240 * GameConfig.kickbackScale);
+  }
+
+  /** Award `perTank` to every alive tank (Turn / Round). Credits are shared per team,
+   *  so a team's balance rises by `perTank × (its alive members)`. No-op at rate 0. */
+  private awardSurvivorCredit(perTank: number): void {
+    if (perTank <= 0) return;
+    const teams = this.groupTanksByTeam(t => t.isAlive());
     for (const members of teams.values()) {
       const shared = members[0].getCredits() + perTank * members.length;
       for (const m of members) m.setCredits(shared);
@@ -2805,7 +2832,7 @@ export class CGameController implements ShotWorld {
 
     const muzzlePos = tank.getMuzzlePosition();
     const baseAngle = tank.getTurretAngle();
-    const isBeam = ext === EXT.BEAM || ext === EXT.BEAM_ALT;
+    const isBeam = isBeamExt(ext);
     // Per-shot inaccuracy — gated by Settings → Gameplay → Variance.
     const varianceRad = this.m_variance ? (weapon.getVariance() * Math.PI) / 180 : 0;
 
@@ -2918,11 +2945,7 @@ export class CGameController implements ShotWorld {
         continue;
       const removed = t.hit(weapon.getDamage());
       this.creditDamage(owner, t, removed); // shooter earns per life removed
-      const dx = tp.x - muzzle.x;
-      t.kick(
-        new Vec2(dx >= 0 ? 0.5 : -0.5, -1).normalize(),
-        Math.min(1, removed * 0.001) * 240 * GameConfig.kickbackScale, // scale with life removed (0..1000)
-      );
+      this.kickTank(t, muzzle.x, removed, 0.5);
       if (!t.isAlive()) this.handleTankDestroyed(t);
     }
 
@@ -3505,13 +3528,7 @@ export class CGameController implements ShotWorld {
     const warOver = this.getWarOver();
 
     // Group tanks into teams by colour (Sentries are excluded from standings).
-    const teams = new Map<number, CTank[]>();
-    for (const t of this.m_tanks) {
-      if (t.getTankType() === 'Sentry') continue;
-      const arr = teams.get(t.getTeamId());
-      if (arr) arr.push(t);
-      else teams.set(t.getTeamId(), [t]);
-    }
+    const teams = this.groupTanksByTeam(t => t.getTankType() !== 'Sentry');
 
     const rows: WarTeamRow[] = [];
     for (const members of teams.values()) {
