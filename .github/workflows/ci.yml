@@ -1,0 +1,21 @@
+name: CI
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.ref }}
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    uses: ppizarror/workflow-actions/.github/workflows/npmrun.yml@master
+    with:
+      action: test, lint, check
+    secrets:
+      ACTIONS: ${{ secrets.ACTIONS }}
