@@ -452,10 +452,14 @@ export class CGameController implements ShotWorld {
       this.m_tanks.push(pTank);
     }
 
-    // Credits are per-tank; the human's depot spends against the human tank's
-    // balance. Reset the shared inventory (owned rounds) for the fresh match.
-    this.m_economy.bindCredits(this.m_tanks[0]);
+    // Credits are per-tank; the human's depot spends against the human tank's balance.
+    // Bind to the human tank BY REFERENCE (not index 0 — Randomize Turns may shuffle the
+    // array). Reset the shared inventory (owned rounds) for the fresh match.
+    this.m_economy.bindCredits(this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0]);
     this.m_economy.reset(this.m_startCredits);
+    for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
+    // Randomize Turns (Gameplay): shuffle the turn queue once per battle.
+    if (GameConfig.randomizeTurns) this.shuffleTurnOrder();
 
     // Preload hull sprites for the tanks in play (fire-and-forget; the renderer
     // falls back to vector hulls until they are ready).
@@ -660,7 +664,9 @@ export class CGameController implements ShotWorld {
     this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
     this.updateCrates(dt); // descend / land / collect supply crates + age pickup text
     this.m_land.update(dt);
-    this.updateWindDrift(dt);
+    // Change Wind (Gameplay): only "Anytime" (3) drifts continuously; Per-game / After-round /
+    // After-shot hold the vector constant between their discrete rerolls (see endTurn).
+    if (GameConfig.changeWind === 3) this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
     this.m_weather.update(dt, this.m_wind);
     if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.6);
@@ -2579,6 +2585,29 @@ export class CGameController implements ShotWorld {
   /**
    * Advance to next living player's turn
    */
+  /** Randomize Turns (Gameplay): reorder the turn queue with 2N random transpositions —
+   *  the original's repeated random pair-swaps (not a clean shuffle). The queue IS the
+   *  m_tanks array; positions/teams/economy bind by reference, so only the sequence changes. */
+  private shuffleTurnOrder(): void {
+    const n = this.m_tanks.length;
+    for (let k = 0; k < n * 2; k++) {
+      const i = Math.floor(Math.random() * n);
+      const j = Math.floor(Math.random() * n);
+      const tmp = this.m_tanks[i];
+      this.m_tanks[i] = this.m_tanks[j];
+      this.m_tanks[j] = tmp;
+    }
+  }
+
+  /** Whether the human may open the depot right now (Economy → Buy Time). Automatic mode
+   *  disables the manual depot entirely (weapons are auto-assigned); otherwise it's gated by
+   *  the acting human tank's per-turn/round Buy-Time flag. */
+  canOpenDepot(): boolean {
+    if (GameConfig.buyTime === 3) return false; // Automatic → no manual depot
+    const tank = this.getCurrentTank();
+    return tank.isHuman() && tank.canBuy();
+  }
+
   /** Returns whether the turn order WRAPPED (crossed the last player back to the
    *  start) — i.e. a full round just completed. */
   private advanceToNextPlayer(): boolean {
@@ -2611,6 +2640,9 @@ export class CGameController implements ShotWorld {
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
     const tank = this.getCurrentTank();
+    // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it
+    // up on the human's turn-begin from whatever credits are on hand (a no-op when broke).
+    if (GameConfig.buyTime === 3 && tank.isHuman()) this.m_economy.autoBuy();
     // Restore THIS player's own weapon so the previous player's (or a bot's)
     // choice never carries over.
     this.m_currentWeaponIndex = tank.getWeaponIndex();
@@ -2702,7 +2734,10 @@ export class CGameController implements ShotWorld {
     this.m_tanks.forEach((t, i) => {
       t.respawn(this.tankSpawnX(i, n), this.m_land);
       t.setWeaponIndex(this.m_currentWeaponIndex);
+      t.setCanBuy(true); // Buy Time: depot re-opens at each battle's start
     });
+    // Randomize Turns: re-shuffle the turn queue for the new battle.
+    if (GameConfig.randomizeTurns) this.shuffleTurnOrder();
     this.m_currentPlayerIndex = 0;
     this.m_winnerName = '';
     this.m_gameState = EGameState.Battle;
@@ -2746,11 +2781,12 @@ export class CGameController implements ShotWorld {
       return;
     }
 
+    const actor = this.getCurrentTank(); // the tank whose turn just ended
+
     // Post-fire gloat: as the turn passes on after a shot, the tank that just fired
     // may taunt a random post-fire line (Chatter, 8% chance, on the turn hand-off).
     // Only after an actual shot, never a timed-out forfeit.
-    if (this.m_firedThisTurn)
-      this.tryTaunt('postFire', this.getCurrentTank(), TAUNT_CHANCE_POSTFIRE);
+    if (this.m_firedThisTurn) this.tryTaunt('postFire', actor, TAUNT_CHANCE_POSTFIRE);
 
     // On the turn hand-off, roll the chance to drop a new supply crate.
     this.maybeSpawnCrate();
@@ -2764,6 +2800,16 @@ export class CGameController implements ShotWorld {
       this.awardSurvivorCredit(this.m_creditRound);
     }
     this.awardSurvivorCredit(this.m_creditTurn);
+
+    // Buy Time (Economy): after acting, a player loses depot access — UNLESS Anytime(0) or
+    // Automatic(3). A new round re-opens the depot for everyone only in After-round(1) mode.
+    if (GameConfig.buyTime === 1 || GameConfig.buyTime === 2) actor.setCanBuy(false);
+    if (wrapped && GameConfig.buyTime === 1) for (const t of this.m_tanks) t.setCanBuy(true);
+
+    // Change Wind (Gameplay): discrete reroll on the chosen cadence — every shot (2), or at
+    // each round boundary (1). Per-game (0) holds; Anytime (3) drifts each frame instead.
+    if (GameConfig.changeWind === 2) this.updateWind();
+    else if (wrapped && GameConfig.changeWind === 1) this.updateWind();
 
     // Rounds/Points: the game ends once the configured number of rounds has been played
     // (the counter runs 1..N; passing N ends it), regardless of how many tanks are dead.
@@ -2946,7 +2992,15 @@ export class CGameController implements ShotWorld {
     // Utility items apply an effect to the firing tank instead of launching a shot.
     if (this.applyUtility(tank, weapon, ext)) {
       this.m_gameState = EGameState.Battle;
-      this.schedule(0.4, () => this.endTurn());
+      // Utility Turn (Gameplay, default OFF): when OFF a utility is "free" — the human keeps
+      // control and can still aim/fire this turn. When ON, using it ends the turn like a shot.
+      // Bots always end their turn (they take one action), so the flag is human-only.
+      if (GameConfig.utilityTurn || tank.isBot()) {
+        this.schedule(0.4, () => this.endTurn());
+      } else {
+        this.m_firedThisTurn = false; // a free utility isn't a shot → no post-fire gloat gating
+        this.markDirty();
+      }
       return;
     }
 
@@ -2985,7 +3039,7 @@ export class CGameController implements ShotWorld {
     }
 
     const muzzlePos = tank.getMuzzlePosition();
-    const baseAngle = tank.getTurretAngle();
+    const baseAngle = tank.firingAngle(); // world barrel angle (Relative Turrets applies here)
     const isBeam = isBeamExt(ext);
     // Per-shot inaccuracy — gated by Settings → Gameplay → Variance.
     const varianceRad = this.m_variance ? deg2rad(weapon.getVariance()) : 0;

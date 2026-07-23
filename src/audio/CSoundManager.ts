@@ -34,9 +34,19 @@ export class CSoundManager extends GainChannel {
   private m_lastPlay = new Map<string, number>(); // throttle timestamps (ms)
   private m_loops = new Map<string, LoopHandle>(); // named looping sounds
   private m_worldWidth = 1; // for world-X → pan
+  private m_stereo = true; // Audio → Stereo: when off, everything plays centre (mono)
 
   constructor(ctx: AudioContext, destination: AudioNode) {
     super(ctx, destination);
+  }
+
+  /** Stereo panning on/off (Audio → Stereo). Off = every source plays centred. */
+  setStereo(on: boolean): void {
+    this.m_stereo = on;
+    if (!on) for (const h of this.m_loops.values()) h.panner.pan.value = 0; // recentre live loops
+  }
+  isStereo(): boolean {
+    return this.m_stereo;
   }
 
   /** World width in pixels — the pan axis. Set once the scene size is known. */
@@ -83,9 +93,9 @@ export class CSoundManager extends GainChannel {
     return job;
   }
 
-  /** world-X → stereo pan in [-1, 1]. Centre-screen = 0. */
+  /** world-X → stereo pan in [-1, 1]. Centre-screen = 0. Always 0 when Stereo is off. */
   private panFor(worldX: number | undefined): number {
-    if (worldX === undefined) return 0;
+    if (worldX === undefined || !this.m_stereo) return 0;
     return Math.max(-1, Math.min(1, (worldX / this.m_worldWidth) * 2 - 1));
   }
 

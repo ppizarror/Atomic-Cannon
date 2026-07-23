@@ -37,6 +37,7 @@ interface AudioSettings {
   musicVol: number;
   sfxOn: boolean;
   musicOn: boolean;
+  stereoOn: boolean;
 }
 
 // Music policy.
@@ -274,6 +275,15 @@ export class CAudio {
     this.saveSettings();
   }
 
+  /** Audio → Stereo: SFX pan across the field when on, all-centre (mono) when off. */
+  setStereo(on: boolean): void {
+    this.m_sfx.setStereo(on);
+    this.saveSettings();
+  }
+  isStereo(): boolean {
+    return this.m_sfx.isStereo();
+  }
+
   getSfxVolume(): number {
     return this.m_sfx.getVolume();
   }
@@ -299,6 +309,7 @@ export class CAudio {
     if (typeof s.musicVol === 'number') this.m_music.setVolume(s.musicVol);
     if (typeof s.sfxOn === 'boolean') this.m_sfx.setEnabled(s.sfxOn);
     if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
+    if (typeof s.stereoOn === 'boolean') this.m_sfx.setStereo(s.stereoOn);
   }
 
   private saveSettings(): void {
@@ -307,6 +318,7 @@ export class CAudio {
       musicVol: this.m_music.getVolume(),
       sfxOn: this.m_sfx.isEnabled(),
       musicOn: this.m_music.isEnabled(),
+      stereoOn: this.m_sfx.isStereo(),
     } satisfies AudioSettings);
   }
 }

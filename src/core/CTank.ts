@@ -381,9 +381,11 @@ export class CTank {
       this.stepDrive(pLand, dt);
       this.m_fAngle = this.computeBodyTilt(pLand);
     } else {
-      // Resting on the surface: stay glued to it as the terrain deforms,
-      // and tilt the body to match the local slope.
-      this.m_vPos.y = fRestY;
+      // Resting on the surface: stay glued to it as the terrain deforms, and tilt the body
+      // to match the local slope. Bury Tanks (Tank option): if the tank is BELOW the surface
+      // top — e.g. dirt was piled on it — leave it buried instead of lifting it back out.
+      // (A genuine downward landing still settles it via the airborne branch above.)
+      if (!(GameConfig.buryTanks && this.m_vPos.y > fRestY + 0.5)) this.m_vPos.y = fRestY;
       this.m_vVel = new Vec2(0, 0);
       this.m_bFalling = false;
       this.m_bIsMoving = false;
@@ -990,12 +992,20 @@ export class CTank {
     this.m_fTurretAngle = (fDegrees * Math.PI) / 180;
   }
 
+  /** The barrel's actual WORLD angle (radians). Relative Turrets (Tank option) makes the
+   *  HUMAN's stored aim relative to the tank body, so add the body's terrain tilt — "up"
+   *  then follows the tank on a slope. Bots always solve and fire absolute angles, so the
+   *  aid never applies to them (matching the original, where the AI compensates for it). */
+  firingAngle(): number {
+    return this.m_fTurretAngle + (GameConfig.relativeTurrets && this.m_bIsHuman ? this.m_fAngle : 0);
+  }
+
   /**
    * Unit vector the barrel points along, matching the projectile launch
    * direction. Screen-Y is down, so up = negative-Y: (cos θ, -sin θ) for all θ.
    */
   aimUnit(): Vec2 {
-    const r = this.m_fTurretAngle;
+    const r = this.firingAngle();
     return new Vec2(Math.cos(r), -Math.sin(r));
   }
 
@@ -1129,6 +1139,14 @@ export class CTank {
     this.m_credits = Math.max(0, this.m_credits + n);
   }
 
+  /** Whether this tank may open the depot right now (Economy → Buy Time gates it). */
+  canBuy(): boolean {
+    return this.m_canBuy;
+  }
+  setCanBuy(on: boolean): void {
+    this.m_canBuy = on;
+  }
+
   /** The last tank to deal LIFE damage to this one — the kill-credit attribution
    *  ("killer"). Set on every damaging hit, cleared on spawn. */
   getLastDamager(): CTank | null {
@@ -1228,6 +1246,7 @@ export class CTank {
   private m_sColor: string = DEFAULT_TEAM_COLOR; // Hull colour (per player; the team is its grouping)
   private m_sName: string = ''; // Display name (e.g. "Player", "BrainBot")
   private m_credits: number = 0; // Economy credits (per-tank balance; shown in the badge)
+  private m_canBuy: boolean = true; // Economy → Buy Time: may this tank open the depot now
   private m_lastDamager: CTank | null = null; // kill-credit attribution ("killer")
   // War scorecard — accumulates across the battles of a war (standings table).
   private m_kills: number = 0;

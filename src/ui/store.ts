@@ -40,8 +40,11 @@ function refreshEconomy(): void {
   mapName.value = c.getMapName();
 }
 
-/** Open/close the depot (refreshes the economy snapshot on open). */
+/** Open/close the depot (refreshes the economy snapshot on open). Gated by Economy → Buy
+ *  Time: no-op when the current player isn't allowed to buy right now. Reads the live
+ *  controller (not the once-per-frame `canBuyNow` signal, which may be stale at open time). */
 export function openDepot(): void {
+  if (controller && !controller.canOpenDepot()) return;
   refreshEconomy();
   showDepot.value = true;
   uiClick();
@@ -260,6 +263,8 @@ export const life = signal(1000);
 export const maxLife = signal(1000);
 export const shield = signal(0);
 export const canFire = signal(false);
+// Whether the depot may be opened right now (Economy → Buy Time). Drives the depot button.
+export const canBuyNow = signal(false);
 
 // Extra per-tank / world readouts for the side LCDs (updated each frame; number
 // signals only re-notify on an actual change, so the bitmap text stays cheap).
@@ -397,6 +402,7 @@ export function syncHud(): void {
   windAccY.value = Math.round(wa.y * 100) / 100;
   canMoveNow.value = c.getCurrentTankCanMove();
   canFire.value = c.isPlayerTurn();
+  canBuyNow.value = c.canOpenDepot();
   flying.value = c.isFlying();
   jetFuel.value = c.getJetFuel();
   // Held when paused or when it isn't the human's live turn (see `blocked`).

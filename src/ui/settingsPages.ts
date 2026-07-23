@@ -243,7 +243,14 @@ function audioRows(): Widget[] {
       get: () => Math.round(a?.getMusicVolume() ?? 100),
       set: (v: number) => a?.setMusicVolume(v),
     },
-    toggle(s.stereo, 'aud.stereo'),
+    {
+      // Stereo binds live to CAudio (like the volumes), not a stored preference.
+      label: s.stereo.label,
+      tip: s.stereo.tip,
+      kind: 'toggle',
+      get: () => (a?.isStereo() ? 1 : 0),
+      set: (v: number) => a?.setStereo(!!v),
+    },
   ];
 }
 

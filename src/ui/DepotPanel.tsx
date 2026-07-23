@@ -10,6 +10,7 @@ import {useMemo, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Tooltip} from './Tooltip';
 import {ClassicScrollbar} from './ClassicScrollbar';
+import {GameConfig} from '../core/CGameConfig';
 import {useAsyncImage} from './useAsyncImage';
 import {ModalButton} from './ModalButton';
 import {
@@ -45,7 +46,9 @@ type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
 // The game's bitmap fonts — catalog ids (see FONTS in BitmapFont.ts).
 const TITLE_FONT = 'bazouk-28'; // native white+outline
-const TABLE_FONT = 'beijing-16-out'; // table header + rows: native white + baked outline
+// Table header + rows: native white + baked outline. Graphics → Small Buy Fonts swaps in
+// the compact 8px pixel font so more of the arsenal fits at once.
+const tableFont = () => (GameConfig.smallBuyFonts ? 'silkscreen-8-out' : 'beijing-16-out');
 const ROW_FONT = 'msans-14';
 const SMALL_FONT = 'msans-12';
 const BIG_FONT = 'msans-18';
@@ -88,7 +91,7 @@ function Header({
 }) {
   return (
     <button class={`dep-th ${cls ?? ''}`} onClick={() => onSort(k)}>
-      <BmpText font={TABLE_FONT} text={label} spacing={-1} />
+      <BmpText font={tableFont()} text={label} spacing={-1} />
       {activeKey === k && <SortArrow dir={dir} />}
     </button>
   );
@@ -191,7 +194,10 @@ export function DepotPanel() {
 
   return (
     <div class="overlay dep-overlay" onClick={closeDepot}>
-      <div class="dep-card" onClick={e => e.stopPropagation()}>
+      <div
+        class={`dep-card${GameConfig.smallBuyFonts ? ' small-buy' : ''}`}
+        onClick={e => e.stopPropagation()}
+      >
         <div class="dep-head">
           <BmpText font={TITLE_FONT} text={d.title} />
           <div class="dep-sub">
@@ -262,21 +268,21 @@ export function DepotPanel() {
                   {q === UNLIMITED ? (
                     <span class="dep-inf">∞</span>
                   ) : (
-                    <BmpText font={TABLE_FONT} text={String(q)} spacing={-1} />
+                    <BmpText font={tableFont()} text={String(q)} spacing={-1} />
                   )}
                 </span>
                 <span class="c-name">
                   <WeaponIcon name={w.icon} size={16} cls="dep-icon" />
-                  <BmpText font={TABLE_FONT} text={weaponName(w)} spacing={-1} />
+                  <BmpText font={tableFont()} text={weaponName(w)} spacing={-1} />
                 </span>
                 <span class="c-type">
-                  <BmpText font={TABLE_FONT} text={weaponTypeName(w.type)} spacing={-1} />
+                  <BmpText font={tableFont()} text={weaponTypeName(w.type)} spacing={-1} />
                 </span>
                 <span class="c-num">
-                  <BmpText font={TABLE_FONT} text={String(powerOf(w))} spacing={-1} />
+                  <BmpText font={tableFont()} text={String(powerOf(w))} spacing={-1} />
                 </span>
                 <span class="c-num">
-                  <BmpText font={TABLE_FONT} text={String(w.cost)} spacing={-1} />
+                  <BmpText font={tableFont()} text={String(w.cost)} spacing={-1} />
                 </span>
               </div>
             );

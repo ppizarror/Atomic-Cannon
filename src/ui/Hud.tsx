@@ -26,6 +26,7 @@ import {
   battleStatus,
   statusLeftFrac,
   openDepot,
+  canBuyNow,
   openPauseMenu,
   openHelp,
   POWER_MIN,
@@ -103,9 +104,20 @@ const pos = (r: readonly number[]): JSX.CSSProperties => ({
   height: `${r[3]}%`,
 });
 
-function Hotspot({r, onClick, title}: {r: readonly number[]; onClick: () => void; title?: string}) {
-  // Held (paused / not your turn): grey the button face and drop its pointer events.
-  const off = blocked.value;
+function Hotspot({
+  r,
+  onClick,
+  title,
+  disabled,
+}: {
+  r: readonly number[];
+  onClick: () => void;
+  title?: string;
+  disabled?: boolean;
+}) {
+  // Held (paused / not your turn) or explicitly disabled (e.g. depot closed by Buy Time):
+  // grey the button face and drop its pointer events.
+  const off = blocked.value || !!disabled;
   return (
     <button
       class={`ov-hotspot${off ? ' blocked' : ''}`}
@@ -384,7 +396,7 @@ function ControlPanel() {
       <MeterOverlay />
       <FireButton />
       <TurnTimerBar />
-      <Hotspot r={R.buy} title={h.depot} onClick={openDepot} />
+      <Hotspot r={R.buy} title={h.depot} onClick={openDepot} disabled={!canBuyNow.value} />
       <Hotspot
         r={R.reset}
         title={h.resetShot}

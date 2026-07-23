@@ -84,4 +84,22 @@ export const gameSettings = {
   framerate: (): number => getVal('gfx.framerate'),
   /** Max framerate cap (ticker.maxFPS): 0 = uncapped (display refresh rate). */
   maxFps: (): number => scale('gfx.fpsCap', 0),
+
+  // ── formerly-unwired options (Settings parity) ──
+  /** Right-click fires the shot (like Space / the FIRE button). */
+  rightClickFires: (): boolean => getVal('gp.rcFires') !== 0,
+  /** Depot list uses the smaller bitmap font. */
+  smallBuyFonts: (): boolean => getVal('gfx.smallBuy') !== 0,
+  /** Turret aim is relative to the tank's terrain tilt (vs. absolute screen angle). */
+  relativeTurrets: (): boolean => getVal('tank.relTurrets') !== 0,
+  /** Tanks can be buried underground instead of always riding the surface top. */
+  buryTanks: (): boolean => getVal('tank.bury') !== 0,
+  /** Using a utility item consumes the turn (off = it's free, fire afterwards). */
+  utilityTurn: (): boolean => getVal('gp.utilTurn') !== 0,
+  /** Shuffle the turn order at the start of each battle. */
+  randomizeTurns: (): boolean => getVal('gp.randTurns') !== 0,
+  /** Buy Time enum: 0 Anytime · 1 After-round · 2 At-start · 3 Automatic. */
+  buyTime: (): number => getVal('eco.buyTime'),
+  /** Change-Wind cadence enum: 0 Per-game · 1 After-round · 2 After-shot · 3 Anytime. */
+  changeWind: (): number => getVal('gp.changeWind'),
 };

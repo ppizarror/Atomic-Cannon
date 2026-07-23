@@ -715,6 +715,14 @@ canvas {
   cursor: pointer;
 }
 
+/* Graphics → Small Buy Fonts: tighter rows so more of the arsenal fits (pairs with the
+   compact 8px table font). */
+.dep-card.small-buy .dep-row,
+.dep-card.small-buy .dep-cols {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
 .dep-row.afford {
   background: rgba(34, 104, 40, 0.5);
 }

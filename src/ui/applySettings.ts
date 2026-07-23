@@ -61,6 +61,15 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.highContrast = S.highContrast();
   GameConfig.showAiStats = S.showAiStats();
   GameConfig.demo = S.demo();
+  // Formerly-unwired options (Settings parity).
+  GameConfig.rightClickFires = S.rightClickFires();
+  GameConfig.smallBuyFonts = S.smallBuyFonts();
+  GameConfig.relativeTurrets = S.relativeTurrets();
+  GameConfig.buryTanks = S.buryTanks();
+  GameConfig.utilityTurn = S.utilityTurn();
+  GameConfig.randomizeTurns = S.randomizeTurns();
+  GameConfig.buyTime = S.buyTime();
+  GameConfig.changeWind = S.changeWind();
   // Framerate overlay (top-right DOM readouts): FPS at mode ≥ 1, + frame count at Full.
   const frameMode = S.framerate();
   showFramerate.value = frameMode >= 1;

@@ -79,8 +79,7 @@ const CATALOG = {
   'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144]},
   'gfx.demo': {default: 0},
 
-  // ── Audio ── (only the stereo toggle is remembered; volumes/enable live on CAudio)
-  'aud.stereo': {default: 1},
+  // ── Audio ── (Sound/Music/volumes/Stereo all bind live to CAudio, not stored here)
 } satisfies Record<string, SettingMeta>;
 
 /** The id of any stored setting — the keys of the catalog. A widget or engine getter for an

@@ -47,4 +47,14 @@ export const GameConfig = {
   highContrast: false, // Graphics → High Contrast (white outline around tanks)
   showAiStats: false, // Graphics → Show AI Stats (the active bot's aim solution)
   demo: false, // More Graphics Options → Demo Mode (the human's turns are played by the AI)
+
+  // ── formerly-unwired options (Settings parity) ──
+  rightClickFires: true, // Gameplay → Right Click Fires (RMB launches the shot)
+  smallBuyFonts: false, // Graphics → Small Buy Fonts (compact depot list font)
+  relativeTurrets: false, // Tank → Relative Turrets (aim relative to the tank's terrain tilt)
+  buryTanks: false, // Tank → Bury Tanks (a tank can be trapped underground)
+  utilityTurn: false, // Gameplay → Utility Turn (using a utility ends the turn)
+  randomizeTurns: false, // Gameplay → Randomize Turns (shuffle turn order each battle)
+  buyTime: 0, // Economy → Buy Time (0 Anytime · 1 After-round · 2 At-start · 3 Automatic)
+  changeWind: 0, // Gameplay → Change Wind (0 Per-game · 1 After-round · 2 After-shot · 3 Anytime)
 };

@@ -9,6 +9,7 @@ import './hud.css';
 import {render} from 'preact';
 import {effect} from '@preact/signals';
 import {CGameController, EGameType} from './game/CGameController';
+import {GameConfig} from './core/CGameConfig';
 import {CLand} from './core/CLand';
 import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
@@ -301,7 +302,17 @@ async function main(): Promise<void> {
   };
   let aiming = false;
   let minimapDrag = false; // grabbed the minimap → panning the camera (suppresses aim)
+  // Right Click Fires (Gameplay, default on): the right mouse button launches the shot,
+  // exactly like Space / the FIRE button. Suppress the browser context menu so it can.
+  container.addEventListener('contextmenu', e => e.preventDefault());
   container.addEventListener('pointerdown', e => {
+    if (e.button === 2) {
+      if (GameConfig.rightClickFires && canFire.value) {
+        e.preventDefault();
+        gameController.fire();
+      }
+      return;
+    }
     if (e.button !== 0) return;
     const [sx, sy] = toScene(e);
     // Minimap first: only the extents box (the viewport handle) starts a pan-drag;
