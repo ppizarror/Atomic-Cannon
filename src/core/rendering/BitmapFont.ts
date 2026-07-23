@@ -249,25 +249,34 @@ export const FONTS = {
   'msans-12': {
     file: 'Microsoft Sans Serif 12',
     family: '"Microsoft Sans Serif", sans-serif',
-    size: 12,
+    size: 10,
+    tint: '#000000',
   },
   'msans-14': {
     file: 'Microsoft Sans Serif 14',
     family: '"Microsoft Sans Serif", sans-serif',
-    size: 14,
+    size: 12,
+    tint: '#000000',
   },
   'msans-18': {
     file: 'Microsoft Sans Serif 18',
     family: '"Microsoft Sans Serif", sans-serif',
-    size: 18,
+    size: 16,
+    tint: '#000000',
   },
   'trebuchet-9': {
     file: 'Trebuchet MS 9 bold',
     family: '"Trebuchet MS", sans-serif',
     size: 9,
     weight: 'bold',
+    tint: '#000000',
   },
-  'trebuchet-18': {file: 'Trebuchet MS 18', family: '"Trebuchet MS", sans-serif', size: 18},
+  'trebuchet-18': {
+    file: 'Trebuchet MS 18',
+    family: '"Trebuchet MS", sans-serif',
+    size: 18,
+    tint: '#000000',
+  },
   'silkscreen-8': {file: 'UPF Silkscreen ReMix 8', family: 'monospace', size: 8},
   'silkscreen-8-black': {
     file: 'UPF Silkscreen ReMix 8 black',
