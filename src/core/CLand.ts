@@ -5,6 +5,12 @@
 import {Vec2} from '../math/Vec2';
 import {clamp, clamp01, TWO_PI} from '../math/num';
 import {GameConfig} from './CGameConfig';
+import {isRealisticWind, windProfile} from './wind';
+
+// Sideways acceleration (px/s^2) a unit of wind imparts to flying dirt chunks. Dirt is heavy,
+// so this is well below smoke's push — high-arcing ejecta leans on the wind, low chunks barely.
+// Only applied in Realistic wind mode; Linear mode leaves ejecta purely ballistic (the classic feel).
+const DEBRIS_WIND_ACCEL = 12;
 
 // ============================================================================
 // INTERFACES & TYPES
@@ -1034,8 +1040,13 @@ export class CLand {
     this.scorchPixels(x, y, Math.max(20, radius * 1.8));
   }
 
-  update(dt: number): void {
+  update(dt: number, wind?: Vec2): void {
     const GRAVITY = 500;
+    // Realistic wind pushes flying dirt sideways (Linear mode leaves it purely ballistic — the
+    // classic feel). Terrain is broadcast authoritatively (getNetSnapshot), so wind-nudged deposits
+    // stay in sync across clients without re-simulation. Precomputed once per frame.
+    const windX = wind && isRealisticWind() ? wind.x * DEBRIS_WIND_ACCEL : 0;
+    const windY = wind && isRealisticWind() ? wind.y * DEBRIS_WIND_ACCEL : 0;
 
     this.m_radPulseT += dt; // drives the sinusoidal glow shimmer on the radiation specks
 
@@ -1053,6 +1064,15 @@ export class CLand {
     for (let i = 0; i < this.m_particles.length; i++) {
       const p = this.m_particles[i];
 
+      // Wind (Realistic mode only): the shared profile eases the push near the ground so settling
+      // chunks barely drift while high-arcing ejecta leans on the wind. windX/Y are 0 in Linear mode.
+      if (windX !== 0 || windY !== 0) {
+        const wf = windProfile(
+          this.getHeightAt(clamp(Math.floor(p.x), 0, this.m_nWidth - 1)) - p.y,
+        );
+        p.vx += windX * wf * dt;
+        p.vy += windY * wf * dt;
+      }
       p.vy += GRAVITY * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;

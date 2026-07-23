@@ -345,6 +345,7 @@ export interface Strings {
       difficulty: RowCopy;
       wind: RowCopy;
       changeWind: RowCopy;
+      windModel: RowCopy;
       explosionSize: RowCopy;
       variance: RowCopy;
       utilTurn: RowCopy;

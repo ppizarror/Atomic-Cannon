@@ -61,6 +61,8 @@ export const GameConfig = {
   randomizeTurns: false, // Gameplay → Randomize Turns (shuffle turn order each battle)
   buyTime: 0, // Economy → Buy Time (0 Anytime · 1 After-round · 2 At-start · 3 Automatic)
   changeWind: 0, // Gameplay → Change Wind (0 Per-game · 1 After-round · 2 After-shot · 3 Anytime)
+  windModel: 0, // Gameplay → Wind Model (0 Linear/uniform · 1 Realistic boundary-layer profile). See core/wind.ts
+
   detail: 2, // Graphics → Detail preset (0 Old School · 1 Simple · 2 High · 3 Wargame)
   craterFill: false, // Graphics → Filled Craters (soil-filled crater interior vs transparent)
 };

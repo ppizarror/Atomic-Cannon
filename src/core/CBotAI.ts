@@ -14,6 +14,7 @@
  */
 import {SHOT_GRAVITY, SHOT_WIND_ACCEL, launchSpeed} from './CShot';
 import {GameConfig} from './CGameConfig';
+import {windProfile} from './wind';
 import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE} from './CWeapon';
 import {clamp, deg2rad} from '../math/num';
@@ -98,8 +99,11 @@ export function simulateMiss(
 
   for (let i = 0; i < 500; i++) {
     vy += SHOT_GRAVITY * ws * dt;
-    vx += wind.x * SHOT_WIND_ACCEL * ws * dt;
-    vy += wind.y * SHOT_WIND_ACCEL * ws * dt;
+    // Same wind altitude profile the real shot uses (uniform in Linear mode, boundary-layer
+    // ramp in Realistic) so the predicted arc matches what actually flies.
+    const wf = windProfile(field.heightAt(clamp(x, 0, field.width - 1)) - y);
+    vx += wind.x * SHOT_WIND_ACCEL * ws * wf * dt;
+    vy += wind.y * SHOT_WIND_ACCEL * ws * wf * dt;
     x += vx * dt;
     y += vy * dt;
 

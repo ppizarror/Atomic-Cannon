@@ -472,6 +472,11 @@ export const en: Strings = {
         tip: 'Defines when the wind changes direction',
         options: ['Per game', 'After round', 'After shot', 'Anytime'],
       },
+      windModel: {
+        label: 'Wind Model',
+        tip: 'Linear: uniform wind at all heights. Realistic: wind is 0 at ground and grows with altitude',
+        options: ['Linear', 'Realistic'],
+      },
       explosionSize: {
         label: 'Explosion Size',
         tip: 'How big the explosions are.',

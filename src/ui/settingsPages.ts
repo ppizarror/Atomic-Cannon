@@ -124,6 +124,7 @@ function gameplayRows(): Widget[] {
     enumW(s.difficulty, 'gp.difficulty'),
     enumW(s.wind, 'gp.wind'),
     enumW(s.changeWind, 'gp.changeWind'),
+    enumW(s.windModel, 'gp.windModel'),
     enumW(s.explosionSize, 'gp.explosionSize'),
     toggle(s.variance, 'gp.variance'),
     toggle(s.utilTurn, 'gp.utilTurn'),

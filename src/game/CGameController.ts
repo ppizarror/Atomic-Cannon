@@ -13,6 +13,7 @@ import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import {Roster} from '../core/CRoster';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
+import {windProfile} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
@@ -761,7 +762,7 @@ export class CGameController implements ShotWorld {
     }
     this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
     this.updateCrates(dt); // descend / land / collect supply crates + age pickup text
-    this.m_land.update(dt);
+    this.m_land.update(dt, this.m_wind);
     // Change Wind (Gameplay): only "Anytime" (3) drifts continuously; Per-game / After-round /
     // After-shot hold the vector constant between their discrete rerolls (see endTurn).
     if (GameConfig.changeWind === 3) this.updateWindDrift(dt);
@@ -1959,12 +1960,15 @@ export class CGameController implements ShotWorld {
       this.m_rockets = rising;
     }
 
-    // Burst + trail sparks: integrate, then cull.
+    // Burst + trail sparks: integrate, then cull. The shared wind profile (core/wind.ts)
+    // eases the drift near the ground in Realistic mode (constant 1 in Linear), so low sparks
+    // fall straighter while high bursts stream with the wind.
     if (this.m_fireworks.length) {
       for (const p of this.m_fireworks) {
+        const wf = windProfile(this.m_land.getHeightAt(p.x) - p.y);
         p.age += dt;
-        p.vx += wx * dt;
-        p.vy += (FW_GRAVITY + wy) * dt;
+        p.vx += wx * wf * dt;
+        p.vy += (FW_GRAVITY + wy * wf) * dt;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
       }
@@ -2307,7 +2311,7 @@ export class CGameController implements ShotWorld {
     }
 
     for (const shot of activeShots) {
-      shot.update(dt, this.m_wind);
+      shot.update(dt, this.m_wind, this.m_windGroundAt);
 
       // Per-frame behaviour dispatch (extType): roller/digger/airburst/beam/…
       const weapon = getWeapon(
@@ -3878,7 +3882,7 @@ export class CGameController implements ShotWorld {
   private updateGhostShots(dt: number): void {
     if (!this.m_ghostShots.length) return;
     this.m_ghostShots = this.m_ghostShots.filter(g => {
-      g.update(dt, this.m_wind);
+      g.update(dt, this.m_wind, this.m_windGroundAt);
       const p = g.getPosition();
       if (g.isDead()) return false;
       if (p.x < -50 || p.x > this.m_worldWidth + 50 || p.y > this.m_canvas.height + 50)
@@ -4637,6 +4641,9 @@ export class CGameController implements ShotWorld {
   private m_wind: Vec2 = new Vec2(0, 0);
   private m_windAccel: Vec2 = new Vec2(0, 0);
   private m_windTimer: number = 0;
+  // Terrain-surface provider handed to shots so the shared wind profile (core/wind.ts) can
+  // attenuate drift near the ground in Realistic mode. Reads m_land live (it's re-created per map).
+  private m_windGroundAt = (x: number): number => this.m_land.getHeightAt(Math.floor(x));
   private m_difficulty: number = AI_DEFAULT_LEVEL; // computer-player skill
 
   private m_winnerName: string = '';

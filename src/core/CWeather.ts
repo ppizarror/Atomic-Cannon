@@ -16,6 +16,7 @@
 import type {Vec2} from '../math/Vec2';
 import {TWO_PI} from '../math/num';
 import {between} from '../math/random';
+import {windProfile} from './wind';
 
 export type WeatherType = 'snow' | 'rain' | 'hail' | 'dust';
 
@@ -217,8 +218,11 @@ export class CWeather {
       const windDx = windX * tune.wind;
       for (const p of layer.particles) {
         // Horizontal: wind + type-specific sway/flutter (+ ambient drift for dust).
+        // The shared wind profile (core/wind.ts) attenuates the wind term near the ground in
+        // Realistic mode (0 at the field bottom → full aloft); in Linear mode it's a constant 1.
+        const wf = windProfile(H - p.y);
         const sway = tune.sway ? Math.sin(t * tune.swayFreq + p.seed) * tune.sway : 0;
-        const vx = windDx + sway + (tune.hover ? p.drift : 0);
+        const vx = windDx * wf + sway + (tune.hover ? p.drift : 0);
         // Vertical: fall speed (dust barely falls — it bobs on the oscillator instead).
         const vy = tune.hover
           ? Math.sin(t * tune.swayFreq + p.seed * 1.7) * tune.fallVar +

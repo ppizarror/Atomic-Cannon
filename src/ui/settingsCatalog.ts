@@ -48,6 +48,7 @@ const CATALOG = {
   'gp.difficulty': {default: 4},
   'gp.wind': {default: 0, scale: [0, 0.5, 1, 1.6]},
   'gp.changeWind': {default: 0},
+  'gp.windModel': {default: 0}, // 0 Linear (uniform) · 1 Realistic (boundary-layer profile)
   'gp.explosionSize': {default: 1, scale: [0.7, 1, 1.35, 1.8]},
   'gp.variance': {default: 1},
   'gp.utilTurn': {default: 0},

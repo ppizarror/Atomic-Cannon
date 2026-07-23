@@ -6,6 +6,7 @@ import {Vec2} from '../math/Vec2';
 import {CLand} from './CLand';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
+import {windProfile} from './wind';
 import {TWO_PI} from '../math/num';
 
 // Trajectory constants — the single source of truth, shared with the aim AI so a
@@ -132,8 +133,14 @@ export class CShot {
   /**
    * Semi-implicit Euler step: gravity + wind added as acceleration, then position
    * advances. Beam-type shots skip gravity so they fly straight.
+   *
+   * `groundAt(x)` (optional) supplies the terrain surface height beneath the shot so the
+   * shared wind PROFILE (core/wind.ts) can attenuate the drift near the ground in Realistic
+   * mode — a shot skimming a hill barely feels the wind, the top of a tall arc gets it all.
+   * In Linear mode (default) the profile is a constant 1, so wind is uniform as before; the
+   * aim AI (CBotAI.simulateMiss) applies the identical profile so bot shots stay accurate.
    */
-  update(dt: number, wind: Vec2): void {
+  update(dt: number, wind: Vec2, groundAt?: (x: number) => number): void {
     if (this.m_bIsDead) return;
 
     this.m_prevY = this.m_pos.y;
@@ -148,8 +155,10 @@ export class CShot {
       const g = (this.m_antiGrav ? -CShot.GRAVITY : CShot.GRAVITY) * ws;
       this.m_vel.y += g * dt;
     }
-    this.m_vel.x += wind.x * CShot.WIND_ACCEL * ws * dt;
-    this.m_vel.y += wind.y * CShot.WIND_ACCEL * ws * dt;
+    // Wind altitude factor: 1 (uniform) in Linear mode; a 0-at-ground → 1-aloft ramp in Realistic.
+    const wf = groundAt ? windProfile(groundAt(this.m_pos.x) - this.m_pos.y) : 1;
+    this.m_vel.x += wind.x * CShot.WIND_ACCEL * ws * wf * dt;
+    this.m_vel.y += wind.y * CShot.WIND_ACCEL * ws * wf * dt;
 
     this.m_pos = new Vec2(this.m_pos.x + this.m_vel.x * dt, this.m_pos.y + this.m_vel.y * dt);
 
