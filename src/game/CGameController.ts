@@ -163,6 +163,16 @@ const SENTRY_FIRE_POWER = 1000;
 // and stay silent after the opener. Matches the original's `0.5 < sucSec` FX gate.
 const SUCCESSION_LOUD_MAX_SEC = 0.5;
 
+// Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the
+// radius that maps to ×1. The original scales the kick by the per-explosion size (not damage
+// alone), so a bigger crater shoves harder for equal life removed — a nuke launches a tank a
+// shell only nudges. The size factor is clamped so bullets still barely budge and nukes don't
+// fling absurdly.
+const KICK_BASE = 240;
+const KICK_REF_RADIUS = 50;
+const KICK_SIZE_MIN = 0.3;
+const KICK_SIZE_MAX = 3.5;
+
 // Camera pan speed (world px/sec) — the constant-speed ease toward the follow
 // target (the original scrolls at dt·gameSpeed·scrollSpeed; this is that budget
 // in px/sec). Fast enough to keep a shot roughly framed without whipping.
@@ -488,7 +498,10 @@ export class CGameController implements ShotWorld {
       pTank.init(this.tankSpawnX(i, n), this.m_land);
       pTank.setHuman(s.human);
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
-      pTank.setCredits(this.m_startCredits); // per-tank starting credits (Economy → Credit Start)
+      // Starting purse scales with squad size: each tank begins with `perTeam × CreditStart`
+      // (the original seeds every member this way, and team-pooling shares one balance, so a
+      // squad of N spends against N × CreditStart — not a flat CreditStart).
+      pTank.setCredits(this.m_startCredits * perTeam);
 
       this.m_tanks.push(pTank);
     }
@@ -497,7 +510,7 @@ export class CGameController implements ShotWorld {
     // Bind to the human tank BY REFERENCE (not index 0 — Randomize Turns may shuffle the
     // array). Reset the shared inventory (owned rounds) for the fresh match.
     this.m_economy.bindCredits(this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0]);
-    this.m_economy.reset(this.m_startCredits);
+    this.m_economy.reset(this.m_startCredits * perTeam); // squad-scaled purse (see per-tank seed above)
     for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
     // Randomize Turns (Gameplay): shuffle the turn queue once per battle.
     if (GameConfig.randomizeTurns) this.shuffleTurnOrder();
@@ -2525,7 +2538,7 @@ export class CGameController implements ShotWorld {
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
       this.spawnDamageNumber(tank, removed); // Show Points: floating damage text
 
-      this.kickTank(tank, pos.x, removed, 0.6); // Tank → Kickback; up-and-away from the blast
+      this.kickTank(tank, pos.x, removed, radius); // Tank → Kickback; up-and-away, scaled by blast size
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
     }
@@ -2604,9 +2617,18 @@ export class CGameController implements ShotWorld {
   /** Throw `tank` up and away from a blast/beam centred at `fromX`: the lateral sign
    *  points away from the source; magnitude scales with the LIFE actually removed (post
    *  shield/armor, clamped over the full 0..1000 range) × the Kickback setting. */
-  private kickTank(tank: CTank, fromX: number, removed: number, lateral: number): void {
-    const dir = new Vec2(tank.getPosition().x - fromX >= 0 ? lateral : -lateral, -1).normalize();
-    tank.kick(dir, Math.min(1, removed * 0.001) * 240 * GameConfig.kickbackScale);
+  private kickTank(tank: CTank, fromX: number, removed: number, radiusPx: number): void {
+    // Explosion-size dependence: scale the impulse by the blast radius (the port's proxy for
+    // the original's per-explosion kick size) so bigger blasts shove harder for equal damage.
+    const sizeFactor = clamp(radiusPx / KICK_REF_RADIUS, KICK_SIZE_MIN, KICK_SIZE_MAX);
+    // Per-shot RANDOM horizontal lean (the original draws a fresh lateral each blast rather
+    // than a fixed lean); sign points away from the blast centre, magnitude varies the launch.
+    const away = tank.getPosition().x - fromX >= 0 ? 1 : -1;
+    const dir = new Vec2(away * (0.25 + Math.random() * 0.7), -1).normalize();
+    tank.kick(
+      dir,
+      Math.min(1, removed * 0.001) * KICK_BASE * sizeFactor * GameConfig.kickbackScale,
+    );
   }
 
   /** Award `perTank` to every alive tank (Turn / Round). Credits are shared per team,
@@ -3232,7 +3254,7 @@ export class CGameController implements ShotWorld {
         continue;
       const removed = t.hit(weapon.getDamage());
       this.creditDamage(owner, t, removed); // shooter earns per life removed
-      this.kickTank(t, muzzle.x, removed, 0.5);
+      this.kickTank(t, muzzle.x, removed, r); // beam kick scaled by the weapon's radius
       if (!t.isAlive()) this.handleTankDestroyed(t);
     }
 

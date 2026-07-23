@@ -102,4 +102,29 @@ describe('Two-radius blast damage', () => {
 
     GameConfig.tankSizeScale = 1; // restore for other tests
   });
+
+  it('knockback scales with explosion size (a bigger blast shoves harder for equal damage)', () => {
+    const gc = freshGame();
+    const [shooter, target] = priv(gc).m_tanks;
+    GameConfig.kickbackScale = 1;
+
+    // Impulse magnitude the kick imparts: kick adds `dir·force` to a resting tank, and dir is a
+    // unit vector, so |velocity| after a single kick == the force. Same damage + same (core) hit
+    // distance each time — only the blast radius differs.
+    const kickForce = (radius: number): number => {
+      (target as unknown as {m_vVel: Vec2}).m_vVel = new Vec2(0, 0); // reset the impulse
+      target.setMaxLife(1_000_000); // survive so `removed` is the full damage each time
+      const p = target.getPosition();
+      gc.applyBlast(new Vec2(p.x, p.y), radius, 5000, shooter, false, false, 10); // direct core hit
+      const v = (target as unknown as {m_vVel: {x: number; y: number}}).m_vVel;
+      return Math.hypot(v.x, v.y);
+    };
+
+    const small = kickForce(20); // sizeFactor clamps to 0.4
+    const big = kickForce(120); // sizeFactor clamps to 2.4
+    expect(small).toBeGreaterThan(0);
+    expect(big).toBeGreaterThan(small * 2); // ~6× by radius ratio — decisively size-dependent
+
+    GameConfig.kickbackScale = 1; // leave a known state
+  });
 });

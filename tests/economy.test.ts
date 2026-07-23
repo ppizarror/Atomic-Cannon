@@ -76,4 +76,22 @@ describe('Depot economy', () => {
     expect(e.getCredits()).toBeLessThan(20000); // auto buy spends credits
     expect(e.getCredits()).toBeGreaterThanOrEqual(0); // auto buy never overspends
   });
+
+  it('auto buy stocks only OFFENSIVE weapons — never utility/support types', () => {
+    // extTypes the AI never buys: MOVE, TRACER, SHIELD, HEAL, ARMOR, DEATH, HAZMAT, MINE, JET.
+    const SKIP = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
+    const e = new CEconomy(200000, []); // plenty of credits → it would grab everything affordable
+    e.autoBuy();
+    const boughtUtility = WEAPON_DATABASE.some(
+      (w, i) => e.getOwned(i) > 0 && SKIP.has(w.extType ?? 0),
+    );
+    expect(boughtUtility).toBe(false); // utility/support types are filtered out
+  });
+
+  it('auto buy (conserve) spends without overspending', () => {
+    const e = new CEconomy(20000, []);
+    e.autoBuy({conserve: true}); // tough-AI branch: half the picks are the weakest filler
+    expect(e.getCredits()).toBeLessThan(20000); // still spends
+    expect(e.getCredits()).toBeGreaterThanOrEqual(0); // never overspends
+  });
 });

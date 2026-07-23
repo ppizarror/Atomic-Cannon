@@ -29,6 +29,43 @@ function flatLand(surface = 300): CLand {
   return land;
 }
 
+// Flat terrain WITH a real pixel buffer (solid ground below `surface`, sky above). The
+// pixel-level carve/collapse ops (sliceColumn / falling blocks) only run when `m_pixels`
+// exists — the headless DOM mock no-ops getImageData — so digger tests that need the true
+// game geometry (overburden slides down; no floating dirt) must install a buffer.
+function flatLandPx(surface = 200): CLand {
+  const W = 800,
+    H = 400;
+  const land = new CLand(W, H);
+  land.generateFlat();
+  const p = land as unknown as {
+    m_pixels: Uint32Array;
+    m_material: Uint8Array;
+    m_arrHeights: Int16Array;
+  };
+  const px = new Uint32Array(W * H);
+  const mat = new Uint8Array(W * H);
+  for (let x = 0; x < W; x++) {
+    p.m_arrHeights[x] = surface;
+    for (let y = surface; y < H; y++) px[y * W + x] = 0xff3c5a1e >>> 0; // opaque solid ground
+  }
+  p.m_pixels = px;
+  p.m_material = mat;
+  return land;
+}
+
+/** Count solid pixels stranded strictly ABOVE each column's surface height (= floating dirt). */
+function floatingPixels(land: CLand): number {
+  const p = land as unknown as {m_pixels: Uint32Array; m_arrHeights: Int16Array; m_nWidth: number};
+  let n = 0;
+  for (let x = 0; x < p.m_nWidth; x++) {
+    for (let y = 0; y < p.m_arrHeights[x]; y++) {
+      if ((p.m_pixels[y * p.m_nWidth + x] & 0xff000000) !== 0) n++;
+    }
+  }
+  return n;
+}
+
 class MockWorld implements ShotWorld {
   land: CLand;
   tanks: any[] = [];
@@ -141,6 +178,48 @@ describe('Weapon behaviour', () => {
       if (land.getHeightAt(cx - 80 + i) > before[i] + 1) dug++;
     }
     expect(dug).toBe(0); // Dirt removes no terrain
+  });
+
+  // Fly a digger from just above the surface at a shallow downward angle, so it enters the mass
+  // and bores a long diagonal channel before reaching its dig depth. Returns the settled land.
+  function flyDigger(detonate: boolean): {land: CLand; detX: number} {
+    const land = flatLandPx(200);
+    const w = getWeapon(WEAPON_DATABASE.findIndex(x => x.id === 'digger')); // extType DIGGER
+    const world = new MockWorld(land);
+    const shot = new CShot();
+    shot.initFromVelocity(new Vec2(120, 190), 320, 60, w.getDamage(), w.getRadius(), null);
+    shot.setWeaponIndex(w.getIndex());
+    let action = 'continue',
+      steps = 0;
+    while (action === 'continue' && steps++ < 5000) {
+      shot.update(1 / 60, new Vec2(0, 0));
+      action = weaponFlyStep(shot, w, world, 1 / 60);
+    }
+    expect(action).toBe('detonate');
+    const detX = shot.getPosition().x;
+    if (detonate) weaponDetonate(shot, w, world);
+    for (let f = 0; f < 600; f++) land.update(1 / 60); // settle all falling overburden
+    return {land, detX};
+  }
+
+  it('Digger bores a continuous, shallow, backfilling channel (not a deep wide cave-to-shell)', () => {
+    const {land, detX} = flyDigger(false); // flight only — isolate the bore from the end crater
+    const dropAt = (x: number) => land.getHeightAt(Math.round(x)) - 200; // larger Y = lower surface
+
+    // Dug DURING flight, all along the path — a single end-crater could not touch early/mid columns.
+    expect(dropAt(detX - 120)).toBeGreaterThan(3); // near the entry…
+    expect(dropAt(detX - 70)).toBeGreaterThan(3); // …the middle…
+    expect(dropAt(detX - 25)).toBeGreaterThan(3); // …and the end: a continuous channel.
+    // The tunnel BACKFILLS: the surface only dents by ~the bore height (size 10 → ~2·10), it does
+    // NOT cave down toward the buried shell. Every sampled column stays a shallow dent.
+    for (const x of [detX - 120, detX - 70, detX - 25]) {
+      expect(dropAt(x)).toBeLessThan(40); // ≪ the ~100px depth a cave-to-shell would show
+    }
+  });
+
+  it('Digger leaves NO floating dirt after it detonates', () => {
+    const {land} = flyDigger(true); // full bore + buried detonation crater
+    expect(floatingPixels(land)).toBe(0); // no solid pixels stranded in the sky above the surface
   });
 
   it('NUKE creates a radiation zone', () => {

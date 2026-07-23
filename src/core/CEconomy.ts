@@ -29,6 +29,11 @@ export const CREDIT_PER_TURN = 0;
 /** Sentinel quantity meaning "never runs out". */
 export const UNLIMITED = Number.POSITIVE_INFINITY;
 
+/** extTypes Auto Buy never stocks — utility/support/relocate weapons that aren't offensive
+ *  ammo: MOVE(3), TRACER(4), SHIELD(7), HEAL(10), ARMOR(11), DEATH(12), HAZMAT(14), MINE(16),
+ *  JET(17). Mirrors the original AI's buy-candidate type filter. */
+const AUTO_BUY_SKIP_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
+
 /** Weapons that start unlimited (always fireable, not sold/bought). By default the
  * basic Shell, so the player can always take a shot. */
 function defaultUnlimited(): number[] {
@@ -175,27 +180,40 @@ export class CEconomy {
   }
 
   /**
-   * Auto Buy: a "drain loop" — repeatedly pick a random affordable weapon and buy it
-   * until nothing is left affordable, spending nearly all credits on a varied,
-   * semi-random assortment (the Shell staple is excluded). A difficulty-gated pass
-   * that front-loads a few support weapons scaled to AI difficulty isn't modelled here.
+   * Auto Buy: a "drain loop" — repeatedly pick an affordable weapon and buy it until
+   * nothing is left affordable, spending nearly all credits on a varied assortment. Only
+   * OFFENSIVE stock is bought: utility/support/relocate types (Move, Tracer, Shield, Heal,
+   * Armor, Death, Hazmat, Mine, Jet) are skipped, mirroring the original's buy-candidate
+   * filter (which also excludes the unlimited Shell staple). `conserve` mirrors the original's
+   * tough-AI branch — half the time it grabs the weakest affordable filler to hoard credits
+   * for pricier rounds; the difficulty-gated support front-load pass isn't modelled here.
    */
-  autoBuy(): void {
+  autoBuy(opts?: {conserve?: boolean}): void {
     // Guard against pathological loops (every buy removes at least the cheapest cost).
     for (let guard = 0; guard < 5000; guard++) {
       const affordable: number[] = [];
       for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+        const w = WEAPON_DATABASE[i];
         if (
           !this.isUnlimited(i) &&
           weaponEnabled(i) &&
-          WEAPON_DATABASE[i].cost > 0 &&
-          WEAPON_DATABASE[i].cost <= this.creditsGet()
+          w.cost > 0 &&
+          w.cost <= this.creditsGet() &&
+          !AUTO_BUY_SKIP_EXT.has(w.extType ?? 0)
         ) {
           affordable.push(i);
         }
       }
       if (affordable.length === 0) break;
-      this.buy(affordable[Math.floor(Math.random() * affordable.length)]);
+      // Tough AI conserves: half the buys grab the lowest-"Power" (weakest) affordable weapon
+      // instead of a random one, so it stocks cheap filler and saves for the expensive rounds.
+      const pick =
+        opts?.conserve && Math.random() < 0.5
+          ? affordable.reduce((lo, i) =>
+              WEAPON_DATABASE[i].damage < WEAPON_DATABASE[lo].damage ? i : lo,
+            )
+          : affordable[Math.floor(Math.random() * affordable.length)];
+      this.buy(pick);
     }
   }
 

@@ -88,6 +88,19 @@ describe('Earning economy', () => {
     expect(human.getCredits()).toBe(c0 - cost);
   });
 
+  it('a squad starts with perTeam × CreditStart (not a flat CreditStart)', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.setStartCredits(1000);
+    gc.setTanksPerTeam(3); // 3-tank squads
+    gc.startGame(2);
+    const t = (gc as unknown as Tanks).m_tanks;
+
+    // Every member is seeded with the squad-scaled purse; pooling then shares one balance,
+    // so a 3-tank squad spends against 3 × 1000, matching the original's tanksPerTeam×CreditStart.
+    for (const tk of t) expect(tk.getCredits()).toBe(3000);
+    expect(gc.getCredits()).toBe(3000); // the human depot reads the scaled balance
+  });
+
   it('credits pool per team', () => {
     const gc = new CGameController(makeCanvas());
     gc.setStartCredits(1000);

@@ -182,6 +182,26 @@ describe('Particle system', () => {
     expect(flares.length > 0 && greenish > flares.length * 0.5).toBe(true);
   });
 
+  it('a fiery crater-cutting blast throws rising dust-streamers across the crater width', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(1600, 1200);
+    const cx = 800,
+      cy = 600,
+      r = 50;
+    ps.blast(cx, cy, r, '#ff8c22', false);
+    const parts = (
+      ps as unknown as {m_particles: {x: number; y: number; vy: number; kind: string}[]}
+    ).m_particles;
+    // Streamers are the only 'flare' emitter that spawns SPREAD across the crater width and
+    // BELOW the blast centre (radial/burst flares all spawn at the centre point), rising (vy<0).
+    const streamers = parts.filter(
+      p => p.kind === 'flare' && Math.abs(p.x - cx) > r * 0.5 && p.y > cy && p.vy < 0,
+    );
+    expect(streamers.length).toBeGreaterThan(0); // dust-streamers are emitted
+    // They line the crater on BOTH sides — a spread row, not a point.
+    expect(streamers.some(p => p.x < cx) && streamers.some(p => p.x > cx)).toBe(true);
+  });
+
   it('out-of-bounds reap: a particle pushed past the clip window dies immediately', () => {
     const ps = new CParticleSystem();
     ps.setBounds(100, 100); // tight bounds (maxX≈300 incl. margin)
