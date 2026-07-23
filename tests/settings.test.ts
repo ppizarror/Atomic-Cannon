@@ -188,6 +188,9 @@ describe('settings catalog (single source)', () => {
     expect(SETTINGS['eco.creditStart'].default).toBe(3000);
     expect(SETTINGS['gp.difficulty'].default).toBe(4);
     expect(SETTINGS['tank.hitpoints'].default).toBe(1000);
+    // Play-screen defaults match the original: Battles 2, Wind Disabled (index 0).
+    expect(SETTINGS['gp.battles'].default).toBe(2);
+    expect(SETTINGS['gp.wind'].default).toBe(0);
     expect(SETTINGS['gp.wind'].scale).toEqual([0, 0.5, 1, 1.6]);
     expect(SETTINGS['tank.kickback'].scale).toEqual([0, 0.6, 1, 1.5]);
     expect(SETTINGS['gp.explosionSize'].scale).toEqual([0.7, 1, 1.35, 1.8]);

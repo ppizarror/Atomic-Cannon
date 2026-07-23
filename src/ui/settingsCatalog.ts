@@ -41,12 +41,12 @@ const CATALOG = {
   'tank.colorize': {default: 1},
 
   // ── Gameplay ──
-  'gp.battles': {default: 5},
+  'gp.battles': {default: 2},
   'gp.rounds': {default: 10},
   'gp.gameType': {default: 1},
   'gp.landSize': {default: 0},
   'gp.difficulty': {default: 4},
-  'gp.wind': {default: 2, scale: [0, 0.5, 1, 1.6]},
+  'gp.wind': {default: 0, scale: [0, 0.5, 1, 1.6]},
   'gp.changeWind': {default: 0},
   'gp.explosionSize': {default: 1, scale: [0.7, 1, 1.35, 1.8]},
   'gp.variance': {default: 1},
