@@ -6,6 +6,7 @@
  * immediately with the last-used setup; Settings/About navigate.
  */
 import {openPlaySetup, quickPlay, openSettings, openAbout} from './store';
+import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {MenuTargets} from './MenuTargets';
@@ -54,7 +55,16 @@ export function MainMenu() {
         <MenuButton label="Settings" onClick={() => openSettings('menu')} />
         <MenuButton label="About" onClick={openAbout} />
       </div>
-      <AtomLogo />
+      <a
+        class="mainmenu-repo"
+        href={__REPO_URL__}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={__REPO_URL__}
+      >
+        <BmpText font="beijing-16-out" text={strings.value.repoLabel} />
+        <AtomLogo />
+      </a>
       <div class="mainmenu-version">
         <BmpText font="beijing-16-out" text={`v${__APP_VERSION__}`} />
       </div>

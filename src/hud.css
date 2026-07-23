@@ -1056,18 +1056,19 @@ canvas {
 }
 
 .mainmenu-logo {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
-  width: 38px;
-  height: 40px;
+  width: 34px;
+  height: 36px;
   image-rendering: pixelated;
-  opacity: 0.85;
+  display: block;
+  flex: none;
 }
 
 /* About / credits — a steel-backed <Modal> (frame + layout shared with Help). */
 .about-card {
   width: min(680px, 92vw);
+  /* A definite height (not just max-height) so the flex:1 scroll body — whose content
+     is absolutely positioned and contributes no intrinsic height — has room to fill. */
+  height: min(86vh, 760px);
   max-height: 86vh;
   padding: 20px 26px;
 }
@@ -1088,15 +1089,76 @@ canvas {
 .about-body {
   flex: 1;
   overflow: hidden; /* clips the ClassicScrollbar view + track */
-  white-space: pre-wrap; /* inherited by the scrolling view's text */
-  font-size: 13px;
-  line-height: 1.55;
-  color: #cdd6de;
+}
+
+/* The scrolling content is a column of bitmap-font sections (colour + size come
+   from the fonts themselves; this is layout / spacing only). */
+.about-body .cscroll-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 2px;
+}
+
+.about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.about-sec-head {
+  margin-bottom: 2px;
+}
+
+/* Each BmpParagraph is a stack of one-line canvases — space them for readability. */
+.about-para > canvas {
+  margin-bottom: 3px;
+}
+
+.bmp-para-gap {
+  height: 8px; /* blank line between flowing paragraphs */
+}
+
+/* Bullet row: the marker glyph beside the wrapping paragraph. */
+.about-bullet {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.about-bullet > canvas {
+  margin-top: 1px;
+  flex: none;
+}
+
+.about-bullet .about-para {
+  flex: 1;
+  min-width: 0; /* let the paragraph host shrink so its wrap width is measurable */
 }
 
 .about-back {
   align-self: center;
   margin-top: 16px;
+}
+
+/* Source-repository link, bottom-right of the main menu: the "Source on GitHub" label
+   and the atom logo sit on one baseline as a single clickable footer unit (the whole
+   row — label and atom — opens the repo). */
+.mainmenu-repo {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  opacity: 0.85;
+  cursor: pointer;
+  transform: translateZ(0); /* own layer → the bitmap font stays crisp */
+  transition: opacity 0.12s ease;
+}
+
+.mainmenu-repo:hover {
+  opacity: 1;
 }
 
 /* =================== RESOLUTION-TOO-SMALL GATE =================== */
