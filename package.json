@@ -11,12 +11,14 @@
   "packageManager": "pnpm@11.5.2",
   "scripts": {
     "dev": "vite",
+    "dev:net": "wrangler dev",
+    "deploy:net": "wrangler deploy",
     "build": "vite build",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.worker.json",
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --fix",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"*.{json,ts}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"*.{json,ts}\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"worker/**/*.ts\" \"tests/**/*.ts\" \"*.{json,ts}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"worker/**/*.ts\" \"tests/**/*.ts\" \"*.{json,ts}\"",
     "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test",
     "preview": "vite preview",
     "test": "vitest run",
@@ -29,14 +31,16 @@
     "preact": "^10.29.7"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260722.1",
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.1.1",
-    "oxlint": "^1.74.0",
+    "oxlint": "^1.75.0",
     "playwright-core": "^1.61.1",
     "prettier": "^3.9.6",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.113.0"
   }
 }

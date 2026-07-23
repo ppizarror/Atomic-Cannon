@@ -1,0 +1,26 @@
+{
+  // Cloudflare Worker + Durable Object for Atomic Cannon multiplayer.
+  // Dev:    pnpm dev:net   (wrangler dev — runs the DO locally; dev == prod)
+  // Deploy: pnpm deploy:net (after `pnpm build` produces dist/)
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "atomic-cannon-net",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-06-01",
+
+  // One Durable Object class = the room. SQLite-backed storage (free-tier
+  // eligible) so a room's roster/turn state survives hibernation.
+  "durable_objects": {
+    "bindings": [{"name": "ROOM", "class_name": "Room"}],
+  },
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["Room"]}],
+
+  // Static client (the Vite build). The Worker handles /api/* and /room/*; every
+  // other path falls through to these assets, with SPA fallback to index.html.
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+  },
+
+  "observability": {"enabled": true},
+}

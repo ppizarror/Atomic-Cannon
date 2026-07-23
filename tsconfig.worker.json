@@ -1,0 +1,22 @@
+{
+  // Cloudflare Worker + Durable Object code (worker/). Workers runtime libs —
+  // WebWorker globals + @cloudflare/workers-types, NOT the DOM. Imports the
+  // isomorphic net modules from src/net (which stay DOM/Workers-agnostic).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "WebWorker"],
+    "types": ["@cloudflare/workers-types"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["worker", "src/net"]
+}
