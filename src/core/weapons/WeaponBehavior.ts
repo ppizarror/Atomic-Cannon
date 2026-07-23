@@ -359,7 +359,13 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // cloud that arcs up and rains back down, piling into a mound. The crater is the "dirt replace"
     // at the landing point; the debris overtops it, so the mound wins.
     if (reachesGround) {
-      land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), Math.round(radiusPx * 0.35));
+      land.blastCircle(
+        Math.floor(pos.x),
+        Math.floor(pos.y),
+        Math.round(radiusPx * 0.35),
+        true,
+        true,
+      );
     }
     land.depositDirt(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (isCleaner) {

@@ -105,6 +105,15 @@ const DIRT_THROW_UP_SPAN = 70; // varied arc heights → staggered landings (no 
 /** Chunks are born across a disc of `radius × this`, so the pile is BROAD (a wide dome) rather than a
  *  tall spire — the legacy Mountain is a broad hill. Wider disc → wider base, lower peak (same volume). */
 const DIRT_DISC_SPREAD = 2.0;
+/** Max deposit height: dirt cannot pile above this screen-Y (a fraction of world height from the
+ *  top). A chunk landing on a capped column is discarded, so tall stacks (Land Fill) FLAT-TOP into a
+ *  mesa instead of spiking — matching the original's deposit-height settle gate. */
+const DIRT_CAP_FRACTION = 0.16;
+/** A settled radiation speck is hidden once the surface has been RAISED (by a dirt fill) more than
+ *  this far above where it landed — it reads as buried under the fresh dirt, not glowing on top.
+ *  Comfortably above per-frame slump jitter so post-crater repose doesn't flicker the crater-face
+ *  coat; well below the tens of px a Dirt weapon piles, so a real fill always buries it. */
+const RAD_BURY_MARGIN = 6;
 
 export class CLand {
   // ========================================================================
@@ -338,7 +347,7 @@ export class CLand {
    * approximates that. A CLEANER (earth-remover) passes `false`: it just removes earth and leaves
    * the natural strata beneath exposed, never a fresh introduced dirt lining.
    */
-  blastCircle(x: number, y: number, nRadius: number, coatDirt = true): void {
+  blastCircle(x: number, y: number, nRadius: number, coatDirt = true, ragged = false): void {
     if (!this.m_arrHeights) return;
 
     const startX = Math.max(0, x - nRadius);
@@ -357,13 +366,19 @@ export class CLand {
     // through). Purely visual — collision uses m_arrHeights (the lowered floor), untouched.
     // Cleaners (coatDirt=false) still leave bare removed earth.
     const craterFill = coatDirt && GameConfig.craterFill;
+    // `ragged`: a gentle wobble on the bowl radius so a small dirt crater reads as a rough hole, not a
+    // weird perfect circle. Two out-of-phase sines (random per-crater phases) give an irregular but
+    // SMOOTH rim — never per-column white noise, which spiked into "nails" in the original.
+    const wobPh1 = ragged ? Math.random() * TWO_PI : 0;
+    const wobPh2 = ragged ? Math.random() * TWO_PI : 0;
 
     for (let dx = startX; dx <= endX; dx++) {
       const distFromCenter = Math.abs(dx - x);
 
       if (distFromCenter > nRadius) continue;
 
-      const arcHeight = Math.sqrt(nRadius * nRadius - distFromCenter * distFromCenter);
+      let arcHeight = Math.sqrt(nRadius * nRadius - distFromCenter * distFromCenter);
+      if (ragged) arcHeight *= 0.9 + 0.07 * Math.sin(dx * 0.6 + wobPh1) + 0.05 * Math.sin(dx * 1.4 + wobPh2); // prettier-ignore
       const craterBottom = y + arcHeight;
 
       // Lower the surface to the crater floor — `setColumnTop` CLEARS the removed pixels
@@ -1000,7 +1015,9 @@ export class CLand {
   /** Dirt-chunk colour string cached by brightness v (0..139) so a 6500-chunk nuke
    *  doesn't allocate 6500 `rgb()` strings per blast (GC churn → fire-time hitch). */
   private dirtColor(v: number): string {
-    return this.m_dirtColors[v] ?? (this.m_dirtColors[v] = `rgb(${v},${v >> 1},${v >> 3})`);
+    // (v, v/2, 0) — pure orange-brown, ZERO blue, exactly matching the decompiled dirt colour
+    // `(v*0x200 | v&~1) << 7`. The old `v>>3` blue muddied it toward a darker "burned" tone.
+    return this.m_dirtColors[v] ?? (this.m_dirtColors[v] = `rgb(${v},${v >> 1},0)`);
   }
 
   /** Throw dirt chunks. `deposit`: raise the column where each lands (true, blast ejecta) vs. just
@@ -1100,18 +1117,27 @@ export class CLand {
           continue; // cosmetic ejecta (beam) — reached ground, just vanish (no column raise)
         }
         const dcol = clamp(col + ((Math.random() * 4) | 0) - 2, 0, this.m_nWidth - 1); // −2..+1 (orig)
-        // A landed chunk raises its column 1px → STAMP one dirt pixel on top (the shared
-        // deposit primitive). Real, native terrain; no separate de-grass bookkeeping.
-        this.setColumnTop(dcol, this.m_arrHeights[dcol] - 1);
-        if (this.m_baseHeights)
-          this.m_baseHeights[dcol] = Math.min(this.m_baseHeights[dcol], this.m_arrHeights[dcol]);
-        this.preBlast(dcol - 1, dcol + 1);
-        // Let the slump smooth this area over the next few seconds.
-        this.m_slumpTimer = 3;
-        this.m_slumpX0 = Math.min(this.m_slumpX0, dcol - 3);
-        this.m_slumpX1 = Math.max(this.m_slumpX1, dcol + 3);
+        // Height cap: dirt can't pile above `capY`. A chunk on a capped column is discarded, so tall
+        // stacks (Land Fill) FLAT-TOP into a mesa instead of spiking (orig settle gate `0x60 <= y`).
+        if (this.m_arrHeights[dcol] > this.m_nHeight * DIRT_CAP_FRACTION) {
+          // Raise the column 1px, then TINT that pixel with a random brightness — the original stamps
+          // each chunk's own colour, so deposited dirt has small brightness VARIATIONS, not one flat tone.
+          this.setColumnTop(dcol, this.m_arrHeights[dcol] - 1);
+          const px = this.m_pixels;
+          if (px) {
+            const v = 30 + ((Math.random() * 100) | 0); // [30,129] = decompiled `rand%100 + 30`
+            px[this.m_arrHeights[dcol] * this.m_nWidth + dcol] = this.packSolid(v, v >> 1, 0); // (v,v/2,0)
+          }
+          if (this.m_baseHeights)
+            this.m_baseHeights[dcol] = Math.min(this.m_baseHeights[dcol], this.m_arrHeights[dcol]);
+          this.preBlast(dcol - 1, dcol + 1);
+          // Let the slump smooth this area over the next few seconds.
+          this.m_slumpTimer = 3;
+          this.m_slumpX0 = Math.min(this.m_slumpX0, dcol - 3);
+          this.m_slumpX1 = Math.max(this.m_slumpX1, dcol + 3);
+        }
         this.m_particlePool.push(p);
-        continue; // settled → deposited → recycle
+        continue; // settled (or capped) → recycle
       }
 
       this.m_particles[dw++] = p; // still airborne → keep
@@ -1150,6 +1176,10 @@ export class CLand {
 
     // Radiation specks: fall until they hit the surface, then settle and glow.
     const RAD_GRAV = 320;
+    // A settled speck is culled once a crater drops the ground more than this far below it (it would
+    // otherwise hang in the air). Wider than the +3px top of the settle scatter so the coat's surface
+    // line survives — only a genuine crater lowering triggers it.
+    const RAD_STRAND_MARGIN = 4;
     let sw = 0;
     for (let i = 0; i < this.m_radSpecks.length; i++) {
       const s = this.m_radSpecks[i];
@@ -1174,8 +1204,9 @@ export class CLand {
           // Faithful settle scatter (the original, on settle, offsets x by −2..+1 columns and sets
           // y to `impactRow + (rand%12 − 2)` — i.e. a granular band from 2px ABOVE the surface to
           // 9px BELOW it). That ~11px scatter is what gives the coat its thickness — NOT a deep
-          // 42px band (over-invented) and NOT a flat 1px line (over-thinned). `rise` is stored as
-          // height above the surface so the coat clings as the terrain shifts.
+          // 42px band (over-invented) and NOT a flat 1px line (over-thinned). `rise` (offset from the
+          // surface at settle) is kept only so we can tell burial-by-fill from the crater-face coat;
+          // the speck's y is FIXED from here (the original sets it once and never re-reads the ground).
           const jx = Math.floor(this.rand01() * 4) - 2; // −2..+1 columns
           const c2 = clamp(col + jx, 0, this.m_nWidth - 1);
           s.x = c2;
@@ -1186,9 +1217,17 @@ export class CLand {
           s.y = this.getHeightAt(c2) - s.rise;
         }
       } else {
-        // Keep clinging to the surface as craters below it change the height.
+        // A settled speck holds its ABSOLUTE position — the original fixes y at settle and never
+        // re-reads the surface (so the fallout can be buried or stranded, it never RIDES the ground).
+        // If a crater later drops the surface well BELOW the speck (it would hang in mid-air), cull it
+        // — the original removes a settled speck the moment the ground falls out from under it.
         const col = Math.floor(s.x);
-        if (col >= 0 && col < this.m_nWidth) s.y = this.getHeightAt(col) - s.rise;
+        if (col >= 0 && col < this.m_nWidth && s.y < this.getHeightAt(col) - RAD_STRAND_MARGIN) {
+          this.m_speckPool.push(s);
+          continue;
+        }
+        // A fill that RAISES the ground over the speck buries it in place — it stays here (hidden on
+        // draw), it does NOT climb onto the fresh dirt. No reposition needed: y is already fixed.
       }
       this.m_radSpecks[sw++] = s; // still live → keep
     }
@@ -1670,6 +1709,12 @@ export class CLand {
       for (const s of this.m_radSpecks) {
         const fade = 1 - s.age / s.life; // linear: contribution = irRGB · (1 − age/life)
         if (fade <= 0) continue;
+        // BURIED-by-fill: a settled speck holds its absolute y, so a deposit that raised the ground
+        // well ABOVE where it landed (`s.y + s.rise` = the surface at settle) has covered it — hide it
+        // so the fallout reads as buried under the fresh dirt, not glowing on top. Non-destructive:
+        // if the fill is later dug back out, the speck shows again (until a carve clears it outright).
+        if (s.settled && this.getHeightAt(Math.floor(s.x)) < s.y + s.rise - RAD_BURY_MARGIN)
+          continue;
         if (!dbg) {
           const key = (s.r << 16) | (s.g << 8) | s.b;
           if (key !== lastKey) {

@@ -1107,6 +1107,20 @@ export class CParticleSystem {
     return this.m_particles.length > 0 || this.m_beams.length > 0 || this.m_explosions.length > 0;
   }
 
+  /**
+   * Whether the EXPLOSION itself is still playing — the fireball/flare burst (`m_explosions`), a
+   * beam sweep, or its fire/spark particles. Unlike `hasActiveExplosions`, this deliberately IGNORES
+   * the lingering grey `smoke`/`plume` puffs: those are a port embellishment (the original blasts
+   * emit only flares + fire streamers, no drifting smoke), so their multi-second fade must NOT hold
+   * the turn open. Gates turn hand-off; the render gate still uses `hasActiveExplosions` so the smoke
+   * keeps drawing (and drifting) into the next player's aim phase.
+   */
+  hasActiveBlast(): boolean {
+    if (this.m_explosions.length > 0 || this.m_beams.length > 0) return true;
+    for (const p of this.m_particles) if (p.kind !== 'smoke' && p.kind !== 'plume') return true;
+    return false;
+  }
+
   /** Live particle count (diagnostics / tests). */
   count(): number {
     return this.m_particles.length;
