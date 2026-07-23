@@ -13,6 +13,7 @@ import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
 import {GameConfig} from '../CGameConfig';
 import {EXT, isBeamExt} from './ExtType';
+import {type ExpType} from './ExpType';
 
 // `EXT` / `ExtType` / `toExtType` — the authoritative behaviour-selector table — live in
 // ./ExtType so `CWeapon.getExtType()` can return the typed value without a circular import.
@@ -35,8 +36,9 @@ export interface ShotWorld {
   spawnShot(shot: CShot): void;
 
   /** Detonation FX. `color`/`radiusPx`/`nuclear` tint & scale the burst; `blastPreset`
-   * names its particles.json effect; `expType` (0–4) + `expBitmap` select the weapon's
-   * own explosion flare sprite and style. */
+   * names its particles.json effect; `expType` + `expBitmap` select the weapon's own explosion
+   * flare sprite and style. `isCleaner` suppresses the big-blast screen flash (an earth-remover
+   * is not a fiery blast). */
   explode(
     x: number,
     y: number,
@@ -45,9 +47,10 @@ export interface ShotWorld {
     radiusPx?: number,
     nuclear?: boolean,
     blastPreset?: string,
-    expType?: number,
+    expType?: ExpType,
     expBitmap?: string,
     deposit?: boolean,
+    isCleaner?: boolean,
   ): void;
 
   shake(mag: number, dur: number): void;
@@ -285,7 +288,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   const isBeam = isBeamExt(ext);
   // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
   // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
-  const isCleaner = weapon.getType() === 'Cleaner';
+  const isCleaner = weapon.isCleaner();
   // Explosion Size (Gameplay) scales the blast radius → crater, damage reach and FX.
   // Blast radius grows with the map (the original scales it by √(map area); our world widens
   // only, so √worldScale) — so a blast covers the same fraction of the world at any map size.
@@ -315,6 +318,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     weapon.getExpType(),
     weapon.getExpBitmap(),
     weapon.getEarth() > 0, // Dirt/deposit weapons skip the fiery firework — just the flare + puff.
+    isCleaner, // earth-remover → no big-blast screen flash
   );
   world.hitSound(weapon.getHitSound(), pos.x); // soundHit, panned to the blast
   // Camera shake is a port embellishment — the original never shakes on impact (it
@@ -341,9 +345,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // piling up and slumping into a natural slope — never a crater, never a hard blob.
     land.depositDirt(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (isCleaner) {
-    // Cleaner: carve out its (large) radius — remove terrain, nothing else. No
-    // scorch (it isn't a burn) and no ejecta (it clears dirt, doesn't throw it).
-    land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
+    // Cleaner: carve out its (large) radius — remove terrain, nothing else. No scorch (it isn't a
+    // burn), no ejecta (it clears dirt, doesn't throw it), and coatDirt=false so it introduces NO
+    // fresh dirt — the natural strata beneath is left exposed (an earth-remover, not a crater bomb).
+    land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx, false);
   } else if (ext === EXT.DIGGER || ext === EXT.ESCAPE) {
     // Digger/Escape explode where the shot IS — deep in the mass (or wherever they
     // re-impacted after crossing to the far side). The blast removes only its DISC of

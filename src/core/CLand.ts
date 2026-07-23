@@ -280,7 +280,13 @@ export class CLand {
   // TERRAIN DEFORMATION
   // =====================================================================
 
-  blastCircle(x: number, y: number, nRadius: number): void {
+  /**
+   * Carve a crater bowl. `coatDirt` (default true) coats the exposed face with a dirt band — the
+   * original reveals the land's own sub-surface soil/strata texture across the bowl; our thin band
+   * approximates that. A CLEANER (earth-remover) passes `false`: it just removes earth and leaves
+   * the natural strata beneath exposed, never a fresh introduced dirt lining.
+   */
+  blastCircle(x: number, y: number, nRadius: number, coatDirt = true): void {
     if (!this.m_arrHeights) return;
 
     const startX = Math.max(0, x - nRadius);
@@ -310,7 +316,8 @@ export class CLand {
       // Coat the exposed face with dirt: a thin band below the new surface, only where the crater
       // actually cut in (arcHeight > 2 skips the featherweight rim columns so it can't smear onto
       // untouched ground beyond the crater). Overwrite SOLID pixels only (skip the excavated void).
-      if (px && arcHeight > 2) {
+      // A Cleaner passes coatDirt=false → no fresh dirt, the natural strata below is left exposed.
+      if (px && coatDirt && arcHeight > 2) {
         const mat = this.m_material;
         const bandTop = heights[dx];
         const bandBot = Math.min(this.m_nHeight, bandTop + dirtBand);

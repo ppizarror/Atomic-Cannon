@@ -21,6 +21,7 @@ import {GameConfig} from './CGameConfig';
 import {between} from '../math/random';
 import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
 import {TWO_PI, deg2rad} from '../math/num';
+import {EXP, type ExpType} from './weapons/ExpType';
 
 // Per-weapon explosion presets from weapons.txt's ParticleEffectTable: each
 // weapon's `blast`/`trail` names one of these (colour, count, speed, life,
@@ -86,6 +87,11 @@ const KIND_WIND: Record<RenderKind, number> = {
 // (r≥~20) get the full sequence. See `blast`.
 const SMALL_BLAST_R = 14;
 
+// Cap the hollow flare-burst ring count for NON-nuke blasts. The original uses ~r·0.5 particles;
+// this caps a wide conventional round (Cleaner r130 → 65) so the ring stays a readable shell rather
+// than an over-dense band. Nukes stay uncapped. See `emitFlareBurst`.
+const FLARE_BURST_MAX = 54;
+
 const rnd = () => Math.random();
 
 /** Parse `#rrggbb` (falls back to a warm orange). */
@@ -149,6 +155,7 @@ export class CParticleSystem {
    *  like fire, cooling to plain grey as they age. Null until the sprite exists. */
   private warmSmoke(): HTMLCanvasElement | null {
     if (this.m_warmSmoke) return this.m_warmSmoke;
+    if (typeof document === 'undefined') return null; // headless (tests): no canvas to tint
     const spr = this.m_assets?.getSprite('fx:smoke');
     if (!spr) return null;
     const w = spr.width,
@@ -242,9 +249,9 @@ export class CParticleSystem {
   }
 
   /**
-   * Blit the tinted glow centred at (x,y) with the given radius and alpha, under
-   * whatever composite op the caller has set. Returns false when no canvas is
-   * available so the caller can fall back to a gradient (keeps unit tests working).
+   * Blit the tinted glow centred at (x,y) with the given radius and alpha, under whatever
+   * composite op the caller has set. When no baked canvas is available (headless tests) it
+   * draws the equivalent radial gradient itself, so callers never branch on the fallback.
    */
   private blitGlow(
     ctx: CanvasRenderingContext2D,
@@ -255,14 +262,25 @@ export class CParticleSystem {
     g: number,
     b: number,
     alpha: number,
-  ): boolean {
+  ): void {
     const t = this.tintedGlow(r, g, b);
-    if (!t) return false;
-    const d = radius * 2;
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(t, x - radius, y - radius, d, d);
-    ctx.globalAlpha = 1;
-    return true;
+    if (t) {
+      const d = radius * 2;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(t, x - radius, y - radius, d, d);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    // No baked glow canvas — approximate with the radial gradient the master encodes
+    // (0 → mid 0.4 → transparent), the same 3-stop the flare/flash path used inline.
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    grad.addColorStop(0, `rgba(${r | 0},${g | 0},${b | 0},${alpha})`);
+    grad.addColorStop(0.5, `rgba(${r | 0},${g | 0},${b | 0},${alpha * 0.4})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, TWO_PI);
+    ctx.fill();
   }
 
   // Downward acceleration (px/s^2). Sparks and debris arc and fall; flares and
@@ -415,9 +433,10 @@ export class CParticleSystem {
     color: string,
     nuclear = false,
     presetName?: string,
-    expType = 0,
+    expType: ExpType = EXP.PLAIN,
     expBitmap?: string,
     deposit = false,
+    isCleaner = false,
   ): void {
     // `eLlightBlue` is a typo in the weapon data table for `eLightBlue`.
     const preset = presetName
@@ -427,40 +446,35 @@ export class CParticleSystem {
     // Floor low so a small round (machine gun r8, shotgun r4) stays a small puff —
     // the old floor of 12 forced every blast to grenade size, so bullets "exploded".
     const r = Math.max(4, radiusPx);
-    const big = expType === 4 || nuclear; // expType 4 = the nuke white-out
+    const big = expType === EXP.NUKE || nuclear; // nuke style = the full-screen white-out
     // Small rounds — bullets/pellets/cannon-shells — get a compact pop, not the full
     // firework. The original scales its detonation FX by blast size and GATES the
     // fire streamers by a size threshold, so tiny rounds throw only debris + a spark
     // puff (no fireball storm, radial rings, fire line or ejecta ring).
     const small = !big && r < SMALL_BLAST_R;
 
-    // Stage 1 — a central bloom + hot flash, sized to the blast. The bloom is the
-    // weapon's OWN catalog flare (`expBitmap`: nuke=flares/00 puff, digger=flares/03
-    // ring, …), NOT the generic chromatic explosion1.bmp. Big + BRIEF for a prominent
-    // core; small rounds get just a modest pop.
+    // Central fireball. A NUKE gets the bright generic chromatic starburst (`explosion1.bmp`); a
+    // small round gets a quick pop of its own flare. A conventional blast gets NO bright central
+    // bloom — its hollow flare-burst (below) forms the whole look and the CENTRE STAYS CLEAR, so
+    // the crater/tank shows through (the original's burst is the weapon's own — often DIM — sprite,
+    // never a synthesized white core).
     const flareSpr = expBitmap ? `fx:${expBitmap}` : 'fx:explosion';
-    this.spawnExplosion(
-      x,
-      y,
-      r * (big ? 2.2 : small ? 1.1 : 1.6),
-      big ? 0.35 : small ? 0.32 : 0.5,
-      flareSpr,
-    );
-    // The shrinking flare burst — the weapon's own expBitmap flares that start big and
-    // contract to nothing (additive → a flash that collapses inward). This is the MAIN body
-    // of the blast the original shows, so it is FEW + LARGE (so the flare's own shape reads,
-    // not a washed-out blob) rather than a dense cloud.
-    // Ring count scales with the blast radius (the original uses ~mag·0.5), not a fixed number.
-    this.emitShrinkBurst(x, y, r, flareSpr, Math.max(3, Math.round(r * (big ? 0.7 : 0.5))));
-    // A hot white-out flash is a NUKE/big-blast thing in the original (style-4 full-screen
-    // add). Smaller rounds get NO washout, so their expBitmap flare stays visible.
+    if (big) this.spawnExplosion(x, y, r * 2.2, 0.35, 'fx:explosion');
+    else if (small) this.spawnExplosion(x, y, r * 1.1, 0.32, flareSpr);
+
+    // The flare BURST — the weapon's own `expBitmap` scattered on a HOLLOW RING (an annulus: each
+    // particle is born on radius r·[0.5..0.8], NEVER the centre, so the shell is hollow), drifting
+    // slowly outward and shrinking to nothing. Blitted ADDITIVELY at the sprite's TRUE intensity, so
+    // the per-weapon look emerges from the sprite alone: a dim sprite (Cleaner flares/02, peak ~55)
+    // reads as translucent grey-blue smoke bubbles with a clear centre; a bright one (nuke flares/00,
+    // peak ~229; bomb flares/07 orange) reads as a hot fireball ring. No white boost, no ×N stacking.
+    if (!small) this.emitFlareBurst(x, y, r, flareSpr, big);
+
+    // A hot white-out flash is a NUKE thing ONLY — never a conventional or Cleaner blast.
     if (big) this.spawnFlash(x, y, r * 2.4, {r: 255, g: 255, b: 255}, 0.3);
 
-    // Dirt/deposit weapons (Dirty Boy, Mountain, …) DEPOSIT earth rather than cut a fiery
-    // crater — the original shows no fire streamers or debris storm for them, just the flare
-    // burst + a small white puff (their `eWhiteSmall` blast). So stop here: no firework.
-    // (This is gated on DEPOSIT, not `expType`, since expType 2 also covers Bomb/Death/Cleaner
-    // weapons that DO get a fiery crater explosion.)
+    // Dirt/deposit weapons (Dirty Boy, Mountain, …) DEPOSIT earth rather than cut a crater — just
+    // the flare burst + puff, no firework/fire/ejecta. Stop here.
     if (deposit) return;
 
     // Compact spark puff for small rounds, then stop — no firework/rings/fire/ejecta.
@@ -469,76 +483,87 @@ export class CParticleSystem {
       return;
     }
 
-    // Radial fire streamers. The big firework is a NUKE/large-blast thing; medium rounds get
-    // just a light spray so the expBitmap flare stays the star.
-    if (preset) {
-      this.emitPreset(x, y, r, preset);
+    // A CLEANER is an earth-remover, NOT a fiery blast: its whole look is the dim smoke-shell
+    // (annulus above) + the grey ground fumes (below). No coloured fireball, no fire, no ejecta —
+    // just a light ember spray that flies OUT (a slow/dense box would clump at the centre and
+    // re-fill the hollow shell).
+    if (isCleaner) {
+      this.emitBox(x, y, 14, 150, 0.3, 0.7, 1.3, toward255(c, 0.2), 'disc');
     } else {
-      const ring = Math.round(r * 1.2) + (nuclear ? 70 : 22);
-      this.emitRadial(
-        x,
-        y,
-        big ? ring : Math.round(ring * 0.35),
-        70,
-        200,
-        0.35,
-        0.7,
-        r * 0.14 + 2,
-        toward255(c, 0.3),
-        'flare',
-      );
-      if (big) this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
+      // A fiery blast (bomb/rocket/nuke) also gets the coloured radial fireball (its preset colour or
+      // generic rings) filling the shell; the ejecta ring + spark storm are BIG/nuke-only.
+      if (preset) {
+        this.emitPreset(x, y, r, preset);
+      } else {
+        const ring = Math.round(r * 1.2) + (nuclear ? 70 : 22);
+        const n = big ? ring : Math.round(ring * 0.35);
+        this.emitRadial(x, y, n, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
+        if (big) this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
+      }
+      if (big) {
+        this.emitEjectaRing(x, y, r);
+        this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc');
+      } else {
+        this.emitBox(x, y, Math.round(r * 0.7) + 16, 90, 0.4, 1.0, 1.5, toward255(c, 0.2), 'disc');
+      }
     }
 
-    // Stage 2 — scattered expBitmap blobs radiating out, and (big only) a circular ejecta ring.
-    // Kept sparse for medium blasts so they don't bury the shrinking flare burst above.
-    this.emitGasBlobs(x, y, r, big ? Math.round(r * 1.5) + 30 : Math.round(r * 0.5) + 6, flareSpr);
-    if (big) this.emitEjectaRing(x, y, r);
-
-    // Sparks — a modest ember spray for medium rounds, a full storm only for big blasts.
-    this.emitBox(
-      x,
-      y,
-      Math.round(r * 1.4) + 26,
-      big ? 190 : 34,
-      0.4,
-      1.1,
-      1.6,
-      toward255(c, 0.2),
-      'disc',
-    );
-    this.emitFireLine(x, y, r * 0.8, c);
+    // Fumes rising from the crater FLOOR (the earth), not the blast centre — a faint fire flicker +
+    // grey smoke wisps seeded across the bowl, kept sparse so they never fill the hollow centre.
+    this.emitCraterFumes(x, y, r);
   }
 
   /**
-   * Stage-2 firework: scatter many instances of the weapon's explosion flare
-   * SPRITE radiating outward — the cloudy blob burst (each blob is one flare, so
-   * its shape/colour is the weapon's own: nuke puffs, excavator green rings, …).
+   * The flare BURST as a HOLLOW annulus (the original's ring burst). `count ≈ r·0.5` particles are
+   * born on a ring of radius `r·[0.5..0.8]` — never the centre — each starting at `r·[0.167..0.333]`
+   * px and shrinking to nothing while drifting slowly outward, so the shell EXPANDS and the centre
+   * stays clear. Plus ONE big central puff of the same sprite: for a dim sprite it adds ~nothing (the
+   * centre reads through); for a bright one it gives the hot core. All additive at true intensity.
    */
-  private emitGasBlobs(x: number, y: number, r: number, count: number, spr: string): void {
-    const white: RGB = {r: 255, g: 255, b: 248}; // procedural fallback tint only
-    const size = between(2, 3) + r * 0.02; // bigger blobs for bigger blasts
-    // Centre the firework a bit DOWN into the crater bowl — the blast point is at
-    // the rim while the bowl carves below it, so this fills the whole crater.
-    const cy = y + r * 0.35;
+  private emitFlareBurst(x: number, y: number, r: number, sprite: string, big: boolean): void {
+    const count = big ? Math.round(r * 0.9) : Math.min(FLARE_BURST_MAX, Math.max(3, Math.round(r * 0.5))); // prettier-ignore
     for (let i = 0; i < count; i++) {
-      const a = rnd() * TWO_PI;
-      // Spread to ≈1.5·r (the crater edge), only lightly centre-biased so blobs
-      // reach the rim AND the bottom of the bowl — not just a ball in the middle.
-      const life = between(0.4, 0.85);
-      const sp = (0.25 + rnd() * 0.75) * ((1.5 * r) / life);
-      const d0 = rnd() * r * 0.35;
-      this.add(
-        x + Math.cos(a) * d0,
-        cy + Math.sin(a) * d0,
-        Math.cos(a) * sp,
-        Math.sin(a) * sp, // symmetric → fills DOWN into the bowl too
-        white,
+      const ang = rnd() * TWO_PI;
+      const off = between(r * 0.5, r * 0.8); // born on the ring, so the centre is empty
+      const size = between(r * 0.167, r * 0.333);
+      const life = between(0.5, 0.95);
+      const spd = off * between(0.35, 0.6); // slow radial outward drift → the shell expands a little
+      this.m_explosions.push({
+        x: x + Math.cos(ang) * off,
+        y: y + Math.sin(ang) * off,
+        age: 0,
         life,
-        size + between(-0.5, 1),
-        'plume',
-        spr,
-      );
+        size,
+        sprite,
+        shrink: true,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+      });
+    }
+    // One central puff (the burst's central member): large, shrinks, same sprite.
+    this.m_explosions.push({x, y, age: 0, life: big ? 0.5 : 0.85, size: r * 1.4, sprite, shrink: true}); // prettier-ignore
+  }
+
+  /**
+   * FUMES rising off the crater FLOOR (the earth) — the original seeds a rising fire particle at
+   * each crater column; we step across the carved bowl (each column's floor follows the blast-circle
+   * arc) and emit a faint fire flicker plus a GREY smoke wisp rising from that ground point. The
+   * smoke is alpha-blended (not additive) so it can never stack into a bright blob, and both are kept
+   * SPARSE so they read as fumes drifting up out of the bowl — never a mass that fills the hollow
+   * centre. This is why the fumes come "from the earth", not from the blast core.
+   */
+  private emitCraterFumes(x: number, y: number, r: number): void {
+    if (!GameConfig.drawSmoke) return; // Graphics → Draw Smoke
+    const step = Math.max(7, Math.round(r * 0.14)); // sparse cadence across the bowl
+    for (let dx = -r; dx <= r; dx += step) {
+      const arc = Math.sqrt(Math.max(0, r * r - dx * dx)); // crater floor depth at this column
+      if (arc < 4) continue; // skip the featherweight rim columns
+      const fx = x + dx + between(-3, 3);
+      const fy = y + arc * 0.8; // the bowl floor = the earth
+      // A grey fume rising from that ground point — alpha-blended (never additive), buoyant so it
+      // drifts up and out of the bowl. No additive fire: the original gates crater fire OFF for a
+      // clean earth-remover, and it would only re-light the hollow centre.
+      this.add(fx, fy, between(-8, 8), between(-52, -20), {r: 150, g: 150, b: 150}, between(1.0, 2.0), between(3, 6), 'smoke'); // prettier-ignore
     }
   }
 
@@ -817,33 +842,6 @@ export class CParticleSystem {
     this.m_explosions.push({x, y, age: 0, life, size, sprite});
   }
 
-  /**
-   * The flare BURST: `count` copies of the weapon's own explosion flare (`expBitmap`),
-   * spawned near the blast point, drifting slowly outward, each starting at ~blast size and
-   * SHRINKING to nothing over a short life. Drawn additively, so the overlap reads as a
-   * bright flash that contracts inward and vanishes — the original's shrinking-ring look.
-   */
-  private emitShrinkBurst(x: number, y: number, r: number, sprite: string, count: number): void {
-    for (let i = 0; i < count; i++) {
-      const ang = Math.random() * TWO_PI;
-      const off = Math.random() * r * 0.55; // born within the blast disc
-      const size = r * (0.9 + Math.random() * 1.0); // starts BIG (≈ blast diameter)
-      const life = 0.32 + Math.random() * 0.22;
-      const spd = (off / life) * 0.5; // slow outward drift (contracting flares still fan out a little)
-      this.m_explosions.push({
-        x: x + Math.cos(ang) * off * 0.4,
-        y: y + Math.sin(ang) * off * 0.4,
-        age: 0,
-        life,
-        size,
-        sprite,
-        shrink: true,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-      });
-    }
-  }
-
   // ------------------------------------------------------------------ update
 
   /**
@@ -937,14 +935,8 @@ export class CParticleSystem {
             ctx.globalCompositeOperation = op;
           }
           ctx.globalAlpha = 1;
-        } else if (!this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, alpha)) {
-          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, d / 2);
-          g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha})`);
-          g.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, d / 2, 0, TWO_PI);
-          ctx.fill();
+        } else {
+          this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, alpha);
         }
       }
     }
@@ -969,14 +961,8 @@ export class CParticleSystem {
         ctx.globalAlpha = a;
         ctx.drawImage(spr.bitmap, e.x - d / 2, e.y - d / 2, d, d);
         ctx.globalAlpha = 1;
-      } else if (!this.blitGlow(ctx, e.x, e.y, d / 2, 255, 220, 150, a)) {
-        const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, d / 2);
-        g.addColorStop(0, `rgba(255,220,150,${a})`);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(e.x, e.y, d / 2, 0, TWO_PI);
-        ctx.fill();
+      } else {
+        this.blitGlow(ctx, e.x, e.y, d / 2, 255, 220, 150, a);
       }
     }
 
@@ -993,14 +979,8 @@ export class CParticleSystem {
         ctx.globalAlpha = a;
         ctx.drawImage(pspr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
         ctx.globalAlpha = 1;
-      } else if (!this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, a)) {
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, d / 2);
-        g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${a})`);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, d / 2, 0, TWO_PI);
-        ctx.fill();
+      } else {
+        this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, a);
       }
     }
 
@@ -1021,16 +1001,7 @@ export class CParticleSystem {
 
       // Blit the pre-baked glow (its baked 0.4 midpoint matches the old 3-stop
       // gradient); fall back to the gradient only where no canvas exists (tests).
-      if (!this.blitGlow(ctx, p.x, p.y, glow, p.r, p.g, p.b, alpha)) {
-        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
-        g.addColorStop(0, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha})`);
-        g.addColorStop(0.5, `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${alpha * 0.4})`);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, glow, 0, TWO_PI);
-        ctx.fill();
-      }
+      this.blitGlow(ctx, p.x, p.y, glow, p.r, p.g, p.b, alpha);
     }
 
     // Beam flashes — a soft coloured halo line under a thin white-hot core. The

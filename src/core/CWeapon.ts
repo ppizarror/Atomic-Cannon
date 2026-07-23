@@ -10,6 +10,7 @@ import weaponsRaw from '../data/weapons.json';
 import particlesRaw from '../data/particles.json';
 import {rgbToHex} from '../math/color';
 import {type ExtType, toExtType} from './weapons/ExtType';
+import {EXP, type ExpType, toExpType} from './weapons/ExpType';
 
 // The 20 weapon type strings present in the data.
 export type WeaponType =
@@ -197,10 +198,16 @@ export class CWeapon {
     return this.m_def.type === 'NUKE';
   }
 
-  /** "Nuke-class" blast — the top explosion tier (expType 4) or an actual NUKE. Drives the
+  /** "Nuke-class" blast — the top explosion tier ({@link EXP.NUKE}) or an actual NUKE. Drives the
    *  heavy shake / full-screen flash / big-fallout branches. */
   isNukeClass(): boolean {
-    return this.getExpType() === 4 || this.isNuclear();
+    return this.getExpType() === EXP.NUKE || this.isNuclear();
+  }
+
+  /** Cleaner-family (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
+   *  that carves terrain to unbury a tank — no blast damage, no ejecta, no fiery white-out. */
+  isCleaner(): boolean {
+    return this.getType() === 'Cleaner';
   }
 
   /** Big enough for the heavy blast FX: nuke-class, or a wide conventional hit
@@ -316,9 +323,11 @@ export class CWeapon {
     return this.m_def.flareBmp || this.m_def.expBitmap;
   }
 
-  /** Explosion style 0–4 (4 = nuke: biggest + full-screen white flash). */
-  getExpType(): number {
-    return this.m_def.expType || 0;
+  /** Explosion style as the authoritative {@link ExpType} token ({@link EXP.NUKE} = biggest +
+   *  full-screen white flash). Narrowed from the raw JSON field so callers can't compare bare
+   *  numbers (`=== 4`) — only `=== EXP.NUKE`. */
+  getExpType(): ExpType {
+    return toExpType(this.m_def.expType || 0);
   }
 
   /** The weapon's explosion flare sprite, e.g. `flares/00.bmp`. */
