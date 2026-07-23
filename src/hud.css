@@ -1510,6 +1510,13 @@ canvas {
 
 /* ---- Settings option pages (two-column widget rows) ---- */
 
+/* PlaySetup + settings sub-pages render the row list directly (no scroll host), so the list
+   centres vertically in the gap between title and subtitle via auto margins. (The scrollable
+   Settings ROOT uses .settings-scroll's `safe center` instead — don't route these through it.) */
+.settings-rows {
+  margin: auto 0;
+}
+
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-row {
   display: flex;

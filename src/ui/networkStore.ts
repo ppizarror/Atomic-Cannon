@@ -6,10 +6,11 @@
  */
 import {signal} from '@preact/signals';
 import {RoomClient, type RoomClientState} from '../net/roomClient';
-import type {ServerMessage} from '../net/protocol';
+import {NetGame} from '../net/netGame';
 import {normalizeRoomCode, isValidRoomCode} from '../net/roomCode';
 import {createPersistedSignal} from './persistedSignal';
 import {roster} from './playersStore';
+import {game, screen, paused} from './store';
 
 const initialState: RoomClientState = {
   phase: 'idle',
@@ -34,21 +35,28 @@ export const playerName = nameStore.signal;
 export const setPlayerName = (name: string): void => nameStore.set(name);
 
 let client: RoomClient | null = null;
-
-function onGameMessage(_msg: ServerMessage): void {
-  // Phase 2: route startGame / turnBegin / cmd / stateUpdate into the game bridge.
-}
+let netGame: NetGame | null = null;
 
 function makeClient(): RoomClient {
   client?.close();
-  client = new RoomClient({
+  const c = new RoomClient({
     identity: {name: playerName.value.trim() || 'Player', color: roster.value[0]?.color},
     onState: s => {
       netState.value = s;
     },
-    onGameMessage,
+    onGameMessage: msg => netGame?.handle(msg),
   });
-  return client;
+  client = c;
+  // The bridge boots the match from `startGame` and enters the battle screen.
+  netGame = new NetGame(c, {
+    controller: game(),
+    onMatchStart: () => {
+      screen.value = 'battle';
+      game().setPaused(false);
+      paused.value = false;
+    },
+  });
+  return c;
 }
 
 function fail(message: string): void {
@@ -80,6 +88,7 @@ export const startMatch = (): void => client?.startMatch();
 export function leaveRoom(): void {
   client?.leave();
   client = null;
+  netGame = null;
   netState.value = initialState;
 }
 
@@ -87,5 +96,6 @@ export function leaveRoom(): void {
 export function resetNet(): void {
   client?.close();
   client = null;
+  netGame = null;
   netState.value = initialState;
 }

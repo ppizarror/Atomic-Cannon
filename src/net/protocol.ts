@@ -30,22 +30,24 @@ export interface RoomSettings {
   readonly battles: number;
 }
 
-/** Deltas produced by the acting client after it simulates its own shot. */
+/**
+ * Authoritative post-turn state the acting client broadcasts once its shot resolves;
+ * everyone applies it so tanks + terrain + wind stay in sync. Structurally matches the
+ * controller's NetSnapshot (identity mapping, no per-field translation).
+ */
 export interface ShotResult {
-  /** Run-length dirty-region heightmap diff: [startCol, Int16 heights...] spans. */
-  readonly land?: ReadonlyArray<{readonly x: number; readonly h: readonly number[]}>;
-  /** Per-tank post-shot state (hp/pos/credits/kickback landing). */
-  readonly tanks?: ReadonlyArray<{
-    readonly id: number;
+  readonly tanks: ReadonlyArray<{
     readonly x: number;
     readonly y: number;
-    readonly hp: number;
-    readonly credits?: number;
+    readonly life: number;
+    readonly shield: number;
+    readonly armor: number;
+    readonly hazmat: number;
+    readonly credits: number;
   }>;
-  /** Items created/removed this shot (crates, mines, sentries). */
-  readonly items?: ReadonlyArray<Record<string, number | string>>;
-  /** New shared wind vector after the turn (server keeps wind authoritative). */
-  readonly wind?: {readonly x: number; readonly y: number};
+  /** Full terrain heightmap (per-column surface Y). */
+  readonly heights: readonly number[];
+  readonly wind: {readonly x: number; readonly y: number};
 }
 
 // ── Client → room ──────────────────────────────────────────────────────────

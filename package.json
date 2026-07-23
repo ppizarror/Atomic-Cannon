@@ -10,19 +10,19 @@
   },
   "packageManager": "pnpm@11.5.2",
   "scripts": {
+    "build": "vite build",
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test",
+    "deploy:net": "wrangler deploy",
     "dev": "vite",
     "dev:net": "wrangler dev",
-    "deploy:net": "wrangler deploy",
-    "build": "vite build",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.worker.json",
-    "lint": "oxlint --deny-warnings",
-    "lint:fix": "oxlint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"worker/**/*.ts\" \"tests/**/*.ts\" \"*.{json,ts}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"worker/**/*.ts\" \"tests/**/*.ts\" \"*.{json,ts}\"",
-    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.worker.json"
   },
   "dependencies": {
     "@preact/signals": "^2.9.4",
