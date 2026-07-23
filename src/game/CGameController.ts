@@ -8,6 +8,7 @@
  * - Wind and physics parameters
  */
 
+import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS} from '../core/CTank';
 import {Roster} from '../core/CRoster';
@@ -92,6 +93,7 @@ export interface WarTeamRow {
   color: string;
   kills: number;
   deaths: number;
+  points: number; // Rounds/Points mode: team total net damage dealt (the "Points" column)
   lifePct: number;
   accuracyPct: number;
   damagePerHit: number;
@@ -110,20 +112,6 @@ export interface WarStandings {
   prompt: string; // "Click anywhere to play next battle." / "…exit to menu."
   warOver: boolean;
 }
-
-// Bot names
-const BOT_NAMES = [
-  'Whopper',
-  'BrainBot',
-  'RandBot',
-  'AlphaBot',
-  'MechaBot',
-  'FlashBot',
-  'GammaBot',
-  'ShazBot',
-  'BetaBot',
-  'DeltaBot',
-];
 
 interface LandConfig {
   bg: string;
@@ -159,15 +147,13 @@ const controlWeaponIndex = (): number =>
 // headroom for deployed Sentry turrets, past which deploySentry no-ops.
 const MAX_FIELD_TANKS = 24;
 // The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the
-// rapid Machine Gun (Minigun variant) — found by name, matching the original's lookup.
-const SENTRY_SHELL_WEAPON = Math.max(
-  0,
-  WEAPON_DATABASE.findIndex(w => w.name === 'Shell'),
-);
-const SENTRY_MG_WEAPON = (() => {
-  const i = WEAPON_DATABASE.findIndex(w => w.name === 'Machine Gun');
-  return i >= 0 ? i : SENTRY_SHELL_WEAPON; // fall back to Shell if the MG is disabled/missing
-})();
+// rapid Machine Gun (Minigun variant). The Turret uses the Shell staple; the Minigun looks
+// the Machine Gun up by its STABLE id (never the localised display name) — falling back to
+// the Shell if the Machine Gun is disabled/absent.
+const sentryMachineGunIndex = (): number => {
+  const i = WEAPON_DATABASE.findIndex(w => w.id === 'machine.gun');
+  return i >= 0 ? i : getDefaultWeaponIndex();
+};
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
 
@@ -430,8 +416,9 @@ export class CGameController implements ShotWorld {
 
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
     for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
+      const botNames = strings.value.botNames;
       const cfg = roster[p] ?? {
-        name: p === 0 ? 'Player' : BOT_NAMES[p % BOT_NAMES.length],
+        name: p === 0 ? strings.value.game.defaultPlayer : botNames[p % botNames.length],
         model: '',
         color: TEAM_COLORS[p] ?? '#0000ff',
       };
@@ -443,7 +430,8 @@ export class CGameController implements ShotWorld {
       }
       const human = p < this.m_humanCount;
       for (let k = 0; k < perTeam && spawns.length < MAX_TANKS; k++) {
-        const name = perTeam > 1 ? `${cfg.name} ${k + 1}` : cfg.name;
+        const name =
+          perTeam > 1 ? fmt(strings.value.game.teamMember, {name: cfg.name, n: k + 1}) : cfg.name;
         spawns.push({name, color: cfg.color, model: cfg.model, team, human});
       }
     }
@@ -1423,7 +1411,7 @@ export class CGameController implements ShotWorld {
     this.m_bubbles.push({
       id: ++this.m_bubbleSeq,
       speaker,
-      text: `${speaker.getName()}: ${line}`,
+      text: fmt(strings.value.game.bubble, {name: speaker.getName(), line}),
       age: 0,
     });
   }
@@ -1730,25 +1718,13 @@ export class CGameController implements ShotWorld {
   // ========================================================================
 
   /** True when the war is over AND the human's team leads the final standings — the
-   *  only case the legacy fires victory fireworks (leader by kills, tie → team life%). */
+   *  only case the legacy fires victory fireworks. Leader is mode-aware (Deathmatch: kills;
+   *  Rounds/Points: points), via getLeadingTeam — so a points win with no survivors still
+   *  counts. */
   private isHumanWarVictory(): boolean {
     if (!this.getWarOver()) return false;
     if (!this.m_tanks.some(t => t.isHuman())) return false;
-    if (!this.m_tanks.some(t => t.isAlive())) return false; // all dead → no victory
-    const teams = new Map<number, {kills: number; life: number; n: number; human: boolean}>();
-    for (const t of this.m_tanks) {
-      if (t.getTankType() === 'Sentry') continue;
-      let e = teams.get(t.getTeamId());
-      if (!e) teams.set(t.getTeamId(), (e = {kills: 0, life: 0, n: 0, human: false}));
-      e.kills += t.getKills();
-      e.life += clamp01(t.getHealth().nLife / t.getMaxLife());
-      e.n++;
-      if (t.isHuman()) e.human = true;
-    }
-    const leader = [...teams.values()].sort(
-      (a, b) => b.kills - a.kills || b.life / b.n - a.life / a.n,
-    )[0];
-    return leader?.human ?? false;
+    return this.getLeadingTeam()?.human ?? false;
   }
 
   /** Launch a firework: pick a random sky target above the terrain and send a rocket up
@@ -1974,20 +1950,20 @@ export class CGameController implements ShotWorld {
       case 'credits':
         tank.addCredits(c.amount);
         this.poolTeamCredits(tank);
-        msg = `You found ${c.amount} credits.`;
+        msg = fmt(strings.value.game.foundCredits, {n: c.amount});
         color = '#ffe27a';
         break;
       case 'health': {
         const gain = clamp(tank.getMaxLife() - tank.getHealth().nLife, 0, c.amount);
         tank.addLife(gain);
-        msg = `You gained ${gain} health.`;
+        msg = fmt(strings.value.game.gainedHealth, {n: gain});
         color = '#bfe9b0';
         break;
       }
       case 'weapon':
       case 'bomb':
         if (tank.isHuman() && c.weaponIndex >= 0) this.m_economy.grant(c.weaponIndex);
-        msg = `You found a ${getWeapon(c.weaponIndex).getName()} weapon.`;
+        msg = fmt(strings.value.game.foundWeapon, {weapon: getWeapon(c.weaponIndex).getName()});
         color = '#bfe9b0';
         break;
     }
@@ -2133,16 +2109,21 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * End the battle immediately when only one TEAM (or none) is left standing. No-op
-   * while two or more teams remain. `endTurn` re-checks the same condition and hands off
-   * to the BattleEnd state (winner flag + win/lose jingle) rather than passing the turn
-   * on, so this only ever finalises the battle — it never skips a live player's turn.
+   * Finalise the battle immediately when it's decided by a PASSIVE death (radiation, a
+   * mine under a settling tank) rather than a resolving shot. Mode-aware, matching endTurn:
+   *  • Deathmatch — decided when ≤ 1 team survives.
+   *  • Rounds/Points — an elimination never ends it (only the round count does); a total
+   *    wipeout still ends any mode.
+   * `endTurn` re-checks the same condition, so this only ever finalises — it never skips a
+   * live player's turn.
    */
   private endBattleIfDecided(): void {
     // Only while a turn is live: if the turn timer already forfeited into BattleEnd
     // earlier this tick, endTurn has run — a second call would double the jingle.
     if (this.m_gameState !== EGameState.Battle) return;
-    if (this.livingTeamCount() <= 1) this.endTurn();
+    const rounds = this.m_gameType === EGameType.Rounds;
+    const teamsLeft = this.livingTeamCount();
+    if (teamsLeft === 0 || (!rounds && teamsLeft <= 1)) this.endTurn();
   }
 
   /**
@@ -2376,12 +2357,12 @@ export class CGameController implements ShotWorld {
   deploySentry(x: number, _y: number, owner: CTank | null, weaponIndex: number): void {
     if (this.m_tanks.length >= MAX_FIELD_TANKS) return; // never grow the field without bound
     const w = getWeapon(weaponIndex);
-    const minigun = w.getName() === 'Sentry Minigun';
+    const minigun = w.getId() === 'sentry.minigun';
     const team = owner ? owner.getTeamId() : 0;
     // The badge shows the OWNER's name (a sentry inherits its deployer's display name);
     // "Sentry" is only the internal TYPE — it drives the sprites + the behaviour guards
     // (turn/standings/taunt exclusions), never the on-field label.
-    const sentry = new CTank(owner ? owner.getName() : 'Sentry', team);
+    const sentry = new CTank(owner ? owner.getName() : strings.value.game.sentry, team);
     sentry.setTankType('Sentry'); // Sentry body/turret/wreck sprites
     if (owner) sentry.setColor(owner.getColor()); // team identity + tint
     sentry.setHuman(false);
@@ -2749,54 +2730,22 @@ export class CGameController implements ShotWorld {
       : true;
   }
 
-  /** End the current turn: declare a winner, or hand off to the next player. */
+  /** End the current turn: declare a winner, or hand off to the next player. The
+   *  end-of-game trigger is mode-aware:
+   *   • Deathmatch ends the instant ≤ 1 TEAM survives (the killing shot ends the battle) —
+   *     a squad ends it when every enemy team is wiped, not only on the last tank.
+   *   • Rounds/Points never ends early on eliminations; it plays the full round count and
+   *     scores by points. A total wipeout (no team left) still ends any mode. */
   private endTurn(): void {
     this.m_turnTimerRunning = false; // the clock never outlives its turn
-    // The battle is decided by the living PLAYERS — deployed sentries don't count toward
-    // (or win) the battle, and are cleared at the next battle regardless.
-    const alive = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
-    // Decided when ≤ 1 TEAM survives — so a squad ends the battle when every enemy team is
-    // wiped, even if it still fields several tanks (not only when one tank is left).
-    if (this.livingTeamCount() <= 1) {
-      this.m_gameState = EGameState.BattleEnd;
-      this.m_battleEndTime = 0; // restart the winner-flag animation
-      // Victory-only sky fireworks (war end, the human's team leads the final standings).
-      this.m_showFireworks = this.isHumanWarVictory();
-      this.m_fireworks = [];
-      this.m_rockets = [];
-      this.m_fireworkTimer = 0.35; // first burst shortly after the screen appears
-      if (this.m_showFireworks) loadBurstPixels(); // warm the burst bmps
-      // The battle victor: the winning team's top tank by kills (all survivors are one
-      // team here). It names the winner banner, plants the flag, and gloats a post-fire
-      // line through the taunt-bubble system — the bubble persists on the standings screen
-      // because bubbles only age during a live turn (updateTaunts runs in Battle only).
-      const victor = alive.length
-        ? alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a))
-        : null;
-      this.m_winnerName = victor ? victor.getName() : '';
-      const victorLine = pickTaunt('postFire');
-      if (victor && victorLine && GameConfig.chatter && victor.getTankType() !== 'Sentry') {
-        this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== victor);
-        this.m_bubbles.push({
-          id: ++this.m_bubbleSeq,
-          speaker: victor,
-          text: `${victor.getName()}: ${victorLine}`,
-          age: 0,
-        });
-      }
-      this.m_audio?.stopTankMove();
-      // Win/lose jingle — victory if the surviving team is the human's (any survivor human).
-      const humanWon = alive.some(t => t.isHuman());
-      if (humanWon) this.m_audio?.battleWon();
-      else this.m_audio?.battleLost();
-      // Record this battle's outcome for the local human's Battle Heroes tally — only in
-      // matches a human is actually playing (skip all-AI demo games). The UI consumes it
-      // once (takeBattleOutcome) to advance the persisted won/lost counters.
-      if (this.m_tanks.some(t => t.isHuman())) {
-        this.m_pendingBattleOutcome = humanWon ? 'won' : 'lost';
-      }
+    const rounds = this.m_gameType === EGameType.Rounds;
+    const teamsLeft = this.livingTeamCount();
+
+    if (teamsLeft === 0 || (!rounds && teamsLeft <= 1)) {
+      this.finishBattle();
       return;
     }
+
     // Post-fire gloat: as the turn passes on after a shot, the tank that just fired
     // may taunt a random post-fire line (Chatter, 8% chance, on the turn hand-off).
     // Only after an actual shot, never a timed-out forfeit.
@@ -2815,7 +2764,83 @@ export class CGameController implements ShotWorld {
       this.awardSurvivorCredit(this.m_creditRound);
     }
     this.awardSurvivorCredit(this.m_creditTurn);
+
+    // Rounds/Points: the game ends once the configured number of rounds has been played
+    // (the counter runs 1..N; passing N ends it), regardless of how many tanks are dead.
+    if (rounds && this.m_currentRound > this.m_totalRounds) {
+      this.finishBattle();
+      return;
+    }
     this.beginTurn();
+  }
+
+  /** Hand off to the BattleEnd state and declare the winner (mode-aware). */
+  private finishBattle(): void {
+    this.m_gameState = EGameState.BattleEnd;
+    this.m_battleEndTime = 0; // restart the winner-flag animation
+    // Victory-only sky fireworks (war end, the human's team leads the final standings).
+    this.m_showFireworks = this.isHumanWarVictory();
+    this.m_fireworks = [];
+    this.m_rockets = [];
+    this.m_fireworkTimer = 0.35; // first burst shortly after the screen appears
+    if (this.m_showFireworks) loadBurstPixels(); // warm the burst bmps
+
+    // The winner is the LEADING team — Deathmatch: most kills; Rounds/Points: most points
+    // (Σ net damage), which may be an entirely dead team. Its representative names the
+    // winner banner, plants the flag, and gloats a post-fire line through the taunt-bubble
+    // system (the bubble persists on the standings screen — bubbles only age in Battle).
+    // A Rounds tie across all teams → no winner (a Draw), so no banner name.
+    const leader = this.getLeadingTeam();
+    this.m_winnerName = leader ? leader.members[0].getName() : '';
+    const speaker = leader?.rep ?? null;
+    const victorLine = pickTaunt('postFire');
+    if (speaker && victorLine && GameConfig.chatter && speaker.getTankType() !== 'Sentry') {
+      this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== speaker);
+      this.m_bubbles.push({
+        id: ++this.m_bubbleSeq,
+        speaker,
+        text: fmt(strings.value.game.bubble, {name: speaker.getName(), line: victorLine}),
+        age: 0,
+      });
+    }
+    this.m_audio?.stopTankMove();
+    // Win/lose jingle — victory if the leading team is the human's.
+    const humanWon = leader?.human ?? false;
+    if (humanWon) this.m_audio?.battleWon();
+    else this.m_audio?.battleLost();
+    // Record this battle's outcome for the local human's Battle Heroes tally — only in
+    // matches a human is actually playing (skip all-AI demo games). The UI consumes it
+    // once (takeBattleOutcome) to advance the persisted won/lost counters.
+    if (this.m_tanks.some(t => t.isHuman())) {
+      this.m_pendingBattleOutcome = humanWon ? 'won' : 'lost';
+    }
+  }
+
+  /** The team currently leading the standings, its representative tank, and whether it's
+   *  the human's — mode-aware. Deathmatch: most kills (tie → team average life%).
+   *  Rounds/Points: most points (Σ net damage dealt); an exact tie across ALL teams → null
+   *  (a Draw). Also null when no player teams remain. The representative is the team's own
+   *  top scorer — used for the winner flag/gloat — which in Rounds mode may be a dead tank. */
+  private getLeadingTeam(): {members: CTank[]; rep: CTank; human: boolean} | null {
+    const teams = [...this.groupTanksByTeam(t => t.getTankType() !== 'Sentry').values()];
+    if (teams.length === 0) return null;
+    const rounds = this.m_gameType === EGameType.Rounds;
+    const score = (t: CTank) => (rounds ? t.getDamageDealt() : t.getKills());
+    const agg = teams.map(members => {
+      let s = 0,
+        life = 0;
+      for (const m of members) {
+        s += score(m);
+        life += clamp01(m.getHealth().nLife / m.getMaxLife());
+      }
+      return {members, score: s, life: life / members.length};
+    });
+    // Rounds: an exact tie across every team is a Draw (no winner).
+    if (rounds && agg.length > 1 && agg.every(a => a.score === agg[0].score)) return null;
+    agg.sort((a, b) => b.score - a.score || b.life - a.life);
+    const top = agg[0];
+    const rep = top.members.reduce((a, b) => (score(b) > score(a) ? b : a));
+    return {members: top.members, rep, human: top.members.some(m => m.isHuman())};
   }
 
   /**
@@ -3240,7 +3265,7 @@ export class CGameController implements ShotWorld {
     this.m_angle = norm;
     this.m_power = SENTRY_FIRE_POWER;
 
-    const wi = this.m_sentryMinigun.has(sentry) ? SENTRY_MG_WEAPON : SENTRY_SHELL_WEAPON;
+    const wi = this.m_sentryMinigun.has(sentry) ? sentryMachineGunIndex() : getDefaultWeaponIndex();
     sentry.setWeaponIndex(wi);
     this.m_currentWeaponIndex = wi;
 
@@ -3702,13 +3727,11 @@ export class CGameController implements ShotWorld {
     return this.m_winnerName;
   }
 
-  /** The tank the winner flag plants beside — the battle victor (top surviving tank
-   *  by kills), or null in a draw. */
+  /** The tank the winner flag plants beside — the leading team's representative (top
+   *  scorer: kills in Deathmatch, points in Rounds), or null in a draw. In Rounds/Points
+   *  mode this may be a dead tank (the flag then plants beside its wreck). */
   getWinnerTank(): CTank | null {
-    // The flag plants beside a winning PLAYER, never a deployed sentry.
-    const alive = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
-    if (!alive.length) return null;
-    return alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a));
+    return this.getLeadingTeam()?.rep ?? null;
   }
 
   /** DEV (`?endtest=battle|war`): fabricate some stats and end the battle so the
@@ -3790,6 +3813,7 @@ export class CGameController implements ShotWorld {
         color: members[0].getColor(),
         kills,
         deaths,
+        points: Math.round(dmg), // team net damage dealt = the Points metric
         lifePct: (lifeSum / members.length) * 100,
         accuracyPct: shots > 0 ? (hits / shots) * 100 : 0,
         damagePerHit: hits !== 0 ? dmg / hits : 0,
@@ -3798,46 +3822,57 @@ export class CGameController implements ShotWorld {
       });
     }
 
-    // Leader = most kills, ties broken by higher team life% (the original's sort).
-    rows.sort((a, b) => b.kills - a.kills || b.lifePct - a.lifePct);
-    if (rows.length) rows[0].isLeader = true;
-    const leaderName = rows[0]?.name ?? '';
+    // Sort + leader are mode-aware: Rounds/Points by points, Deathmatch by kills (tie →
+    // higher team life%). The leader (getLeadingTeam) also decides Rounds ties → Draw.
+    const rounds = !deathmatch;
+    rows.sort((a, b) =>
+      rounds
+        ? b.points - a.points || b.lifePct - a.lifePct
+        : b.kills - a.kills || b.lifePct - a.lifePct,
+    );
+    const leader = this.getLeadingTeam();
+    const draw = !leader && rows.length > 0; // Rounds only: every team finished level
+    if (leader && rows.length) rows[0].isLeader = true;
+    const leaderName = leader ? rows[0].name : '';
 
-    const title = !leaderName
-      ? ''
-      : !deathmatch
-        ? `${leaderName} wins the battle!`
-        : warOver
-          ? `${leaderName} wins the war!`
-          : `${leaderName} is winning the war.`;
+    const ws = strings.value.warStandings;
+    const title = draw
+      ? ws.draw
+      : !leaderName
+        ? ''
+        : rounds
+          ? fmt(ws.winsBattle, {name: leaderName})
+          : warOver
+            ? fmt(ws.winsWar, {name: leaderName})
+            : fmt(ws.winningWar, {name: leaderName});
 
     const subtitle: string[] = [];
     if (deathmatch && !warOver) {
-      subtitle.push('The War is not over yet.');
-      subtitle.push(`Battle ${this.m_currentBattle} of ${this.m_totalBattles} completed.`);
+      subtitle.push(ws.notOver);
+      subtitle.push(fmt(ws.battleCompleted, {n: this.m_currentBattle, total: this.m_totalBattles}));
     }
 
     // Victory!/Defeat! banner — ONLY when the whole war is over (the legacy war-end
-    // screen). Between battles there is no banner. Reflects the human's outcome: a win
-    // if the human's team leads the final standings.
-    const banner = !warOver
-      ? ''
-      : !this.m_tanks.some(t => t.isAlive())
-        ? 'All tanks are dead!'
-        : !this.m_tanks.some(t => t.isHuman())
-          ? '' // all-bots (demo): no human perspective to declare
-          : rows[0]?.isHuman
-            ? 'Victory!'
-            : 'Defeat!';
+    // screen). Between battles there is no banner. Reflects the human's outcome: a win if
+    // the human's team leads. Rounds/Points is decided by points (a winner even with no
+    // survivors), so it never shows "all dead"; a level tie shows the Draw banner.
+    let banner = '';
+    if (warOver) {
+      if (draw) banner = ws.draw;
+      else if (deathmatch && !this.m_tanks.some(t => t.isAlive())) banner = ws.allDead;
+      else if (!this.m_tanks.some(t => t.isHuman()))
+        banner = ''; // all-bots (demo)
+      else banner = (leader?.human ?? false) ? ws.victory : ws.defeat;
+    }
 
     return {
       title,
       banner,
       subtitle,
-      winCondition: deathmatch ? 'The team with the most kills or life wins.' : '',
+      winCondition: deathmatch ? ws.winConditionKills : '',
       rows,
-      pointsMode: !deathmatch,
-      prompt: warOver ? 'Click anywhere to exit to menu.' : 'Click anywhere to play next battle.',
+      pointsMode: rounds,
+      prompt: warOver ? ws.exitPrompt : ws.nextPrompt,
       warOver,
     };
   }
@@ -4042,6 +4077,23 @@ export class CGameController implements ShotWorld {
 
   getShotCount(): number {
     return this.m_shotsFired;
+  }
+
+  /** The top-left status line: "Round N of M" in Rounds/Points, else "Battle N of M -
+   *  Shot X" in Deathmatch. */
+  getStatusLine(): string {
+    const g = strings.value.game;
+    if (this.m_gameType === EGameType.Rounds) {
+      return fmt(g.statusRound, {
+        round: Math.min(this.m_currentRound, this.m_totalRounds),
+        total: this.m_totalRounds,
+      });
+    }
+    return fmt(g.statusBattle, {
+      battle: this.m_currentBattle,
+      total: this.m_totalBattles,
+      shot: this.m_shotsFired,
+    });
   }
 
   getBattleNum(): number {

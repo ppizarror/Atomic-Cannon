@@ -10,7 +10,9 @@ import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from '../src/core/CWeapon';
 
 const SHELL = getDefaultWeaponIndex();
-const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
+// A buyable weapon: any costed weapon that isn't the free staple. Looked up by cost (not
+// by display name) so it's independent of the i18n weapon-name scheme.
+const NUKE = WEAPON_DATABASE.findIndex(w => w.index !== SHELL && (w.cost ?? 0) > 0);
 
 type GCInternals = {beginTurn(): void};
 const priv = (gc: CGameController) => gc as unknown as GCInternals;

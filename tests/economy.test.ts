@@ -4,9 +4,9 @@
 import {describe, it, expect} from 'vitest';
 
 import {CEconomy, UNLIMITED} from '../src/core/CEconomy';
-import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 
-const idx = (n: string) => WEAPON_DATABASE.findIndex(w => w.name === n);
+const idx = (n: string) => WEAPON_DATABASE.findIndex(w => weaponName(w) === n);
 const ROCKET = idx('Rocket'); // cheap
 const NUKE = idx('Uranium Nuke'); // expensive
 const rocketCost = WEAPON_DATABASE[ROCKET].cost;
