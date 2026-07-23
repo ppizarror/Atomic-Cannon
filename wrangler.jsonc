@@ -22,5 +22,16 @@
     "not_found_handling": "single-page-application",
   },
 
+  // Per-IP room-creation limiter (used by /api/new). period must be 10 or 60.
+  "ratelimits": [
+    {"name": "ROOM_LIMIT", "namespace_id": "1", "simple": {"limit": 30, "period": 60}},
+  ],
+
+  // ── Custom domain (optional) ──────────────────────────────────────────────
+  // To serve from your own domain instead of *.workers.dev, add the domain to this
+  // Cloudflare account, then uncomment (the zone must be on Cloudflare):
+  //   "routes": [{"pattern": "atomic.example.com", "custom_domain": true}],
+  //   "workers_dev": false,
+
   "observability": {"enabled": true},
 }

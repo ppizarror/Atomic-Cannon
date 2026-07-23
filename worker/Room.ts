@@ -153,6 +153,11 @@ export class Room {
   // ── Message handling ────────────────────────────────────────────────────────
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+    // Cap frame size (the biggest legit message is a shotResult with a full 5-screen
+    // heightmap, ~30 KB of JSON) so a client can't flood the room with huge payloads.
+    if (text.length > 128 * 1024) {
+      return this.send(ws, {t: 'error', code: 'bad_message', message: 'message too large'});
+    }
     const msg = parseClientMessage(text);
     if (!msg) return this.send(ws, {t: 'error', code: 'bad_message', message: 'unparseable'});
 

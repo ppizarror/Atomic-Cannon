@@ -10,6 +10,8 @@ export {Room} from './Room';
 interface Env {
   ROOM: DurableObjectNamespace;
   ASSETS: Fetcher;
+  /** Per-IP limiter on room creation (see `ratelimits` in wrangler.jsonc). */
+  ROOM_LIMIT: RateLimit;
 }
 
 const json = (data: unknown, status = 200): Response =>
@@ -24,7 +26,11 @@ export default {
 
     // Mint a fresh, shareable room code. (Collision odds at 31^6 are negligible;
     // the DO is created lazily on first connect, so no reservation is needed.)
+    // Rate-limited per client IP so one host can't spin up rooms in a loop.
     if (url.pathname === '/api/new') {
+      const ip = req.headers.get('CF-Connecting-IP') ?? 'anon';
+      const {success} = await env.ROOM_LIMIT.limit({key: ip});
+      if (!success) return json({error: 'slow down — too many rooms'}, 429);
       return json({code: newRoomCode()});
     }
 
