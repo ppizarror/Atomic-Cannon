@@ -17,6 +17,8 @@
  * receive {cmd:'meta'|'end'|'err'}.
  */
 
+import {GainChannel} from './GainChannel';
+
 const MUSIC_BASE = '/assets/music/';
 const WORKLET_URL = '/audio/chiptune3.worklet.js';
 
@@ -24,23 +26,16 @@ const WORKLET_URL = '/audio/chiptune3.worklet.js';
 const LOOP_FOREVER = -1;
 const PLAY_ONCE = 0;
 
-export class CMusicPlayer {
-  private m_ctx: AudioContext;
-  private m_gain: GainNode; // master music volume node
+export class CMusicPlayer extends GainChannel {
   private m_node: AudioWorkletNode | null = null;
   private m_ready: Promise<void>;
-  private m_enabled = true;
-  private m_volume = 100; // 0..100 (options slider)
   private m_current: string | null = null; // filename currently requested
   private m_loop = false; // whether the current track loops
   private m_onEnded: (() => void) | null = null;
   private m_buffers = new Map<string, ArrayBuffer>();
 
   constructor(ctx: AudioContext, destination: AudioNode) {
-    this.m_ctx = ctx;
-    this.m_gain = ctx.createGain();
-    this.m_gain.gain.value = this.m_volume / 100;
-    this.m_gain.connect(destination);
+    super(ctx, destination);
     this.m_ready = this.initNode();
   }
 
@@ -73,22 +68,9 @@ export class CMusicPlayer {
     else if (msg.cmd === 'err') console.warn('libopenmpt error:', msg.val);
   }
 
-  setEnabled(on: boolean): void {
-    this.m_enabled = on;
-    if (!on) this.stop();
-  }
-
-  isEnabled(): boolean {
-    return this.m_enabled;
-  }
-
-  setVolume(v: number): void {
-    this.m_volume = Math.max(0, Math.min(100, v));
-    this.m_gain.gain.value = this.m_volume / 100;
-  }
-
-  getVolume(): number {
-    return this.m_volume;
+  /** Disabling the music channel stops the current track. */
+  protected onDisable(): void {
+    this.stop();
   }
 
   /** Fires when a non-looping track finishes (win/lose jingles). */

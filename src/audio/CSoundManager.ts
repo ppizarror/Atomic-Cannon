@@ -14,6 +14,8 @@
  *    driven by the movement state machine.
  */
 
+import {GainChannel} from './GainChannel';
+
 const SOUND_BASE = '/assets/sound/';
 
 // Minimum gap before the same-named effect may retrigger. ~45ms ≈ 3 frames at
@@ -26,22 +28,15 @@ interface LoopHandle {
   gain: GainNode;
 }
 
-export class CSoundManager {
-  private m_ctx: AudioContext;
-  private m_sfxGain: GainNode; // master SFX volume node
+export class CSoundManager extends GainChannel {
   private m_buffers = new Map<string, AudioBuffer>();
   private m_loading = new Map<string, Promise<AudioBuffer | null>>();
   private m_lastPlay = new Map<string, number>(); // throttle timestamps (ms)
   private m_loops = new Map<string, LoopHandle>(); // named looping sounds
-  private m_enabled = true;
-  private m_volume = 100; // 0..100 (matches the options slider)
   private m_worldWidth = 1; // for world-X → pan
 
   constructor(ctx: AudioContext, destination: AudioNode) {
-    this.m_ctx = ctx;
-    this.m_sfxGain = ctx.createGain();
-    this.m_sfxGain.gain.value = 1;
-    this.m_sfxGain.connect(destination);
+    super(ctx, destination);
   }
 
   /** World width in pixels — the pan axis. Set once the scene size is known. */
@@ -49,23 +44,9 @@ export class CSoundManager {
     this.m_worldWidth = Math.max(1, w);
   }
 
-  setEnabled(on: boolean): void {
-    this.m_enabled = on;
-    if (!on) this.stopAllLoops();
-  }
-
-  isEnabled(): boolean {
-    return this.m_enabled;
-  }
-
-  /** Options-slider volume, 0..100. */
-  setVolume(v: number): void {
-    this.m_volume = Math.max(0, Math.min(100, v));
-    this.m_sfxGain.gain.value = this.m_volume / 100;
-  }
-
-  getVolume(): number {
-    return this.m_volume;
+  /** Disabling the SFX channel also cuts any looping sounds (movement / jet). */
+  protected onDisable(): void {
+    this.stopAllLoops();
   }
 
   /**
@@ -147,7 +128,7 @@ export class CSoundManager {
       tail = g;
     }
     src.connect(panner);
-    tail.connect(this.m_sfxGain);
+    tail.connect(this.m_gain);
     src.start();
     src.onended = () => {
       try {
@@ -190,7 +171,7 @@ export class CSoundManager {
     const gain = this.m_ctx.createGain();
     src.connect(panner);
     panner.connect(gain);
-    gain.connect(this.m_sfxGain);
+    gain.connect(this.m_gain);
     src.start();
     this.m_loops.set(name, {src, panner, gain});
   }
