@@ -15,6 +15,7 @@ import {Button} from './Button';
 import {openSettingsPage, uiClick} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
 import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
+import {usePointerDrag} from './usePointerDrag';
 
 function TankPreview({model, color}: {model: string; color: string}) {
   const [src, setSrc] = useState('');
@@ -49,7 +50,6 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
   }, [data, value]);
 
   const imgRef = useRef<HTMLImageElement>(null);
-  const dragging = useRef(false);
 
   // Sample the palette at the pointer (clamped to the bar) and commit the colour.
   const pickAt = (clientX: number, clientY: number) => {
@@ -60,21 +60,13 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
     onPick(samplePalette(data, fx, fy));
   };
 
-  const onDown = (e: PointerEvent) => {
-    dragging.current = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    pickAt(e.clientX, e.clientY);
-    uiClick();
-    e.preventDefault();
-  };
-  const onMove = (e: PointerEvent) => {
-    if (dragging.current) pickAt(e.clientX, e.clientY);
-  };
-  const onUp = (e: PointerEvent) => {
-    dragging.current = false;
-    const el = e.currentTarget as HTMLElement;
-    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
-  };
+  const drag = usePointerDrag<HTMLImageElement>({
+    onStart: e => {
+      pickAt(e.clientX, e.clientY);
+      uiClick();
+    },
+    onMove: e => pickAt(e.clientX, e.clientY),
+  });
 
   return (
     <div class="player-color">
@@ -86,10 +78,7 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
           class="player-palette"
           src="/assets/gui/color pallette.bmp"
           alt="colour palette"
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          onPointerCancel={onUp}
+          {...drag}
         />
         {mark ? (
           <span

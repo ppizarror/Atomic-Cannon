@@ -22,11 +22,11 @@ import {
   depotBuy,
   depotSell,
   depotAutoBuy,
-  loadWeaponIcon,
   loadUiBmp,
   game,
   uiClick,
 } from './store';
+import {WeaponIcon} from './WeaponIcon';
 import {
   WEAPON_DATABASE,
   getDefaultWeaponIndex,
@@ -54,11 +54,6 @@ const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native ou
 const powerOf = weaponPower;
 
 // ---- small leaf pieces ------------------------------------------------------
-function WeaponIcon({name}: {name: string}) {
-  const src = useAsyncImage(() => loadWeaponIcon(name, 16), [name]);
-  return src ? <img class="dep-icon" src={src} alt="" /> : <span class="dep-icon" />;
-}
-
 // The magenta-keyed sort caret next to the active column header. Keeps a fixed-size
 // placeholder while the bitmap loads so nothing reflows and no broken-image glyph shows.
 function SortArrow({dir}: {dir: 1 | -1}) {
@@ -266,7 +261,7 @@ export function DepotPanel() {
                   )}
                 </span>
                 <span class="c-name">
-                  <WeaponIcon name={w.name} />
+                  <WeaponIcon name={w.name} size={16} cls="dep-icon" />
                   <BmpText font={TABLE_FONT} text={w.name} spacing={-1} />
                 </span>
                 <span class="c-type">

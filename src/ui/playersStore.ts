@@ -6,10 +6,9 @@
  * Each player defaults to a distinct colour from the 16-entry palette (a fresh match
  * is therefore every-player-for-themselves until players pick matching colours).
  */
-import {signal} from '@preact/signals';
 import {PLAYER_TANKS, TEAM_COLORS} from '../core/CTank';
 import type {PlayerCfg} from '../core/CRoster';
-import {loadJSON, saveJSON} from '../util/storage';
+import {createPersistedSignal} from './persistedSignal';
 
 export type {PlayerCfg};
 
@@ -44,30 +43,28 @@ function defaultRoster(): PlayerCfg[] {
   return Array.from({length: MAX_PLAYERS}, (_, i) => defaultPlayer(i));
 }
 
-function load(): PlayerCfg[] {
-  const base = defaultRoster();
-  const saved = loadJSON<Partial<PlayerCfg>[]>(KEY, []);
-  for (let i = 0; i < base.length; i++) {
-    const s = saved[i];
-    if (!s) continue;
-    if (typeof s.name === 'string') base[i].name = s.name;
-    if (typeof s.model === 'string') base[i].model = s.model;
-    if (typeof s.color === 'string') base[i].color = s.color;
-  }
-  return base;
-}
+const store = createPersistedSignal<PlayerCfg[]>(KEY, {
+  // Merge stored per-field values over the default roster (tolerates a short/old file).
+  revive: raw => {
+    const base = defaultRoster();
+    const saved = raw as Partial<PlayerCfg>[];
+    for (let i = 0; i < base.length; i++) {
+      const s = saved[i];
+      if (!s) continue;
+      if (typeof s.name === 'string') base[i].name = s.name;
+      if (typeof s.model === 'string') base[i].model = s.model;
+      if (typeof s.color === 'string') base[i].color = s.color;
+    }
+    return base;
+  },
+  seed: defaultRoster,
+});
 
-function persist(r: PlayerCfg[]): void {
-  saveJSON(KEY, r);
-}
-
-export const roster = signal<PlayerCfg[]>(load());
+export const roster = store.signal;
 
 function update(i: number, patch: Partial<PlayerCfg>): void {
   if (i < 0 || i >= roster.value.length) return;
-  const next = roster.value.map((p, idx) => (idx === i ? {...p, ...patch} : p));
-  roster.value = next;
-  persist(next);
+  store.set(roster.value.map((p, idx) => (idx === i ? {...p, ...patch} : p)));
 }
 
 export const setName = (i: number, name: string): void => update(i, {name});

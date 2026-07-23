@@ -7,10 +7,11 @@
  * and applies to the NEXT game, so editing never disturbs the running match.
  */
 import type {ComponentChildren} from 'preact';
-import {useEffect, useLayoutEffect, useRef, useState} from 'preact/hooks';
+import {useLayoutEffect, useRef, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Button} from './Button';
-import {loadWeaponIcon, openSettingsPage, uiClick} from './store';
+import {openSettingsPage, uiClick} from './store';
+import {WeaponIcon} from './WeaponIcon';
 import {WEAPON_DATABASE} from '../core/CWeapon';
 import landData from '../data/land.json';
 import {
@@ -23,20 +24,6 @@ import {
 } from './contentStore';
 
 const LANDS = landData as {bg: string}[];
-
-function WeaponIcon({name}: {name: string}) {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    let ok = true;
-    loadWeaponIcon(name, 16).then(s => {
-      if (ok && s) setSrc(s);
-    });
-    return () => {
-      ok = false;
-    };
-  }, [name]);
-  return <span class="editor-icon">{src ? <img src={src} alt="" /> : null}</span>;
-}
 
 function EditorRow({
   off,
@@ -148,7 +135,7 @@ export function WeaponsEditor() {
           toggle: () => (toggleWeapon(i), uiClick()),
           body: (
             <>
-              <WeaponIcon name={w.name} />
+              <WeaponIcon name={w.name} size={16} cls="editor-icon" />
               <BmpText font="beijing-16-out" text={`${w.name} (${w.type})`} />
             </>
           ),

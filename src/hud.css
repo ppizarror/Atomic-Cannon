@@ -1655,12 +1655,8 @@ canvas {
 .editor-icon {
   width: 18px;
   height: 18px;
-  display: inline-flex;
   flex: 0 0 auto;
-}
-.editor-icon img {
-  width: 18px;
-  height: 18px;
+  display: block;
   image-rendering: pixelated;
 }
 .editor-state {

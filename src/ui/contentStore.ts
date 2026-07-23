@@ -6,9 +6,8 @@
  * (see ui/applySettings → core/CGameContent), so editing never disturbs the running
  * match — matching the option's "(quits current game)"-style deferral.
  */
-import {signal} from '@preact/signals';
 import {WEAPON_DATABASE} from '../core/CWeapon';
-import {loadJSON, saveJSON} from '../util/storage';
+import {createPersistedSignal} from './persistedSignal';
 
 const KEY_W = 'atomic.content.weaponsOff';
 const KEY_L = 'atomic.content.landsOff';
@@ -21,16 +20,18 @@ const isOrganic = (i: number): boolean => {
 };
 const defaultWeaponsOff = (): number[] => WEAPON_DATABASE.map((_, i) => i).filter(isOrganic);
 
-function load(key: string, fallback: () => number[]): Set<number> {
-  return new Set<number>(loadJSON<number[]>(key, fallback()));
-}
+// Stored as the array of disabled indices; revived into a Set for O(1) membership tests.
+const disabledStore = (key: string, seed: () => number[]) =>
+  createPersistedSignal<Set<number>>(key, {
+    revive: raw => new Set(raw as number[]),
+    seed: () => new Set(seed()),
+    encode: s => [...s],
+  });
 
-function persist(key: string, s: Set<number>): void {
-  saveJSON(key, [...s]);
-}
-
-export const weaponsOff = signal<Set<number>>(load(KEY_W, defaultWeaponsOff));
-export const landsOff = signal<Set<number>>(load(KEY_L, () => []));
+const weaponsStore = disabledStore(KEY_W, defaultWeaponsOff);
+const landsStore = disabledStore(KEY_L, () => []);
+export const weaponsOff = weaponsStore.signal;
+export const landsOff = landsStore.signal;
 
 export const isWeaponOff = (i: number): boolean => weaponsOff.value.has(i);
 export const isLandOff = (i: number): boolean => landsOff.value.has(i);
@@ -39,14 +40,12 @@ export function toggleWeapon(i: number): void {
   const s = new Set(weaponsOff.value);
   if (s.has(i)) s.delete(i);
   else s.add(i);
-  weaponsOff.value = s;
-  persist(KEY_W, s);
+  weaponsStore.set(s);
 }
 
 export function toggleLand(i: number): void {
   const s = new Set(landsOff.value);
   if (s.has(i)) s.delete(i);
   else s.add(i);
-  landsOff.value = s;
-  persist(KEY_L, s);
+  landsStore.set(s);
 }

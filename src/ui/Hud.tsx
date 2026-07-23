@@ -22,7 +22,6 @@ import {
   blocked,
   weapons,
   game,
-  loadWeaponIcon,
   uiClick,
   battleStatus,
   statusLeftFrac,
@@ -47,7 +46,8 @@ import {
 } from './store';
 import {weaponPower, weaponDamagePerArea, weaponDisplayNumber} from '../core/CWeapon';
 import {clamp, wrapIndex} from '../math/num';
-import {useAsyncImage} from './useAsyncImage';
+import {WeaponIcon} from './WeaponIcon';
+import {usePointerDrag} from './usePointerDrag';
 
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
@@ -136,7 +136,6 @@ function MeterOverlay() {
   const p = power.value;
   const emptyH = R.meter[3] * (1 - (p - POWER_MIN) / (POWER_MAX - POWER_MIN));
   const barRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
 
   const powerFromEvent = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
     const rect = barRef.current?.getBoundingClientRect();
@@ -144,20 +143,7 @@ function MeterOverlay() {
     const frac = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     game().setPower(Math.round(POWER_MAX - frac * (POWER_MAX - POWER_MIN)));
   };
-  const onDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    dragging.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    powerFromEvent(e);
-    e.preventDefault();
-  };
-  const onMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    if (dragging.current) powerFromEvent(e);
-  };
-  const onUp = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    dragging.current = false;
-    if (e.currentTarget.hasPointerCapture(e.pointerId))
-      e.currentTarget.releasePointerCapture(e.pointerId);
-  };
+  const drag = usePointerDrag<HTMLDivElement>({onStart: powerFromEvent, onMove: powerFromEvent});
 
   return (
     <>
@@ -179,10 +165,7 @@ function MeterOverlay() {
         class={`ov meter-drag${blocked.value ? ' blocked' : ''}`}
         style={pos(R.meter)}
         title="Drag to set power (top 1000 · bottom 10)"
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
+        {...drag}
       />
     </>
   );
@@ -248,29 +231,21 @@ function AngleReadout() {
 // the cursor slips off the small dial.
 function DialGrab() {
   const drag = useRef<{x: number; a: number} | null>(null);
-  const onDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    drag.current = {x: e.clientX, a: game().getAngle()};
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  };
-  const onMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (d) game().setAngle(wrapAngle(Math.round(d.a - (e.clientX - d.x) * ANGLE_PER_PX)));
-  };
-  const onUp = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    drag.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId))
-      e.currentTarget.releasePointerCapture(e.pointerId);
-  };
+  const handlers = usePointerDrag<HTMLDivElement>({
+    onStart: e => {
+      drag.current = {x: e.clientX, a: game().getAngle()};
+    },
+    onMove: e => {
+      const d = drag.current;
+      if (d) game().setAngle(wrapAngle(Math.round(d.a - (e.clientX - d.x) * ANGLE_PER_PX)));
+    },
+  });
   return (
     <div
       class={`ov dial-drag${blocked.value ? ' blocked' : ''}`}
       style={pos(DIAL_GRAB)}
       title="Drag left/right to aim"
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      onPointerCancel={onUp}
+      {...handlers}
     />
   );
 }
@@ -283,12 +258,6 @@ function WindReadout() {
       <BmpText font="silkscreen-8-white" text={txt} />
     </ReadoutBox>
   );
-}
-
-// ---- weapon list (re-renders only when the weapon changes) ------------------
-function WeaponIcon({name, size, cls}: {name: string; size: 16 | 32; cls: string}) {
-  const src = useAsyncImage(() => loadWeaponIcon(name, size), [name, size]);
-  return src ? <img class={cls} src={src} alt="" /> : <span class={cls} />;
 }
 
 // The 32x32 preview of the current weapon, in the box between the ▲/▼ arrows.

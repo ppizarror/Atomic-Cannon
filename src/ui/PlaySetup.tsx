@@ -12,6 +12,7 @@
 import {useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {WidgetRow} from './WidgetRow';
+import {useForceRender} from './useForceRender';
 import {backToMenu, startBattle, MIN_PLAYERS} from './store';
 import {type Widget, stepper, enumW} from './settingsPages';
 import {
@@ -44,8 +45,7 @@ const countRow = (
 const NEED_PLAYERS = `Add at least ${MIN_PLAYERS} players (humans + computers) to start`;
 
 export function PlaySetup() {
-  const [, setTick] = useState(0);
-  const bump = () => setTick(v => v + 1);
+  const bump = useForceRender();
   const [sub, setSub] = useState<string | null>(null);
 
   const s = setup.value; // subscribe so the Start Game guard updates as counts change

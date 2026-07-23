@@ -5,8 +5,7 @@
  * colour / tank come from the Customize Players roster; the shared match options
  * (Game Type / Battles / Rounds / Land Size / Difficulty / Wind) live in settingsStore.
  */
-import {signal} from '@preact/signals';
-import {loadJSON, saveJSON} from '../util/storage';
+import {createPersistedSignal} from './persistedSignal';
 
 const KEY = 'atomic.setup';
 
@@ -41,30 +40,22 @@ const clampSetup = (s: Partial<Setup>): Setup => ({
   tanksPerTeam: clampInt(s.tanksPerTeam, MIN_TANKS_PER_TEAM, MAX_TANKS_PER_TEAM, 1),
 });
 
-function load(): Setup {
-  const raw = loadJSON<Partial<Setup> | null>(KEY, null);
-  if (raw) {
-    const s = clampSetup(raw);
-    // Heal an unstartable stored setup (e.g. 1 human + 0 CPU) so the initial view is
-    // always a valid match.
+const store = createPersistedSignal<Setup>(KEY, {
+  // Heal an unstartable stored setup (e.g. 1 human + 0 CPU) so the initial view is a valid match.
+  revive: raw => {
+    const s = clampSetup(raw as Partial<Setup>);
     return s.humans + s.computers >= MIN_PLAYERS
       ? s
       : {...DEFAULT_SETUP, tanksPerTeam: s.tanksPerTeam};
-  }
-  return {...DEFAULT_SETUP};
-}
+  },
+  seed: () => ({...DEFAULT_SETUP}),
+});
 
-function persist(s: Setup): void {
-  saveJSON(KEY, s);
-}
-
-export const setup = signal<Setup>(load());
+export const setup = store.signal;
 
 /** Set + persist the setup (clamped). */
 export function setSetup(next: Setup): void {
-  const s = clampSetup(next);
-  setup.value = s;
-  persist(s);
+  store.set(clampSetup(next));
 }
 
 /** Number of players (teams) = humans + computers. */
