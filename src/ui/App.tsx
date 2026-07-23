@@ -32,6 +32,7 @@ import {PauseMenu} from './PauseMenu';
 import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
 import {About} from './About';
+import {Manual} from './Manual';
 import {HighScores} from './HighScores';
 import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
@@ -239,6 +240,8 @@ function CurrentScreen() {
       return <MainMenu />;
     case 'about':
       return <About />;
+    case 'manual':
+      return <Manual />;
     case 'highscores':
       return <HighScores />;
     case 'settings':

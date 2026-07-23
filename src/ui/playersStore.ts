@@ -19,12 +19,12 @@ export const MAX_PLAYERS = 16;
 const KEY = 'atomic.players';
 
 // Default names come from i18n: player 0 is the localised "Player", the rest cycle the
-// bot-name list (repeating if the roster runs past it). These seed a fresh roster only;
-// once a name is edited/persisted it is stored verbatim.
+// human-player name pool (Spider, Ice, … — repeating if the roster runs past it). These
+// seed a fresh roster only; once a name is edited/persisted it is stored verbatim.
 function defaultPlayer(i: number): PlayerCfg {
-  const bots = strings.value.botNames;
+  const names = strings.value.playerNames;
   return {
-    name: i === 0 ? strings.value.game.defaultPlayer : bots[(i - 1) % bots.length],
+    name: i === 0 ? strings.value.game.defaultPlayer : names[(i - 1) % names.length],
     model: PLAYER_TANKS[i % PLAYER_TANKS.length],
     color: TEAM_COLORS[i] ?? DEFAULT_TEAM_COLOR,
   };

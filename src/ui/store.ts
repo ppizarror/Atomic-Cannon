@@ -19,7 +19,8 @@ import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
 import {wrapIndex} from '../math/num';
 import {knockoutWhere} from '../util/canvas';
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup' | 'highscores' | 'network';
+export type Screen =
+  'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'setup' | 'highscores' | 'network';
 
 export const screen = signal<Screen>('battle');
 
@@ -198,6 +199,12 @@ export function playNewGame(): void {
 /** Main menu → About, and back. */
 export function openAbout(): void {
   screen.value = 'about';
+  uiClick();
+}
+
+/** Main menu → Manual (the how-to-play document), and back. */
+export function openManual(): void {
+  screen.value = 'manual';
   uiClick();
 }
 

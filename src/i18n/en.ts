@@ -16,6 +16,7 @@ export const en: Strings = {
     quickPlay: 'Quick Play',
     network: 'Network Game',
     settings: 'Settings',
+    manual: 'Manual',
     about: 'About',
     highScores: 'High Scores',
     repoLabel: 'Source on GitHub',
@@ -104,6 +105,101 @@ export const en: Strings = {
           'Created by Pablo Pizarro R. (ppizarror), a software engineer and long-time fan of the original who built this port to keep the game alive for the web. It is a fan preservation project, not affiliated with or endorsed by Isotope 244 Graphics LLC; all original trademarks and copyrights belong to their respective owners.',
         ],
         bullets: ['Source code and issues: github.com/ppizarror/Atomic-Cannon'],
+      },
+    ],
+  },
+
+  manual: {
+    title: 'MANUAL',
+    subtitle: 'How to Play',
+    back: 'Back',
+    sections: [
+      {
+        heading: 'Introduction',
+        body: [
+          'Welcome to the best artillery game in the world! Atomic Cannon is a fun arcade game that is easy to learn but difficult to master. In this strategic tank artillery duel you battle against computers or friends across many different landscapes.',
+          'Players take turns aiming and firing at each other with dozens of weapons of mass destruction, including nuclear bombs. Some weapons create landmasses you can use to your tactical advantage as cover; others dig, clean, or reshape the ground. The landscape is randomly generated each round and can be destroyed in real time for real scorched earth.',
+        ],
+      },
+      {
+        heading: 'Gameplay',
+        body: [
+          'Your objective is to inflict more damage on your opponent than they inflict on you. There are two game types. ROUND games are score based: you play a set number of rounds and gain points, and the more accurate your shot the more points you get - no tank is ever destroyed. DEATH MATCH is power based: each tank has a life meter and you try to destroy the other tanks before they get you.',
+          'A Death Match is played over a set number of battles called a war. Each battle ends when only one team is left alive. You gain points for each kill, and at the end of the war the winner is the team with the most kills. Killing your own tank counts as a negative kill. If teams are tied, the team with the most hitpoints on the final battle wins.',
+          'A random player goes first. On your turn you can buy or sell weapons and utilities, adjust your aim and power, use utilities such as moving your tank or raising your armor and shields, then fire a weapon to end your turn.',
+        ],
+      },
+      {
+        heading: 'Story',
+        body: [
+          'The United Nations banned all atomic and nuclear devices and ordered their destruction. Most were destroyed over a period of years; the only remaining nuclear capable devices were in museums and scattered in hidden secret bunkers around the world.',
+          'After global chaos erupted in a heated debate centered on a rogue dictator, world powers were battling in small inhospitable environments where only machines could go. Aircraft and ground soldiers could not be used because of the harsh weather and terrain.',
+          'Thus began the resurrection of the Atomic Cannons. They were outfitted with as many kinds of ammunition systems as possible to deter the enemy. It is your mission to command our Atomic Cannon and be victorious...',
+        ],
+      },
+      {
+        heading: 'Controls',
+        body: [
+          'You can play with the mouse, the keyboard, or both. On the battle panel: drag the tall bar to set POWER (10 at the bottom, 1000 at the top), drag the dial to set your ANGLE, then press FIRE. You can also drag near your own tank to set angle and power at once, and use the Reset button to return to your last shot.',
+          'The default keys are listed below. Every action can be rebound under Settings > Customize Controls.',
+        ],
+        bullets: [
+          'Fire cannon: Space',
+          'Previous weapon: Q     Next weapon: A',
+          'Increase / decrease power: Up / Down arrows',
+          'Aim turret left / right: Left / Right arrows',
+          'Open the game menu: Escape',
+          'Chat taunt: Enter',
+          'Toggle full screen: F11',
+          'Mouse: drag the power bar and aim dial, or drag near your tank to aim; the depot scroll wheel cycles weapons.',
+        ],
+      },
+      {
+        heading: 'Weapons',
+        body: [
+          'Weapons are bought and sold through the Weapons Depot. In the depot you can hover over or click a weapon icon to see exactly what it does, and hover over each column header to learn what that stat means. Press the Stats button for extra columns of weapon information.',
+          'Your arsenal includes guns, bombs, missiles, rockets, and nukes, plus utilities such as armor, shields, medkits, and movers. Dirt weapons build cover, cleaners and diggers remove it, and death weapons detonate when a tank dies. Spend your credits wisely - the right weapon for the range and terrain wins battles.',
+        ],
+      },
+      {
+        heading: 'Landscapes',
+        body: [
+          'A random landscape is chosen for each battle. Each one is generated from five formations: Flat, Hill, Gulley, Plateau, and Slope. If you prefer one formation you can force it under Settings > Graphics Options > Land Type, and you can enable or disable individual landscapes under Settings > Game Content > Landscapes.',
+        ],
+      },
+      {
+        heading: 'Weather',
+        body: [
+          'Several landscapes feature weather effects such as rain, snow, hail, and sand storms. You can turn the weather off by lowering the graphics detail under Settings > Graphics Options > Detail (set it to Simple).',
+        ],
+      },
+      {
+        heading: 'Difficulty & Computer AI',
+        body: [
+          'Targeting is choosing which tank to fire at; aiming is setting the power and angle to hit it. Each difficulty level makes the computer about 10% better at targeting. Levels 1 to 9 still have a 50% chance of aiming with a slightly bad angle, so the enemy is beatable at every setting.',
+        ],
+        bullets: [
+          'Level 3: buys and uses shields and life.',
+          'Level 4 (default): buys and uses armor and death weapons.',
+          'Level 5: fires underground weapons first to dig out or punch through land.',
+          'Level 6: buys and uses move utilities.',
+          'Level 7: buys the highest-damage weapons 50% of the time.',
+          'Level 8: targets the lowest-hp or closest enemy much of the time.',
+          'Level 9: fires its highest-damage weapon 70% of the time.',
+          'Level 10: targets and aims correctly 90% of the time.',
+        ],
+      },
+      {
+        heading: 'Gameplay Tips',
+        body: [
+          'If you are just starting out and have no idea where to aim, buy a few Tracer rounds and use them. Tracers are especially useful when wind is enabled.',
+          'Find two enemy tanks that are near each other. When you hit one, the splash damage also scores on its neighbor - very advantageous in Rounds mode.',
+          'When you are close to an enemy, aim as low as possible and use weapons that spread out, such as the Shotgun and Cannon. They do little damage from far away but a lot from close range.',
+          'If an irradiating weapon hits you, such as the Plutonium Nuke, move to a clean location as soon as possible to suffer less damage over time.',
+          'Using lower power for weapons that blossom, such as the Hex Bomb, Porcupine, and Blow Fish, deals more damage, since their spread distance is based on the power they were launched with.',
+          'If you are buried underground you cannot move, but you can still use special weapons - the Escaper and any of the cleaners are good picks.',
+          'If you play more than one tank per team and sit next to an ally, buy a death weapon: if your tank blows up it will take the enemy beside it with you.',
+        ],
       },
     ],
   },
@@ -551,10 +647,12 @@ export const en: Strings = {
     statusRound: 'Round {round} of {total}',
   },
 
+  // Default human-player names — the roster prefill pool. Bare first names, a
+  // separate pool from the bot names below.
+  playerNames: ['Spider', 'Ice', 'Zoltar', 'Keen', 'Rex', 'Flash', 'Mavrick', 'Bob'],
+
+  // Computer-opponent names — the "…Bot" pool assigned to CPU players.
   botNames: [
-    'Whopper',
-    'BrainBot',
-    'RandBot',
     'AlphaBot',
     'MechaBot',
     'FlashBot',
@@ -562,6 +660,9 @@ export const en: Strings = {
     'ShazBot',
     'BetaBot',
     'DeltaBot',
+    'BoltBot',
+    'MetaBot',
+    'BrainBot',
   ],
 
   taunts: {

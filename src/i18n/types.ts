@@ -63,6 +63,7 @@ export interface Strings {
     quickPlay: string;
     network: string;
     settings: string;
+    manual: string;
     about: string;
     highScores: string;
     /** Corner link to the project's source repository. */
@@ -111,6 +112,16 @@ export interface Strings {
     title: string;
     subtitle: string;
     /** The credits / story document, top to bottom. */
+    sections: AboutSection[];
+    back: string;
+  };
+
+  // ── Manual / How-to-play card (main-menu help document) ────────────────────
+  manual: {
+    title: string;
+    subtitle: string;
+    /** The manual document (gameplay / controls / weapons / tips), top to bottom.
+     *  Reuses the About section shape and the same bitmap-font card chrome. */
     sections: AboutSection[];
     back: string;
   };
@@ -505,7 +516,11 @@ export interface Strings {
     statusRound: string;
   };
 
-  /** Default computer-player names (cycled if the roster runs past the list). */
+  /** Default human-player names — the roster prefill pool (cycled past the list). A
+   *  separate pool from the bot names. */
+  playerNames: readonly string[];
+
+  /** Computer-opponent names — assigned to CPU players, distinct from the human pool. */
   botNames: readonly string[];
 
   /** Default taunt content, editable in the Taunt editor and spoken in-game. */

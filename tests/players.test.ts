@@ -11,6 +11,7 @@ import {CTank, TEAM_COLORS} from '../src/core/CTank';
 import {Roster} from '../src/core/CRoster';
 import {roster, setColor, setName, MAX_PLAYERS} from '../src/ui/playersStore';
 import {samplePalette} from '../src/ui/palette';
+import {strings} from '../src/i18n';
 
 type Tanks = {m_tanks: CTank[]};
 
@@ -38,6 +39,7 @@ describe('Customize Players', () => {
       {name: 'Green1', model: 'Standard', color: '#00ff00'},
     ];
     const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(4); // all four are human, so every tank takes its roster name
     gc.startGame(4);
     const t = (gc as unknown as Tanks).m_tanks;
 
@@ -49,6 +51,25 @@ describe('Customize Players', () => {
     expect(t[0].getTeamId()).toBe(t[1].getTeamId()); // same colour → same team
     expect(t[0].getTeamId()).not.toBe(t[2].getTeamId()); // different colour → different team
     expect(new Set(t.map(x => x.getTeamId())).size).toBe(3); // three distinct colours → three teams
+  });
+
+  it('CPU opponents are named from the bot pool, not their roster slot', () => {
+    Roster.players = [
+      {name: 'Ada', model: 'Standard', color: '#ff0000'},
+      {name: 'Custom Foe A', model: 'Standard', color: '#00ff00'},
+      {name: 'Custom Foe B', model: 'Standard', color: '#0000ff'},
+    ];
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(1); // one human, two CPUs
+    gc.startGame(3);
+    const t = (gc as unknown as Tanks).m_tanks;
+    const bots = strings.value.botNames;
+
+    expect(t[0].getName()).toBe('Ada'); // the human keeps their roster name
+    // CPU tanks are named from the bot pool, overriding the roster's human-pool name.
+    expect(bots.includes(t[1].getName())).toBe(true);
+    expect(bots.includes(t[2].getName())).toBe(true);
+    expect(t[1].getName()).not.toBe('Custom Foe A');
   });
 
   it('an empty roster falls back to distinct per-player defaults (free-for-all)', () => {
