@@ -42,6 +42,7 @@ export const GameConfig = {
   showTurn: true, // More Graphics Options → Show Turn (turn arrow)
   showLastAim: true, // More Graphics Options → Show Last Aim (faded initial-aim marker)
   explosionWaves: true, // More Graphics Options → Explosion Waves (nuke refractive wave)
+  cameraShake: true, // More Graphics Options → Camera Shake (screen shake on big/nuke blasts; port-only)
   blastCircles: false, // More Graphics Options → Show Blast Circles (ring at each explosion's radius)
   highContrast: false, // Graphics → High Contrast (white outline around tanks)
   showAiStats: false, // Graphics → Show AI Stats (the active bot's aim solution)

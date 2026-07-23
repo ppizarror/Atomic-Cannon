@@ -57,8 +57,10 @@ export interface ShotWorld {
 
   ripple(x: number, y: number, strength: number): void;
 
-  /** Falloff blast damage + kick + shield/armor. `full` skips falloff (beams). `piercing`
-   * marks a secondary/piercing weapon, so the target's Hazmat resistance applies. */
+  /** Two-radius blast damage + kick + shield/armor. Full `damage` inside `innerRadius`
+   * (the direct-hit core), then LINEAR falloff to zero at `radius` (the outer field). `full`
+   * skips falloff entirely (beams). `piercing` marks a secondary/piercing weapon, so the
+   * target's Hazmat resistance applies. `innerRadius` defaults to 0 (a point core). */
   applyBlast(
     pos: Vec2,
     radius: number,
@@ -66,6 +68,7 @@ export interface ShotWorld {
     owner: CTank | null,
     full: boolean,
     piercing?: boolean,
+    innerRadius?: number,
   ): void;
 
   aimMarker(x: number, y: number, label?: string): void;
@@ -326,7 +329,15 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // and bomb/rocket-scale craters (radius ≥ 45). Small rounds — machine gun, shells,
   // cannon — land with no shake, matching how they read in the original.
   const bigBlast = weapon.isBigBlast(radiusPx);
-  if (!isCleaner && bigBlast) world.shake(isPrimary ? 8 : 4, 0.3);
+  if (GameConfig.cameraShake && !isCleaner && bigBlast) {
+    // A NUKE also fires the full-screen white-out (`flashScreen(1)`, ~0.6s fade) — a static overlay
+    // that covers the whole viewport, so a short 0.3s shake plays out entirely BEHIND it and is
+    // never seen. Give nukes a stronger, LONGER rumble that outlasts the flash: it decays past the
+    // ~0.6s white-out so the ground is still visibly shaking once the scene reappears. Conventional
+    // big blasts keep the short punch (their flash is only partial, so their shake already shows).
+    const nuke = weapon.isNukeClass();
+    world.shake(nuke ? (isPrimary ? 16 : 10) : isPrimary ? 8 : 4, nuke ? 1.0 : 0.3);
+  }
 
   // A blast only craters/scorches the GROUND when its radius spans the gap from the detonation
   // point down to the surface. An AIRBURST (extType 13) detonates high at the apex, so it does
@@ -407,11 +418,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   if (!isCleaner)
     world.applyBlast(
       pos,
-      radiusPx,
+      radiusPx, // outer field (zero-damage boundary) — radius × explosionScale × √worldScale
       shot.getDamage(),
       shot.getOwner(),
       isBeam,
       weapon.isRadioactive(),
+      0.5 * weapon.getSize(), // inner full-damage core (half the sprite size; collR added per-target)
     );
 
   // Radiation zone (NUKE/DOT/Organic/…): irDmg/sec for irTime s, tinted irRGB.

@@ -56,6 +56,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.autoScroll = S.autoScroll(); // camera follows the shot / active tank
   GameConfig.showLastAim = S.showLastAim();
   GameConfig.explosionWaves = S.explosionWaves();
+  GameConfig.cameraShake = S.cameraShake();
   GameConfig.blastCircles = S.blastCircles();
   GameConfig.highContrast = S.highContrast();
   GameConfig.showAiStats = S.showAiStats();

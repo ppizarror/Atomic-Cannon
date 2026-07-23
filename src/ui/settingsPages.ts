@@ -223,6 +223,7 @@ function graphics2Rows(): Widget[] {
     toggle('Auto Scroll', 'Automatically scrolls during game events', 'gfx.autoScroll'),
     toggle('Show Last Aim', 'Show last power and angle position', 'gfx.lastAim'),
     toggle('Explosion Waves', 'A very cool refractive wave effect for nukes', 'gfx.expWaves'),
+    toggle('Camera Shake', 'Shake the screen on big and nuclear explosions', 'gfx.camShake'),
     enumW('Show Framerate', 'Off, the FPS counter, or FPS + a frame count (Full)', 'gfx.framerate'),
     enumW(
       'Max Framerate',

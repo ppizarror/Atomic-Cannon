@@ -93,6 +93,7 @@ const CATALOG = {
   'gfx.autoScroll': {default: 1},
   'gfx.lastAim': {default: 1},
   'gfx.expWaves': {default: 1},
+  'gfx.camShake': {default: 1},
   'gfx.framerate': {default: 0, options: ['Off', 'FPS', 'Full']},
   'gfx.fpsCap': {
     default: 0,

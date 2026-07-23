@@ -14,6 +14,7 @@ import {BmpText} from './BmpText';
 import {getSettingsPage} from './settingsPages';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
+import {ClassicScrollbar} from './ClassicScrollbar';
 
 export function SettingsPage({id}: {id: string}) {
   const bump = useForceRender();
@@ -31,19 +32,21 @@ export function SettingsPage({id}: {id: string}) {
 
   return (
     <div class="settings-screen">
-      <div class="menu-list settings-rows">
-        {page.rows.map((w, i) => (
-          <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
-        ))}
-        <button
-          class="settings-row srow-done menu-btn"
-          onMouseEnter={() => setSub('Return to the settings menu')}
-          onMouseLeave={() => setSub(null)}
-          onClick={settingsPageBack}
-        >
-          <BmpText font="bazouk-28" text="Done" />
-        </button>
-      </div>
+      <ClassicScrollbar class="settings-scroll">
+        <div class="menu-list settings-rows">
+          {page.rows.map((w, i) => (
+            <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
+          ))}
+          <button
+            class="settings-row srow-done menu-btn"
+            onMouseEnter={() => setSub('Return to the settings menu')}
+            onMouseLeave={() => setSub(null)}
+            onClick={settingsPageBack}
+          >
+            <BmpText font="bazouk-28" text="Done" />
+          </button>
+        </div>
+      </ClassicScrollbar>
       <div class="settings-subtitle">
         <BmpText font="beijing-16-out" text={sub ?? page.header} />
       </div>

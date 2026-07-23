@@ -74,6 +74,8 @@ export const gameSettings = {
   autoScroll: (): boolean => getVal('gfx.autoScroll') !== 0,
   showLastAim: (): boolean => getVal('gfx.lastAim') !== 0,
   explosionWaves: (): boolean => getVal('gfx.expWaves') !== 0,
+  /** Camera shake on big/nuke blasts (a port embellishment — not in the original). */
+  cameraShake: (): boolean => getVal('gfx.camShake') !== 0,
   blastCircles: (): boolean => getVal('gfx.blastCircles') !== 0,
   highContrast: (): boolean => getVal('gfx.highContrast') !== 0,
   showAiStats: (): boolean => getVal('gfx.aiStats') !== 0,

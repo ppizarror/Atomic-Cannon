@@ -1467,11 +1467,24 @@ canvas {
      in), darkened with a flat black wash so the white-outlined options read clearly.
      The brushed-steel plate is reserved for the deeper editor sub-screens. */
   background: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
+  /* Reserve the bottom band for the absolute subtitle so the scroll host stops above it. */
+  padding: 2vh 0 9vh;
 }
 
-/* Options list, vertically centred in the gap between title and subtitle. */
-.settings-list {
-  margin: auto 0;
+/* The scroll host that holds the option list (root categories or a page's widget rows). It fills
+   the vertical gap between the title and the subtitle; when the window is too short to fit every
+   row, the ClassicScrollbar grip appears and the list scrolls. Short lists stay vertically centred
+   (`safe center`); long lists top-align and scroll. */
+.settings-scroll {
+  width: var(--menu-w);
+  flex: 1 1 0;
+  min-height: 0;
+}
+.settings-scroll .cscroll-view {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center; /* centre when it fits; top-align + scroll when it doesn't */
+  align-items: center;
 }
 
 /* Hover subtitle, centred along the bottom edge (reserves height so nothing jumps). */
@@ -1488,9 +1501,6 @@ canvas {
 }
 
 /* ---- Settings option pages (two-column widget rows) ---- */
-.settings-rows {
-  margin: auto 0;
-}
 
 /* Layout only — the hover box + click-negative come from .menu-btn. */
 .settings-row {

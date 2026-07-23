@@ -2424,8 +2424,11 @@ export class CGameController implements ShotWorld {
         w.isCleaner(),
       );
       // Only big mines shake the camera (see weaponDetonate — shake is reserved for
-      // bomb/nuke-scale blasts; a small proximity charge just pops).
-      if (w.isBigBlast(w.getRadius())) this.shake(8, 0.3);
+      // bomb/nuke-scale blasts; a small proximity charge just pops). A nuke mine gets the longer
+      // rumble that outlasts its full-screen white-out (a short shake plays out behind it, unseen).
+      // Gated on the Camera Shake option (a port embellishment, not in the original).
+      if (GameConfig.cameraShake && w.isBigBlast(w.getRadius()))
+        this.shake(w.isNukeClass() ? 16 : 8, w.isNukeClass() ? 1.0 : 0.3);
       this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
       // Scorch is crackle-gated + scaled, matching weaponDetonate (a clean charge leaves no burn).
       const mineCrackle = w.getCrackle();
@@ -2435,7 +2438,15 @@ export class CGameController implements ShotWorld {
           Math.floor(m.y),
           Math.round(w.getRadius() * (0.4 + mineCrackle * 0.85)),
         );
-      this.applyBlast(new Vec2(m.x, m.y), w.getRadius(), w.getDamage(), m.owner, false);
+      this.applyBlast(
+        new Vec2(m.x, m.y),
+        w.getRadius(),
+        w.getDamage(),
+        m.owner,
+        false,
+        w.isRadioactive(),
+        0.5 * w.getSize(), // same inner full-damage core as a normal detonation
+      );
     }
   }
 
@@ -2450,15 +2461,24 @@ export class CGameController implements ShotWorld {
     owner: CTank | null,
     full: boolean,
     piercing = false,
+    innerRadius = 0,
   ): void {
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
+      // Two-radius model (recovered from the blast routine): full damage within the inner
+      // CORE, then LINEAR falloff — normalized by the OUTER radius — to zero at the outer
+      // edge. Both radii get the target's own collision radius added (a target-size bonus,
+      // not subtracted from distance), so a bigger tank is easier to catch. There's a
+      // deliberate step DOWN at the core edge (core = flat full damage, not a smooth peak).
+      const collR = tank.getHitRadius(); // target collision radius, added to both radii
+      const outer = Math.max(radius, 0) + collR; // zero-damage boundary
+      const inner = innerRadius + collR; // full-damage core
       const dist = tank.distanceTo(pos.x, pos.y);
-      const inRange = full ? dist < Math.max(radius, 20) : dist <= radius + 1;
-      if (!inRange) continue;
+      if (dist > outer) continue; // beyond the outer field → no damage
 
-      const falloff = full ? 1 : Math.max(0, 1 - dist / (radius + 1));
-      const dmg = damage * falloff;
+      // Beams (full) always deal full damage to what they touch; otherwise full inside the
+      // core, then damage × (1 − dist/outer) out to the edge.
+      const dmg = full || dist <= inner ? damage : damage * (1 - dist / outer);
       if (dmg <= 0) continue;
 
       const removed = tank.hit(dmg, piercing); // shield → hazmat(if piercing) → armor → life
@@ -2474,7 +2494,7 @@ export class CGameController implements ShotWorld {
     // clears crates in the crater's radius and simply removes them (no reward is spilled,
     // no debris, no sound; the blast's own fireball is the only visual).
     if (this.m_crates.length) {
-      const reach = (full ? Math.max(radius, 20) : radius + 1) + CRATE_BOX / 2;
+      const reach = Math.max(radius, 20) + CRATE_BOX / 2; // crater/outer-field reach
       this.m_crates = this.m_crates.filter(c => Math.hypot(c.x - pos.x, c.y - pos.y) > reach);
     }
   }
@@ -3627,6 +3647,19 @@ export class CGameController implements ShotWorld {
 
   autoBuyWeapons(): void {
     this.m_economy.autoBuy();
+  }
+
+  /**
+   * Drive the acting tank to `destX` and end the turn once it settles — the public
+   * seam for a Move action (the network layer's `move` command and, later, replayed
+   * remote input; locally the human still moves via aim + a Move weapon through
+   * `fire()`). Guarded like `fire()`: only the living, non-moving current tank acts.
+   */
+  commandMoveTo(destX: number): void {
+    if (this.m_paused) return;
+    const tank = this.getCurrentTank();
+    if (!tank.isAlive() || tank.isMoving()) return;
+    this.startTankMove(tank, destX);
   }
 
   getAngle(): number {
