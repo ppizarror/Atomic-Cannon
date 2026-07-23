@@ -1,7 +1,11 @@
+# Dot-files
 .DS_Store
 .git/
 .idea/
 *.log
+.vscode/
+
+# Dist/packages
 dist/
 node_modules
 
