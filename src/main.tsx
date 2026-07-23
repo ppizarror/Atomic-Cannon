@@ -121,9 +121,6 @@ async function main(): Promise<void> {
     // `?flatland=1`: force a perfectly flat test surface (set BEFORE playNewGame generates
     // terrain) so weapon/terrain effects can be judged without natural slopes in the way.
     if (q.get('flatland') === '1') gameController.setFlatLand(true);
-    // `?frame=1`: show a live frame counter just below the FPS readout (dev timing aid —
-    // read the exact frame an effect starts/ends on).
-    if (q.get('frame') === '1') showFrameCount.value = true;
     if (
       q.get('battle') === '1' ||
       q.get('depot') === '1' ||

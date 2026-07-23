@@ -16,7 +16,7 @@ import {gameSettings as S} from './settingsValues';
 import {weaponsOff, landsOff} from './contentStore';
 import {tauntLines} from './tauntsStore';
 import {roster} from './playersStore';
-import {showFramerate} from './store';
+import {showFramerate, showFrameCount} from './store';
 
 export function applyGameSettings(c: CGameController): void {
   // Controller-owned: most read at the next startGame, a few live.
@@ -60,7 +60,10 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.highContrast = S.highContrast();
   GameConfig.showAiStats = S.showAiStats();
   GameConfig.demo = S.demo();
-  showFramerate.value = S.framerate(); // top-right FPS counter (DOM overlay)
+  // Framerate overlay (top-right DOM readouts): FPS at mode ≥ 1, + frame count at Full.
+  const frameMode = S.framerate();
+  showFramerate.value = frameMode >= 1;
+  showFrameCount.value = frameMode >= 2;
 
   // Active weapon/landscape selection for the NEXT match (Game Content editors).
   GameContent.weaponsOff = new Set(weaponsOff.value);

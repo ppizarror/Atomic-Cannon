@@ -79,5 +79,6 @@ export const gameSettings = {
   highContrast: (): boolean => getVal('gfx.highContrast', 0) !== 0,
   showAiStats: (): boolean => getVal('gfx.aiStats', 0) !== 0,
   demo: (): boolean => getVal('gfx.demo', 0) !== 0,
-  framerate: (): boolean => getVal('gfx.framerate', 0) !== 0,
+  /** Framerate overlay mode: 0 = Off, 1 = FPS only, 2 = Full (FPS + frame count). */
+  framerate: (): number => getVal('gfx.framerate', 0),
 };

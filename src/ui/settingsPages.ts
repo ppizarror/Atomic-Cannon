@@ -58,6 +58,8 @@ export const GAME_TYPE = ['Rounds', 'Deathmatch'];
 export const LAND_SIZE = ['1 Screen', '2x', '3x', '4x', '5x'];
 const KICKBACK = ['Off', 'Low', 'Normal', 'High'];
 const PLAYER_SIZE = ['Small', 'Normal', 'Large'];
+// Framerate overlay mode: Off / FPS only / Full (FPS + frame count).
+const FRAMERATE = ['Off', 'FPS', 'Full'];
 const EXPLOSION_SIZE = ['Small', 'Normal', 'Large', 'Massive'];
 const BUY_TIME = ['Anytime', 'Round', 'Start', 'Automatic'];
 
@@ -271,7 +273,13 @@ function graphics2Rows(): Widget[] {
     toggle('Auto Scroll', 'Automatically scrolls during game events', 'gfx.autoScroll', 1),
     toggle('Show Last Aim', 'Show last power and angle position', 'gfx.lastAim', 1),
     toggle('Explosion Waves', 'A very cool refractive wave effect for nukes', 'gfx.expWaves', 1),
-    toggle('Show Framerate', 'Display frames rendered per second', 'gfx.framerate', 0),
+    enumW(
+      'Show Framerate',
+      'Off, the FPS counter, or FPS + a frame count (Full)',
+      'gfx.framerate',
+      0,
+      FRAMERATE,
+    ),
     toggle('Demo Mode', 'Game automatically plays itself', 'gfx.demo', 0),
   ];
 }

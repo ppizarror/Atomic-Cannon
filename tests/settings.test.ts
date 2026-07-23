@@ -12,6 +12,7 @@ import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
+import {showFramerate, showFrameCount} from '../src/ui/store';
 
 const NUKE = WEAPON_DATABASE.findIndex(w => w.name === 'Uranium Nuke');
 const nukeCost = WEAPON_DATABASE[NUKE].cost;
@@ -96,6 +97,25 @@ describe('Settings → game', () => {
     ).m_tanks[0];
     expect(tank.getMaxLife()).toBe(2500); // Hitpoints → tank max life
     expect(tank.getHealth().nLife).toBe(2500); // Hitpoints → tank spawns full
+  });
+
+  it('Show Framerate enum drives the FPS + frame-count overlays (Off/FPS/Full)', () => {
+    const gc = new CGameController(makeCanvas());
+
+    setVal('gfx.framerate', 0); // Off
+    applyGameSettings(gc);
+    expect(showFramerate.value).toBe(false);
+    expect(showFrameCount.value).toBe(false);
+
+    setVal('gfx.framerate', 1); // FPS only
+    applyGameSettings(gc);
+    expect(showFramerate.value).toBe(true);
+    expect(showFrameCount.value).toBe(false);
+
+    setVal('gfx.framerate', 2); // Full → FPS + frame count
+    applyGameSettings(gc);
+    expect(showFramerate.value).toBe(true);
+    expect(showFrameCount.value).toBe(true);
   });
 
   it('Show Points + Auto Scroll toggles reach GameConfig (were silent no-ops)', () => {
