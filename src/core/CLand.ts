@@ -17,7 +17,8 @@ interface LandParticle {
   color: string; // dirt-chunk colour, sampled from the terrain palette
   size: number; // chunk size in px
   spin: number; // visual tumble
-  age: number; // seconds airborne — force-settled past a cap so ejecta never lingers as "dots"
+  age: number; // seconds airborne
+  deposit: boolean; // on landing: raise the column (true) vs. just vanish (false — cosmetic ejecta)
 }
 
 interface RadParticle {
@@ -284,6 +285,7 @@ export class CLand {
 
     const startX = Math.max(0, x - nRadius);
     const endX = Math.min(this.m_nWidth - 1, x + nRadius);
+    this.settleFallsIn(startX, endX); // settle any active overburden so the carve acts on stable ground
 
     // Heightmap approximation of a destructible-bitmap crater:
     // at each column the surface drops to the bottom edge of the blast circle
@@ -354,19 +356,30 @@ export class CLand {
 
     if (px) {
       const W = this.m_nWidth;
+      const mat = this.m_material;
       const overThick = b0 - surf; // the intact overburden ABOVE the band (cap + earth)
       if (overThick > 0) {
         // Capture the overburden's pixels (grass cap + earth) so they slide DOWN INTACT,
         // then clear both it and the band. A falling block drops it under gravity to land
         // on the substrate below, filling the cut — the "upper section falls down".
         const colors = new Uint32Array(overThick);
-        for (let i = 0; i < overThick; i++) colors[i] = px[(surf + i) * W + col];
-        for (let yy = surf; yy < b1; yy++) px[yy * W + col] = 0;
-        this.m_falls.push({col, y: surf, thick: overThick, target: surf + removed, vel: 0, colors});
+        const mats = new Uint8Array(overThick);
+        for (let i = 0; i < overThick; i++) {
+          colors[i] = px[(surf + i) * W + col];
+          if (mat) mats[i] = mat[(surf + i) * W + col];
+        }
+        for (let yy = surf; yy < b1; yy++) {
+          px[yy * W + col] = 0;
+          if (mat) mat[yy * W + col] = 0;
+        }
+        this.m_falls.push({col, y: surf, thick: overThick, target: surf + removed, vel: 0, colors, mats}); // prettier-ignore
         h[col] = surf; // surface = the falling block's (current) top
       } else {
         // The cut starts at the surface — just remove the band from the top.
-        for (let yy = surf; yy < b1; yy++) px[yy * W + col] = 0;
+        for (let yy = surf; yy < b1; yy++) {
+          px[yy * W + col] = 0;
+          if (mat) mat[yy * W + col] = 0;
+        }
         h[col] = b1;
       }
     } else {
@@ -384,11 +397,17 @@ export class CLand {
     const G = 1400,
       W = this.m_nWidth,
       px = this.m_pixels,
+      mat = this.m_material,
       h = this.m_arrHeights;
     let w = 0;
     for (let i = 0; i < this.m_falls.length; i++) {
       const f = this.m_falls[i];
-      for (let k = 0; k < f.thick; k++) px[(Math.round(f.y) + k) * W + f.col] = 0; // erase old pos
+      const oldTop = Math.round(f.y);
+      for (let k = 0; k < f.thick; k++) {
+        const idx = (oldTop + k) * W + f.col; // erase old pos (pixel + material)
+        px[idx] = 0;
+        if (mat) mat[idx] = 0;
+      }
       f.vel += G * dt;
       f.y += f.vel * dt;
       let landed = false;
@@ -397,9 +416,49 @@ export class CLand {
         landed = true;
       }
       const top = Math.round(f.y);
-      for (let k = 0; k < f.thick; k++) px[(top + k) * W + f.col] = f.colors[k]; // draw at new pos
+      for (let k = 0; k < f.thick; k++) {
+        const idx = (top + k) * W + f.col; // draw at new pos (pixel + material)
+        px[idx] = f.colors[k];
+        if (mat) mat[idx] = f.mats[k];
+      }
       h[f.col] = top;
       if (!landed) this.m_falls[w++] = f;
+    }
+    this.m_falls.length = w;
+    this.m_pixelsDirty = true;
+  }
+
+  /** Finalize (snap to target) every active falling block in the column range [lo,hi] and clear it
+   *  from the list — so a follow-up carve on those columns acts on SETTLED terrain. Without this a
+   *  second cut reads the mid-air block top as the surface and spawns a CONCURRENT fall; the two then
+   *  land at independent absolute targets and whichever sets `h[col]` lower strands the other block's
+   *  pixels ABOVE the surface → the "floating dirt" in the sky. Called before every re-carve. */
+  private settleFallsIn(lo: number, hi: number): void {
+    if (!this.m_falls.length || !this.m_pixels || !this.m_arrHeights) return;
+    const W = this.m_nWidth,
+      px = this.m_pixels,
+      mat = this.m_material,
+      h = this.m_arrHeights;
+    let w = 0;
+    for (let i = 0; i < this.m_falls.length; i++) {
+      const f = this.m_falls[i];
+      if (f.col < lo || f.col > hi) {
+        this.m_falls[w++] = f; // outside the range → still falling
+        continue;
+      }
+      const oldTop = Math.round(f.y);
+      for (let k = 0; k < f.thick; k++) {
+        const idx = (oldTop + k) * W + f.col; // erase from wherever it is now
+        px[idx] = 0;
+        if (mat) mat[idx] = 0;
+      }
+      const top = Math.min(this.m_nHeight - f.thick, f.target);
+      for (let k = 0; k < f.thick; k++) {
+        const idx = (top + k) * W + f.col; // deposit at its target
+        px[idx] = f.colors[k];
+        if (mat) mat[idx] = f.mats[k];
+      }
+      h[f.col] = top; // surface = the settled block top
     }
     this.m_falls.length = w;
     this.m_pixelsDirty = true;
@@ -418,6 +477,7 @@ export class CLand {
     if (!this.m_arrHeights) return;
     const lo = Math.max(0, Math.floor(Math.min(x0, x1)));
     const hi = Math.min(this.m_nWidth - 1, Math.ceil(Math.max(x0, x1)));
+    this.settleFallsIn(lo, hi); // finalize any overburden still falling here → no concurrent falls
     const dx = x1 - x0;
     // The original carves with an irregular MASK stencil (jagged silhouette), not a clean band,
     // and trims the channel a few px per fire. Reproduce that with COHERENT edge noise: two low
@@ -438,7 +498,16 @@ export class CLand {
         3.4 * Math.sin(c * 0.17 + pT1) + 2.0 * Math.sin(c * 0.44 + pT2) + (rnd() - 0.5) * 1.8;
       const jBot =
         3.4 * Math.sin(c * 0.2 + pB1) + 2.0 * Math.sin(c * 0.51 + pB2) + (rnd() - 0.5) * 1.8;
-      this.sliceColumn(c, beamY, Math.max(1, fireHalf + jTop), Math.max(1, fireHalf + jBot));
+      const surfBefore = this.getHeightAt(c); // spawn ejecta at the ground, BEFORE the slice lowers it
+      const removed = this.sliceColumn(c, beamY, Math.max(1, fireHalf + jTop), Math.max(1, fireHalf + jBot)); // prettier-ignore
+      // The original EJECTS the removed earth as falling debris — the ray visibly emits dirt, not a
+      // silent slice. We spray a couple of cosmetic grains per cut column UP from the surface so they
+      // arc and rain back visibly (the source's grains are zero-velocity because its cut leaves open
+      // space below; ours fills the trench, so a small pop is the visible equivalent). NON-depositing:
+      // they vanish on landing — the sliding overburden block already fills the trench.
+      if (removed > 0) {
+        this.addShowerParticles(c, surfBefore, 2, 14, false);
+      }
     }
     this.startSlump(lo, hi); // settle the cut so it never leaves standing nails
     // Only the fallout specks the ray actually PASSES THROUGH are vaporised — the
@@ -467,6 +536,7 @@ export class CLand {
     if (!this.m_arrHeights) return;
     const lo = Math.max(0, Math.floor(x - r));
     const hi = Math.min(this.m_nWidth - 1, Math.ceil(x + r));
+    this.settleFallsIn(lo, hi); // settle any active overburden first → no concurrent falls
     for (let c = lo; c <= hi; c++) {
       const dx = c - x;
       const base = Math.sqrt(Math.max(0, r * r - dx * dx)); // disc half-height at this column
@@ -779,7 +849,12 @@ export class CLand {
     const THRESH = 8; // columns must differ by ≥8 before dirt slides (original gate is `7 < diff`)
     const a = Math.max(1, Math.floor(x0)),
       b = Math.min(this.m_nWidth - 2, Math.floor(x1));
+    // Columns with an overburden block still FALLING have a transient (mid-air) surface height —
+    // slumping against it stamps a pixel that the block then leaves stranded above the final ground
+    // as it drops ("floating dirt"). Skip those columns until the block lands.
+    const falling = this.m_falls.length ? new Set(this.m_falls.map(f => f.col)) : null;
     for (let x = a; x <= b; x++) {
+      if (falling && (falling.has(x) || falling.has(x + 1))) continue;
       const diff = h[x + 1] - h[x]; // >0: column x is TALLER (smaller screen-Y)
       // Move 1px of dirt downhill: CLEAR the taller column's top pixel, STAMP one on the
       // lower — via the shared primitive, so the pixels track the avalanche.
@@ -806,7 +881,17 @@ export class CLand {
     return this.m_dirtColors[v] ?? (this.m_dirtColors[v] = `rgb(${v},${v >> 1},${v >> 3})`);
   }
 
-  addShowerParticles(x: number, y: number, count: number, radius = 24): void {
+  /** Throw dirt chunks. `deposit`: raise the column where each lands (true, blast ejecta) vs. just
+   *  vanish (false, cosmetic). `gentle`: near-zero launch velocity so grains DROP rather than
+   *  fountain — used for a beam cut, whose original ejects the removed band at ZERO velocity. */
+  addShowerParticles(
+    x: number,
+    y: number,
+    count: number,
+    radius = 24,
+    deposit = true,
+    gentle = false,
+  ): void {
     const pool = this.m_particlePool;
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * TWO_PI;
@@ -815,8 +900,8 @@ export class CLand {
       if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark chunks
       // Launch speed scales with the blast radius so a small weapon's debris stays
       // near the crater instead of raining across the whole map.
-      const speed = 30 + Math.random() * (radius * 2.4);
-      const up = radius * (0.3 + Math.random() * 1.3);
+      const speed = gentle ? Math.random() * 10 : 30 + Math.random() * (radius * 2.4);
+      const up = gentle ? 0 : radius * (0.3 + Math.random() * 1.3);
       // Reuse a settled chunk from the free pool — after the first big blast the
       // pool is warm, so a nuke allocates zero LandParticle objects (no GC spike).
       const p: LandParticle = pool.pop() ?? {
@@ -828,15 +913,17 @@ export class CLand {
         size: 0,
         spin: 0,
         age: 0,
+        deposit: true,
       };
       p.x = x + (Math.random() * 2 - 1) * radius;
       p.y = y + (Math.random() * 2 - 1) * radius * 0.4;
       p.vx = Math.cos(ang) * speed;
-      p.vy = Math.sin(ang) * speed * 0.7 - up; // varied up-and-out, scaled to the blast
+      p.vy = gentle ? Math.random() * 12 : Math.sin(ang) * speed * 0.7 - up; // gentle drop vs up-and-out
       p.color = this.dirtColor(v);
       p.size = 1; // the original plots each chunk as a single 1px pixel — no 2px squares
       p.spin = 0;
       p.age = 0;
+      p.deposit = deposit;
       this.m_particles.push(p);
     }
   }
@@ -887,6 +974,10 @@ export class CLand {
       // ground at once ("high in the sky, then all fell 14 frames later"). Gravity brings each one
       // down on its own schedule, so the landing stays staggered.
       if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
+        if (!p.deposit) {
+          this.m_particlePool.push(p);
+          continue; // cosmetic ejecta (beam) — reached ground, just vanish (no column raise)
+        }
         const dcol = clamp(col + ((Math.random() * 4) | 0) - 2, 0, this.m_nWidth - 1); // −2..+1 (orig)
         // A landed chunk raises its column 1px → STAMP one dirt pixel on top (the shared
         // deposit primitive). Real, native terrain; no separate de-grass bookkeeping.
@@ -1583,6 +1674,7 @@ export class CLand {
     target: number;
     vel: number;
     colors: Uint32Array;
+    mats: Uint8Array; // material tag per captured pixel (kept in sync so the block isn't stale in debug)
   }[] = [];
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
   private m_slumpTimer: number = 0;
