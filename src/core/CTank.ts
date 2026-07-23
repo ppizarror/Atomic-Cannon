@@ -9,7 +9,10 @@ import {Vec2} from '../math/Vec2';
 import {clamp, clamp01, TWO_PI} from '../math/num';
 import {hexToRgb} from '../math/color';
 import {CLand} from './CLand';
-import {GameConfig} from './CGameConfig';
+import {GameConfig, isWargame} from './CGameConfig';
+
+// Wargame Detail preset — tanks drawn as flat tactical-map silhouettes in this pale blue.
+const WARGAME_TINT = '#8ed1ec';
 import {getFont, type FontId} from './rendering/BitmapFont';
 import type {Sprite, ISpriteSource} from './rendering/sprites';
 
@@ -684,24 +687,30 @@ export class CTank {
         this.m_bExploded || !GameConfig.colorizeTeam
           ? sprite.bitmap
           : tintToColor(sprite, this.m_sColor, `${bodyKey}|${this.m_sColor}`);
-      // High Contrast: stamp a white silhouette at 8 offsets behind the hull so the
-      // tank reads as white-outlined against busy terrain.
-      if (GameConfig.highContrast && !this.m_bExploded) {
-        const sil = silhouette(sprite, '#ffffff', `${bodyKey}|white`);
-        const o = Math.max(1.5, w * 0.045);
-        for (const [ox, oy] of [
-          [-o, 0],
-          [o, 0],
-          [0, -o],
-          [0, o],
-          [-o, -o],
-          [o, -o],
-          [-o, o],
-          [o, o],
-        ])
-          ctx.drawImage(sil, -w / 2 + ox, -h + oy, w, h);
+      // Wargame Detail preset: draw the hull as a flat pale-blue silhouette (tactical-map
+      // look), not the textured/coloured sprite.
+      if (isWargame() && !this.m_bExploded) {
+        ctx.drawImage(silhouette(sprite, WARGAME_TINT, `${bodyKey}|wargame`), -w / 2, -h, w, h);
+      } else {
+        // High Contrast: stamp a white silhouette at 8 offsets behind the hull so the
+        // tank reads as white-outlined against busy terrain.
+        if (GameConfig.highContrast && !this.m_bExploded) {
+          const sil = silhouette(sprite, '#ffffff', `${bodyKey}|white`);
+          const o = Math.max(1.5, w * 0.045);
+          for (const [ox, oy] of [
+            [-o, 0],
+            [o, 0],
+            [0, -o],
+            [0, o],
+            [-o, -o],
+            [o, -o],
+            [-o, o],
+            [o, o],
+          ])
+            ctx.drawImage(sil, -w / 2 + ox, -h + oy, w, h);
+        }
+        ctx.drawImage(img, -w / 2, -h, w, h);
       }
-      ctx.drawImage(img, -w / 2, -h, w, h);
     } else {
       this.drawVectorHull(ctx);
     }
@@ -799,9 +808,12 @@ export class CTank {
       const scale = turretLen() / turret.width;
       const tw = turret.width * scale,
         th = turret.height * scale;
-      const img = GameConfig.colorizeTeam
-        ? tintToColor(turret, this.m_sColor, `tanks/${this.m_sTankType} turret|${this.m_sColor}`)
-        : turret.bitmap;
+      const turretKey = `tanks/${this.m_sTankType} turret`;
+      const img = isWargame()
+        ? silhouette(turret, WARGAME_TINT, `${turretKey}|wargame`) // tactical-map silhouette
+        : GameConfig.colorizeTeam
+          ? tintToColor(turret, this.m_sColor, `${turretKey}|${this.m_sColor}`)
+          : turret.bitmap;
       ctx.save();
       ctx.translate(pivot.x, pivot.y);
       ctx.rotate(Math.atan2(aim.y, aim.x));
@@ -1140,6 +1152,28 @@ export class CTank {
 
   setCredits(n: number): void {
     this.m_credits = Math.max(0, n);
+  }
+
+  /** Overwrite position + health + credits from an authoritative network snapshot
+   *  (getPosition/getHealth hand out copies, so a spectator can't just mutate those). */
+  setNetState(s: {
+    x: number;
+    y: number;
+    life: number;
+    shield: number;
+    armor: number;
+    hazmat: number;
+    credits: number;
+  }): void {
+    this.m_vPos.x = s.x;
+    this.m_vPos.y = s.y;
+    this.m_vVel.x = 0;
+    this.m_vVel.y = 0;
+    this.m_health.nLife = s.life;
+    this.m_health.nShield = s.shield;
+    this.m_health.nArmor = s.armor;
+    this.m_health.nHazmat = s.hazmat;
+    this.setCredits(s.credits);
   }
 
   /** Add (or subtract) credits, floored at 0. Used by the earning economy. */

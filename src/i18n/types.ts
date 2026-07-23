@@ -343,6 +343,8 @@ export interface Strings {
       language: RowCopy;
       tracking: RowCopy;
       smoke: RowCopy;
+      detail: RowCopy;
+      craterFill: RowCopy;
       highContrast: RowCopy;
       landType: RowCopy;
       aiStats: RowCopy;
@@ -480,6 +482,8 @@ export interface Strings {
     bubble: string;
     /** Fallback name for an unnamed sentry tank. */
     sentry: string;
+    /** Wargame Detail preset: every CPU is renamed to this (the WarGames "WOPR"). */
+    whopper: string;
     /** Placeholder rendered on a tank badge with no name. */
     noName: string;
     /** On-canvas tank badge stats. */

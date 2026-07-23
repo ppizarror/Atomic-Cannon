@@ -169,6 +169,8 @@ function graphicsRows(): Widget[] {
     languageRow(s.language),
     toggle(s.tracking, 'gfx.tracking'),
     toggle(s.smoke, 'gfx.smoke'),
+    enumW(s.detail, 'gfx.detail'),
+    toggle(s.craterFill, 'gfx.craterFill'),
     toggle(s.highContrast, 'gfx.highContrast'),
     enumW(s.landType, 'gfx.landType'),
     toggle(s.aiStats, 'gfx.aiStats'),

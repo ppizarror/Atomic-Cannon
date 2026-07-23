@@ -17,7 +17,7 @@
 import type {Vec2} from '../math/Vec2';
 import type {ISpriteSource} from './rendering/sprites';
 import particlesRaw from '../data/particles.json';
-import {GameConfig} from './CGameConfig';
+import {smokeEnabled} from './CGameConfig';
 import {between} from '../math/random';
 import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
 import {TWO_PI, deg2rad} from '../math/num';
@@ -553,7 +553,7 @@ export class CParticleSystem {
    * centre. This is why the fumes come "from the earth", not from the blast core.
    */
   private emitCraterFumes(x: number, y: number, r: number): void {
-    if (!GameConfig.drawSmoke) return; // Graphics → Draw Smoke
+    if (!smokeEnabled()) return; // Graphics → Draw Smoke (+ Detail gating)
     const step = Math.max(7, Math.round(r * 0.14)); // sparse cadence across the bowl
     for (let dx = -r; dx <= r; dx += step) {
       const arc = Math.sqrt(Math.max(0, r * r - dx * dx)); // crater floor depth at this column
@@ -799,7 +799,7 @@ export class CParticleSystem {
 
   /** A slow column of grey smoke rising from a blast site (lingers after the flash). */
   private emitSmokeColumn(x: number, y: number, count: number, scale: number): void {
-    if (!GameConfig.drawSmoke) return; // Graphics → Draw Smoke (lingering ground plumes)
+    if (!smokeEnabled()) return; // Graphics → Draw Smoke (+ Detail gating) (lingering ground plumes)
     for (let i = 0; i < count; i++) {
       const g = 90 + between(-25, 45);
       this.add(

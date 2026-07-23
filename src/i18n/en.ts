@@ -396,6 +396,15 @@ export const en: Strings = {
       language: {label: 'Language', tip: 'Language used for the game interface'},
       tracking: {label: 'Tracking', tip: 'Draws a notch for off screen shots'},
       smoke: {label: 'Draw Smoke', tip: 'Draws smoking plumes on ground'},
+      detail: {
+        label: 'Detail',
+        tip: 'Render style (Wargame is a tactical-map theme)',
+        options: ['Old School', 'Simple', 'High', 'Wargame'],
+      },
+      craterFill: {
+        label: 'Filled Craters',
+        tip: 'Fill blast craters with soil instead of the background',
+      },
       highContrast: {label: 'High Contrast', tip: 'Outlines objects with white'},
       landType: {
         label: 'Land Type',
@@ -526,6 +535,7 @@ export const en: Strings = {
     foundWeapon: 'You found a {weapon} weapon.',
     bubble: '{name}: {line}',
     sentry: 'Sentry',
+    whopper: 'Whopper',
     noName: '-',
     tankTeam: 'Team {n}',
     tankLife: 'Life {n}',

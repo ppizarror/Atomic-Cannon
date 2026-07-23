@@ -102,4 +102,8 @@ export const gameSettings = {
   buyTime: (): number => getVal('eco.buyTime'),
   /** Change-Wind cadence enum: 0 Per-game · 1 After-round · 2 After-shot · 3 Anytime. */
   changeWind: (): number => getVal('gp.changeWind'),
+  /** Detail render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame. */
+  detail: (): number => getVal('gfx.detail'),
+  /** Fill blast craters with soil instead of leaving them transparent (background through). */
+  craterFill: (): boolean => getVal('gfx.craterFill') !== 0,
 };

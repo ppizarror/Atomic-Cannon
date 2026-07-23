@@ -70,6 +70,8 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.randomizeTurns = S.randomizeTurns();
   GameConfig.buyTime = S.buyTime();
   GameConfig.changeWind = S.changeWind();
+  GameConfig.detail = S.detail();
+  GameConfig.craterFill = S.craterFill();
   // Framerate overlay (top-right DOM readouts): FPS at mode ≥ 1, + frame count at Full.
   const frameMode = S.framerate();
   showFramerate.value = frameMode >= 1;

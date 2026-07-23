@@ -57,4 +57,24 @@ export const GameConfig = {
   randomizeTurns: false, // Gameplay → Randomize Turns (shuffle turn order each battle)
   buyTime: 0, // Economy → Buy Time (0 Anytime · 1 After-round · 2 At-start · 3 Automatic)
   changeWind: 0, // Gameplay → Change Wind (0 Per-game · 1 After-round · 2 After-shot · 3 Anytime)
+  detail: 2, // Graphics → Detail preset (0 Old School · 1 Simple · 2 High · 3 Wargame)
+  craterFill: false, // Graphics → Filled Craters (soil-filled crater interior vs transparent)
 };
+
+/** Detail preset values. */
+export const DETAIL = {OLD_SCHOOL: 0, SIMPLE: 1, HIGH: 2, WARGAME: 3} as const;
+
+/** Ground smoke draws only when Draw Smoke is on AND the Detail preset allows it — Old
+ *  School and Wargame both force smoke off (matching the original's derived sub-flags). */
+export function smokeEnabled(): boolean {
+  return (
+    GameConfig.drawSmoke &&
+    GameConfig.detail !== DETAIL.OLD_SCHOOL &&
+    GameConfig.detail !== DETAIL.WARGAME
+  );
+}
+
+/** Wargame Detail preset — the tactical-map theme (silhouette tanks, "Whopper" bots, etc.). */
+export function isWargame(): boolean {
+  return GameConfig.detail === DETAIL.WARGAME;
+}

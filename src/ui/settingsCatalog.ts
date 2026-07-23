@@ -59,6 +59,8 @@ const CATALOG = {
   // ── Graphics ──
   'gfx.tracking': {default: 1},
   'gfx.smoke': {default: 1},
+  'gfx.detail': {default: 2}, // render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame
+  'gfx.craterFill': {default: 0}, // fill craters with soil (off = transparent, the faithful default)
   'gfx.highContrast': {default: 0},
   'gfx.landType': {default: 5},
   'gfx.aiStats': {default: 0},

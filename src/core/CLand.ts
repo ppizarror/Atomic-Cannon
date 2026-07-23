@@ -4,6 +4,7 @@
 
 import {Vec2} from '../math/Vec2';
 import {clamp, clamp01, TWO_PI} from '../math/num';
+import {GameConfig} from './CGameConfig';
 
 // ============================================================================
 // INTERFACES & TYPES
@@ -69,6 +70,18 @@ interface HeatWisp {
   b: number;
 }
 
+// A falling overburden block (beam/digger slice collapse): a captured column of pixels
+// (the cap + earth above a cut) sliding DOWN under gravity to land on the substrate below.
+interface Fall {
+  col: number;
+  y: number;
+  thick: number;
+  target: number;
+  vel: number;
+  colors: Uint32Array;
+  mats: Uint8Array; // material tag per captured pixel (kept in sync so the block isn't stale in debug)
+}
+
 // ============================================================================
 // CLand CLASS
 // ============================================================================
@@ -91,6 +104,11 @@ export class CLand {
 
     this.m_particles = [];
     this.m_radParticles = [];
+  }
+
+  /** The per-column surface heightmap (live reference — copy before mutating). */
+  getHeights(): Int16Array {
+    return this.m_arrHeights ?? new Int16Array(0);
   }
 
   initFromArray(heights: Int16Array, _scaleX: number = 1, scaleY: number = 1): void {
@@ -300,6 +318,11 @@ export class CLand {
     const W = this.m_nWidth;
     const heights = this.m_arrHeights;
     const dirtBand = clamp(Math.round(nRadius * 0.22), 12, 40);
+    // Graphics → Filled Craters (opt-in, off by default): paint the excavated bowl with soil
+    // so the crater reads as a dirt hole instead of transparent (the background showing
+    // through). Purely visual — collision uses m_arrHeights (the lowered floor), untouched.
+    // Cleaners (coatDirt=false) still leave bare removed earth.
+    const craterFill = coatDirt && GameConfig.craterFill;
 
     for (let dx = startX; dx <= endX; dx++) {
       const distFromCenter = Math.abs(dx - x);
@@ -311,7 +334,19 @@ export class CLand {
 
       // Lower the surface to the crater floor — `setColumnTop` CLEARS the removed pixels
       // (grass/dirt/rock/deposited dirt alike, material-blind) down to the new floor.
+      const oldTop = heights[dx];
       if (craterBottom > this.m_arrHeights[dx]) this.setColumnTop(dx, craterBottom);
+
+      // Filled Craters: re-fill the just-excavated void [oldTop, craterBottom) with soil.
+      if (px && craterFill && craterBottom > oldTop) {
+        const mat = this.m_material;
+        const bot = Math.min(this.m_nHeight, Math.floor(craterBottom));
+        for (let yy = oldTop; yy < bot; yy++) {
+          const i = yy * W + dx;
+          px[i] = this.dirtColorAt(dx, yy);
+          if (mat) mat[i] = CLand.MAT_DIRT;
+        }
+      }
 
       // Coat the exposed face with dirt: a thin band below the new surface, only where the crater
       // actually cut in (arcHeight > 2 skips the featherweight rim columns so it can't smear onto
@@ -396,13 +431,34 @@ export class CLand {
     return removed;
   }
 
+  /** Clamp a raw column span to the terrain's valid range [0, width-1]. */
+  private clampCols(lo: number, hi: number): [number, number] {
+    return [Math.max(0, lo), Math.min(this.m_nWidth - 1, hi)];
+  }
+
+  /** Blit a falling block's captured column at row `top`: `draw` writes its pixels+material,
+   *  else clears them (erase). Shared by stepFalls (per frame) + settleFallsIn (on re-carve). */
+  private blitFall(
+    px: Uint32Array,
+    mat: Uint8Array | null,
+    f: Fall,
+    top: number,
+    draw: boolean,
+  ): void {
+    const W = this.m_nWidth;
+    for (let k = 0; k < f.thick; k++) {
+      const idx = (top + k) * W + f.col;
+      px[idx] = draw ? f.colors[k] : 0;
+      if (mat) mat[idx] = draw ? f.mats[k] : 0;
+    }
+  }
+
   /** Advance falling overburden blocks (beam/digger collapse): each slid-down cap accelerates
    *  under gravity, redrawn at its new Y each frame, until it lands contiguously on the
    *  substrate — no lingering gap. */
   private stepFalls(dt: number): void {
     if (!this.m_falls.length || !this.m_pixels || !this.m_arrHeights) return;
     const G = 1400,
-      W = this.m_nWidth,
       px = this.m_pixels,
       mat = this.m_material,
       h = this.m_arrHeights;
@@ -410,11 +466,7 @@ export class CLand {
     for (let i = 0; i < this.m_falls.length; i++) {
       const f = this.m_falls[i];
       const oldTop = Math.round(f.y);
-      for (let k = 0; k < f.thick; k++) {
-        const idx = (oldTop + k) * W + f.col; // erase old pos (pixel + material)
-        px[idx] = 0;
-        if (mat) mat[idx] = 0;
-      }
+      this.blitFall(px, mat, f, oldTop, false); // erase old pos
       f.vel += G * dt;
       f.y += f.vel * dt;
       let landed = false;
@@ -423,11 +475,7 @@ export class CLand {
         landed = true;
       }
       const top = Math.round(f.y);
-      for (let k = 0; k < f.thick; k++) {
-        const idx = (top + k) * W + f.col; // draw at new pos (pixel + material)
-        px[idx] = f.colors[k];
-        if (mat) mat[idx] = f.mats[k];
-      }
+      this.blitFall(px, mat, f, top, true); // draw at new pos
       h[f.col] = top;
       if (!landed) this.m_falls[w++] = f;
     }
@@ -442,8 +490,7 @@ export class CLand {
    *  pixels ABOVE the surface → the "floating dirt" in the sky. Called before every re-carve. */
   private settleFallsIn(lo: number, hi: number): void {
     if (!this.m_falls.length || !this.m_pixels || !this.m_arrHeights) return;
-    const W = this.m_nWidth,
-      px = this.m_pixels,
+    const px = this.m_pixels,
       mat = this.m_material,
       h = this.m_arrHeights;
     let w = 0;
@@ -454,17 +501,9 @@ export class CLand {
         continue;
       }
       const oldTop = Math.round(f.y);
-      for (let k = 0; k < f.thick; k++) {
-        const idx = (oldTop + k) * W + f.col; // erase from wherever it is now
-        px[idx] = 0;
-        if (mat) mat[idx] = 0;
-      }
+      this.blitFall(px, mat, f, oldTop, false); // erase from wherever it is now
       const top = Math.min(this.m_nHeight - f.thick, f.target);
-      for (let k = 0; k < f.thick; k++) {
-        const idx = (top + k) * W + f.col; // deposit at its target
-        px[idx] = f.colors[k];
-        if (mat) mat[idx] = f.mats[k];
-      }
+      this.blitFall(px, mat, f, top, true); // deposit at its target
       h[f.col] = top; // surface = the settled block top
     }
     this.m_falls.length = w;
@@ -482,8 +521,7 @@ export class CLand {
    */
   carveBeamSlice(x0: number, y0: number, x1: number, y1: number, halfWidth: number): void {
     if (!this.m_arrHeights) return;
-    const lo = Math.max(0, Math.floor(Math.min(x0, x1)));
-    const hi = Math.min(this.m_nWidth - 1, Math.ceil(Math.max(x0, x1)));
+    const [lo, hi] = this.clampCols(Math.floor(Math.min(x0, x1)), Math.ceil(Math.max(x0, x1)));
     this.settleFallsIn(lo, hi); // finalize any overburden still falling here → no concurrent falls
     const dx = x1 - x0;
     // The original carves with an irregular MASK stencil (jagged silhouette), not a clean band,
@@ -541,8 +579,7 @@ export class CLand {
    */
   carveDiscCollapse(x: number, y: number, r: number): void {
     if (!this.m_arrHeights) return;
-    const lo = Math.max(0, Math.floor(x - r));
-    const hi = Math.min(this.m_nWidth - 1, Math.ceil(x + r));
+    const [lo, hi] = this.clampCols(Math.floor(x - r), Math.ceil(x + r));
     this.settleFallsIn(lo, hi); // settle any active overburden first → no concurrent falls
     for (let c = lo; c <= hi; c++) {
       const dx = c - x;
@@ -600,8 +637,7 @@ export class CLand {
     if (!this.m_arrHeights) return;
     const c = clamp(Math.round(cx), 0, this.m_nWidth - 1);
     const top = Math.max(0, this.m_arrHeights[c] - Math.round(height)); // flat top, `height` above centre
-    const x0 = Math.max(0, c - halfWidth),
-      x1 = Math.min(this.m_nWidth - 1, c + halfWidth);
+    const [x0, x1] = this.clampCols(c - halfWidth, c + halfWidth);
     for (let col = x0; col <= x1; col++) {
       if (top < this.m_arrHeights[col]) this.setColumnTop(col, top); // raise → stamp dirt (never lower)
     }
@@ -660,12 +696,12 @@ export class CLand {
    */
   depositDirt(x: number, y: number, nRadius: number, amount: number): void {
     if (!this.m_arrHeights) return;
-    // Mound WIDTH is driven by the weapon's blast RADIUS (how far it flings earth) and its
-    // VOLUME by `earth`; height = volume/width. So two same-`earth` weapons read differently:
-    // a wide-radius one (Dirty Boy r15) spreads into a low broad hill, a tight one (Dirtox r10)
-    // piles a narrower, TALLER mound — instead of both looking the same.
-    const R = Math.min(220, Math.round(Math.max(6, nRadius) * 3 + amount * 0.6)); // half-base
-    const H = Math.min(120, Math.round((amount * amount * 1.2) / Math.max(20, R))); // peak
+    // The deposit AMOUNT (`earth`) is the primary driver of BOTH the mound's width and its height,
+    // so a high-`earth` weapon (Mountain e90) piles a big, tall, rounded dome — not a flat skirt.
+    // WIDTH: earth spread + a little extra reach from the blast radius. HEIGHT scales DIRECTLY with
+    // earth (NOT divided by width, the old bug — that starved big mounds down to a long-tailed ridge).
+    const R = Math.min(200, Math.round(Math.max(6, nRadius) + amount * 1.4)); // half-base
+    const H = Math.min(Math.round(this.m_nHeight * 0.55), Math.round(amount * 2.4 + nRadius * 0.4)); // peak
     if (R <= 0 || H <= 0) return;
     const r0 = clamp(Math.round(nRadius), 5, R); // impact-ball radius
     const cx = Math.round(x);
@@ -702,8 +738,7 @@ export class CLand {
       // The mound spreads out and rises from the contact ball to the full dome.
       const curR = blob.r0 + (blob.R - blob.r0) * ease;
       const curH = blob.H * (0.35 + 0.65 * ease); // starts as a small ball, grows up
-      const x0 = Math.max(0, Math.round(blob.x - curR)),
-        x1 = Math.min(this.m_nWidth - 1, Math.round(blob.x + curR));
+      const [x0, x1] = this.clampCols(Math.round(blob.x - curR), Math.round(blob.x + curR));
       for (let col = x0; col <= x1; col++) {
         const dx = (col - blob.x) / curR; // -1..1 across the current mound
         if (dx <= -1 || dx >= 1) continue;
@@ -1302,8 +1337,7 @@ export class CLand {
     const W = this.m_nWidth,
       H = this.m_nHeight;
     const r = Math.max(1, radius);
-    const x0 = Math.max(0, Math.floor(cx - r)),
-      x1 = Math.min(W - 1, Math.ceil(cx + r));
+    const [x0, x1] = this.clampCols(Math.floor(cx - r), Math.ceil(cx + r));
     const y0 = Math.max(0, Math.floor(cy - r)),
       y1 = Math.min(H - 1, Math.ceil(cy + r));
     for (let y = y0; y <= y1; y++) {
@@ -1334,8 +1368,7 @@ export class CLand {
     if (!h) return;
     const W = this.m_nWidth,
       H = this.m_nHeight;
-    const x0 = Math.max(0, cx - r),
-      x1 = Math.min(W - 1, cx + r);
+    const [x0, x1] = this.clampCols(cx - r, cx + r);
     for (let x = x0; x <= x1; x++) {
       const dx = x - cx;
       const hh = Math.sqrt(Math.max(0, r * r - dx * dx));
@@ -1674,15 +1707,7 @@ export class CLand {
   // Impact discs: a round dirt ball baked at each Dirt-weapon contact point (x, surfY, radius).
   // Falling overburden blocks (beam/digger slice collapse): a captured column of pixels (the
   // cap + earth above the cut) sliding DOWN under gravity to land on the substrate below.
-  private m_falls: {
-    col: number;
-    y: number;
-    thick: number;
-    target: number;
-    vel: number;
-    colors: Uint32Array;
-    mats: Uint8Array; // material tag per captured pixel (kept in sync so the block isn't stale in debug)
-  }[] = [];
+  private m_falls: Fall[] = [];
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
   private m_slumpTimer: number = 0;
   private m_slumpX0: number = 1e9;

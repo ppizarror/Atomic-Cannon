@@ -13,7 +13,7 @@ import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import {Roster} from '../core/CRoster';
 import {CShot} from '../core/CShot';
-import {GameConfig} from '../core/CGameConfig';
+import {GameConfig, isWargame} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
 import {
@@ -324,6 +324,22 @@ export interface ActiveTaunt {
   alpha: number;
 }
 
+/** Authoritative per-turn state shared between clients in a network match. */
+export interface NetSnapshot {
+  tanks: {
+    x: number;
+    y: number;
+    life: number;
+    shield: number;
+    armor: number;
+    hazmat: number;
+    credits: number;
+  }[];
+  /** Full terrain heightmap (per-column surface Y). */
+  heights: number[];
+  wind: {x: number; y: number};
+}
+
 /**
  * CGameController - Main game controller
  */
@@ -379,6 +395,17 @@ export class CGameController implements ShotWorld {
    *  squad sharing that player's colour), capped at 16 tanks total. The first
    *  `m_humanCount` teams are human. */
   startGame(nPlayers: number = 2): void {
+    // A plain startGame (solo / Play) is never a network match — clear any net state
+    // left from a previous online game. startNetworkGame sets m_bootingNet to keep its
+    // own config through this reset.
+    if (!this.m_bootingNet) {
+      this.m_netMode = false;
+      this.m_netLocalIndex = -1;
+      this.m_terrainSeed = null;
+      this.m_netRoster = null;
+      this.m_onNetTurnEnd = null;
+    }
+
     // Reset state
     this.m_tanks = [];
     this.m_shots = [];
@@ -417,11 +444,16 @@ export class CGameController implements ShotWorld {
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
     for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
       const botNames = strings.value.botNames;
-      const cfg = roster[p] ?? {
-        name: p === 0 ? strings.value.game.defaultPlayer : botNames[p % botNames.length],
-        model: '',
-        color: TEAM_COLORS[p] ?? DEFAULT_TEAM_COLOR,
-      };
+      // In a network match the roster comes from the lobby (same on every client, in
+      // turn order) so names/colours — and thus team identity — match across clients.
+      const netCfg = this.m_netRoster?.[p];
+      const cfg = netCfg
+        ? {name: netCfg.name, model: '', color: netCfg.color}
+        : (roster[p] ?? {
+            name: p === 0 ? strings.value.game.defaultPlayer : botNames[p % botNames.length],
+            model: '',
+            color: TEAM_COLORS[p] ?? DEFAULT_TEAM_COLOR,
+          });
       // Team = the colour's group; the first tank of a colour defines a new team id.
       let team = teamOfColor.get(cfg.color);
       if (team === undefined) {
@@ -429,9 +461,11 @@ export class CGameController implements ShotWorld {
         teamOfColor.set(cfg.color, team);
       }
       const human = p < this.m_humanCount;
+      // Wargame Detail preset renames every CPU "Whopper" (the WarGames reference).
+      const baseName = !human && isWargame() ? strings.value.game.whopper : cfg.name;
       for (let k = 0; k < perTeam && spawns.length < MAX_TANKS; k++) {
         const name =
-          perTeam > 1 ? fmt(strings.value.game.teamMember, {name: cfg.name, n: k + 1}) : cfg.name;
+          perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
         spawns.push({name, color: cfg.color, model: cfg.model, team, human});
       }
     }
@@ -2649,10 +2683,7 @@ export class CGameController implements ShotWorld {
     // If the human emptied that weapon last turn (fired its last round), fall back to
     // the unlimited staple so the turn never opens on a weapon that's out of stock.
     // (Under free-fire every weapon is in stock, so this never trips.)
-    if (tank.isHuman() && !this.m_economy.hasStock(this.m_currentWeaponIndex)) {
-      this.m_currentWeaponIndex = getDefaultWeaponIndex();
-      tank.setWeaponIndex(this.m_currentWeaponIndex);
-    }
+    if (tank.isHuman()) this.ensureStocked(tank);
     // Likewise restore THIS player's own aim + power (per-tank), so the previous
     // player's shot settings never carry over into this turn.
     this.m_angle = tank.getAimAngle();
@@ -2675,7 +2706,13 @@ export class CGameController implements ShotWorld {
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
     this.m_turnElapsed = 0;
-    this.m_turnTimerRunning = this.m_shotTime > 0 && tank.isHuman() && !this.m_weaponTest;
+    // The shot clock only runs for the player actually in control here — in a network
+    // match that is solely the local player on their own turn (spectators never forfeit).
+    this.m_turnTimerRunning =
+      this.m_shotTime > 0 &&
+      tank.isHuman() &&
+      !this.m_weaponTest &&
+      (!this.m_netMode || this.m_currentPlayerIndex === this.m_netLocalIndex);
 
     // A deployed Sentry takes its own turn: aim at the nearest enemy and fire in a direct
     // line. It never moves and never uses a normal bot solve, so route it separately.
@@ -2693,10 +2730,13 @@ export class CGameController implements ShotWorld {
   /** Generate the battle terrain: a DEV flat test surface (`?flatland=1`), a forced
    *  landscape shape (Settings → Land Type), or the usual random landscape. */
   private generateTerrain(): void {
+    // A shared seed (network match) makes every client generate byte-identical
+    // terrain; Date.now() keeps solo play freshly random.
+    const seed = this.m_terrainSeed ?? Date.now();
     if (this.m_flatLand) this.m_land.generateFlat();
     else if (this.m_landMode >= 0 && this.m_landMode <= 4)
-      this.m_land.generateTerrainMode(this.m_landMode);
-    else this.m_land.generateRandomTerrain();
+      this.m_land.generateTerrainMode(this.m_landMode, seed);
+    else this.m_land.generateRandomTerrain(seed);
   }
 
   /** Spawn X for tank `i` of `n`: spread across the world with a little jitter. */
@@ -2773,6 +2813,14 @@ export class CGameController implements ShotWorld {
    *     scores by points. A total wipeout (no team left) still ends any mode. */
   private endTurn(): void {
     this.m_turnTimerRunning = false; // the clock never outlives its turn
+
+    // Network match: the server arbitrates turns. Don't advance locally — report the
+    // resolved outcome (m_onNetTurnEnd) and wait for the server's next `turnBegin`.
+    if (this.m_netMode) {
+      this.m_onNetTurnEnd?.();
+      return;
+    }
+
     const rounds = this.m_gameType === EGameType.Rounds;
     const teamsLeft = this.livingTeamCount();
 
@@ -2948,10 +2996,7 @@ export class CGameController implements ShotWorld {
     // inventory; free-fire (weapon-test) makes consume a no-op via the economy; self-playing
     // Demo fires freely (the AI drives arbitrary weapons, so it doesn't touch real stock).
     const chargeAmmo = tank.isHuman() && !GameConfig.demo;
-    if (chargeAmmo && !this.m_economy.hasStock(this.m_currentWeaponIndex)) {
-      this.m_currentWeaponIndex = getDefaultWeaponIndex();
-      tank.setWeaponIndex(this.m_currentWeaponIndex);
-    }
+    if (chargeAmmo) this.ensureStocked(tank);
 
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
@@ -3319,6 +3364,14 @@ export class CGameController implements ShotWorld {
     this.m_currentWeaponIndex = index;
   }
 
+  /** If the current weapon is out of stock, fall back to the unlimited staple (Shell) and
+   *  persist it on `tank` — so a turn never opens on, nor a shot fires from, an empty weapon.
+   *  The caller decides WHEN to check (human turn-start vs a chargeable-ammo shot). */
+  private ensureStocked(tank: CTank): void {
+    if (this.m_economy.hasStock(this.m_currentWeaponIndex)) return;
+    this.setCurrentWeapon(tank, getDefaultWeaponIndex());
+  }
+
   private executeSentryTurn(): void {
     const sentry = this.getCurrentTank();
     if (!sentry.isAlive() || this.m_gameState !== EGameState.Battle) return;
@@ -3516,6 +3569,77 @@ export class CGameController implements ShotWorld {
   /** Tanks each player fields (squad size, 1..5). Read in `startGame`. */
   setTanksPerTeam(n: number): void {
     this.m_tanksPerTeam = clamp(Math.round(n), 1, 5);
+  }
+
+  // ── Networked match ────────────────────────────────────────────────────────
+
+  /**
+   * Boot a network match: one human team per player (no local AI), a single tank
+   * each, terrain seeded so every client is identical, and the lobby roster (same
+   * order on all clients) for names/colours. The server is the turn arbiter, so
+   * `onTurnEnd` fires when the local player's turn resolves (the client then reports
+   * its authoritative outcome and waits for the next `turnBegin`).
+   */
+  startNetworkGame(opts: {
+    seed: number;
+    players: number;
+    localIndex: number;
+    roster: {name: string; color: string}[];
+    onTurnEnd?: () => void;
+  }): void {
+    this.m_netMode = true;
+    this.m_netLocalIndex = opts.localIndex;
+    this.m_terrainSeed = opts.seed >>> 0 || 1;
+    this.m_netRoster = opts.roster;
+    this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
+    this.setHumanCount(opts.players); // every team human → no local bots
+    this.setTanksPerTeam(1);
+    this.m_bootingNet = true; // keep the net config through startGame's reset
+    this.startGame(opts.players);
+    this.m_bootingNet = false;
+  }
+
+  /** True while it is the local player's turn in a network match (drives input/HUD). */
+  isLocalNetTurn(): boolean {
+    return this.m_netMode && this.m_currentPlayerIndex === this.m_netLocalIndex;
+  }
+
+  /** Server turn hand-off: make `idx` the active player and begin its turn. */
+  netSetActivePlayer(idx: number): void {
+    if (!this.m_netMode || this.m_tanks.length === 0) return;
+    this.m_currentPlayerIndex = clamp(Math.round(idx), 0, this.m_tanks.length - 1);
+    this.beginTurn();
+  }
+
+  /** Authoritative post-turn state the acting client broadcasts (tanks + terrain + wind). */
+  getNetSnapshot(): NetSnapshot {
+    const tanks = this.m_tanks.map(t => {
+      const h = t.getHealth();
+      const p = t.getPosition();
+      return {
+        x: p.x,
+        y: p.y,
+        life: h.nLife,
+        shield: h.nShield,
+        armor: h.nArmor,
+        hazmat: h.nHazmat,
+        credits: t.getCredits(),
+      };
+    });
+    return {
+      tanks,
+      heights: Array.from(this.m_land.getHeights()),
+      wind: {x: this.m_wind.x, y: this.m_wind.y},
+    };
+  }
+
+  /** Apply an authoritative snapshot from the acting client (spectator side). */
+  applyNetSnapshot(s: NetSnapshot): void {
+    s.tanks.forEach((st, i) => this.m_tanks[i]?.setNetState(st));
+    if (s.heights.length) this.m_land.initFromArray(Int16Array.from(s.heights));
+    this.m_wind.x = s.wind.x;
+    this.m_wind.y = s.wind.y;
+    this.markDirty();
   }
 
   /** Depot sell-back refund fraction (0..1), live. */
@@ -3821,6 +3945,18 @@ export class CGameController implements ShotWorld {
     this.devForceBattleEnd();
   }
 
+  /** DEV (`?craterfill=0|1`): carve a row of test craters to preview the Filled Craters
+   *  option (fill=true → soil-filled bowls; fill=false → transparent, the default). */
+  devCarveTestCraters(fill: boolean): void {
+    GameConfig.craterFill = fill;
+    for (const f of [0.35, 0.62]) {
+      const wx = Math.floor(this.m_worldWidth * f);
+      const gy = this.m_land.getHeightAt(wx);
+      this.m_land.blastCircle(wx, Math.floor(gy + 30), 90); // deep bowl → obvious fill vs sky
+    }
+    this.markDirty();
+  }
+
   /** DEV (`?sentrytest=1`): drop a Turret + Minigun sentry beside the human tank and aim
    *  each at its nearest enemy, to preview the deployed sentry sprites + turret rotation. */
   devDropSentries(): void {
@@ -4008,6 +4144,9 @@ export class CGameController implements ShotWorld {
     if (GameConfig.demo) return false;
     // Null-safe: before a match starts there is no current tank (the arsenal preview
     // and other read-only accessors can run then), so no one "has control".
+    // In a network match only the LOCAL player controls their own turn; on everyone
+    // else's turn the tank is driven from the wire, so local input is locked out.
+    if (this.m_netMode && this.m_currentPlayerIndex !== this.m_netLocalIndex) return false;
     return this.getCurrentTank()?.isHuman() === true && this.m_gameState === EGameState.Battle;
   }
 
@@ -4039,6 +4178,17 @@ export class CGameController implements ShotWorld {
   private m_shots: CShot[];
   private m_pendingSalvos = 0; // succession salvos still scheduled to fire this shot
   private m_weaponTest = false; // ?weapontest=1: AI never takes a turn (endless firing)
+
+  // ── Networked match state ────────────────────────────────────────────────
+  // Set by startNetworkGame(). In net mode the server is the turn arbiter: turns
+  // don't advance locally (endTurn defers to m_onNetTurnEnd), local input is limited
+  // to the local player's tank, and terrain is seeded so every client starts identical.
+  private m_netMode = false;
+  private m_netLocalIndex = -1; // which tank index this client controls
+  private m_terrainSeed: number | null = null; // shared seed → identical terrain
+  private m_netRoster: {name: string; color: string}[] | null = null;
+  private m_onNetTurnEnd: (() => void) | null = null;
+  private m_bootingNet = false; // true only while startNetworkGame drives startGame
 
   private m_particles: CParticleSystem;
   private m_weather: CWeather;
