@@ -1721,14 +1721,16 @@ canvas {
 /* Shared editor text field — the taunt rows and the player-name box are the same dark
    input with a green accent border + brighter focus (only sizing/padding differ). */
 .taunt-input,
-.player-name {
+.player-name,
+.net-input {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--green-line-strong);
   color: var(--text-light);
   font: 14px/1.4 sans-serif;
 }
 .taunt-input:focus,
-.player-name:focus {
+.player-name:focus,
+.net-input:focus {
   outline: none;
   border-color: var(--green-focus);
   background: rgba(0, 0, 0, 0.55);
@@ -1756,6 +1758,103 @@ canvas {
 .taunt-empty {
   margin: auto;
   text-align: center;
+}
+
+/* ── Network / multiplayer lobby ─────────────────────────────────────────── */
+.net-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(460px, 88vw);
+  margin: 0 auto;
+  padding-top: clamp(24px, 8vh, 96px);
+}
+.net-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.net-input {
+  padding: 6px 9px;
+  width: 100%;
+}
+.net-input.net-code {
+  text-align: center;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 18px;
+}
+.net-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.net-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--green-line-strong);
+  opacity: 0.5;
+  margin: 4px 0;
+}
+.net-code-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--green-line-strong);
+}
+.net-code-value {
+  font:
+    700 26px/1 ui-monospace,
+    monospace;
+  letter-spacing: 0.2em;
+  color: var(--text-light);
+}
+.net-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.net-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--green-line);
+}
+.net-row.net-you {
+  border-color: var(--green-focus);
+}
+.net-swatch {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+.net-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.net-tag {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+.net-ready {
+  flex: 0 0 auto;
+  color: var(--green-focus);
+}
+.net-ready.net-notready {
+  color: rgba(220, 180, 90, 0.9);
+}
+.net-status {
+  opacity: 0.8;
 }
 
 /* Landscapes: fewer, larger thumbnail rows. */

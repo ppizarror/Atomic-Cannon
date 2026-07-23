@@ -35,6 +35,7 @@ import {About} from './About';
 import {HighScores} from './HighScores';
 import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
+import {Network} from './Network';
 import {WarStandings} from './WarStandings';
 
 /**
@@ -243,6 +244,8 @@ function CurrentScreen() {
       return <Settings />;
     case 'setup':
       return <PlaySetup />;
+    case 'network':
+      return <Network />;
     default:
       return <Hud />;
   }

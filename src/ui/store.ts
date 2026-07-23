@@ -19,7 +19,7 @@ import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
 import {wrapIndex} from '../math/num';
 import {knockoutWhere} from '../util/canvas';
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup' | 'highscores';
+export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup' | 'highscores' | 'network';
 
 export const screen = signal<Screen>('battle');
 
@@ -180,6 +180,12 @@ export function openPlaySetup(): void {
 /** Quick Play → start immediately with the last-used setup. */
 export function quickPlay(): void {
   startBattle();
+}
+
+/** Main menu → Network Game (create / join a room). */
+export function openNetworkGame(): void {
+  screen.value = 'network';
+  uiClick();
 }
 
 /** A plain 2-player battle (dev URL affordances + boot) — does not touch the setup. */

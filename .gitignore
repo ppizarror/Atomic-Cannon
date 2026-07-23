@@ -4,6 +4,7 @@
 .idea/
 *.log
 .vscode/
+.wrangler/
 
 # Dist/packages
 dist/

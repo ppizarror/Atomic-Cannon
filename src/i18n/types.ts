@@ -61,11 +61,44 @@ export interface Strings {
   menu: {
     play: string;
     quickPlay: string;
+    network: string;
     settings: string;
     about: string;
     highScores: string;
     /** Corner link to the project's source repository. */
     repoLabel: string;
+  };
+
+  // ── Network / multiplayer ─────────────────────────────────────────────────
+  net: {
+    title: string;
+    create: string;
+    join: string;
+    back: string;
+    leave: string;
+    nameLabel: string;
+    codeLabel: string;
+    codePlaceholder: string;
+    joinAction: string;
+    creating: string;
+    /** Above the room code on the host's lobby. */
+    shareHint: string;
+    copy: string;
+    copied: string;
+    lobbyTitle: string;
+    playersLabel: string;
+    you: string;
+    host: string;
+    ready: string;
+    notReady: string;
+    start: string;
+    waitingHost: string;
+    /** fmt: {n} connected of {min} required. */
+    needPlayers: string;
+    /** Connection status pills. */
+    status: {connecting: string; open: string; reconnecting: string; closed: string};
+    errorTitle: string;
+    retry: string;
   };
 
   // ── About card ────────────────────────────────────────────────────────────
