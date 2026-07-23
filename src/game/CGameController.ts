@@ -46,6 +46,8 @@ import {
 } from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
+import {clamp, clamp01, deg2rad, TWO_PI} from '../math/num';
+import {plusMinus} from '../math/random';
 import {
   EXT,
   isBeamExt,
@@ -143,6 +145,22 @@ const STRUCTURE_SCALE = 0.45;
 
 const controlWeaponIndex = (): number =>
   CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
+
+// Hard ceiling on tanks on the field. 16 real players (startGame cap) plus a little
+// headroom for deployed Sentry turrets, past which deploySentry no-ops.
+const MAX_FIELD_TANKS = 24;
+// The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the
+// rapid Machine Gun (Minigun variant) — found by name, matching the original's lookup.
+const SENTRY_SHELL_WEAPON = Math.max(
+  0,
+  WEAPON_DATABASE.findIndex(w => w.name === 'Shell'),
+);
+const SENTRY_MG_WEAPON = (() => {
+  const i = WEAPON_DATABASE.findIndex(w => w.name === 'Machine Gun');
+  return i >= 0 ? i : SENTRY_SHELL_WEAPON; // fall back to Shell if the MG is disabled/missing
+})();
+// A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
+const SENTRY_FIRE_POWER = 1000;
 
 // Camera pan speed (world px/sec) — the constant-speed ease toward the follow
 // target (the original scrolls at dt·gameSpeed·scrollSpeed; this is that budget
@@ -370,7 +388,6 @@ export class CGameController implements ShotWorld {
     this.m_tanks = [];
     this.m_shots = [];
     this.m_mines = [];
-    this.m_sentries = [];
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
@@ -867,7 +884,7 @@ export class CGameController implements ShotWorld {
 
   /** Land-Size scale (1..5); world width = viewWidth × scale. */
   private landScale(): number {
-    return Math.max(1, Math.min(5, Math.round(GameConfig.landSize)));
+    return clamp(Math.round(GameConfig.landSize), 1, 5);
   }
 
   /** Widest the camera can scroll; 0 when the world fits the view (no scroll). */
@@ -876,7 +893,7 @@ export class CGameController implements ShotWorld {
   }
 
   private clampCamX(x: number): number {
-    return Math.max(0, Math.min(this.maxCamX(), x));
+    return clamp(x, 0, this.maxCamX());
   }
 
   /** World X of the view's left edge — for input→world mapping and world draw. */
@@ -1130,7 +1147,7 @@ export class CGameController implements ShotWorld {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     for (let col = 0; col < width; col++) {
       const worldX = Math.floor((col * W) / width);
-      const surfY = Math.max(0, Math.min(Vh, this.m_land.getHeightAt(worldX)));
+      const surfY = clamp(this.m_land.getHeightAt(worldX), 0, Vh);
       const y = Math.round(surfY * sy) + m;
       ctx.fillRect(m + col, y, 1, m + height - y);
     }
@@ -1148,8 +1165,8 @@ export class CGameController implements ShotWorld {
     for (const t of this.m_tanks) {
       if (!t.isAlive()) continue;
       const p = t.getPosition();
-      const dx = Math.round(Math.max(m + d, Math.min(m + width - d, p.x * sx + m)));
-      const dy = Math.round(Math.max(m + d, Math.min(m + height - d, p.y * sy + m)));
+      const dx = Math.round(clamp(p.x * sx + m, m + d, m + width - d));
+      const dy = Math.round(clamp(p.y * sy + m, m + d, m + height - d));
       ctx.fillStyle = t.getTeamColor();
       ctx.fillRect(dx - d, dy - d + 1, d * 2, d * 2);
       if (t === cur) {
@@ -1239,7 +1256,7 @@ export class CGameController implements ShotWorld {
     const down = this.m_assets.getSprite('gui/notch-decent'); // falling → arrow down
     const left = this.m_assets.getSprite('gui/notch-left');
     const right = this.m_assets.getSprite('gui/notch-right');
-    const clampY = (y: number, h: number) => Math.max(0, Math.min(H - h, y));
+    const clampY = (y: number, h: number) => clamp(y, 0, H - h);
 
     ctx.save();
     ctx.imageSmoothingEnabled = false;
@@ -1286,14 +1303,9 @@ export class CGameController implements ShotWorld {
         // Fallback until the sprite loads: a small dot.
         ctx.fillStyle = '#b0b0b0';
         ctx.beginPath();
-        ctx.arc(m.x, m.y - 4, 4, 0, Math.PI * 2);
+        ctx.arc(m.x, m.y - 4, 4, 0, TWO_PI);
         ctx.fill();
       }
-    }
-    for (const s of this.m_sentries) {
-      ctx.fillStyle = '#9aa';
-      ctx.fillRect(s.x - 5, s.y - 10, 10, 10);
-      ctx.fillRect(s.x, s.y - 8, 12, 3);
     }
     // Tracer ranging markers: a persistent white pin at the impact with a centred NUMBER
     // above it (the range), matching the original's numbered ranging label.
@@ -1311,7 +1323,7 @@ export class CGameController implements ShotWorld {
       ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.beginPath();
-      ctx.arc(mk.x, mk.y - 14, 2.4, 0, Math.PI * 2);
+      ctx.arc(mk.x, mk.y - 14, 2.4, 0, TWO_PI);
       ctx.fill();
       if (mk.label) {
         // Ranging number in the game's outlined bitmap font (its baked outline keeps
@@ -1360,12 +1372,12 @@ export class CGameController implements ShotWorld {
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = `rgba(0,0,0,${0.5 * a})`;
       ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.arc(c.x, c.y, c.r, 0, TWO_PI);
       ctx.stroke();
       ctx.strokeStyle = `rgba(255,255,255,${0.9 * a})`;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.arc(c.x, c.y, c.r, 0, TWO_PI);
       ctx.stroke();
       ctx.restore();
     }
@@ -1445,7 +1457,7 @@ export class CGameController implements ShotWorld {
         text: b.text,
         xPct: (p.x - this.m_camX) / vw,
         yPct: (p.y - TAUNT_RISE) / vh,
-        alpha: Math.max(0, Math.min(1, remain / TAUNT_FADE)),
+        alpha: clamp01(remain / TAUNT_FADE),
       };
     });
   }
@@ -1535,7 +1547,7 @@ export class CGameController implements ShotWorld {
   /** World point the current (angle, power) aims at — where the target cross sits. */
   private aimPoint(angleDeg: number, power: number): Vec2 {
     const o = this.aimOrigin();
-    const r = (angleDeg * Math.PI) / 180;
+    const r = deg2rad(angleDeg);
     const f = Math.max(0, (power - 10) / 990); // POWER_MIN..MAX → 0..1
     const L = f * CGameController.AIM_MAX_DRAG; // = the arrow tip (drag distance, capped)
     return new Vec2(o.x + Math.cos(r) * L, o.y - Math.sin(r) * L); // screen-Y up = -sin
@@ -1617,7 +1629,7 @@ export class CGameController implements ShotWorld {
     for (const [x, y] of starPositions) {
       ctx.globalAlpha = 0.3 + Math.sin(Date.now() / 1000 + x) * 0.2;
       ctx.beginPath();
-      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.arc(x, y, 1, 0, TWO_PI);
       ctx.fill();
     }
 
@@ -1667,21 +1679,21 @@ export class CGameController implements ShotWorld {
     ctx.stroke();
     ctx.fillStyle = '#5a3a1e';
     ctx.beginPath();
-    ctx.arc(fx, poleTop, 2.2, 0, Math.PI * 2);
+    ctx.arc(fx, poleTop, 2.2, 0, TWO_PI);
     ctx.fill();
 
     // Waving red flag: each vertical strip is offset by a sine that grows toward the
     // free (right) edge, and SHADED by the wave's local slope so light plays across the
     // cloth as it ripples — crests catch the light, troughs fall into shadow.
     const N = 14;
-    const waveAt = (t: number) => Math.sin(t * Math.PI * 2 - phase) * amp * t;
-    const clamp255 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+    const waveAt = (t: number) => Math.sin(t * TWO_PI - phase) * amp * t;
+    const clamp255 = (v: number) => clamp(Math.round(v), 0, 255);
     for (let i = 0; i < N; i++) {
       const t0 = i / N,
         t1 = (i + 1) / N;
       const mid = (t0 + t1) / 2;
       // Sheen from the wave's slope (∝ cos of the sine's argument): +1 face-to-light → lit.
-      const shade = Math.cos(mid * Math.PI * 2 - phase) * mid; // stronger toward free edge
+      const shade = Math.cos(mid * TWO_PI - phase) * mid; // stronger toward free edge
       const l = 0.82 + 0.42 * shade; // brightness multiplier
       ctx.fillStyle = `rgb(${clamp255(224 * l)},${clamp255(34 * l)},${clamp255(34 * l)})`;
       ctx.beginPath();
@@ -1720,7 +1732,7 @@ export class CGameController implements ShotWorld {
       let e = teams.get(t.getTeamId());
       if (!e) teams.set(t.getTeamId(), (e = {kills: 0, life: 0, n: 0, human: false}));
       e.kills += t.getKills();
-      e.life += Math.max(0, Math.min(1, t.getHealth().nLife / t.getMaxLife()));
+      e.life += clamp01(t.getHealth().nLife / t.getMaxLife());
       e.n++;
       if (t.isHuman()) e.human = true;
     }
@@ -1788,10 +1800,10 @@ export class CGameController implements ShotWorld {
         r.y += r.vy * dt;
         r.x += wx * dt * 0.3; // slight wind lean
         this.m_fireworks.push({
-          x: r.x + (Math.random() * 2 - 1) * 1.5,
+          x: r.x + plusMinus(1.5),
           y: r.y + Math.random() * 4, // just below the head
-          vx: (Math.random() * 2 - 1) * 8,
-          vy: (Math.random() * 2 - 1) * 8 + 6,
+          vx: plusMinus(8),
+          vy: plusMinus(8) + 6,
           color: 'rgb(255,226,150)', // warm launch spark
           age: 0,
           life: FW_TRAIL_LIFE * (0.6 + Math.random() * 0.6),
@@ -1957,7 +1969,7 @@ export class CGameController implements ShotWorld {
         color = '#ffe27a';
         break;
       case 'health': {
-        const gain = Math.max(0, Math.min(c.amount, tank.getMaxLife() - tank.getHealth().nLife));
+        const gain = clamp(tank.getMaxLife() - tank.getHealth().nLife, 0, c.amount);
         tank.addLife(gain);
         msg = `You gained ${gain} health.`;
         color = '#bfe9b0';
@@ -1990,8 +2002,7 @@ export class CGameController implements ShotWorld {
         // Pendulum: swing the whole assembly about its canopy top. The crate box hangs
         // at the bottom, so anchor the sprite's bottom near (x, y) and rotate about top.
         const rot =
-          Math.sin(((this.m_time * CRATE_WOBBLE_SPEED + c.phase) * Math.PI) / 180) *
-          ((CRATE_WOBBLE_DEG * Math.PI) / 180);
+          Math.sin(deg2rad(this.m_time * CRATE_WOBBLE_SPEED + c.phase)) * deg2rad(CRATE_WOBBLE_DEG);
         ctx.save();
         ctx.imageSmoothingEnabled = false;
         ctx.translate(c.x, c.y - h); // canopy-top pivot
@@ -2112,7 +2123,9 @@ export class CGameController implements ShotWorld {
     // Only while a turn is live: if the turn timer already forfeited into BattleEnd
     // earlier this tick, endTurn has run — a second call would double the jingle.
     if (this.m_gameState !== EGameState.Battle) return;
-    if (this.m_tanks.filter(t => t.isAlive()).length <= 1) this.endTurn();
+    // Count living PLAYERS only — a lone survivor plus their own sentry still ends the battle.
+    const players = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
+    if (players.length <= 1) this.endTurn();
   }
 
   /**
@@ -2331,9 +2344,26 @@ export class CGameController implements ShotWorld {
     this.markDirty();
   }
 
-  deploySentry(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
-    // TODO: auto-firing turret each turn. For now the sentry is a static placed marker.
-    this.m_sentries.push({x, y, owner, weaponIndex});
+  /** A Sentry weapon lands → drop a stationary "Sentry" tank on the owner's team at the
+   *  impact point. It's a real tank in the array: it renders with the Sentry hull/turret
+   *  sprites (team-tinted), takes blast damage → wreck, and on its own turn aims its turret
+   *  at the nearest enemy and fires in a direct line (Turret → Shell, Minigun → Machine Gun).
+   *  Sentries are excluded from the turn's win count, standings and taunts, and are cleared
+   *  at the next battle. */
+  deploySentry(x: number, _y: number, owner: CTank | null, weaponIndex: number): void {
+    if (this.m_tanks.length >= MAX_FIELD_TANKS) return; // never grow the field without bound
+    const w = getWeapon(weaponIndex);
+    const minigun = w.getName() === 'Sentry Minigun';
+    const team = owner ? owner.getTeamId() : 0;
+    const sentry = new CTank('Sentry', team);
+    sentry.setTankType('Sentry'); // Sentry body/turret/wreck sprites
+    if (owner) sentry.setColor(owner.getColor()); // team identity + tint
+    sentry.setHuman(false);
+    sentry.init(x, this.m_land); // snap onto the terrain at the impact column (_y unused)
+    // Health is weapon-defined; the Minigun variant is the tougher "more health" one.
+    sentry.setMaxLife(minigun ? GameConfig.hitpoints * 2 : GameConfig.hitpoints);
+    if (minigun) this.m_sentryMinigun.add(sentry); // → fires "Machine Gun" on its turn
+    this.m_tanks.push(sentry);
     this.markDirty();
   }
 
@@ -2567,9 +2597,14 @@ export class CGameController implements ShotWorld {
     this.m_turnElapsed = 0;
     this.m_turnTimerRunning = this.m_shotTime > 0 && tank.isHuman() && !this.m_weaponTest;
 
+    // A deployed Sentry takes its own turn: aim at the nearest enemy and fire in a direct
+    // line. It never moves and never uses a normal bot solve, so route it separately.
+    if (tank.getTankType() === 'Sentry') {
+      this.schedule(0.6, () => this.executeSentryTurn());
+    }
     // Demo Mode (More Graphics Options): the human's turns are played by the AI too, so the
     // game plays itself.
-    if (tank.isBot() || (GameConfig.demo && tank.isHuman())) {
+    else if (tank.isBot() || (GameConfig.demo && tank.isHuman())) {
       this.schedule(0.7, () => this.executeBotTurn());
     }
     this.markDirty(); // new turn: indicator moves, aim resets → redraw
@@ -2603,7 +2638,6 @@ export class CGameController implements ShotWorld {
     this.m_currentBattle++;
     this.m_shots = [];
     this.m_mines = [];
-    this.m_sentries = [];
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
@@ -2614,6 +2648,8 @@ export class CGameController implements ShotWorld {
     this.m_rockets = [];
     this.m_showFireworks = false;
     this.generateTerrain();
+    // Sentries are per-battle: clear last battle's deployed turrets before respawning.
+    this.m_tanks = this.m_tanks.filter(t => t.getTankType() !== 'Sentry');
     const n = this.m_tanks.length;
     this.m_tanks.forEach((t, i) => {
       t.respawn(this.tankSpawnX(i, n), this.m_land);
@@ -2649,7 +2685,9 @@ export class CGameController implements ShotWorld {
   /** End the current turn: declare a winner, or hand off to the next player. */
   private endTurn(): void {
     this.m_turnTimerRunning = false; // the clock never outlives its turn
-    const alive = this.m_tanks.filter(t => t.isAlive());
+    // The battle is decided by the living PLAYERS — deployed sentries don't count toward
+    // (or win) the battle, and are cleared at the next battle regardless.
+    const alive = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
     if (alive.length <= 1) {
       this.m_gameState = EGameState.BattleEnd;
       this.m_battleEndTime = 0; // restart the winner-flag animation
@@ -2726,7 +2764,7 @@ export class CGameController implements ShotWorld {
    */
   getTurnTimer(): {frac: number; color: string} | null {
     if (!this.m_turnTimerRunning || this.m_shotTime <= 0) return null;
-    const frac = Math.max(0, Math.min(1, 1 - this.m_turnElapsed / this.m_shotTime));
+    const frac = clamp01(1 - this.m_turnElapsed / this.m_shotTime);
     const color = frac > 0.33 ? '#00ff00' : frac > 0.12 ? '#ffff00' : '#ff0000';
     return {frac, color};
   }
@@ -2784,7 +2822,7 @@ export class CGameController implements ShotWorld {
       const budget = this.moveRange(weapon);
       const tx = tank.getPosition().x;
       const pick = this.aimPoint(this.m_angle, this.m_power).x; // where the player is pointing
-      const destX = Math.max(tx - budget, Math.min(tx + budget, pick));
+      const destX = clamp(pick, tx - budget, tx + budget);
       this.startTankMove(tank, destX);
       return;
     }
@@ -2834,14 +2872,14 @@ export class CGameController implements ShotWorld {
     const baseAngle = tank.getTurretAngle();
     const isBeam = isBeamExt(ext);
     // Per-shot inaccuracy — gated by Settings → Gameplay → Variance.
-    const varianceRad = this.m_variance ? (weapon.getVariance() * Math.PI) / 180 : 0;
+    const varianceRad = this.m_variance ? deg2rad(weapon.getVariance()) : 0;
 
     // Multi-fire: `spawn` = SIMULTANEOUS rounds in a fan, `spread` = degrees
     // between them, `sucNum` = SUCCESSION (fires sucNum+1 times in a row). So a
     // Cannon (spawn 5) sprays 5 pellets, a Machine Gun (sucNum 11) rattles off
     // ~12, a Tomcat (spawn 3, spread 3) fans 3 rockets.
     const rounds = Math.max(1, weapon.getSpawnCount());
-    const spacingRad = (weapon.getFanSpacingDeg() * Math.PI) / 180;
+    const spacingRad = deg2rad(weapon.getFanSpacingDeg());
 
     // Beams are instantaneous hitscan: resolve the whole fan this frame (no flying
     // projectile), then Explosion waits for the flash to fade. (No beam has a
@@ -2849,7 +2887,7 @@ export class CGameController implements ShotWorld {
     if (isBeam) {
       for (let i = 0; i < rounds; i++) {
         const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
-        const jitter = varianceRad > 0 ? (Math.random() * 2 - 1) * varianceRad : 0;
+        const jitter = varianceRad > 0 ? plusMinus(varianceRad) : 0;
         this.fireBeam(muzzlePos, baseAngle + fan + jitter, weapon, tank);
       }
       this.m_shots = [];
@@ -2867,7 +2905,7 @@ export class CGameController implements ShotWorld {
     const fireSalvo = () => {
       for (let i = 0; i < rounds; i++) {
         const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
-        const jitter = varianceRad > 0 ? (Math.random() * 2 - 1) * varianceRad : 0;
+        const jitter = varianceRad > 0 ? plusMinus(varianceRad) : 0;
         const pShot = new CShot();
         pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, dmg, rad, tank);
         pShot.setWeaponIndex(this.m_currentWeaponIndex);
@@ -2889,7 +2927,7 @@ export class CGameController implements ShotWorld {
     };
 
     const salvos = 1 + weapon.getSuccessionCount();
-    const gap = salvos > 1 ? Math.min(0.14, Math.max(0.05, weapon.getSuccessionSec() / salvos)) : 0;
+    const gap = salvos > 1 ? clamp(weapon.getSuccessionSec() / salvos, 0.05, 0.14) : 0;
     this.m_pendingSalvos = salvos;
     for (let sv = 0; sv < salvos; sv++) {
       // Each succession salvo is a fresh weapon dispatch and replays soundFire.
@@ -2974,7 +3012,7 @@ export class CGameController implements ShotWorld {
     // noisy, not a clean geometric slot. Our heightmap can't hold a floating tunnel,
     // so the slice drops each crossed column by ~the beam thickness.
     const jitter = 0.85 + Math.random() * 0.3; // per-fire size wobble
-    const carveHalf = Math.max(3, Math.min(24, weapon.getSize() * 0.5 * jitter));
+    const carveHalf = clamp(weapon.getSize() * 0.5 * jitter, 3, 24);
     this.schedule(BEAM_COLLAPSE_DELAY, () => {
       this.m_land.carveBeamSlice(muzzle.x, muzzle.y, end.x, end.y, carveHalf);
     });
@@ -3007,7 +3045,7 @@ export class CGameController implements ShotWorld {
     const dx = bx - ax,
       dy = by - ay;
     const len2 = dx * dx + dy * dy;
-    const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+    const t = len2 > 0 ? clamp01(((px - ax) * dx + (py - ay) * dy) / len2) : 0;
     const cx = ax + t * dx,
       cy = ay + t * dy;
     return Math.hypot(px - cx, py - cy);
@@ -3063,6 +3101,63 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
+  // SENTRY TURRETS (auto-firing deployables)
+  // ========================================================================
+
+  /** The nearest living enemy (different team) to a tank, or null if none remain. */
+  private nearestEnemy(from: CTank): CTank | null {
+    const p = from.getPosition();
+    let best: CTank | null = null;
+    let bestDist = Infinity;
+    for (const t of this.m_tanks) {
+      if (t === from || !t.isAlive()) continue;
+      if (t.getTeamId() === from.getTeamId()) continue; // never target its own team
+      const d = t.distanceTo(p.x, p.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** A Sentry's turn: lock the turret onto the nearest enemy and fire in a direct line
+   *  at full power — the Turret variant shoots a Shell, the Minigun variant a Machine Gun
+   *  burst. No ballistic solve (it "can only fire in a direct line"), so it can miss over
+   *  terrain. With no enemy left it simply passes. */
+  private executeSentryTurn(): void {
+    const sentry = this.getCurrentTank();
+    if (!sentry.isAlive() || this.m_gameState !== EGameState.Battle) return;
+    if (sentry.getTankType() !== 'Sentry') return;
+
+    const target = this.nearestEnemy(sentry);
+    if (!target) {
+      this.endTurn();
+      return;
+    }
+
+    // Aim straight at the target. Screen-Y is down and the barrel points along
+    // (cos θ, −sin θ), so the UI angle to a target at (tx,ty) from the pivot is
+    // atan2(−dy, dx). Snap the turret + stored aim to it.
+    const pivot = sentry.getTurretPivot();
+    const tp = target.getPosition();
+    const angleDeg = (Math.atan2(-(tp.y - pivot.y), tp.x - pivot.x) * 180) / Math.PI;
+    const norm = ((Math.round(angleDeg) % 360) + 360) % 360;
+    sentry.setAimAngle(norm);
+    sentry.setPower(SENTRY_FIRE_POWER);
+    sentry.setTurretAngle(norm);
+    this.m_angle = norm;
+    this.m_power = SENTRY_FIRE_POWER;
+
+    const wi = this.m_sentryMinigun.has(sentry) ? SENTRY_MG_WEAPON : SENTRY_SHELL_WEAPON;
+    sentry.setWeaponIndex(wi);
+    this.m_currentWeaponIndex = wi;
+
+    // Fire after a brief beat; the shot resolving hands the turn on (as for a bot).
+    this.schedule(0.4, () => this.fire());
+  }
+
+  // ========================================================================
   // BOT AI (CPU PLAYER)
   // ========================================================================
 
@@ -3071,6 +3166,12 @@ export class CGameController implements ShotWorld {
    */
   private executeBotTurn(): void {
     const botTank = this.getCurrentTank();
+
+    // A Sentry drives its own turn (aim + direct-line fire), never the normal bot solve.
+    if (botTank.getTankType() === 'Sentry') {
+      this.executeSentryTurn();
+      return;
+    }
 
     // In Demo Mode the AI also drives the human tank, so allow a non-bot through then.
     if (!botTank.isAlive() || (!botTank.isBot() && !GameConfig.demo)) return;
@@ -3115,7 +3216,7 @@ export class CGameController implements ShotWorld {
 
   /** Drive a tank to `destX` (a Move utility action), then end the turn once settled. */
   private startTankMove(tank: CTank, destX: number): void {
-    const clamped = Math.max(20, Math.min(this.m_land.width - 20, destX));
+    const clamped = clamp(destX, 20, this.m_land.width - 20);
     tank.startDrive(clamped);
     this.m_gameState = EGameState.Battle;
     this.waitForRest(tank, 0);
@@ -3149,7 +3250,7 @@ export class CGameController implements ShotWorld {
         return {
           x: p.x,
           y: p.y,
-          healthFrac: Math.max(0, Math.min(1, e.getHealth().nLife / e.getMaxLife())),
+          healthFrac: clamp01(e.getHealth().nLife / e.getMaxLife()),
         };
       }),
       botPos.x,
@@ -3235,7 +3336,7 @@ export class CGameController implements ShotWorld {
 
   /** Tanks each player fields (squad size, 1..5). Read in `startGame`. */
   setTanksPerTeam(n: number): void {
-    this.m_tanksPerTeam = Math.max(1, Math.min(5, Math.round(n)));
+    this.m_tanksPerTeam = clamp(Math.round(n), 1, 5);
   }
 
   /** Depot sell-back refund fraction (0..1), live. */
@@ -3316,7 +3417,7 @@ export class CGameController implements ShotWorld {
   /** Seed a fresh random wind at the start of a game (scaled by Settings → Wind). */
   private updateWind(): void {
     const max = CGameController.MAX_WIND * this.m_windScale;
-    this.m_wind = new Vec2((Math.random() * 2 - 1) * max, (Math.random() * 2 - 1) * max * 0.3);
+    this.m_wind = new Vec2(plusMinus(max), plusMinus(max) * 0.3);
     this.m_windTimer = 0;
   }
 
@@ -3326,7 +3427,7 @@ export class CGameController implements ShotWorld {
    */
   private updateWindDrift(dt: number): void {
     const MAX = CGameController.MAX_WIND * this.m_windScale; // 0 when wind is Disabled
-    this.m_wind.x = Math.max(-MAX, Math.min(MAX, this.m_wind.x + this.m_windAccel.x * dt));
+    this.m_wind.x = clamp(this.m_wind.x + this.m_windAccel.x * dt, -MAX, MAX);
     this.m_wind.y = Math.max(
       -MAX * 0.3,
       Math.min(MAX * 0.3, this.m_wind.y + this.m_windAccel.y * dt),
@@ -3335,7 +3436,7 @@ export class CGameController implements ShotWorld {
     this.m_windTimer -= dt;
     if (this.m_windTimer <= 0) {
       this.m_windTimer = Math.random() * 8 + 4; // 4..12 s until next drift target
-      this.m_windAccel = new Vec2((Math.random() * 2 - 1) * 2, Math.random() * 2 - 1);
+      this.m_windAccel = new Vec2(plusMinus(2), plusMinus(1));
     }
   }
 
@@ -3490,7 +3591,8 @@ export class CGameController implements ShotWorld {
   /** The tank the winner flag plants beside — the battle victor (top surviving tank
    *  by kills), or null in a draw. */
   getWinnerTank(): CTank | null {
-    const alive = this.m_tanks.filter(t => t.isAlive());
+    // The flag plants beside a winning PLAYER, never a deployed sentry.
+    const alive = this.m_tanks.filter(t => t.isAlive() && t.getTankType() !== 'Sentry');
     if (!alive.length) return null;
     return alive.reduce((a, b) => (b.getKills() > a.getKills() ? b : a));
   }
@@ -3521,6 +3623,29 @@ export class CGameController implements ShotWorld {
     this.devForceBattleEnd();
   }
 
+  /** DEV (`?sentrytest=1`): drop a Turret + Minigun sentry beside the human tank and aim
+   *  each at its nearest enemy, to preview the deployed sentry sprites + turret rotation. */
+  devDropSentries(): void {
+    const owner = this.m_tanks[0];
+    if (!owner) return;
+    const ox = owner.getPosition().x;
+    const turret = WEAPON_DATABASE.findIndex(w => w.name === 'Sentry Turret');
+    const mg = WEAPON_DATABASE.findIndex(w => w.name === 'Sentry Minigun');
+    this.deploySentry(ox - 60, 0, owner, turret);
+    this.deploySentry(ox + 60, 0, owner, mg);
+    // Aim each freshly-dropped sentry at the nearest enemy so the turrets read correctly.
+    for (const s of this.m_tanks) {
+      if (s.getTankType() !== 'Sentry') continue;
+      const t = this.nearestEnemy(s);
+      if (!t) continue;
+      const pivot = s.getTurretPivot();
+      const tp = t.getPosition();
+      const deg = (Math.atan2(-(tp.y - pivot.y), tp.x - pivot.x) * 180) / Math.PI;
+      s.setTurretAngle(((Math.round(deg) % 360) + 360) % 360);
+    }
+    this.markDirty();
+  }
+
   /** The between-battles standings: per-team totals, the leading team, the title /
    *  banner / prompt, and the victor's taunt. Read by the standings overlay. */
   getWarStandings(): WarStandings {
@@ -3544,7 +3669,7 @@ export class CGameController implements ShotWorld {
         shots += m.getShotsFired();
         hits += m.getHitsLanded();
         dmg += m.getDamageDealt();
-        lifeSum += Math.max(0, Math.min(1, m.getHealth().nLife / m.getMaxLife()));
+        lifeSum += clamp01(m.getHealth().nLife / m.getMaxLife());
       }
       rows.push({
         name: members[0].getName(),
@@ -3688,7 +3813,8 @@ export class CGameController implements ShotWorld {
   private m_tanksMoving = false; // tracks the tank-moving loop state
   private m_jetSounding = false; // tracks the jet.wav loop state
 
-  // Placed entities from special weapons (Mine/Sentry) and Tracer aim markers.
+  // Placed mines from special weapons, and Tracer aim markers. (Sentries are full tanks
+  // in m_tanks — see deploySentry — not placed-marker records.)
   private m_mines: {
     x: number;
     y: number;
@@ -3696,7 +3822,8 @@ export class CGameController implements ShotWorld {
     weaponIndex: number;
     armed: number;
   }[] = [];
-  private m_sentries: {x: number; y: number; owner: CTank | null; weaponIndex: number}[] = [];
+  // Marks which live sentry tanks are the Minigun variant (→ fire "Machine Gun", not Shell).
+  private m_sentryMinigun: WeakSet<CTank> = new WeakSet();
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
   // Floating "Show Points" damage numbers (world pos + age); rise + fade over DMG_NUM_LIFE.
   private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];

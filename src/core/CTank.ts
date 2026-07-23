@@ -5,6 +5,8 @@
  */
 
 import {Vec2} from '../math/Vec2';
+import {clamp, clamp01, TWO_PI} from '../math/num';
+import {hexToRgb} from '../math/color';
 import {CLand} from './CLand';
 import {GameConfig} from './CGameConfig';
 import {getFont, type FontId} from './rendering/BitmapFont';
@@ -55,10 +57,7 @@ const lumaOf = (r: number, g: number, b: number): number =>
 function tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElement {
   const cached = tintCache.get(key);
   if (cached) return cached;
-  const n = parseInt(hex.slice(1), 16);
-  const tr = (n >> 16) & 0xff,
-    tg = (n >> 8) & 0xff,
-    tb = n & 0xff;
+  const {r: tr, g: tg, b: tb} = hexToRgb(hex);
   const cv = document.createElement('canvas');
   cv.width = sprite.width;
   cv.height = sprite.height;
@@ -241,6 +240,13 @@ export class CTank {
     return this.m_maxLife;
   }
 
+  /** Override the max life and refill to it — used to give a deployed Sentry its own
+   *  (weapon-defined) hit points, independent of the tank Hitpoints setting. */
+  setMaxLife(n: number): void {
+    this.m_maxLife = Math.max(1, Math.round(n));
+    this.m_health.nLife = this.m_maxLife;
+  }
+
   /** Shot-collision radius (scales with Player Size). */
   getHitRadius(): number {
     return tankRadius();
@@ -278,7 +284,7 @@ export class CTank {
     let nx = 0,
       ny = 0;
     for (let c = cx - half; c <= cx + half; c++) {
-      const n = pLand.getNormal(Math.max(1, Math.min(pLand.width - 2, c)));
+      const n = pLand.getNormal(clamp(c, 1, pLand.width - 2));
       nx += n.x;
       ny += n.y;
     }
@@ -323,7 +329,7 @@ export class CTank {
           this.m_vPos.y = JET_CEILING;
           if (this.m_vVel.y < 0) this.m_vVel.y = 0;
         }
-        this.m_vPos.x = Math.max(tankRadius(), Math.min(pLand.width - tankRadius(), this.m_vPos.x));
+        this.m_vPos.x = clamp(this.m_vPos.x, tankRadius(), pLand.width - tankRadius());
 
         // Land when descending onto the surface (keeps fuel for re-lift).
         const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
@@ -356,7 +362,7 @@ export class CTank {
       this.m_bFalling = true;
 
       // Keep within the battlefield.
-      this.m_vPos.x = Math.max(tankRadius(), Math.min(pLand.width - tankRadius(), this.m_vPos.x));
+      this.m_vPos.x = clamp(this.m_vPos.x, tankRadius(), pLand.width - tankRadius());
 
       const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
       if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
@@ -747,7 +753,7 @@ export class CTank {
     for (const [rad, a] of rings) {
       ctx.globalAlpha = a / 255;
       ctx.beginPath();
-      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.arc(cx, cy, rad, 0, TWO_PI);
       ctx.stroke();
     }
     ctx.restore();
@@ -825,8 +831,8 @@ export class CTank {
     const w = Math.round(tankWidth() * 0.8); // bars a little narrower than the hull
     const cx = this.m_vPos.x;
     const team = this.m_sColor;
-    const life = Math.max(0, Math.min(1, this.m_health.nLife / this.m_maxLife));
-    const shield = Math.max(0, Math.min(1, this.m_health.nShield / 1000));
+    const life = clamp01(this.m_health.nLife / this.m_maxLife);
+    const shield = clamp01(this.m_health.nShield / 1000);
     const armor = this.m_health.nArmor;
     const BH = 2; // thin bar
 
@@ -1027,7 +1033,7 @@ export class CTank {
     this.m_fTurretAngle += fDelta;
 
     // Clamp to valid range
-    this.m_fTurretAngle = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.m_fTurretAngle));
+    this.m_fTurretAngle = clamp(this.m_fTurretAngle, -Math.PI / 2, Math.PI / 2);
   }
 
   // ========================================================================
@@ -1167,11 +1173,11 @@ export class CTank {
 
   // Utility-weapon effects (extType 7/10/11): boost shield, repair, set armor.
   addShield(n: number): void {
-    this.m_health.nShield = Math.max(0, Math.min(1000, this.m_health.nShield + n));
+    this.m_health.nShield = clamp(this.m_health.nShield + n, 0, 1000);
   }
 
   addLife(n: number): void {
-    this.m_health.nLife = Math.max(0, Math.min(1000, this.m_health.nLife + n));
+    this.m_health.nLife = clamp(this.m_health.nLife + n, 0, 1000);
   }
 
   // Armor and Hazmat are SET stats (a level), NOT additive pools like shield/life — the
@@ -1179,11 +1185,11 @@ export class CTank {
   // it re-sets to the item's level. (Only Shield/Heal add.) Upgrade-only: never downgrade a
   // stronger existing level, matching the "buy only if it improves you" purchase gate.
   setArmor(pct: number): void {
-    this.m_health.nArmor = Math.max(this.m_health.nArmor, Math.max(0, Math.min(100, pct)));
+    this.m_health.nArmor = Math.max(this.m_health.nArmor, clamp(pct, 0, 100));
   }
 
   setHazmat(pct: number): void {
-    this.m_health.nHazmat = Math.max(this.m_health.nHazmat, Math.max(0, Math.min(100, pct)));
+    this.m_health.nHazmat = Math.max(this.m_health.nHazmat, clamp(pct, 0, 100));
   }
 
   getTeamId(): number {

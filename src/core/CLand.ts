@@ -3,6 +3,7 @@
  */
 
 import {Vec2} from '../math/Vec2';
+import {clamp, clamp01, TWO_PI} from '../math/num';
 
 // ============================================================================
 // INTERFACES & TYPES
@@ -98,7 +99,7 @@ export class CLand {
 
     for (let x = 0; x < len; x++) {
       const scaledHeight = heights[x] * scaleY;
-      this.m_arrHeights[x] = Math.max(0, Math.min(this.m_nHeight, Math.floor(scaledHeight)));
+      this.m_arrHeights[x] = clamp(Math.floor(scaledHeight), 0, this.m_nHeight);
     }
 
     this.computeDirtyRegion();
@@ -177,7 +178,6 @@ export class CLand {
     const A = 15; // walk amplitude
     const Ymin = Math.floor(this.m_nHeight * 0.3); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
-    const clamp = (v: number) => Math.min(Math.max(v, Ymin), Ymax);
 
     if (mode === 0) {
       // Flat + uncorrelated ±15 noise (jagged plateau).
@@ -249,11 +249,11 @@ export class CLand {
       q2 = W >> 1,
       q3 = (3 * W) >> 2;
     let prev = start;
-    this.m_arrHeights[0] = Math.round(clamp(start));
+    this.m_arrHeights[0] = Math.round(clamp(start, Ymin, Ymax));
     for (let x = 1; x < W; x++) {
       const q = x < q1 ? 0 : x < q2 ? 1 : x < q3 ? 2 : 3;
       const [lo, hi] = win[q];
-      prev = clamp(prev + this.rand01() * (hi - lo) + lo);
+      prev = clamp(prev + this.rand01() * (hi - lo) + lo, Ymin, Ymax);
       this.m_arrHeights[x] = Math.round(prev);
     }
 
@@ -294,7 +294,7 @@ export class CLand {
     const px = this.m_pixels;
     const W = this.m_nWidth;
     const heights = this.m_arrHeights;
-    const dirtBand = Math.max(12, Math.min(40, Math.round(nRadius * 0.22)));
+    const dirtBand = clamp(Math.round(nRadius * 0.22), 12, 40);
 
     for (let dx = startX; dx <= endX; dx++) {
       const distFromCenter = Math.abs(dx - x);
@@ -430,11 +430,10 @@ export class CLand {
     // independently → a jagged, natural channel. Coherent = adjacent columns barely differ, so it
     // never leaves thin standing "nails" (unlike independent per-column random depth).
     const rnd = () => this.rand01();
-    const TAU = Math.PI * 2;
-    const pT1 = rnd() * TAU,
-      pT2 = rnd() * TAU,
-      pB1 = rnd() * TAU,
-      pB2 = rnd() * TAU;
+    const pT1 = rnd() * TWO_PI,
+      pT2 = rnd() * TWO_PI,
+      pB1 = rnd() * TWO_PI,
+      pB2 = rnd() * TWO_PI;
     const fireHalf = Math.max(2, halfWidth - rnd() * 3); // per-fire width reduction (mask − rand)
     for (let c = lo; c <= hi; c++) {
       const t = Math.abs(dx) < 1e-3 ? 0 : (c - x0) / dx;
@@ -454,10 +453,7 @@ export class CLand {
       const len2 = dx * dx + (y1 - y0) * (y1 - y0);
       this.m_radSpecks = this.m_radSpecks.filter(s => {
         if (s.x < lo || s.x > hi) return true;
-        const tt =
-          len2 > 0
-            ? Math.max(0, Math.min(1, ((s.x - x0) * dx + (s.y - y0) * (y1 - y0)) / len2))
-            : 0;
+        const tt = len2 > 0 ? clamp01(((s.x - x0) * dx + (s.y - y0) * (y1 - y0)) / len2) : 0;
         const cx = x0 + tt * dx,
           cy = y0 + tt * (y1 - y0);
         return Math.hypot(s.x - cx, s.y - cy) > halfWidth + 4; // outside the ray → survives
@@ -530,7 +526,7 @@ export class CLand {
    */
   buildPlatform(cx: number, halfWidth: number, height: number): void {
     if (!this.m_arrHeights) return;
-    const c = Math.max(0, Math.min(this.m_nWidth - 1, Math.round(cx)));
+    const c = clamp(Math.round(cx), 0, this.m_nWidth - 1);
     const top = Math.max(0, this.m_arrHeights[c] - Math.round(height)); // flat top, `height` above centre
     const x0 = Math.max(0, c - halfWidth),
       x1 = Math.min(this.m_nWidth - 1, c + halfWidth);
@@ -555,7 +551,7 @@ export class CLand {
       H = this.m_nHeight;
     const bw = img.width,
       bh = img.height;
-    const c = Math.max(0, Math.min(W - 1, Math.round(cx)));
+    const c = clamp(Math.round(cx), 0, W - 1);
     const left = c - (bw >> 1); // centre the bitmap on the aim column
     const baseTop = this.m_arrHeights[c]; // flat ground level = centre's current surface
     const structTop = Math.max(0, baseTop - bh); // structure top = raise by the bitmap height
@@ -599,7 +595,7 @@ export class CLand {
     const R = Math.min(220, Math.round(Math.max(6, nRadius) * 3 + amount * 0.6)); // half-base
     const H = Math.min(120, Math.round((amount * amount * 1.2) / Math.max(20, R))); // peak
     if (R <= 0 || H <= 0) return;
-    const r0 = Math.max(5, Math.min(R, Math.round(nRadius))); // impact-ball radius
+    const r0 = clamp(Math.round(nRadius), 5, R); // impact-ball radius
     const cx = Math.round(x);
     // Fill the BLAST RADIUS at the contact point with a round DISC of dirt pixels — a solid
     // dirt ball right where the bomb lands (fills the little crater a contact leaves), stamped
@@ -711,10 +707,10 @@ export class CLand {
     // Count scales with the blast RADIUS (the original's fallout count ∝ radius; the exact
     // multiplier is x87-lost). Tuned high enough that the 5-px crosses fill the thick crater-void
     // POOL densely (the reference footage shows a deep red band, not a thin surface line).
-    const n = Math.max(400, Math.min(12000, Math.round(nRadius * 30)));
+    const n = clamp(Math.round(nRadius * 30), 400, 12000);
     const pool = this.m_speckPool;
     for (let i = 0; i < n; i++) {
-      const ang = this.rand01() * Math.PI * 2;
+      const ang = this.rand01() * TWO_PI;
       const dist = this.rand01() * nRadius; // spawn spread across the whole radius (faithful)
       // The original scatters each grain across the blast radius (`pos = center + rand·radius·dir`)
       // and gives it only a SMALL radial velocity (`rand·8+2` in the source's units). The visible
@@ -756,7 +752,7 @@ export class CLand {
       s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
       s.settled = false;
       s.size = 0.85 + this.rand01() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
-      s.phase = this.rand01() * Math.PI * 2; // independent glow phase (no coherent wave/banding)
+      s.phase = this.rand01() * TWO_PI; // independent glow phase (no coherent wave/banding)
       s.pw = 3 + this.rand01() * 4.5; // independent glow rate (each speck breathes at its own speed)
       s.rise = 0;
       s.r = r;
@@ -818,7 +814,7 @@ export class CLand {
   addShowerParticles(x: number, y: number, count: number, radius = 24): void {
     const pool = this.m_particlePool;
     for (let i = 0; i < count; i++) {
-      const ang = Math.random() * Math.PI * 2;
+      const ang = Math.random() * TWO_PI;
       // Dirt brown (R=v, G≈v/2, B≈0), occasionally a darker clod for texture.
       let v = 24 + Math.floor(Math.random() * 116); // [24,139]
       if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark chunks
@@ -896,7 +892,7 @@ export class CLand {
       // ground at once ("high in the sky, then all fell 14 frames later"). Gravity brings each one
       // down on its own schedule, so the landing stays staggered.
       if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
-        const dcol = Math.min(this.m_nWidth - 1, Math.max(0, col + ((Math.random() * 5) | 0) - 2));
+        const dcol = clamp(col + ((Math.random() * 5) | 0) - 2, 0, this.m_nWidth - 1);
         // A landed chunk raises its column 1px → STAMP one dirt pixel on top (the shared
         // deposit primitive). Real, native terrain; no separate de-grass bookkeeping.
         this.setColumnTop(dcol, this.m_arrHeights[dcol] - 1);
@@ -967,7 +963,7 @@ export class CLand {
           // 42px band (over-invented) and NOT a flat 1px line (over-thinned). `rise` is stored as
           // height above the surface so the coat clings as the terrain shifts.
           const jx = Math.floor(this.rand01() * 4) - 2; // −2..+1 columns
-          const c2 = Math.max(0, Math.min(this.m_nWidth - 1, col + jx));
+          const c2 = clamp(col + jx, 0, this.m_nWidth - 1);
           s.x = c2;
           // Scatter DEEP into the crater face so the red coats the whole bowl (over the dirt band
           // and a bit below) — a few px above the surface down to −m_radBandDepth. Biased toward
@@ -1011,7 +1007,7 @@ export class CLand {
             life: 0.7 + this.rand01() * 0.8,
             size: 5 + this.rand01() * 7,
             vx: (this.rand01() - 0.5) * 12,
-            rot: this.rand01() * Math.PI * 2,
+            rot: this.rand01() * TWO_PI,
             spin: (this.rand01() - 0.5) * 1.6,
             r: tr,
             g: tg,
@@ -1187,7 +1183,7 @@ export class CLand {
   setColumnTop(col: number, newTop: number, colorFn?: (x: number, y: number) => number): void {
     const h = this.m_arrHeights;
     if (!h || col < 0 || col >= this.m_nWidth) return;
-    const nt = Math.max(0, Math.min(this.m_nHeight, Math.floor(newTop)));
+    const nt = clamp(Math.floor(newTop), 0, this.m_nHeight);
     const old = h[col];
     const px = this.m_pixels;
     if (px) {
