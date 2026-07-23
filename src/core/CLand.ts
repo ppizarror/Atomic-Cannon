@@ -90,7 +90,6 @@ export class CLand {
 
     this.m_particles = [];
     this.m_radParticles = [];
-    this.m_deposit = new Float32Array(width);
   }
 
   initFromArray(heights: Int16Array, _scaleX: number = 1, scaleY: number = 1): void {
@@ -151,7 +150,6 @@ export class CLand {
    */
   generateFlat(): void {
     if (!this.m_arrHeights) return;
-    this.m_deposit?.fill(0);
     this.m_dirtBlobs.length = 0;
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
@@ -169,7 +167,6 @@ export class CLand {
     if (!this.m_arrHeights) return;
     this.m_needsBake = true; // fresh heights → repaint the pixel buffer
     const W = this.m_nWidth;
-    this.m_deposit?.fill(0); // clear any old fallout pile
     this.m_dirtBlobs.length = 0; // drop any in-flight dirt deposits
     this.m_falls.length = 0; // and any falling overburden blocks
     this.m_radSpecks.length = 0;
@@ -307,8 +304,6 @@ export class CLand {
       // Lower the surface to the crater floor — `setColumnTop` CLEARS the removed pixels
       // (grass/dirt/rock/deposited dirt alike, material-blind) down to the new floor.
       if (craterBottom > this.m_arrHeights[dx]) this.setColumnTop(dx, craterBottom);
-      // A blast destroys any irradiated-earth fallout glow here.
-      if (this.m_deposit) this.m_deposit[dx] = 0;
 
       // Coat the exposed face with dirt: a thin band below the new surface, only where the crater
       // actually cut in (arcHeight > 2 skips the featherweight rim columns so it can't smear onto
@@ -466,7 +461,7 @@ export class CLand {
    * Underground blast (digger detonation): remove ONLY the DISC of radius `r` at (x,y) and
    * let the soil ABOVE it cave IN under gravity to fill the void — so the surface drops by
    * ~the disc thickness (≤ 2r), NOT all the way down from the surface to the buried blast.
-   * Per-column jitter (±28%) keeps the crater ragged, not a flat/perfect circle.
+   * The overburden slides down as a falling block per column and the slump then ragges the rim.
    */
   carveDiscCollapse(x: number, y: number, r: number): void {
     if (!this.m_arrHeights) return;
@@ -615,9 +610,9 @@ export class CLand {
 
   /**
    * Advance the growing dirt blobs (Dirt-weapon deposits). Each frame the mound's radius and
-   * height ease outward from the small contact ball to the full dome — raising each column,
-   * baking it as bare earth (`m_deposit` + de-grass), and NEVER lowering anything, so earth
-   * piles on top and the surrounding terrain is untouched.
+   * height ease outward from the small contact ball to the full dome — raising each column
+   * (stamping dirt via `setColumnTop`) and NEVER lowering anything, so earth piles on top and
+   * the surrounding terrain is untouched.
    */
   private stepDirtBlobs(dt: number): void {
     if (!this.m_dirtBlobs.length || !this.m_arrHeights) return;
@@ -781,7 +776,7 @@ export class CLand {
   private slump(x0: number, x1: number): void {
     const h = this.m_arrHeights;
     if (!h) return;
-    const THRESH = 7; // adjacent columns may differ by up to this before dirt slides (repose angle)
+    const THRESH = 8; // columns must differ by ≥8 before dirt slides (original gate is `7 < diff`)
     const a = Math.max(1, Math.floor(x0)),
       b = Math.min(this.m_nWidth - 2, Math.floor(x1));
     for (let x = a; x <= b; x++) {
@@ -892,7 +887,7 @@ export class CLand {
       // ground at once ("high in the sky, then all fell 14 frames later"). Gravity brings each one
       // down on its own schedule, so the landing stays staggered.
       if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
-        const dcol = clamp(col + ((Math.random() * 5) | 0) - 2, 0, this.m_nWidth - 1);
+        const dcol = clamp(col + ((Math.random() * 4) | 0) - 2, 0, this.m_nWidth - 1); // −2..+1 (orig)
         // A landed chunk raises its column 1px → STAMP one dirt pixel on top (the shared
         // deposit primitive). Real, native terrain; no separate de-grass bookkeeping.
         this.setColumnTop(dcol, this.m_arrHeights[dcol] - 1);
@@ -1082,15 +1077,6 @@ export class CLand {
 
   getRadiationZones(): RadParticle[] {
     return this.m_radParticles.filter(r => r.timeRemaining > 0);
-  }
-
-  /** Fallout deposit height (px) at a column — 0 where there is no live irradiation
-   *  (cleared when a blast overruns it). Gates radiation damage to the visible zone. */
-  radDepositAt(x: number): number {
-    if (!this.m_deposit) return 0;
-    const ix = Math.floor(x);
-    if (ix < 0 || ix >= this.m_nWidth) return 0;
-    return this.m_deposit[ix];
   }
 
   // ========================================================================
@@ -1576,7 +1562,6 @@ export class CLand {
   private m_smokeW: number = 0;
   private m_smokeH: number = 0;
   private m_smokeTints: Map<string, HTMLCanvasElement> = new Map(); // per-colour tinted smoke cache
-  private m_deposit: Float32Array | null = null; // per-column: deposited earth PILE height above surface (px) — fallout OR Dirt-weapon mound; bakes the pile as bare earth
   // Active Dirt-weapon deposits: smooth cosine domes that grow from a small contact ball (r0)
   // out to the full mound (R,H) over `dur` s, ADD-only. `applied` = px raised per column.
   private m_dirtBlobs: {
