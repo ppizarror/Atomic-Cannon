@@ -9,6 +9,7 @@
 import {useEffect, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Button} from './Button';
+import {EditorScreen} from './EditorScreen';
 import {openSettingsPage, uiClick} from './store';
 import {ACTIONS, type ActionId, keyName} from '../core/CControls';
 import {bindings, rebind, unassign, resetDefaults} from './controlsStore';
@@ -60,11 +61,33 @@ export function ControlsEditor() {
   };
 
   return (
-    <div class="editor-screen" onClick={onScreenClick}>
-      <div class="editor-title">
-        <BmpText font="bazouk-28" text="Customize Controls" />
-      </div>
-
+    <EditorScreen
+      title="Customize Controls"
+      onClick={onScreenClick}
+      footer={
+        armed ? (
+          <>
+            <BmpText font="beijing-16-out" text={`Press a key to define "${armLabel}".`} />
+            <BmpText font="beijing-16-out" text="Or click the screen to unassign." />
+          </>
+        ) : (
+          <BmpText font="beijing-16-out" text="Click an action to rebind its key" />
+        )
+      }
+      actions={
+        <>
+          <Button
+            label="Customize"
+            onClick={() => (uiClick(), setSweep(true), setArmed(firstAction()))}
+          />
+          <Button
+            label="Defaults"
+            onClick={() => (uiClick(), setArmed(null), setSweep(false), resetDefaults())}
+          />
+          <Button label="Done" onClick={() => openSettingsPage('root')} class="editor-exit" />
+        </>
+      }
+    >
       <div class="editor-list editor-controls" onClick={e => e.stopPropagation()}>
         <div class="editor-columns">
           <BmpText font="beijing-16-out" text="Action" />
@@ -96,29 +119,6 @@ export function ControlsEditor() {
           );
         })}
       </div>
-
-      <div class="editor-footer">
-        {armed ? (
-          <>
-            <BmpText font="beijing-16-out" text={`Press a key to define "${armLabel}".`} />
-            <BmpText font="beijing-16-out" text="Or click the screen to unassign." />
-          </>
-        ) : (
-          <BmpText font="beijing-16-out" text="Click an action to rebind its key" />
-        )}
-      </div>
-
-      <div class="editor-buttons">
-        <Button
-          label="Customize"
-          onClick={() => (uiClick(), setSweep(true), setArmed(firstAction()))}
-        />
-        <Button
-          label="Defaults"
-          onClick={() => (uiClick(), setArmed(null), setSweep(false), resetDefaults())}
-        />
-        <Button label="Done" onClick={() => openSettingsPage('root')} class="editor-exit" />
-      </div>
-    </div>
+    </EditorScreen>
   );
 }

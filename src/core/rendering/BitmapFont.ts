@@ -5,6 +5,8 @@
  * This reads those markers to slice glyphs, then colorkeys cyan+magenta away.
  */
 
+import {knockoutWhere} from '../../util/canvas';
+
 const isMagenta = (px: Uint8ClampedArray, i: number) =>
   px[i] > 170 && px[i + 1] < 90 && px[i + 2] > 170;
 const isCyan = (px: Uint8ClampedArray, i: number) =>
@@ -71,7 +73,7 @@ export class BitmapFont {
     ag.drawImage(src, 0, 1, W, gh, 0, 0, W, gh);
     const aim = ag.getImageData(0, 0, W, gh);
     const apx = aim.data;
-    for (let i = 0; i < apx.length; i += 4) if (isCyan(apx, i) || isMagenta(apx, i)) apx[i + 3] = 0;
+    knockoutWhere(apx, (p, i) => isCyan(p, i) || isMagenta(p, i));
     ag.putImageData(aim, 0, 0);
 
     this.cv = atlas;

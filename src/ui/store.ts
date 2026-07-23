@@ -16,6 +16,7 @@ import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
 import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
 import {wrapIndex} from '../math/num';
+import {knockoutWhere} from '../util/canvas';
 
 export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup' | 'highscores';
 
@@ -487,9 +488,7 @@ function loadColorKeyedBmp(
       g.drawImage(img, 0, 0);
       const im = g.getImageData(0, 0, cv.width, cv.height);
       const px = im.data;
-      for (let i = 0; i < px.length; i += 4) {
-        if (hit(px, i)) px[i + 3] = 0;
-      }
+      knockoutWhere(px, hit);
       g.putImageData(im, 0, 0);
       resolve(cv.toDataURL());
     };

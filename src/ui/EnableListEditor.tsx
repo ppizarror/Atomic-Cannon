@@ -12,6 +12,7 @@ import {BmpText} from './BmpText';
 import {Button} from './Button';
 import {openSettingsPage, uiClick} from './store';
 import {WeaponIcon} from './WeaponIcon';
+import {EditorScreen} from './EditorScreen';
 import {WEAPON_DATABASE} from '../core/CWeapon';
 import landData from '../data/land.json';
 import {
@@ -99,23 +100,26 @@ function Editor({
   }
 
   return (
-    <div class="editor-screen">
-      <div class="editor-title">
-        <BmpText font="bazouk-28" text={title} />
-      </div>
+    <EditorScreen
+      title={title}
+      footer={
+        <>
+          <BmpText font="beijing-16-out" text={footer} />
+          <BmpText font="beijing-16-out" text={`Page ${p + 1} of ${pages}`} />
+        </>
+      }
+      actions={
+        <>
+          <Button label="Prev" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))} />
+          <Button label="Next" onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))} />
+          <Button label="Exit" onClick={() => openSettingsPage('content')} class="editor-exit" />
+        </>
+      }
+    >
       <div ref={listRef} class={`editor-list editor-${layout}`}>
         {items}
       </div>
-      <div class="editor-footer">
-        <BmpText font="beijing-16-out" text={footer} />
-        <BmpText font="beijing-16-out" text={`Page ${p + 1} of ${pages}`} />
-      </div>
-      <div class="editor-buttons">
-        <Button label="Prev" onClick={() => (uiClick(), setPage(Math.max(0, p - 1)))} />
-        <Button label="Next" onClick={() => (uiClick(), setPage(Math.min(pages - 1, p + 1)))} />
-        <Button label="Exit" onClick={() => openSettingsPage('content')} class="editor-exit" />
-      </div>
-    </div>
+    </EditorScreen>
   );
 }
 

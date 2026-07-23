@@ -10,6 +10,7 @@
  */
 import {BmpText} from './BmpText';
 import {Button} from './Button';
+import {EditorScreen} from './EditorScreen';
 import {openSettingsPage, uiClick} from './store';
 import {
   TAUNT_CATEGORIES,
@@ -32,11 +33,29 @@ export function TauntEditor() {
   const meta = TAUNT_CATEGORIES.find(c => c.id === cat)!;
 
   return (
-    <div class="editor-screen">
-      <div class="editor-title">
-        <BmpText font="bazouk-28" text="Customize Taunts" />
-      </div>
-
+    <EditorScreen
+      title="Customize Taunts"
+      footer={
+        <>
+          <BmpText font="beijing-16-out" text={meta.desc} />
+          <BmpText
+            font="beijing-16-out"
+            text={`${lines.length} line${lines.length === 1 ? '' : 's'}`}
+          />
+        </>
+      }
+      actions={
+        <>
+          <Button label="Add" onClick={addLine} />
+          <Button
+            label="Reset"
+            onClick={() => (uiClick(), resetTauntLines(cat))}
+            class={tauntsEdited(cat) ? '' : 'editor-exit'}
+          />
+          <Button label="Done" onClick={() => openSettingsPage('root')} class="editor-exit" />
+        </>
+      }
+    >
       {/* Category selector: one button per list, the active one highlighted. */}
       <div class="taunt-tabs">
         {TAUNT_CATEGORIES.map(c => (
@@ -71,24 +90,6 @@ export function TauntEditor() {
           </div>
         ) : null}
       </div>
-
-      <div class="editor-footer">
-        <BmpText font="beijing-16-out" text={meta.desc} />
-        <BmpText
-          font="beijing-16-out"
-          text={`${lines.length} line${lines.length === 1 ? '' : 's'}`}
-        />
-      </div>
-
-      <div class="editor-buttons">
-        <Button label="Add" onClick={addLine} />
-        <Button
-          label="Reset"
-          onClick={() => (uiClick(), resetTauntLines(cat))}
-          class={tauntsEdited(cat) ? '' : 'editor-exit'}
-        />
-        <Button label="Done" onClick={() => openSettingsPage('root')} class="editor-exit" />
-      </div>
-    </div>
+    </EditorScreen>
   );
 }

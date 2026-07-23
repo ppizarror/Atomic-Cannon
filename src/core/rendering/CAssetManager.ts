@@ -7,6 +7,7 @@
  */
 
 import type {Sprite, ISpriteSource} from './sprites';
+import {knockoutWhere} from '../../util/canvas';
 
 type RGB = [number, number, number];
 
@@ -108,14 +109,12 @@ export class CAssetManager implements ISpriteSource {
 
   /** Zero the alpha of every pixel within tolerance of the key colour. */
   private keyOut(px: Uint8ClampedArray, [kr, kg, kb]: RGB): void {
-    for (let i = 0; i < px.length; i += 4) {
-      if (
-        Math.abs(px[i] - kr) <= KEY_TOLERANCE &&
-        Math.abs(px[i + 1] - kg) <= KEY_TOLERANCE &&
-        Math.abs(px[i + 2] - kb) <= KEY_TOLERANCE
-      ) {
-        px[i + 3] = 0;
-      }
-    }
+    knockoutWhere(
+      px,
+      (p, i) =>
+        Math.abs(p[i] - kr) <= KEY_TOLERANCE &&
+        Math.abs(p[i + 1] - kg) <= KEY_TOLERANCE &&
+        Math.abs(p[i + 2] - kb) <= KEY_TOLERANCE,
+    );
   }
 }

@@ -16,32 +16,18 @@ import {openSettingsPage, uiClick} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
 import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
 import {usePointerDrag} from './usePointerDrag';
+import {EditorScreen} from './EditorScreen';
+import {useAsyncImage} from './useAsyncImage';
+import {useAsyncValue} from './useAsyncValue';
 
 function TankPreview({model, color}: {model: string; color: string}) {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    let ok = true;
-    recolorTankPreview(model, color)
-      .then(s => ok && setSrc(s))
-      .catch(() => ok && setSrc(''));
-    return () => {
-      ok = false;
-    };
-  }, [model, color]);
+  const src = useAsyncImage(() => recolorTankPreview(model, color), [model, color]);
   return <span class="player-preview">{src ? <img src={src} alt="" /> : null}</span>;
 }
 
 function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => void}) {
-  const [data, setData] = useState<ImageData | null>(null);
+  const data = useAsyncValue<ImageData | null>(loadPalette, [], null);
   const [mark, setMark] = useState<{fx: number; fy: number} | null>(null);
-
-  useEffect(() => {
-    let ok = true;
-    loadPalette().then(d => ok && setData(d));
-    return () => {
-      ok = false;
-    };
-  }, []);
 
   // Place the crosshair on the palette pixel nearest the current colour (works for
   // stored/default colours too, not just fresh clicks).
@@ -107,11 +93,11 @@ export function PlayersEditor() {
   };
 
   return (
-    <div class="editor-screen">
-      <div class="editor-title">
-        <BmpText font="bazouk-28" text="Player Settings" />
-      </div>
-
+    <EditorScreen
+      title="Player Settings"
+      footer={<BmpText font="beijing-16-out" text="Players sharing a colour are a team" />}
+      actions={<Button label="Done" onClick={() => openSettingsPage('root')} />}
+    >
       <div class="player-card">
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
@@ -143,14 +129,6 @@ export function PlayersEditor() {
           </div>
         </div>
       </div>
-
-      <div class="editor-footer">
-        <BmpText font="beijing-16-out" text="Players sharing a colour are a team" />
-      </div>
-
-      <div class="editor-buttons">
-        <Button label="Done" onClick={() => openSettingsPage('root')} />
-      </div>
-    </div>
+    </EditorScreen>
   );
 }
