@@ -45,6 +45,10 @@ export const TEAM_COLORS: Record<number, string> = {
   15: '#80ff00',
 };
 
+/** The fallback hull colour for a team index not in the palette — team 0's blue. Used
+ *  wherever an unresolved team index is mapped to a colour. */
+export const DEFAULT_TEAM_COLOR = TEAM_COLORS[0];
+
 // --- per-tank body recolour: modulate the chosen colour by each pixel's luminance
 // so the sprite's shading is preserved and the brightest pixel shows the exact colour
 // (darker pixels become proportional shades). Reproduces any RGB the player picks.
@@ -131,7 +135,7 @@ export class CTank {
   constructor(sName: string = '', nTeamId: number = 0) {
     this.m_sName = sName; // names keep their given case (upper/lower allowed)
     this.m_nTeamId = nTeamId;
-    this.m_sColor = TEAM_COLORS[nTeamId] ?? '#0000ff'; // default until the roster sets it
+    this.m_sColor = TEAM_COLORS[nTeamId] ?? DEFAULT_TEAM_COLOR; // default until the roster sets it
     this.m_bIsHuman = false;
     // TEMP: random player hull per tank (until per-player tank selection exists in settings).
     this.m_sTankType = PLAYER_TANKS[Math.floor(Math.random() * PLAYER_TANKS.length)];
@@ -1221,7 +1225,7 @@ export class CTank {
   // ========================================================================
 
   private m_nTeamId: number = 0; // Team assignment (tanks sharing a colour are a team)
-  private m_sColor: string = '#0000ff'; // Hull colour (per player; the team is its grouping)
+  private m_sColor: string = DEFAULT_TEAM_COLOR; // Hull colour (per player; the team is its grouping)
   private m_sName: string = ''; // Display name (e.g. "Player", "BrainBot")
   private m_credits: number = 0; // Economy credits (per-tank balance; shown in the badge)
   private m_lastDamager: CTank | null = null; // kill-credit attribution ("killer")

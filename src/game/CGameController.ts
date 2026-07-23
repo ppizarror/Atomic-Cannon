@@ -10,7 +10,7 @@
 
 import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
-import {CTank, TEAM_COLORS} from '../core/CTank';
+import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import {Roster} from '../core/CRoster';
 import {CShot} from '../core/CShot';
 import {GameConfig} from '../core/CGameConfig';
@@ -420,7 +420,7 @@ export class CGameController implements ShotWorld {
       const cfg = roster[p] ?? {
         name: p === 0 ? strings.value.game.defaultPlayer : botNames[p % botNames.length],
         model: '',
-        color: TEAM_COLORS[p] ?? '#0000ff',
+        color: TEAM_COLORS[p] ?? DEFAULT_TEAM_COLOR,
       };
       // Team = the colour's group; the first tank of a colour defines a new team id.
       let team = teamOfColor.get(cfg.color);

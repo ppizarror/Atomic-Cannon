@@ -33,6 +33,7 @@ export class CMusicPlayer extends GainChannel {
   private m_loop = false; // whether the current track loops
   private m_onEnded: (() => void) | null = null;
   private m_buffers = new Map<string, ArrayBuffer>();
+  private m_loading = new Map<string, Promise<ArrayBuffer | null>>(); // in-flight fetch dedup
 
   constructor(ctx: AudioContext, destination: AudioNode) {
     super(ctx, destination);
@@ -120,18 +121,26 @@ export class CMusicPlayer extends GainChannel {
     this.m_node?.port.postMessage({cmd: 'stop'});
   }
 
-  private async fetchModule(file: string): Promise<ArrayBuffer | null> {
+  private fetchModule(file: string): Promise<ArrayBuffer | null> {
     const cached = this.m_buffers.get(file);
-    if (cached) return cached;
-    try {
-      const res = await fetch(encodeURI(MUSIC_BASE + file));
-      if (!res.ok) throw new Error(`${res.status}`);
-      const buf = await res.arrayBuffer();
-      this.m_buffers.set(file, buf);
-      return buf;
-    } catch (e) {
-      console.warn(`music load failed: ${file}`, e);
-      return null;
-    }
+    if (cached) return Promise.resolve(cached);
+    const inFlight = this.m_loading.get(file);
+    if (inFlight) return inFlight; // a concurrent play() of the same track shares one fetch
+    const job = (async () => {
+      try {
+        const res = await fetch(encodeURI(MUSIC_BASE + file));
+        if (!res.ok) throw new Error(`${res.status}`);
+        const buf = await res.arrayBuffer();
+        this.m_buffers.set(file, buf);
+        return buf;
+      } catch (e) {
+        console.warn(`music load failed: ${file}`, e);
+        return null;
+      } finally {
+        this.m_loading.delete(file);
+      }
+    })();
+    this.m_loading.set(file, job);
+    return job;
   }
 }

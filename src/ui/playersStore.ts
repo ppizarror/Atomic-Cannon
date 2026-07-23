@@ -6,7 +6,7 @@
  * Each player defaults to a distinct colour from the 16-entry palette (a fresh match
  * is therefore every-player-for-themselves until players pick matching colours).
  */
-import {PLAYER_TANKS, TEAM_COLORS} from '../core/CTank';
+import {PLAYER_TANKS, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import type {PlayerCfg} from '../core/CRoster';
 import {strings} from '../i18n';
 import {createPersistedSignal} from './persistedSignal';
@@ -26,7 +26,7 @@ function defaultPlayer(i: number): PlayerCfg {
   return {
     name: i === 0 ? strings.value.game.defaultPlayer : bots[(i - 1) % bots.length],
     model: PLAYER_TANKS[i % PLAYER_TANKS.length],
-    color: TEAM_COLORS[i] ?? '#0000ff',
+    color: TEAM_COLORS[i] ?? DEFAULT_TEAM_COLOR,
   };
 }
 
