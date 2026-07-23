@@ -11,7 +11,7 @@ import particlesRaw from '../data/particles.json';
 import {rgbToHex} from '../math/color';
 import {strings} from '../i18n';
 import {type ExtType, toExtType} from './weapons/ExtType';
-import {EXP, type ExpType, toExpType} from './weapons/ExpType';
+import {type ExpType, toExpType, isNukeExp} from './weapons/ExpType';
 
 // The 20 weapon type strings present in the data.
 export type WeaponType =
@@ -220,7 +220,7 @@ export class CWeapon {
   /** "Nuke-class" blast — the top explosion tier ({@link EXP.NUKE}) or an actual NUKE. Drives the
    *  heavy shake / full-screen flash / big-fallout branches. */
   isNukeClass(): boolean {
-    return this.getExpType() === EXP.NUKE || this.isNuclear();
+    return isNukeExp(this.getExpType()) || this.isNuclear();
   }
 
   /** Cleaner-family (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER

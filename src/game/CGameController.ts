@@ -47,7 +47,7 @@ import {
 } from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
-import {clamp, clamp01, deg2rad, TWO_PI} from '../math/num';
+import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
 import {plusMinus} from '../math/random';
 import {
   EXT,
@@ -57,7 +57,7 @@ import {
   weaponDetonate,
   weaponFlyStep,
 } from '../core/weapons/WeaponBehavior';
-import {EXP, type ExpType} from '../core/weapons/ExpType';
+import {EXP, type ExpType, isNukeExp} from '../core/weapons/ExpType';
 import {CAudio} from '../audio/CAudio';
 import landData from '../data/land.json';
 
@@ -1409,7 +1409,7 @@ export class CGameController implements ShotWorld {
    *  replaces any this speaker already has. */
   private tryTaunt(cat: TauntCategory, speaker: CTank | null, chancePct: number): void {
     if (!GameConfig.chatter || !speaker) return;
-    if (speaker.getTankType() === 'Sentry') return; // Sentries never taunt
+    if (speaker.isSentry()) return; // Sentries never taunt
     if (Math.random() * 100 > chancePct) return;
     const line = pickTaunt(cat);
     if (!line) return; // list emptied in the editor → nothing to say
@@ -2109,7 +2109,7 @@ export class CGameController implements ShotWorld {
   private livingTeamCount(): number {
     const teams = new Set<number>();
     for (const t of this.m_tanks) {
-      if (t.isAlive() && t.getTankType() !== 'Sentry') teams.add(t.getTeamId());
+      if (t.isAlive() && !t.isSentry()) teams.add(t.getTeamId());
     }
     return teams.size;
   }
@@ -2274,7 +2274,7 @@ export class CGameController implements ShotWorld {
       // Full-screen white-out is a NUKE thing in the original. A big conventional blast
       // gets a lighter half-flash (port embellishment) — but a Cleaner is an earth-remover, not a
       // fiery blast, so it never flashes.
-      if (expType === EXP.NUKE || nuclear) this.flashScreen(1, color ?? '#ffffff');
+      if (isNukeExp(expType) || nuclear) this.flashScreen(1, color ?? '#ffffff');
       else if (!isCleaner && (radiusPx ?? 0) >= BIG_BLAST_RADIUS)
         this.flashScreen(0.45, color ?? '#ffffff');
     } else this.m_particles.explode(x, y, scale);
@@ -2679,7 +2679,7 @@ export class CGameController implements ShotWorld {
 
     // A deployed Sentry takes its own turn: aim at the nearest enemy and fire in a direct
     // line. It never moves and never uses a normal bot solve, so route it separately.
-    if (tank.getTankType() === 'Sentry') {
+    if (tank.isSentry()) {
       this.schedule(0.6, () => this.executeSentryTurn());
     }
     // Demo Mode (More Graphics Options): the human's turns are played by the AI too, so the
@@ -2729,7 +2729,7 @@ export class CGameController implements ShotWorld {
     this.m_showFireworks = false;
     this.generateTerrain();
     // Sentries are per-battle: clear last battle's deployed turrets before respawning.
-    this.m_tanks = this.m_tanks.filter(t => t.getTankType() !== 'Sentry');
+    this.m_tanks = this.m_tanks.filter(t => !t.isSentry());
     const n = this.m_tanks.length;
     this.m_tanks.forEach((t, i) => {
       t.respawn(this.tankSpawnX(i, n), this.m_land);
@@ -2840,7 +2840,7 @@ export class CGameController implements ShotWorld {
     this.m_winnerName = leader ? leader.members[0].getName() : '';
     const speaker = leader?.rep ?? null;
     const victorLine = pickTaunt('postFire');
-    if (speaker && victorLine && GameConfig.chatter && speaker.getTankType() !== 'Sentry') {
+    if (speaker && victorLine && GameConfig.chatter && !speaker.isSentry()) {
       this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== speaker);
       this.m_bubbles.push({
         id: ++this.m_bubbleSeq,
@@ -2868,7 +2868,7 @@ export class CGameController implements ShotWorld {
    *  (a Draw). Also null when no player teams remain. The representative is the team's own
    *  top scorer — used for the winner flag/gloat — which in Rounds mode may be a dead tank. */
   private getLeadingTeam(): {members: CTank[]; rep: CTank; human: boolean} | null {
-    const teams = [...this.groupTanksByTeam(t => t.getTankType() !== 'Sentry').values()];
+    const teams = [...this.groupTanksByTeam(t => !t.isSentry()).values()];
     if (teams.length === 0) return null;
     const rounds = this.m_gameType === EGameType.Rounds;
     const score = (t: CTank) => (rounds ? t.getDamageDealt() : t.getKills());
@@ -3295,10 +3295,34 @@ export class CGameController implements ShotWorld {
    *  at full power — the Turret variant shoots a Shell, the Minigun variant a Machine Gun
    *  burst. No ballistic solve (it "can only fire in a direct line"), so it can miss over
    *  terrain. With no enemy left it simply passes. */
+  /** UI aim-angle (0..359, screen-up = 90) from `pivot` toward `target` — the barrel points
+   *  along (cos θ, −sin θ) with screen-Y down, so it's atan2(−dy, dx) folded into range. */
+  private aimDegToward(pivot: Vec2, target: Vec2): number {
+    return wrapIndex(
+      Math.round(rad2deg(Math.atan2(-(target.y - pivot.y), target.x - pivot.x))),
+      360,
+    );
+  }
+
+  /** Push an aim onto `tank` and mirror it into the controller's live angle/power. */
+  private commitAim(tank: CTank, angleDeg: number, power: number): void {
+    tank.setAimAngle(angleDeg);
+    tank.setPower(power);
+    tank.setTurretAngle(angleDeg);
+    this.m_angle = angleDeg;
+    this.m_power = power;
+  }
+
+  /** Select `tank`'s weapon and mirror it into the controller's current-weapon index. */
+  private setCurrentWeapon(tank: CTank, index: number): void {
+    tank.setWeaponIndex(index);
+    this.m_currentWeaponIndex = index;
+  }
+
   private executeSentryTurn(): void {
     const sentry = this.getCurrentTank();
     if (!sentry.isAlive() || this.m_gameState !== EGameState.Battle) return;
-    if (sentry.getTankType() !== 'Sentry') return;
+    if (!sentry.isSentry()) return;
 
     const target = this.nearestEnemy(sentry);
     if (!target) {
@@ -3306,22 +3330,11 @@ export class CGameController implements ShotWorld {
       return;
     }
 
-    // Aim straight at the target. Screen-Y is down and the barrel points along
-    // (cos θ, −sin θ), so the UI angle to a target at (tx,ty) from the pivot is
-    // atan2(−dy, dx). Snap the turret + stored aim to it.
-    const pivot = sentry.getTurretPivot();
-    const tp = target.getPosition();
-    const angleDeg = (Math.atan2(-(tp.y - pivot.y), tp.x - pivot.x) * 180) / Math.PI;
-    const norm = ((Math.round(angleDeg) % 360) + 360) % 360;
-    sentry.setAimAngle(norm);
-    sentry.setPower(SENTRY_FIRE_POWER);
-    sentry.setTurretAngle(norm);
-    this.m_angle = norm;
-    this.m_power = SENTRY_FIRE_POWER;
-
+    // Aim straight at the target, then commit the aim + weapon (as a bot would).
+    const norm = this.aimDegToward(sentry.getTurretPivot(), target.getPosition());
+    this.commitAim(sentry, norm, SENTRY_FIRE_POWER);
     const wi = this.m_sentryMinigun.has(sentry) ? sentryMachineGunIndex() : getDefaultWeaponIndex();
-    sentry.setWeaponIndex(wi);
-    this.m_currentWeaponIndex = wi;
+    this.setCurrentWeapon(sentry, wi);
 
     // Fire after a brief beat; the shot resolving hands the turn on (as for a bot).
     this.schedule(0.4, () => this.fire());
@@ -3338,7 +3351,7 @@ export class CGameController implements ShotWorld {
     const botTank = this.getCurrentTank();
 
     // A Sentry drives its own turn (aim + direct-line fire), never the normal bot solve.
-    if (botTank.getTankType() === 'Sentry') {
+    if (botTank.isSentry()) {
       this.executeSentryTurn();
       return;
     }
@@ -3370,8 +3383,7 @@ export class CGameController implements ShotWorld {
     const wi = pickMoveWeapon();
     if (wi < 0) return false;
     const weapon = getWeapon(wi);
-    botTank.setWeaponIndex(wi);
-    this.m_currentWeaponIndex = wi;
+    this.setCurrentWeapon(botTank, wi);
 
     const maxDist = this.moveRange(weapon);
     const dir = Math.random() < 0.5 ? -1 : 1;
@@ -3432,8 +3444,7 @@ export class CGameController implements ShotWorld {
 
     // Pick a weapon — stronger rounds favoured at high difficulty.
     const weaponIndex = pickWeapon(level);
-    botTank.setWeaponIndex(weaponIndex); // store on the bot, not shared
-    this.m_currentWeaponIndex = weaponIndex;
+    this.setCurrentWeapon(botTank, weaponIndex); // store on the bot, not shared
 
     // Whether the bot computes a FRESH solution this turn. Low-skill bots often
     // don't (they fire with their stale aim); a first-round ranging shot is
@@ -3471,12 +3482,8 @@ export class CGameController implements ShotWorld {
     angleDeg += angleError(level);
 
     // Fold into the HUD's 0..359 range; persist on the bot so its aim carries over.
-    angleDeg = ((Math.round(angleDeg) % 360) + 360) % 360;
-    this.m_angle = angleDeg;
-    this.m_power = Math.round(power);
-    botTank.setAimAngle(this.m_angle);
-    botTank.setPower(this.m_power);
-    botTank.setTurretAngle(angleDeg);
+    angleDeg = wrapIndex(Math.round(angleDeg), 360);
+    this.commitAim(botTank, angleDeg, Math.round(power));
     // The HUD (Preact) shows the bot's angle/power via getAngle()/getPower().
 
     // Execute fire after a brief "thinking" delay. The turn ends automatically
@@ -3826,13 +3833,10 @@ export class CGameController implements ShotWorld {
     this.deploySentry(ox + 60, 0, owner, mg);
     // Aim each freshly-dropped sentry at the nearest enemy so the turrets read correctly.
     for (const s of this.m_tanks) {
-      if (s.getTankType() !== 'Sentry') continue;
+      if (!s.isSentry()) continue;
       const t = this.nearestEnemy(s);
       if (!t) continue;
-      const pivot = s.getTurretPivot();
-      const tp = t.getPosition();
-      const deg = (Math.atan2(-(tp.y - pivot.y), tp.x - pivot.x) * 180) / Math.PI;
-      s.setTurretAngle(((Math.round(deg) % 360) + 360) % 360);
+      s.setTurretAngle(this.aimDegToward(s.getTurretPivot(), t.getPosition()));
     }
     this.markDirty();
   }
@@ -3844,7 +3848,7 @@ export class CGameController implements ShotWorld {
     const warOver = this.getWarOver();
 
     // Group tanks into teams by colour (Sentries are excluded from standings).
-    const teams = this.groupTanksByTeam(t => t.getTankType() !== 'Sentry');
+    const teams = this.groupTanksByTeam(t => !t.isSentry());
 
     const rows: WarTeamRow[] = [];
     for (const members of teams.values()) {
@@ -3935,7 +3939,7 @@ export class CGameController implements ShotWorld {
    *  team's total kills (the Kills board) and its average damage-dealt per tank (the
    *  Score board). One entry per team; the callsign is the team's name. */
   getBattleHeroes(): BattleHeroTeam[] {
-    const teams = this.groupTanksByTeam(t => t.getTankType() !== 'Sentry');
+    const teams = this.groupTanksByTeam(t => !t.isSentry());
     const out: BattleHeroTeam[] = [];
     for (const members of teams.values()) {
       let kills = 0,

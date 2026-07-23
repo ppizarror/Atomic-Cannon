@@ -21,7 +21,7 @@ import {GameConfig} from './CGameConfig';
 import {between} from '../math/random';
 import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
 import {TWO_PI, deg2rad} from '../math/num';
-import {EXP, type ExpType} from './weapons/ExpType';
+import {EXP, type ExpType, isNukeExp} from './weapons/ExpType';
 
 // Per-weapon explosion presets from weapons.txt's ParticleEffectTable: each
 // weapon's `blast`/`trail` names one of these (colour, count, speed, life,
@@ -446,7 +446,7 @@ export class CParticleSystem {
     // Floor low so a small round (machine gun r8, shotgun r4) stays a small puff —
     // the old floor of 12 forced every blast to grenade size, so bullets "exploded".
     const r = Math.max(4, radiusPx);
-    const big = expType === EXP.NUKE || nuclear; // nuke style = the full-screen white-out
+    const big = isNukeExp(expType) || nuclear; // nuke style = the full-screen white-out
     // Small rounds — bullets/pellets/cannon-shells — get a compact pop, not the full
     // firework. The original scales its detonation FX by blast size and GATES the
     // fire streamers by a size threshold, so tiny rounds throw only debris + a spark

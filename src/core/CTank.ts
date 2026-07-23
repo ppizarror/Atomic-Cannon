@@ -997,7 +997,9 @@ export class CTank {
    *  then follows the tank on a slope. Bots always solve and fire absolute angles, so the
    *  aid never applies to them (matching the original, where the AI compensates for it). */
   firingAngle(): number {
-    return this.m_fTurretAngle + (GameConfig.relativeTurrets && this.m_bIsHuman ? this.m_fAngle : 0);
+    return (
+      this.m_fTurretAngle + (GameConfig.relativeTurrets && this.m_bIsHuman ? this.m_fAngle : 0)
+    );
   }
 
   /**
@@ -1071,6 +1073,12 @@ export class CTank {
 
   isHuman(): boolean {
     return this.m_bIsHuman;
+  }
+
+  /** Deployed auto-turret (Sentry Turret / Minigun) — drives its own aim-and-fire turn,
+   *  is excluded from team standings, and never taunts. */
+  isSentry(): boolean {
+    return this.m_sTankType === 'Sentry';
   }
 
   setHuman(bHuman: boolean): void {

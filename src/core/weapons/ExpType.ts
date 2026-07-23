@@ -46,4 +46,4 @@ export const {tokens: EXP, toType: toExpType} = makeNominalEnum<ExpType, typeof 
 );
 
 /** Nuke-tier explosion style — the only one that fires the full-screen white-out. */
-export const isNukeExp = (exp: ExpType): boolean => exp === EXP.NUKE;
+export const isNukeExp = (exp: ExpType | undefined): boolean => exp === EXP.NUKE;
