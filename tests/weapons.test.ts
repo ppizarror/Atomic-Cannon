@@ -74,6 +74,11 @@ class MockWorld implements ShotWorld {
   sentries = 0;
   markers = 0;
   blasts: number[] = [];
+  blastScale = 1; // resolution-based blast scale (derived render value on the world context)
+
+  random(): number {
+    return Math.random();
+  }
 
   constructor(land: CLand) {
     this.land = land;
@@ -109,6 +114,62 @@ class MockWorld implements ShotWorld {
 }
 
 describe('Weapon behaviour', () => {
+  it('a Cleaner (Earth Destroy) REMOVES terrain across its radius when it detonates at the surface', () => {
+    const surface = 300;
+    const land = flatLand(surface);
+    const w = getWeapon(idxOf('Earth Destroy'));
+    expect(w.isCleaner()).toBe(true);
+    const world = new MockWorld(land);
+    const shot = new CShot();
+    // Impact right at the surface (a landed shot).
+    shot.initFromVelocity(new Vec2(400, surface), 0, 120, w.getDamage(), w.getRadius(), null);
+    shot.setWeaponIndex(w.getIndex());
+
+    weaponDetonate(shot, w, world);
+
+    // A cleaner must LOWER the surface (screen-Y down: a carved column has a LARGER height number)
+    // across a wide swath — this is the whole point of an earth-remover.
+    expect(land.getHeightAt(400)).toBeGreaterThan(surface); // centre carved down
+    let carved = 0;
+    for (let x = 340; x <= 460; x++) if (land.getHeightAt(x) > surface) carved++;
+    expect(carved).toBeGreaterThan(60); // a wide swath removed, not just a nick
+  });
+
+  it('a Cleaner detonating a bit ABOVE the surface still cleans the GROUND (not empty air)', () => {
+    // Regression: the cleaner used to carve at `pos.y`; when the blast resolved above the ground it
+    // carved empty sky and removed NOTHING (the "blast floats, terrain intact" bug). It must carve
+    // the surface under the impact instead.
+    const surface = 300;
+    const land = flatLand(surface);
+    const w = getWeapon(idxOf('Earth Destroy'));
+    const world = new MockWorld(land);
+    const shot = new CShot();
+    shot.initFromVelocity(new Vec2(400, surface - 40), 0, 60, w.getDamage(), w.getRadius(), null); // 40px ABOVE ground
+    shot.setWeaponIndex(w.getIndex());
+
+    weaponDetonate(shot, w, world);
+
+    expect(land.getHeightAt(400)).toBeGreaterThan(surface); // ground under the impact is cleaned
+  });
+
+  it('a Cleaner still cleans with a FRACTIONAL blast scale (regression: no-op crater)', () => {
+    // The real bug: `blastScale` (Explosion Size × resolution) is often NON-integer, so radiusPx =
+    // radius × scale is fractional (130×1.47≈191). The carve then iterated fractional column indices
+    // and carved NOTHING — the cleaner showed only fumes, no crater. Guard the end-to-end path.
+    const surface = 300;
+    const land = flatLand(surface);
+    const w = getWeapon(idxOf('Earth Destroy'));
+    const world = new MockWorld(land);
+    world.blastScale = 1.47; // makes radiusPx fractional
+    const shot = new CShot();
+    shot.initFromVelocity(new Vec2(400, surface), 0, 120, w.getDamage(), w.getRadius(), null);
+    shot.setWeaponIndex(w.getIndex());
+
+    weaponDetonate(shot, w, world);
+
+    expect(land.getHeightAt(400)).toBeGreaterThan(surface); // it cleans despite the fractional radius
+  });
+
   it('Airburst detonates at apex (mid-air, before hitting ground)', () => {
     const land = flatLand(300);
     const w = getWeapon(idxOf('Shrapnel')); // Airburst, extType 13

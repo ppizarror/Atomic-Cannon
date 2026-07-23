@@ -33,6 +33,15 @@ export interface ShotWorld {
   readonly land: CLand;
   readonly tanks: CTank[];
 
+  /** Resolution-based blast scale (√(view area)·C) — sizes the crater/FX/damage radius off the render
+   *  surface, exactly like the original. A derived render value (NOT a user setting), so it lives on
+   *  the world context, not in GameConfig. */
+  readonly blastScale: number;
+
+  /** A GAMEPLAY random in [0,1) from the match-seeded stream — deterministic across
+   *  clients (must NOT be Math.random for anything that affects the outcome). */
+  random(): number;
+
   spawnShot(shot: CShot): void;
 
   /** Detonation FX. `color`/`radiusPx`/`nuclear` tint & scale the burst; `blastPreset`
@@ -149,8 +158,8 @@ export function weaponFlyStep(
         // Descending through the mass: cut a NARROW disc at the current position each step and
         // let the soil cave straight back in — a continuous bore that wipes a thin channel which
         // immediately fills (no open tunnel; no damage while travelling), then detonate at depth.
-        if (p.y < diggerDetonateY(shot, land)) {
-          digCarve(shot, weapon, land, p);
+        if (p.y < diggerDetonateY(shot, land, world)) {
+          digCarve(shot, weapon, land, p, world.blastScale);
           return 'continue';
         }
         return 'detonate'; // reached its dig depth (or the world floor)
@@ -163,7 +172,7 @@ export function weaponFlyStep(
       if (hit) return 'detonate';
       if (belowSurface) {
         if (shot.isMovingDown()) return 'detonate';
-        digCarve(shot, weapon, land, p);
+        digCarve(shot, weapon, land, p, world.blastScale);
         return 'continue';
       }
       return 'continue';
@@ -202,8 +211,8 @@ export function weaponFlyStep(
  *  out at the world origin. Instead we detonate part-way DOWN from where the shot ENTERED —
  *  a per-shot random FRACTION of the distance to the floor — so it always blows up INSIDE
  *  the mass (the middle), never at the very bottom and never a shallow pop. */
-function diggerDetonateY(shot: CShot, land: CLand): number {
-  if (shot.digDepth < 0) shot.digDepth = 0.45 + Math.random() * 0.25; // fraction to the floor
+function diggerDetonateY(shot: CShot, land: CLand, world: ShotWorld): number {
+  if (shot.digDepth < 0) shot.digDepth = 0.45 + world.random() * 0.25; // fraction to the floor
   return shot.digEntryY + (land.height - shot.digEntryY) * shot.digDepth;
 }
 
@@ -214,11 +223,8 @@ function diggerDetonateY(shot: CShot, land: CLand): number {
  *  runs with slump OFF: the overburden drops straight down by the removed thickness (grass ends up
  *  that much lower) and the walls stay put — with slump on, the steep bore avalanches sideways and
  *  stacks into a wide funnel. Throttled to ~half a disc of travel so overlapping cuts stay clean. */
-function digCarve(shot: CShot, weapon: CWeapon, land: CLand, p: Vec2): void {
-  const r = Math.max(
-    3,
-    weapon.getSize() * GameConfig.explosionScale * Math.sqrt(GameConfig.worldScale),
-  );
+function digCarve(shot: CShot, weapon: CWeapon, land: CLand, p: Vec2, blastScale: number): void {
+  const r = Math.max(3, weapon.getSize() * GameConfig.explosionScale * blastScale);
   const cols = (shot.digCols ??= new Set<number>());
   land.carveBore(p.x, p.y, r, cols);
 }
@@ -295,10 +301,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // Cleaner (Cleaner/Plower/Dirt Destroy/Earth Destroy): a large-radius EARTH-REMOVER
   // to unbury a tank — it just carves terrain. No blast damage, no ejecta, no shake.
   const isCleaner = weapon.isCleaner();
-  // Explosion Size (Gameplay) scales the blast radius → crater, damage reach and FX.
-  // Blast radius grows with the map (the original scales it by √(map area); our world widens
-  // only, so √worldScale) — so a blast covers the same fraction of the world at any map size.
-  const radiusPx = shot.getRadius() * GameConfig.explosionScale * Math.sqrt(GameConfig.worldScale);
+  // Blast radius = weapon.radius × Explosion Size (user) × the resolution-based blastScale — sizing
+  // crater, damage reach and FX together, exactly as the original's `explosionScale` did (off SCREEN
+  // size, NOT map size). See `computeBlastScale` for the formula.
+  const radiusPx = shot.getRadius() * GameConfig.explosionScale * world.blastScale;
   const surfaceY = land.getHeightAt(Math.floor(pos.x));
 
   // A Tracer is a RANGING round — 0 damage, 0 radius. It does NOTHING to the land or
@@ -359,20 +365,18 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // cloud that arcs up and rains back down, piling into a mound. The crater is the "dirt replace"
     // at the landing point; the debris overtops it, so the mound wins.
     if (reachesGround) {
-      land.blastCircle(
-        Math.floor(pos.x),
-        Math.floor(pos.y),
-        Math.round(radiusPx * 0.35),
-        true,
-        true,
-      );
+      // Same unified crater primitive (fuzzy rim + soil coat, as the original blastCircle call); slump
+      // OFF so its avalanche doesn't fight the depositDirt mound that immediately overtops this dimple.
+      land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), Math.round(radiusPx * 0.35), false, true, true); // prettier-ignore
     }
     land.depositDirt(Math.floor(pos.x), Math.floor(surfaceY), radiusPx, earth);
   } else if (isCleaner) {
-    // Cleaner: carve out its (large) radius — remove terrain, nothing else. No scorch (it isn't a
-    // burn), no ejecta (it clears dirt, doesn't throw it), and coatDirt=false so it introduces NO
-    // fresh dirt — the natural strata beneath is left exposed (an earth-remover, not a crater bomb).
-    land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), radiusPx, false);
+    // Cleaner: remove its DISC of earth and let the ground ABOVE cave in under gravity — it consumes
+    // only the radius, it does NOT strip the whole column from the surface down to the blast (which
+    // let a big cleaner "clean everything up to the top" / erase a mountain when it detonated deep).
+    // `carveDiscCollapse` cuts the disc at the impact and drops the overburden as a falling block;
+    // for a shallow/surface hit the disc simply removes a bowl. No fresh dirt (earth-remover).
+    land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), radiusPx);
   } else if (ext === EXT.DIGGER || ext === EXT.ESCAPE) {
     // Digger/Escape explode where the shot IS — deep in the mass (or wherever they
     // re-impacted after crossing to the far side). The blast removes only its DISC of
@@ -405,7 +409,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // Nukes (expType 4) blow a much wider crater than their base radius.
     const heavy = weapon.isNukeClass();
     const craterR = Math.round(radiusPx * (heavy ? 1.35 : 1));
-    land.blastCircle(Math.floor(pos.x), Math.floor(pos.y), craterR);
+    // Unified crater: remove the DISC and let the overburden cave in under gravity — NEVER strip the
+    // whole column from surface to blast (which let a low shot fired into a slope erase the mass above
+    // it). Same primitive the digger + cleaner use; `carveDiscCollapse` also clears radiation/heat here.
+    // coatDirt=true → the fresh crater face is coated with soil (the blastCircle "filled dirt bowl"
+    // look). Smooth rim (bomb rag was false in the original blastCircle call).
+    land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), craterR, true, false, true);
     // SCORCH is driven by the weapon's `crackle` (burnt-rim intensity) — a Shell (crackle 0)
     // leaves no burn; a nuke (0.7) scorches wide. Scaled by crackle, skipped when it's 0.
     if (crackle > 0) {
@@ -416,8 +425,8 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
       );
     }
     // DEBRIS/ejecta count is driven by the weapon's `fodder` (how much dirt it kicks up) — a
-    // Shell (fodder 0) throws almost none, a nuke (0.5) throws a huge spray. The chunks fly out
-    // and settle, each RAISING its landing column → rim mounds. (Was: a flat radius-only count.)
+    // Shell (fodder 0) throws almost none, a nuke (0.5) throws a huge spray. The chunks fly out and
+    // settle, each RAISING its landing column → rim mounds (the smoothing pass rounds them).
     const chunks = Math.min(6500, Math.round(fodder * radiusPx * 100 + radiusPx * 0.8));
     land.addShowerParticles(
       Math.floor(pos.x),

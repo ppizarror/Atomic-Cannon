@@ -80,8 +80,8 @@ describe('turn hand-off waits for the explosion, not the smoke', () => {
       expect(ps.hasActiveBlast()).toBe(false);
     }
 
-    // And it all clears eventually.
-    stepN(ps, 200);
+    // And it all clears eventually — past the crater vent's full life (VENT_LIFE + puff life).
+    stepN(ps, 780); // ~14s total with the 80 above
     expect(ps.hasActiveBlast()).toBe(false);
     expect(ps.hasActiveExplosions()).toBe(false);
   });

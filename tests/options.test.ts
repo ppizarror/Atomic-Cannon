@@ -92,36 +92,23 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.buyTime = 0;
   });
 
-  it('Filled Craters paints the excavated bowl with soil; off leaves it transparent', () => {
-    // The carve edits m_pixels/m_material (normally allocated by bake); set them up directly.
-    const setup = () => {
+  it('Filled Craters is a render toggle (darkened-backdrop layer); a carve still works either way', () => {
+    // Filled Craters is now a rendering feature: a DARKENED snapshot of the pristine terrain drawn
+    // BEHIND the live terrain, so carved-away regions reveal the mountain's darkened interior (not
+    // sky). It is decoupled from the carve — the crater math is identical whether the option is on or
+    // off (only the draw layers differ, verified in-game). Here we just pin that the toggle is a plain
+    // boolean and that a crater carves regardless (no per-column pixel fill in the carve anymore).
+    const carveWith = (fill: boolean): number => {
+      GameConfig.craterFill = fill;
       const land = new CLand(400, 300);
       land.generateRandomTerrain(42);
-      const p = land as unknown as {
-        m_pixels: Uint32Array;
-        m_material: Uint8Array;
-        m_nWidth: number;
-      };
-      p.m_pixels = new Uint32Array(400 * 300).fill(0xff112233); // opaque solid ground
-      p.m_material = new Uint8Array(400 * 300);
-      return {land, px: p.m_pixels, W: p.m_nWidth};
+      const cx = 200;
+      const sy = land.getHeightAt(cx);
+      land.carveDiscCollapse(cx, sy, 40);
+      return land.getHeightAt(cx) - sy; // how much the surface dropped
     };
-    const cx = 200;
-    const sample = (px: Uint32Array, W: number, y: number) => px[Math.floor(y) * W + cx] >>> 24;
-
-    // OFF: the excavated void above the new floor is CLEARED → transparent (background through).
-    GameConfig.craterFill = false;
-    const off = setup();
-    const syOff = off.land.getHeightAt(cx);
-    off.land.blastCircle(cx, syOff, 40);
-    expect(sample(off.px, off.W, syOff + 5)).toBe(0); // alpha 0 = transparent
-
-    // ON: the same void is filled with opaque soil.
-    GameConfig.craterFill = true;
-    const on = setup();
-    const syOn = on.land.getHeightAt(cx);
-    on.land.blastCircle(cx, syOn, 40);
-    expect(sample(on.px, on.W, syOn + 5)).toBe(0xff); // alpha 255 = solid soil
+    expect(carveWith(false)).toBeGreaterThan(0); // carves with the option OFF
+    expect(carveWith(true)).toBeGreaterThan(0); // …and ON — the carve is option-independent
     GameConfig.craterFill = false; // restore
   });
 

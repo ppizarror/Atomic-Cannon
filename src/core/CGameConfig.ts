@@ -22,6 +22,9 @@ export const GameConfig = {
   // scale would over-tall the arc; √ keeps range strong AND the arc on-screen.
   worldScale: 1,
 
+  // (Blast SIZE scale is a DERIVED render value — `CGameController.blastScale`, off the live canvas —
+  // NOT a setting, so it does not live here. `worldScale` below IS kept here: shot PHYSICS read it.)
+
   // ── physics / gameplay scalars (1 = the default feel) ──
   kickbackScale: 1, // Tank → Kickback (Off = 0)
   explosionScale: 1, // Gameplay → Explosion Size
@@ -47,6 +50,7 @@ export const GameConfig = {
   highContrast: false, // Graphics → High Contrast (white outline around tanks)
   showAiStats: false, // Graphics → Show AI Stats (the active bot's aim solution)
   demo: false, // More Graphics Options → Demo Mode (the human's turns are played by the AI)
+  ambientLight: true, // More Graphics Options → Ambient Lighting (tint the scene toward the map's mood)
 
   // ── formerly-unwired options (Settings parity) ──
   rightClickFires: true, // Gameplay → Right Click Fires (RMB launches the shot)

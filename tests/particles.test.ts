@@ -102,8 +102,9 @@ describe('Particle system', () => {
     ps.blast(400, 300, 40, '#ff8c22', false);
     const born = ps.count();
     expect(born).toBeGreaterThan(50); // blast spawns particles
-    stepN(ps, 200, 1 / 60); // ~3.3 s — past the ~1.6 s max life
-    expect(ps.count()).toBe(0); // blast particles all expire
+    // Step past the crater vent's full life (VENT_LIFE of emission + the last puff's ~1.3s life).
+    stepN(ps, 760, 1 / 60); // ~12.7 s (VENT_LIFE 10 + margin)
+    expect(ps.count()).toBe(0); // blast particles (incl. vent fumes) all expire
   });
 
   it('nuclear blast is bigger than a conventional one of the same radius', () => {
@@ -159,6 +160,38 @@ describe('Particle system', () => {
     expect(rx - lx).toBeGreaterThan(20); // opposite winds separate the smoke
   });
 
+  it('wind PROFILE (interp): a low smoke puff drifts less than a high one under the same wind', () => {
+    // Ground line at y=1000 (via a flat groundAt). A puff hugging the ground (small height above it)
+    // should barely move; a puff high above should catch the full wind.
+    const groundY = 1000;
+    const groundAt = () => groundY;
+    const mk = (y: number) => {
+      const ps = new CParticleSystem();
+      ps.setBounds(4000, 2000);
+      ps.setGroundProvider(groundAt); // enable the boundary-layer wind profile
+      (
+        ps as unknown as {
+          add(
+            x: number,
+            y: number,
+            vx: number,
+            vy: number,
+            c: object,
+            l: number,
+            s: number,
+            k: string,
+          ): void;
+        }
+      ).add(2000, y, 0, 0, {r: 150, g: 150, b: 150}, 5, 4, 'smoke');
+      for (let i = 0; i < 40; i++) ps.update(1 / 60, new Vec2(5, 0)); // strong wind
+      return (ps as unknown as {m_particles: {x: number}[]}).m_particles[0].x;
+    };
+    const lowDrift = mk(groundY - 10) - 2000; // 10px above ground → near-zero wind factor
+    const highDrift = mk(groundY - 320) - 2000; // 320px up (> WIND_PROFILE_H 260) → full wind
+    expect(lowDrift).toBeLessThan(highDrift * 0.25); // ground-hugging smoke barely drifts
+    expect(highDrift).toBeGreaterThan(5); // high smoke clearly streams downwind
+  });
+
   it('higher shot speed (∝ power) lays down more trail smoke per frame', () => {
     const lo = new CParticleSystem();
     lo.setBounds(4000, 2000);
@@ -182,24 +215,58 @@ describe('Particle system', () => {
     expect(flares.length > 0 && greenish > flares.length * 0.5).toBe(true);
   });
 
-  it('a fiery crater-cutting blast throws rising dust-streamers across the crater width', () => {
+  it('a crater-cutting blast vents a WHITE fume curtain across the crater width', () => {
     const ps = new CParticleSystem();
     ps.setBounds(1600, 1200);
     const cx = 800,
       cy = 600,
       r = 50;
     ps.blast(cx, cy, r, '#ff8c22', false);
+    // The vent stays silent until VENT_DELAY (fumes rise AFTER the blast), so step past it first.
+    for (let i = 0; i < 60; i++) ps.update(1 / 60); // ~1s > VENT_DELAY
     const parts = (
-      ps as unknown as {m_particles: {x: number; y: number; vy: number; kind: string}[]}
+      ps as unknown as {
+        m_particles: {x: number; y: number; vy: number; r: number; size: number; kind: string}[];
+      }
     ).m_particles;
-    // Streamers are the only 'flare' emitter that spawns SPREAD across the crater width and
-    // BELOW the blast centre (radial/burst flares all spawn at the centre point), rising (vy<0).
-    const streamers = parts.filter(
-      p => p.kind === 'flare' && Math.abs(p.x - cx) > r * 0.5 && p.y > cy && p.vy < 0,
+    // The vent fumes are the only 'smoke' emitter spread across the crater width, WHITE (near-255) —
+    // the original's crater streamers are white.
+    const curtain = parts.filter(
+      p => p.kind === 'smoke' && Math.abs(p.x - cx) > r * 0.5 && p.vy < 0 && p.r > 200,
     );
-    expect(streamers.length).toBeGreaterThan(0); // dust-streamers are emitted
-    // They line the crater on BOTH sides — a spread row, not a point.
-    expect(streamers.some(p => p.x < cx) && streamers.some(p => p.x > cx)).toBe(true);
+    expect(curtain.length).toBeGreaterThan(0); // white fume curtain is emitted
+    // It lines the crater on BOTH sides — a spread row, not a point.
+    expect(curtain.some(p => p.x < cx) && curtain.some(p => p.x > cx)).toBe(true);
+    // They RISE off the bowl (vy < 0) — a fume curtain, not settling debris.
+    expect(curtain.every(p => p.vy < 0)).toBe(true);
+  });
+
+  it('a CLEANER blast (Earth Destroy) also vents the crater fume curtain', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(1600, 1200);
+    const cx = 800,
+      cy = 600,
+      r = 60;
+    // isCleaner=true — the earth-remover path used to skip the streamers entirely.
+    ps.blast(cx, cy, r, '#ffffff', false, undefined, undefined, undefined, false, true);
+    for (let i = 0; i < 60; i++) ps.update(1 / 60); // past VENT_DELAY — fumes rise after the blast
+    const parts = (ps as unknown as {m_particles: {x: number; r: number; kind: string}[]})
+      .m_particles;
+    const curtain = parts.filter(p => p.kind === 'smoke' && p.r > 200);
+    expect(curtain.length).toBeGreaterThan(0); // cleaners now get the white curtain too
+  });
+
+  it('the crater vent keeps venting fumes over time (sustained ascension)', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(1600, 1200);
+    ps.blast(800, 600, 60, '#ff8c22', false);
+    const kind = () =>
+      (ps as unknown as {m_particles: {kind: string}[]}).m_particles.filter(p => p.kind === 'smoke')
+        .length;
+    // Let the immediate curtain fully age out (puff life ≤1.6s), then confirm NEW fumes exist —
+    // proof the vent re-emitted rather than firing a single one-shot burst.
+    stepN(ps, 120, 1 / 60); // 2.0s: past one puff-life, still within VENT_LIFE (2.6s)
+    expect(kind()).toBeGreaterThan(0); // fumes still being vented well after impact
   });
 
   it('out-of-bounds reap: a particle pushed past the clip window dies immediately', () => {
@@ -207,7 +274,7 @@ describe('Particle system', () => {
     ps.setBounds(100, 100); // tight bounds (maxX≈300 incl. margin)
     ps.blast(50, 50, 40, '#ffffff', false);
     const before = ps.count();
-    stepN(ps, 300, 1 / 30); // long enough to fling sparks well past the margin
+    stepN(ps, 420, 1 / 30); // 14s — past the crater vent's full life (VENT_LIFE 10 + puff life)
     expect(ps.count()).toBe(0); // bounds reap empties the pool
     void before;
   });

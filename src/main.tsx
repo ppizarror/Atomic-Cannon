@@ -437,7 +437,8 @@ async function main(): Promise<void> {
 
   compositor.app.ticker.add(ticker => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
-    if (!pausedSignal.value) gameController.update(dt);
+    // advance() runs the sim in fixed timesteps (deterministic; frame-rate-independent).
+    if (!pausedSignal.value) gameController.advance(dt);
     // Present-on-demand: the loop always ticks (so the sim keeps advancing), but the
     // full 2D redraw + GPU texture upload are skipped on frames where nothing visible
     // changed. The shockwave still advances every call (it warps the already-uploaded

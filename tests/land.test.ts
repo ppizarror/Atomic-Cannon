@@ -16,7 +16,7 @@ describe('CLand terrain', () => {
     const sy = land.getHeightAt(cx);
     const farBefore = land.getHeightAt(cx + 200);
 
-    land.blastCircle(cx, sy, 60);
+    land.carveDiscCollapse(cx, sy, 60);
 
     // screen-Y down: a crater makes the surface number LARGER (lower on screen).
     expect(land.getHeightAt(cx)).toBeGreaterThan(sy); // crater lowers the surface at its centre
@@ -24,6 +24,44 @@ describe('CLand terrain', () => {
     for (let x = cx - 55; x <= cx + 55; x++) if (land.getHeightAt(x) > sy - 1) lowered++;
     expect(lowered).toBeGreaterThanOrEqual(90); // crater lowers a wide span
     expect(land.getHeightAt(cx + 200)).toBe(farBefore); // terrain far from the crater is untouched
+  });
+
+  it('carveDiscCollapse ragged=true gives an IRREGULAR rim; smooth gives a clean circle', () => {
+    // The unified crater primitive: `ragged` (explosion weapons) wobbles the disc radius per column;
+    // smooth (cleaner/digger) cuts a clean circle. Measure column-to-column variation of the carved
+    // floor — the ragged crater must vary more than the smooth one (but neither leaves standing nails).
+    const floorVariation = (ragged: boolean): number => {
+      const land = new CLand(600, 400);
+      const h = new Int16Array(600);
+      h.fill(200);
+      land.initFromArray(h, 1, 1);
+      land.carveDiscCollapse(300, 200, 50, false, ragged); // slump OFF so we read the raw disc profile
+      let sumAbsDiff = 0;
+      for (let x = 255; x < 345; x++)
+        sumAbsDiff += Math.abs(land.getHeightAt(x) - land.getHeightAt(x - 1));
+      return sumAbsDiff;
+    };
+    const smooth = floorVariation(false);
+    const rough = floorVariation(true);
+    expect(rough).toBeGreaterThan(smooth); // ragged rim is bumpier than the clean circle
+  });
+
+  it('a crater with a FRACTIONAL radius still carves (regression: fractional-index no-op)', () => {
+    // Bug: `blastCircle`'s column loop started at `x - nRadius`; with a non-integer radius (e.g. a
+    // weapon radius × a non-integer blast scale, like 130×1.47≈191.1) that start is fractional, so
+    // the loop stepped through fractional `dx` and `m_arrHeights[dx]` (a TypedArray) read `undefined`
+    // → `craterBottom > undefined` is false → the crater carved NOTHING (cleaners "didn't clean").
+    const land = new CLand(1080, 400);
+    land.generateRandomTerrain(12345);
+    const cx = 540;
+    const sy = land.getHeightAt(cx);
+
+    land.carveDiscCollapse(cx, sy, 60.7); // ← FRACTIONAL radius, the exact trigger
+
+    expect(land.getHeightAt(cx)).toBeGreaterThan(sy); // it MUST still lower the surface
+    let lowered = 0;
+    for (let x = cx - 55; x <= cx + 55; x++) if (land.getHeightAt(x) > sy) lowered++;
+    expect(lowered).toBeGreaterThanOrEqual(90); // a wide swath carved, exactly like an integer radius
   });
 
   it('settled debris raises the surface where chunks land and removes nothing', () => {

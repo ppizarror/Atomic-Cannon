@@ -342,89 +342,6 @@ export class CLand {
   // =====================================================================
 
   /**
-   * Carve a crater bowl. `coatDirt` (default true) coats the exposed face with a dirt band — the
-   * original reveals the land's own sub-surface soil/strata texture across the bowl; our thin band
-   * approximates that. A CLEANER (earth-remover) passes `false`: it just removes earth and leaves
-   * the natural strata beneath exposed, never a fresh introduced dirt lining.
-   */
-  blastCircle(x: number, y: number, nRadius: number, coatDirt = true, ragged = false): void {
-    if (!this.m_arrHeights) return;
-
-    const startX = Math.max(0, x - nRadius);
-    const endX = Math.min(this.m_nWidth - 1, x + nRadius);
-    this.settleFallsIn(startX, endX); // settle any active overburden so the carve acts on stable ground
-
-    // Heightmap approximation of a destructible-bitmap crater:
-    // at each column the surface drops to the bottom edge of the blast circle
-    // when that is lower than the current ground (screen-Y larger = lower down).
-    const px = this.m_pixels;
-    const W = this.m_nWidth;
-    const heights = this.m_arrHeights;
-    const dirtBand = clamp(Math.round(nRadius * 0.22), 12, 40);
-    // Graphics → Filled Craters (opt-in, off by default): paint the excavated bowl with soil
-    // so the crater reads as a dirt hole instead of transparent (the background showing
-    // through). Purely visual — collision uses m_arrHeights (the lowered floor), untouched.
-    // Cleaners (coatDirt=false) still leave bare removed earth.
-    const craterFill = coatDirt && GameConfig.craterFill;
-    // `ragged`: a gentle wobble on the bowl radius so a small dirt crater reads as a rough hole, not a
-    // weird perfect circle. Two out-of-phase sines (random per-crater phases) give an irregular but
-    // SMOOTH rim — never per-column white noise, which spiked into "nails" in the original.
-    const wobPh1 = ragged ? Math.random() * TWO_PI : 0;
-    const wobPh2 = ragged ? Math.random() * TWO_PI : 0;
-
-    for (let dx = startX; dx <= endX; dx++) {
-      const distFromCenter = Math.abs(dx - x);
-
-      if (distFromCenter > nRadius) continue;
-
-      let arcHeight = Math.sqrt(nRadius * nRadius - distFromCenter * distFromCenter);
-      if (ragged) arcHeight *= 0.9 + 0.07 * Math.sin(dx * 0.6 + wobPh1) + 0.05 * Math.sin(dx * 1.4 + wobPh2); // prettier-ignore
-      const craterBottom = y + arcHeight;
-
-      // Lower the surface to the crater floor — `setColumnTop` CLEARS the removed pixels
-      // (grass/dirt/rock/deposited dirt alike, material-blind) down to the new floor.
-      const oldTop = heights[dx];
-      if (craterBottom > this.m_arrHeights[dx]) this.setColumnTop(dx, craterBottom);
-
-      // Filled Craters: re-fill the just-excavated void [oldTop, craterBottom) with soil.
-      if (px && craterFill && craterBottom > oldTop) {
-        const mat = this.m_material;
-        const bot = Math.min(this.m_nHeight, Math.floor(craterBottom));
-        for (let yy = oldTop; yy < bot; yy++) {
-          const i = yy * W + dx;
-          px[i] = this.dirtColorAt(dx, yy);
-          if (mat) mat[i] = CLand.MAT_DIRT;
-        }
-      }
-
-      // Coat the exposed face with dirt: a thin band below the new surface, only where the crater
-      // actually cut in (arcHeight > 2 skips the featherweight rim columns so it can't smear onto
-      // untouched ground beyond the crater). Overwrite SOLID pixels only (skip the excavated void).
-      // A Cleaner passes coatDirt=false → no fresh dirt, the natural strata below is left exposed.
-      if (px && coatDirt && arcHeight > 2) {
-        const mat = this.m_material;
-        const bandTop = heights[dx];
-        const bandBot = Math.min(this.m_nHeight, bandTop + dirtBand);
-        for (let yy = bandTop; yy < bandBot; yy++) {
-          const i = yy * W + dx;
-          if ((px[i] & 0xff000000) !== 0) {
-            px[i] = this.dirtColorAt(dx, yy);
-            if (mat) mat[i] = CLand.MAT_DIRT;
-          }
-        }
-      }
-    }
-    this.m_pixelsDirty = true;
-
-    // Wipe the radiation the blast overran — the damage ZONES (so tanks stop taking fallout
-    // damage and the heat smoke stops venting), the rising wisps, and the ground specks that sat
-    // here. A cleaner fired over an irradiated crater must leave it INERT, not still smoking.
-    this.clearRadiationSpan(x - nRadius, x + nRadius);
-
-    this.preBlast(x - nRadius, x + nRadius);
-  }
-
-  /**
    * Slice-carve at a column: remove only the part of the [y-half, y+half] band that
    * is BELOW the current surface, then let all the earth above it FALL DOWN to fill
    * the gap — so the surface drops by the removed slice, NOT down to the cut. This is
@@ -629,19 +546,53 @@ export class CLand {
    * thickness (grass ends up that much lower), with NO lateral slumping. Otherwise the steep
    * bore walls avalanche sideways every frame and stack into a wide funnel/V (the wrong look).
    */
-  carveDiscCollapse(x: number, y: number, r: number, slump = true): void {
+  carveDiscCollapse(
+    x: number,
+    y: number,
+    r: number,
+    slump = true,
+    ragged = false,
+    coatDirt = false,
+  ): void {
     if (!this.m_arrHeights) return;
     const [lo, hi] = this.clampCols(Math.floor(x - r), Math.ceil(x + r));
     this.settleFallsIn(lo, hi); // settle any active overburden first → no concurrent falls
+    const px = this.m_pixels;
+    const W = this.m_nWidth;
+    const heights = this.m_arrHeights;
+    const dirtBand = clamp(Math.round(r * 0.22), 12, 40);
+    // `ragged`: a gentle wobble on the disc radius so an EXPLOSION crater reads as a rough hole (what
+    // the old blastCircle gave). Two out-of-phase sines (random per-crater phases) → an irregular but
+    // SMOOTH profile; every column is still CUT (varying depth → wavy floor), so it does NOT strand
+    // the "nails" a per-column jitter/skip would. Cleaner/digger pass false (a clean, controlled cut).
+    const wobPh1 = ragged ? this.rand01() * TWO_PI : 0;
+    const wobPh2 = ragged ? this.rand01() * TWO_PI : 0;
     for (let c = lo; c <= hi; c++) {
       const dx = c - x;
-      const base = Math.sqrt(Math.max(0, r * r - dx * dx)); // disc half-height at this column
+      let base = Math.sqrt(Math.max(0, r * r - dx * dx)); // disc half-height at this column
+      if (ragged) base *= 0.9 + 0.07 * Math.sin(c * 0.6 + wobPh1) + 0.05 * Math.sin(c * 1.4 + wobPh2); // prettier-ignore
       if (base <= 0.5) continue;
-      // Cut the SMOOTH disc profile (no per-column random — that leaves thin standing "nails").
-      // The capped soil ABOVE the band falls in under gravity (falling block).
+      // Cut the disc profile; the capped soil ABOVE the band falls in under gravity (falling block).
+      const before = heights[c];
       this.sliceColumn(c, y, base);
+      // `coatDirt` (bombs/dirt): coat the fresh crater face with soil — a thin band below the new
+      // surface — so it reads as a filled dirt bowl (the blastCircle look), not raw rock strata. Only
+      // for columns that lowered DIRECTLY (heights[c] rose): a column with a falling block keeps its
+      // surface until the block lands, and coating the void there would strand floating dirt.
+      if (coatDirt && px && base > 2 && heights[c] > before) {
+        const mat = this.m_material;
+        const bandBot = Math.min(this.m_nHeight, heights[c] + dirtBand);
+        for (let yy = heights[c]; yy < bandBot; yy++) {
+          const i = yy * W + c;
+          if ((px[i] & 0xff000000) !== 0) {
+            px[i] = this.dirtColorAt(c, yy);
+            if (mat) mat[i] = CLand.MAT_DIRT;
+          }
+        }
+      }
     }
     if (slump) this.startSlump(lo, hi); // detonation bowl only; the bore stays a straight-down cut
+    this.m_pixelsDirty = true;
     // A detonation crater blows the ground (and any fallout on it) away — drop the radiation here.
     this.clearRadiationSpan(lo, hi);
     this.preBlast(lo, hi);
@@ -801,9 +752,10 @@ export class CLand {
     const chunks = Math.min(16000, Math.round(amount * R * DIRT_DEPOSIT_VOLUME));
     const pool = this.m_particlePool;
     for (let i = 0; i < chunks; i++) {
-      const ang = Math.random() * TWO_PI;
-      const dist = Math.sqrt(Math.random()) * discR; // uniform over the DISC AREA (no central 1/r spike)
-      let v = 24 + Math.floor(Math.random() * 116); // dirt brown, occasional dark clod
+      // Deposited dirt writes the heightmap → seeded LCG (deterministic in a net match).
+      const ang = this.rand01() * TWO_PI;
+      const dist = Math.sqrt(this.rand01()) * discR; // uniform over the DISC AREA (no central 1/r spike)
+      let v = 24 + Math.floor(Math.random() * 116); // dirt brown, occasional dark clod (cosmetic)
       if (Math.random() < 0.25) v = Math.floor(v * 0.55);
       const p: LandParticle = pool.pop() ?? {
         x: 0,
@@ -818,8 +770,8 @@ export class CLand {
       };
       p.x = x + Math.cos(ang) * dist;
       p.y = y + Math.sin(ang) * dist * 0.4; // disc flattened vertically (chunks born near the surface)
-      p.vx = (Math.random() * 2 - 1) * DIRT_THROW_SCATTER; // small random horizontal (NOT outward)
-      p.vy = -(DIRT_THROW_UP_MIN + Math.random() * DIRT_THROW_UP_SPAN); // up → rains back near birth
+      p.vx = (this.rand01() * 2 - 1) * DIRT_THROW_SCATTER; // small random horizontal (NOT outward)
+      p.vy = -(DIRT_THROW_UP_MIN + this.rand01() * DIRT_THROW_UP_SPAN); // up → rains back near birth
       p.color = this.dirtColor(v);
       p.size = 1;
       p.spin = 0;
@@ -912,13 +864,13 @@ export class CLand {
     const n = clamp(Math.round(nRadius * 40), 700, 16000);
     const pool = this.m_speckPool;
     for (let i = 0; i < n; i++) {
-      const ang = this.rand01() * TWO_PI;
-      const dist = this.rand01() * nRadius; // spawn spread across the whole radius (faithful)
+      const ang = Math.random() * TWO_PI;
+      const dist = Math.random() * nRadius; // spawn spread across the whole radius (faithful)
       // The original scatters each grain across the blast radius (`pos = center + rand·radius·dir`)
       // and gives it only a SMALL radial velocity (`rand·8+2` in the source's units). The visible
       // fall comes from the SPREAD — grains that land high in the upper half of the disc drop back
       // down under gravity — NOT from a big launch. So: full-radius spawn + a gentle radial nudge.
-      const speed = 20 + this.rand01() * 65; // small radial launch (the spread does the spreading)
+      const speed = 20 + Math.random() * 65; // small radial launch (the spread does the spreading)
       // Reuse a faded speck from the free pool — up to 12000 per nuke, so this is
       // the biggest allocation sink; pooling makes a warm blast allocate zero.
       const s: RadSpeck = pool.pop() ?? {
@@ -948,14 +900,14 @@ export class CLand {
       // and the low-spawned ones settle quickly, matching the original's radial launch. Airburst
       // (raining): biased DOWN so the disc rains from the mid-air burst point onto the ground.
       s.vy = raining
-        ? Math.abs(Math.sin(ang)) * speed + (25 + this.rand01() * 55)
+        ? Math.abs(Math.sin(ang)) * speed + (25 + Math.random() * 55)
         : Math.sin(ang) * speed;
       s.age = 0;
-      s.life = dur * (0.85 + this.rand01() * 0.2); // lingers ~the stretched irTime
+      s.life = dur * (0.85 + Math.random() * 0.2); // lingers ~the stretched irTime
       s.settled = false;
-      s.size = 0.85 + this.rand01() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
-      s.phase = this.rand01() * TWO_PI; // independent glow phase (no coherent wave/banding)
-      s.pw = 3 + this.rand01() * 4.5; // independent glow rate (each speck breathes at its own speed)
+      s.size = 0.85 + Math.random() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
+      s.phase = Math.random() * TWO_PI; // independent glow phase (no coherent wave/banding)
+      s.pw = 3 + Math.random() * 4.5; // independent glow rate (each speck breathes at its own speed)
       s.rise = 0;
       s.r = r;
       s.g = g;
@@ -1015,8 +967,8 @@ export class CLand {
   /** Dirt-chunk colour string cached by brightness v (0..139) so a 6500-chunk nuke
    *  doesn't allocate 6500 `rgb()` strings per blast (GC churn → fire-time hitch). */
   private dirtColor(v: number): string {
-    // (v, v/2, 0) — pure orange-brown, ZERO blue, exactly matching the decompiled dirt colour
-    // `(v*0x200 | v&~1) << 7`. The old `v>>3` blue muddied it toward a darker "burned" tone.
+    // (v, v/2, 0) — pure orange-brown, ZERO blue, exactly matching the original's packed dirt colour.
+    // The old `v>>3` blue muddied it toward a darker "burned" tone.
     return this.m_dirtColors[v] ?? (this.m_dirtColors[v] = `rgb(${v},${v >> 1},0)`);
   }
 
@@ -1032,15 +984,18 @@ export class CLand {
     gentle = false,
   ): void {
     const pool = this.m_particlePool;
+    // Depositing ejecta WRITES the heightmap, so its motion must be deterministic in a
+    // network match → draw from the seeded LCG. Non-deposit spray is cosmetic → Math.random.
+    const r = deposit ? () => this.rand01() : Math.random;
     for (let i = 0; i < count; i++) {
-      const ang = Math.random() * TWO_PI;
+      const ang = r() * TWO_PI;
       // Dirt brown (R=v, G≈v/2, B≈0), occasionally a darker clod for texture.
       let v = 24 + Math.floor(Math.random() * 116); // [24,139]
       if (Math.random() < 0.25) v = Math.floor(v * 0.55); // some dark chunks
       // Launch speed scales with the blast radius so a small weapon's debris stays
       // near the crater instead of raining across the whole map.
-      const speed = gentle ? Math.random() * 10 : 30 + Math.random() * (radius * 2.4);
-      const up = gentle ? 0 : radius * (0.3 + Math.random() * 1.3);
+      const speed = gentle ? r() * 10 : 30 + r() * (radius * 2.4);
+      const up = gentle ? 0 : radius * (0.3 + r() * 1.3);
       // Reuse a settled chunk from the free pool — after the first big blast the
       // pool is warm, so a nuke allocates zero LandParticle objects (no GC spike).
       const p: LandParticle = pool.pop() ?? {
@@ -1054,10 +1009,10 @@ export class CLand {
         age: 0,
         deposit: true,
       };
-      p.x = x + (Math.random() * 2 - 1) * radius;
-      p.y = y + (Math.random() * 2 - 1) * radius * 0.4;
+      p.x = x + (r() * 2 - 1) * radius;
+      p.y = y + (r() * 2 - 1) * radius * 0.4;
       p.vx = Math.cos(ang) * speed;
-      p.vy = gentle ? Math.random() * 12 : Math.sin(ang) * speed * 0.7 - up; // gentle drop vs up-and-out
+      p.vy = gentle ? r() * 12 : Math.sin(ang) * speed * 0.7 - up; // gentle drop vs up-and-out
       p.color = this.dirtColor(v);
       p.size = 1; // the original plots each chunk as a single 1px pixel — no 2px squares
       p.spin = 0;
@@ -1090,6 +1045,10 @@ export class CLand {
     // ~6500 chunks, and hundreds settle per frame — each splice shifts the whole
     // tail (O(n)), so settling was O(n²) per frame. That is the hitch on impact and
     // the sluggish earth settle. Copying survivors forward and truncating once is O(n).
+    // Columns with an overburden block still FALLING: a depositing chunk must NOT settle/stamp on the
+    // block's transient (high) top — when the block lands lower the stamped dirt would be left floating
+    // above the surface. Keep such chunks airborne until the column stabilises.
+    const falling = this.m_falls.length ? new Set(this.m_falls.map(f => f.col)) : null;
     let dw = 0;
     for (let i = 0; i < this.m_particles.length; i++) {
       const p = this.m_particles[i];
@@ -1111,12 +1070,20 @@ export class CLand {
       // still-airborne (highest-thrown) chunks in the SAME frame — the whole cloud snaps into the
       // ground at once ("high in the sky, then all fell 14 frames later"). Gravity brings each one
       // down on its own schedule, so the landing stays staggered.
+      // Don't settle onto a column whose overburden is still FALLING — its surface is a transient
+      // (mid-air) block top; depositing there strands dirt once the block lands lower. Keep flying.
+      if (falling && falling.has(col)) {
+        this.m_particles[dw++] = p;
+        continue;
+      }
       if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
         if (!p.deposit) {
           this.m_particlePool.push(p);
           continue; // cosmetic ejecta (beam) — reached ground, just vanish (no column raise)
         }
-        const dcol = clamp(col + ((Math.random() * 4) | 0) - 2, 0, this.m_nWidth - 1); // −2..+1 (orig)
+        // Which column the chunk raises → writes the heightmap → seeded LCG.
+        let dcol = clamp(col + ((this.rand01() * 4) | 0) - 2, 0, this.m_nWidth - 1); // −2..+1 (orig)
+        if (falling && falling.has(dcol)) dcol = col; // never deposit onto a falling column
         // Height cap: dirt can't pile above `capY`. A chunk on a capped column is discarded, so tall
         // stacks (Land Fill) FLAT-TOP into a mesa instead of spiking (orig settle gate `0x60 <= y`).
         if (this.m_arrHeights[dcol] > this.m_nHeight * DIRT_CAP_FRACTION) {
@@ -1125,7 +1092,7 @@ export class CLand {
           this.setColumnTop(dcol, this.m_arrHeights[dcol] - 1);
           const px = this.m_pixels;
           if (px) {
-            const v = 30 + ((Math.random() * 100) | 0); // [30,129] = decompiled `rand%100 + 30`
+            const v = 30 + ((Math.random() * 100) | 0); // [30,129] = the original's `rand%100 + 30`
             px[this.m_arrHeights[dcol] * this.m_nWidth + dcol] = this.packSolid(v, v >> 1, 0); // (v,v/2,0)
           }
           if (this.m_baseHeights)
@@ -1207,13 +1174,13 @@ export class CLand {
           // 42px band (over-invented) and NOT a flat 1px line (over-thinned). `rise` (offset from the
           // surface at settle) is kept only so we can tell burial-by-fill from the crater-face coat;
           // the speck's y is FIXED from here (the original sets it once and never re-reads the ground).
-          const jx = Math.floor(this.rand01() * 4) - 2; // −2..+1 columns
+          const jx = Math.floor(Math.random() * 4) - 2; // −2..+1 columns
           const c2 = clamp(col + jx, 0, this.m_nWidth - 1);
           s.x = c2;
           // Scatter DEEP into the crater face so the red coats the whole bowl (over the dirt band
           // and a bit below) — a few px above the surface down to −m_radBandDepth. Biased toward
           // the deeper end so the face fills rather than crowding the surface line.
-          s.rise = 3 - Math.floor(this.rand01() * (this.m_radBandDepth + 4));
+          s.rise = 3 - Math.floor(Math.random() * (this.m_radBandDepth + 4));
           s.y = this.getHeightAt(c2) - s.rise;
         }
       } else {
@@ -1241,7 +1208,7 @@ export class CLand {
       for (const z of this.m_radParticles) {
         const cool = z.timeRemaining / Math.max(0.5, z.duration); // 1 hot → 0 cold
         const rr = z.radius;
-        const spawn = this.rand01() < cool * 0.7 ? 1 : 0; // sparse — a wisp here and there
+        const spawn = Math.random() < cool * 0.7 ? 1 : 0; // sparse — a wisp here and there
         // Tint the wisp with the weapon's radiation colour (irRGB), brightened
         // so hydrogen puffs BLUE / plutonium GREEN / uranium RED — matching the
         // carpet, not a fixed red.
@@ -1251,17 +1218,17 @@ export class CLand {
           tg = Math.round(z.g * k2),
           tb = Math.round(z.b * k2);
         for (let k = 0; k < spawn; k++) {
-          const col = Math.floor(z.x - rr + this.rand01() * rr * 2);
+          const col = Math.floor(z.x - rr + Math.random() * rr * 2);
           if (col < 0 || col >= this.m_nWidth) continue; // spawn anywhere in the zone, off the surface
           this.m_heat.push({
-            x: col + this.rand01() * 2 - 1,
-            y: this.getHeightAt(col) - this.rand01() * 4,
+            x: col + Math.random() * 2 - 1,
+            y: this.getHeightAt(col) - Math.random() * 4,
             age: 0,
-            life: 0.7 + this.rand01() * 0.8,
-            size: 5 + this.rand01() * 7,
-            vx: (this.rand01() - 0.5) * 12,
-            rot: this.rand01() * TWO_PI,
-            spin: (this.rand01() - 0.5) * 1.6,
+            life: 0.7 + Math.random() * 0.8,
+            size: 5 + Math.random() * 7,
+            vx: (Math.random() - 0.5) * 12,
+            rot: Math.random() * TWO_PI,
+            spin: (Math.random() - 0.5) * 1.6,
             r: tr,
             g: tg,
             b: tb,
@@ -1562,8 +1529,53 @@ export class CLand {
       for (let y = 0; y < top; y++) px[y * W + x] = 0;
     }
     if (!this.m_dirtTile) this.buildDirtTile();
+    this.buildBackdrop(); // snapshot the PRISTINE shape (darkened) for the Filled-Craters back layer
     this.m_needsBake = false;
     this.m_pixelsDirty = true;
+  }
+
+  /**
+   * "Filled Craters" back layer: an ATMOSPHERIC snapshot of the pristine terrain, drawn BEHIND the
+   * live terrain. Where the live terrain is later carved away, this shows through — so a crater reveals
+   * the mountain's darkened interior ("the mass is still there behind, we only broke the surface"),
+   * not the sky. A plain darken reads as the SAME texture (hard to tell destroyed from solid), so we
+   * push it back via atmospheric perspective: DESATURATE (toward luminance) + COOL tint (recede blue) +
+   * DARKEN. A blur + rim shadow are added at draw time. Captured once per bake, static as terrain dies.
+   */
+  private buildBackdrop(): void {
+    const px = this.m_pixels;
+    if (!px || typeof document === 'undefined') return;
+    const W = this.m_nWidth,
+      H = this.m_nHeight;
+    if (!this.m_backdropCanvas) this.m_backdropCanvas = document.createElement('canvas');
+    this.m_backdropCanvas.width = W;
+    this.m_backdropCanvas.height = H;
+    const bctx = this.m_backdropCanvas.getContext('2d');
+    if (!bctx) return;
+    const img = bctx.createImageData(W, H);
+    const out = new Uint32Array(img.data.buffer);
+    const DESAT = 0.6, // 0 = keep colour, 1 = full grayscale
+      DARK = 0.5, // overall value drop
+      TR = 0.78, // cool tint: cut warm channels, lift blue → the layer reads "distant/in shadow"
+      TG = 0.9,
+      TB = 1.22;
+    for (let i = 0; i < px.length; i++) {
+      const p = px[i];
+      if ((p & 0xff000000) === 0) {
+        out[i] = 0; // sky stays transparent
+        continue;
+      }
+      let r = p & 0xff,
+        g = (p >> 8) & 0xff,
+        b = (p >> 16) & 0xff;
+      const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+      r = (r + (lum - r) * DESAT) * DARK * TR;
+      g = (g + (lum - g) * DESAT) * DARK * TG;
+      b = (b + (lum - b) * DESAT) * DARK * TB;
+      out[i] =
+        (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>> 0;
+    }
+    bctx.putImageData(img, 0, 0);
   }
 
   /** ?skiptexture: paint the terrain by MATERIAL — sky cyan, native land grayscale (luminance of
@@ -1672,6 +1684,19 @@ export class CLand {
         if (this.m_pixelsDirty && this.m_terrainImage) {
           this.ensureTerrainCtx().putImageData(this.m_terrainImage, 0, 0);
           this.m_pixelsDirty = false;
+        }
+        // Filled Craters: draw the atmospheric PRISTINE terrain first, so carved-away regions reveal
+        // the mountain's darkened interior behind the live terrain (not the sky). Off → craters are voids.
+        if (GameConfig.craterFill && this.m_backdropCanvas && this.m_terrainCanvas) {
+          ctx.save();
+          ctx.filter = 'blur(3px)'; // #2 soften → the backdrop recedes (depth of field)
+          ctx.drawImage(this.m_backdropCanvas, 0, 0);
+          // #4 rim shadow: a soft black echo of the live terrain, dropped a few px INTO the carved
+          // void, so the crater edge casts an ambient-occlusion shadow onto the backdrop below it.
+          ctx.filter = 'blur(3px) brightness(0)';
+          ctx.globalAlpha = 0.5;
+          ctx.drawImage(this.m_terrainCanvas, 0, 7);
+          ctx.restore();
         }
         if (this.m_terrainCanvas) ctx.drawImage(this.m_terrainCanvas, 0, 0);
       }
@@ -1819,6 +1844,7 @@ export class CLand {
   private m_patterns: (CanvasPattern | null)[] = [];
   private m_bareImage: CanvasImageSource | null = null; // non-grass earth for de-grassed craters
   private m_terrainCanvas: HTMLCanvasElement | null = null;
+  private m_backdropCanvas: HTMLCanvasElement | null = null; // darkened pristine terrain (Filled Craters)
   private m_terrainDirty: boolean = true;
 
   // ---- Unified terrain PIXEL BUFFER -------------------------------------------

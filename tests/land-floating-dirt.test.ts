@@ -84,9 +84,28 @@ describe('CLand — no floating dirt', () => {
 
     land.carveBeamSlice(40, surf + 34, 160, surf + 34, 10);
     land.update(1 / 60);
-    land.blastCircle(100, surf, 40); // crater over the falling cut
+    land.carveDiscCollapse(100, surf, 40); // crater over the falling cut
 
     settleAll(land);
     expect(floatingPixels(land)).toBe(0);
+  });
+
+  it('depositing debris on a column with a FALLING overburden block strands nothing', () => {
+    // Bug: a bomb now cuts with `carveDiscCollapse` (falling-block collapse) AND throws DEPOSITING
+    // debris. A chunk that settles on a column whose block is still mid-air stamps dirt at the block's
+    // CURRENT (high) top; when the block then lands lower, that dirt is left floating above the surface.
+    const W = 200,
+      H = 300,
+      surf = 120;
+    const land = landWithPixels(W, H, surf);
+
+    // Detonate BELOW the surface (buried) so the overburden caves in as falling blocks.
+    land.carveDiscCollapse(100, surf + 50, 34);
+    // …and immediately rain depositing dirt over the same span while those blocks are still falling.
+    land.addShowerParticles(100, surf, 1200, 44); // deposit=true (default) → raises columns
+
+    for (let i = 0; i < 8; i++) land.update(1 / 60); // chunks deposit onto the mid-air block tops
+    settleAll(land);
+    expect(floatingPixels(land)).toBe(0); // no dirt stranded above the settled surface
   });
 });

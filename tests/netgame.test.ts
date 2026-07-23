@@ -134,9 +134,10 @@ describe('authoritative snapshot', () => {
     const pristine = spectator.getNetSnapshot().heights.slice();
 
     // Carve a crater on the host's terrain, then sync it to the spectator.
-    const land = (host as unknown as {m_land: {blastCircle(x: number, y: number, r: number): void}})
-      .m_land;
-    land.blastCircle(200, 240, 40);
+    const land = (
+      host as unknown as {m_land: {carveDiscCollapse(x: number, y: number, r: number): void}}
+    ).m_land;
+    land.carveDiscCollapse(200, 240, 40);
 
     const snap = host.getNetSnapshot();
     expect(snap.heights).not.toEqual(pristine); // the host's terrain actually changed
@@ -256,7 +257,10 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       isHost: youId === 1,
       lastError: null,
     };
-    const client = {getState: () => state, send: (m: ClientMessage) => sent.push(m)} as unknown as RoomClient;
+    const client = {
+      getState: () => state,
+      send: (m: ClientMessage) => sent.push(m),
+    } as unknown as RoomClient;
     const ng = new NetGame(client, {controller: gc, onMatchStart: () => {}});
     ng.handle({t: 'startGame', seed: 5, order: [1, 2]});
     return {gc, ng, sent};

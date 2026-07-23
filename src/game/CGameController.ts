@@ -49,6 +49,7 @@ import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
 import {plusMinus} from '../math/random';
+import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
 import {
   EXT,
@@ -61,6 +62,7 @@ import {
 import {EXP, type ExpType, isNukeExp} from '../core/weapons/ExpType';
 import {CAudio} from '../audio/CAudio';
 import landData from '../data/land.json';
+import {hexToRgb} from '../math/color';
 
 /**
  * Game state machine states
@@ -116,6 +118,7 @@ export interface WarStandings {
 
 interface LandConfig {
   bg: string;
+  ambient: string; // hand-picked mood tint (#rrggbb) for Ambient Lighting — soft-light over the scene
   weather: {type: string; intensity: number}[];
   layers: {tile: string; depth: number}[];
 }
@@ -373,8 +376,8 @@ export class CGameController implements ShotWorld {
     // world height = view height (scroll is horizontal only). `m_camX` is the
     // world X of the view's left edge.
     this.m_worldWidth = Math.round(canvas.width * this.landScale());
-    // Publish the world scale so shot physics + blast size grow with the map (a full-power
-    // shot stays powerful on big maps instead of only crossing a fraction of them).
+    // Publish the world scale so shot PHYSICS grow with the map (a full-power shot stays powerful on
+    // big maps instead of only crossing a fraction of them). Blast SIZE is a separate resolution axis.
     GameConfig.worldScale = this.m_worldWidth / canvas.width;
 
     // Terrain fills the full world so its body covers the bottom of the screen —
@@ -385,6 +388,9 @@ export class CGameController implements ShotWorld {
     this.m_shots = [];
     this.m_particles = new CParticleSystem();
     this.m_particles.setBounds(this.m_worldWidth, canvas.height);
+    // Surface provider (reads the CURRENT land each call, so it survives land rebuilds): drives the
+    // wind altitude profile and keeps crater-vent fumes from spraying into empty sky (no soil).
+    this.m_particles.setGroundProvider(x => this.m_land.getHeightAt(Math.floor(x)));
     // Weather fills the VIEW (rain/snow are screen-space), not the world.
     this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_economy = new CEconomy();
@@ -423,6 +429,8 @@ export class CGameController implements ShotWorld {
     }
 
     // Reset state
+    this.m_simAccum = 0; // fresh fixed-timestep accumulator
+    this.m_netShotResolving = false;
     this.m_tanks = [];
     this.m_shots = [];
     this.m_ghostShots = [];
@@ -447,6 +455,12 @@ export class CGameController implements ShotWorld {
       this.m_particles.setBounds(worldW, this.m_canvas.height);
     }
 
+    // Seed the gameplay RNG from the match seed (shared in a network match → identical
+    // outcomes on every client; a fresh seed keeps solo play random). Derived from the
+    // terrain seed so gameplay draws don't mirror the terrain generator's own stream.
+    const rngSeed = ((this.m_terrainSeed ?? Date.now()) ^ 0x9e3779b9) >>> 0;
+    this.m_rng.seed(rngSeed);
+
     this.generateTerrain();
 
     // Build the spawn list from the roster (Customize Players): one entry per tank.
@@ -458,16 +472,22 @@ export class CGameController implements ShotWorld {
     const perTeam = Math.max(1, this.m_tanksPerTeam);
     const MAX_TANKS = 16;
 
+    const botNames = strings.value.botNames;
+    const playerNames = strings.value.playerNames;
+    let botSeq = 0; // cycles the bot pool so CPU opponents get distinct bot names
+
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
     for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
-      const botNames = strings.value.botNames;
       // In a network match the roster comes from the lobby (same on every client, in
       // turn order) so names/colours — and thus team identity — match across clients.
       const netCfg = this.m_netRoster?.[p];
       const cfg = netCfg
         ? {name: netCfg.name, model: '', color: netCfg.color}
         : (roster[p] ?? {
-            name: p === 0 ? strings.value.game.defaultPlayer : botNames[p % botNames.length],
+            name:
+              p === 0
+                ? strings.value.game.defaultPlayer
+                : playerNames[(p - 1) % playerNames.length],
             model: '',
             color: TEAM_COLORS[p] ?? DEFAULT_TEAM_COLOR,
           });
@@ -478,8 +498,13 @@ export class CGameController implements ShotWorld {
         teamOfColor.set(cfg.color, team);
       }
       const human = p < this.m_humanCount;
-      // Wargame Detail preset renames every CPU "Whopper" (the WarGames reference).
-      const baseName = !human && isWargame() ? strings.value.game.whopper : cfg.name;
+      // Humans (and network players) keep their roster/lobby name from the human pool;
+      // local CPU opponents are named from the separate bot pool instead. The Wargame
+      // Detail preset overrides every CPU to "Whopper" (the WarGames reference).
+      let baseName: string;
+      if (netCfg || human) baseName = cfg.name;
+      else if (isWargame()) baseName = strings.value.game.whopper;
+      else baseName = botNames[botSeq++ % botNames.length];
       for (let k = 0; k < perTeam && spawns.length < MAX_TANKS; k++) {
         const name =
           perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
@@ -597,6 +622,7 @@ export class CGameController implements ShotWorld {
    */
   private async loadLandscape(): Promise<void> {
     const cfg = LAND_DATA[this.pickLandscapeIndex()];
+    this.m_ambient = hexToRgb(cfg.ambient); // per-map mood tint for Ambient Lighting (from land.json)
 
     // Precipitation / blowing sand declared by this map (snow, rain, hail, dust).
     this.m_weather.configure(cfg.weather);
@@ -666,9 +692,25 @@ export class CGameController implements ShotWorld {
   /**
    * Main update tick - called every frame via requestAnimationFrame
    */
+  /**
+   * Drive the sim from real (wall-clock) time. Accumulates elapsed time (scaled by the
+   * game-speed setting) and runs the sim in FIXED_DT slices — so the same shot resolves
+   * in the same number of steps on every client, at any frame rate (lockstep). Tests
+   * bypass this and call {@link update} with an explicit dt.
+   */
+  advance(realDt: number): void {
+    this.m_simAccum += realDt * this.m_speedScale;
+    const step = CGameController.FIXED_DT;
+    let steps = 0;
+    while (this.m_simAccum >= step && steps < CGameController.MAX_SIM_STEPS) {
+      this.update(step);
+      this.m_simAccum -= step;
+      steps++;
+    }
+    if (steps === CGameController.MAX_SIM_STEPS) this.m_simAccum = 0; // fell behind → drop the backlog
+  }
+
   update(dt: number): void {
-    // Game-speed multiplier (Settings → Gameplay → Update Scale; 1 = normal).
-    dt *= this.m_speedScale;
     switch (this.m_gameState) {
       case EGameState.Battle:
         this.updateBattle(dt);
@@ -685,11 +727,13 @@ export class CGameController implements ShotWorld {
       case EGameState.Explosion:
         // Tanks keep falling/settling into the fresh craters while the blast animates.
         this.updateTanks(dt);
-        // Hand off only once the effects AND every tank have come to rest — the blast's
-        // fireball / particles / screen-shake, a beam-slice collapse or debris still
-        // settling (m_land.isSettling), and any tank still falling/sliding from the blast.
+        // Hand off once the EXPLOSION and every tank have come to rest — the blast's fireball / fire /
+        // sparks (hasActiveBlast, which ignores the lingering cosmetic smoke — the turn waits for the
+        // explosion, NOT its multi-second smoke fade), screen-shake, a beam-slice collapse or debris
+        // still settling (m_land.isSettling), and any tank still falling/sliding from the blast. The
+        // smoke keeps drifting into the next player's aim phase (it's purely visual).
         if (
-          !this.m_particles.hasActiveExplosions() &&
+          !this.m_particles.hasActiveBlast() &&
           !this.m_screenShake.isActive() &&
           !this.m_land.isSettling() &&
           !this.m_tanks.some(t => t.isAlive() && (t.isFalling() || t.isMoving()))
@@ -945,6 +989,32 @@ export class CGameController implements ShotWorld {
     return clamp(Math.round(GameConfig.landSize), 1, 5);
   }
 
+  /**
+   * Resolution-based blast scale (the original's explosion-scale factor): the crater/FX radius and the
+   * blast-damage falloff radius are both `weapon.radius × explosionScale × this`. A DERIVED render
+   * value (not a user setting), exposed on the `ShotWorld` context — computed on demand from the LIVE
+   * canvas so it always tracks the current window size (no resize-timing state to keep in sync).
+   */
+  get blastScale(): number {
+    return this.computeBlastScale(this.m_canvas.width, this.m_canvas.height);
+  }
+
+  /**
+   * The original's factor `√(screenW·screenH) × C`, C = 1/600 for a ≤800px-wide view else 1/900 —
+   * ≈1.0 at typical resolutions, so a weapon's radius reads at its authored px size.
+   */
+  private computeBlastScale(viewW: number, viewH: number): number {
+    // Guard against an unsized canvas (0/NaN dims during early construction) — never return 0/NaN,
+    // which would zero the blast radius and carve NO crater. Fall back to the classic 800×600.
+    const w = viewW > 0 ? viewW : 800;
+    const h = viewH > 0 ? viewH : 600;
+    // The ORIGINAL's factor: √(screen area) × C, with C = 1/600 for a ≤800px-wide view else 1/900.
+    // (A flat 1/600 at all sizes over-scaled blasts ~1.5–2.4× on modern windows.) Gives ≈1.0 at typical
+    // resolutions, so a weapon's radius reads at its authored px size.
+    const c = w <= 800 ? 1 / 600 : 1 / 900;
+    return Math.sqrt(w * h) * c;
+  }
+
   /** Widest the camera can scroll; 0 when the world fits the view (no scroll). */
   private maxCamX(): number {
     return Math.max(0, this.m_worldWidth - this.m_canvas.width);
@@ -1137,6 +1207,19 @@ export class CGameController implements ShotWorld {
 
     ctx.restore(); // end world-space camera transform → back to screen space
 
+    // Ambient Lighting (Graphics → Ambient Lighting): a subtle soft-light wash of the map's own
+    // average colour over the scene, so terrain/tanks take on each backdrop's mood — warm on a sunset
+    // map, cool on snow. A port embellishment (the original reads warm purely by backdrop context).
+    // Over the world only; the notches/minimap draw after, untinted.
+    if (GameConfig.ambientLight && this.m_ambient) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = `rgb(${this.m_ambient.r},${this.m_ambient.g},${this.m_ambient.b})`;
+      ctx.fillRect(0, 0, this.m_canvas.width, this.m_canvas.height);
+      ctx.restore();
+    }
+
     // Edge notches pointing at any projectile that has left the view (Tracking).
     if (GameConfig.tracking) this.drawShotNotches(ctx);
 
@@ -1145,6 +1228,11 @@ export class CGameController implements ShotWorld {
 
     ctx.restore();
   }
+
+  // Per-map ambient tint (from land.json's `ambient`) for Ambient Lighting — a soft-light wash over
+  // the scene so terrain/tanks take each map's mood. Hand-picked per map (a snowy map's raw average
+  // is washed-out white; the stored tint leans cool instead). Null → no tint.
+  private m_ambient: {r: number; g: number; b: number} | null = null;
 
   /**
    * Foreground overlay — drawn to a SEPARATE full-viewport canvas that sits ABOVE
@@ -1925,25 +2013,25 @@ export class CGameController implements ShotWorld {
    *  2 × live tanks) — drop one parachute crate from the top at a random column. */
   private maybeSpawnCrate(): void {
     if (GameConfig.crateChance <= 0) return;
-    if (Math.random() * 100 >= GameConfig.crateChance) return;
+    if (this.m_rng.float() * 100 >= GameConfig.crateChance) return;
     const aliveTanks = this.m_tanks.filter(t => t.isAlive()).length;
     if (this.m_crates.length >= 2 * aliveTanks) return;
-    this.addCrate(10 + Math.random() * Math.max(1, this.m_worldWidth - 20));
+    this.addCrate(10 + this.m_rng.float() * Math.max(1, this.m_worldWidth - 20));
   }
 
   /** Push one crate dropping from the top at column `x`, with contents rolled 50% weapon
    *  / 20% credits / 20% health / 10% bomb (or a forced `kind` for dev previews). */
   private addCrate(x: number, forced?: CrateKind): void {
-    const roll = Math.random() * 100;
+    const roll = this.m_rng.float() * 100;
     const kind: CrateKind =
       forced ?? (roll < 50 ? 'weapon' : roll < 70 ? 'credits' : roll < 90 ? 'health' : 'bomb');
     let amount = 0,
       weaponIndex = -1;
     if (kind === 'weapon') weaponIndex = this.randomCrateWeapon();
     else if (kind === 'credits')
-      amount = (Math.floor(Math.random() * 9) + 1) * 200; // 200..1800
+      amount = (this.m_rng.int(9) + 1) * 200; // 200..1800
     else if (kind === 'health')
-      amount = (Math.floor(Math.random() * 9) + 1) * 100; // 100..900
+      amount = (this.m_rng.int(9) + 1) * 100; // 100..900
     else weaponIndex = WEAPON_DATABASE.findIndex(w => w.name === 'Bomb');
     this.m_crates.push({
       x,
@@ -1974,7 +2062,7 @@ export class CGameController implements ShotWorld {
       if (i !== staple && weaponEnabled(i)) pool.push(i);
     }
     return pool.length
-      ? pool[Math.floor(Math.random() * pool.length)]
+      ? pool[this.m_rng.int(pool.length)]
       : WEAPON_DATABASE.findIndex(w => w.name === 'Bomb');
   }
 
@@ -2227,24 +2315,22 @@ export class CGameController implements ShotWorld {
       );
       const sp = shot.getPosition();
       const sv = shot.getVelocity();
-      // Trail emission gate — the exhaust/plume AND the nose flare come from ONE
-      // test: the shot's "moving down" flag is clear (still rising, motor burning
-      // to apex) OR it's a Tracer (extType 4, which streaks its whole path). At
-      // apex the flag sets and the WHOLE trail — smoke and fire alike — stops; the
-      // rocket then coasts down as just its sprite. Both the smoke and the nose
-      // flare must share this gate, or the fire outlives the smoke on the way down.
+      // The SMOKE trail is emitted the WHOLE flight (up AND down) so it builds into a
+      // continuous ribbon that lengthens as the shot arcs — matching the original, which
+      // emits ~1 trail puff per frame for the entire flight. Only the hot nose FIRE and the
+      // bright projectile flare are gated to the ascent (the motor burning to apex); on the
+      // way down the shot coasts, smoking but no longer burning.
       const isTracer = weapon.getExtType() === EXT.TRACER;
-      const emitTrail = !shot.isMovingDown() || isTracer;
+      const ascending = !shot.isMovingDown();
       if (isTracer) {
         // Tracer: NO exhaust, NO smoke, NO nose flare — just a thin white streak.
         // Stationary white puffs planted along the whole path (it emits rising AND
         // descending) hang and fade, tracing a white arc across the sky.
         this.m_particles.tracerTrail(sp.x, sp.y, sv.x, sv.y, dt);
-      } else if (emitTrail) {
-        // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume).
-        // Emitted from the missile's REAR (exhaust), not its centre — the trail
-        // is offset back along the heading by half the sprite length so
-        // smoke/fire pours from the tail.
+      } else {
+        // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume). Emitted
+        // from the missile's REAR (exhaust), offset back along the heading so smoke pours
+        // from the tail. `ascending` gates the hot fire component within the trail.
         const ex = shot.getExhaustPoint(weapon.getSize());
         this.m_particles.trail(
           ex.x,
@@ -2255,12 +2341,12 @@ export class CGameController implements ShotWorld {
           weapon.getTrailType(),
           weapon.getTrailLength(),
           dt,
+          ascending,
         );
-        // In-flight glowing flare on the projectile (rockets: flareType/flareBmp).
-        // Kept SMALL — a tight bright nose point, not a big bloom (the ×~7.8 plume
-        // draw multiplier means a small size here reads at ~14-18px).
+        // In-flight glowing flare on the projectile (rockets: flareType/flareBmp) — only
+        // while the motor burns. Kept SMALL — a tight bright nose point, not a big bloom.
         const iff = weapon.getInFlightFlare();
-        if (iff)
+        if (ascending && iff)
           this.m_particles.inflightFlare(
             sp.x,
             sp.y,
@@ -2301,6 +2387,11 @@ export class CGameController implements ShotWorld {
 
   spawnShot(shot: CShot): void {
     this.m_shots.push(shot);
+  }
+
+  /** ShotWorld: gameplay random in [0,1) from the match-seeded stream (deterministic). */
+  random(): number {
+    return this.m_rng.float();
   }
 
   explode(
@@ -2463,12 +2554,15 @@ export class CGameController implements ShotWorld {
       if (!near) continue;
       const w = getWeapon(m.weaponIndex);
       this.m_mines.splice(i, 1);
+      // Scale the mine blast by Explosion Size × resolution, exactly like a fired shot (a mine used
+      // the raw weapon radius, so it ignored the setting and the resolution scale — now aligned).
+      const mineR = w.getRadius() * GameConfig.explosionScale * this.blastScale;
       this.explode(
         m.x,
         m.y,
         1.3,
         w.getColor(),
-        w.getRadius(),
+        mineR,
         w.isNuclear(),
         w.getBlastParticle(),
         w.getExpType(),
@@ -2482,18 +2576,19 @@ export class CGameController implements ShotWorld {
       // Gated on the Camera Shake option (a port embellishment, not in the original).
       if (GameConfig.cameraShake && w.isBigBlast(w.getRadius()))
         this.shake(w.isNukeClass() ? 16 : 8, w.isNukeClass() ? 1.0 : 0.3);
-      this.m_land.blastCircle(Math.floor(m.x), Math.floor(m.y), w.getRadius());
+      // Unified crater: disc + gravity collapse (never strip the column) + soil-coated face.
+      this.m_land.carveDiscCollapse(Math.floor(m.x), Math.floor(m.y), mineR, true, false, true);
       // Scorch is crackle-gated + scaled, matching weaponDetonate (a clean charge leaves no burn).
       const mineCrackle = w.getCrackle();
       if (mineCrackle > 0)
         this.m_land.scorch(
           Math.floor(m.x),
           Math.floor(m.y),
-          Math.round(w.getRadius() * (0.4 + mineCrackle * 0.85)),
+          Math.round(mineR * (0.4 + mineCrackle * 0.85)),
         );
       this.applyBlast(
         new Vec2(m.x, m.y),
-        w.getRadius(),
+        mineR,
         w.getDamage(),
         m.owner,
         false,
@@ -2624,7 +2719,7 @@ export class CGameController implements ShotWorld {
     // Per-shot RANDOM horizontal lean (the original draws a fresh lateral each blast rather
     // than a fixed lean); sign points away from the blast centre, magnitude varies the launch.
     const away = tank.getPosition().x - fromX >= 0 ? 1 : -1;
-    const dir = new Vec2(away * (0.25 + Math.random() * 0.7), -1).normalize();
+    const dir = new Vec2(away * (0.25 + this.m_rng.float() * 0.7), -1).normalize();
     tank.kick(
       dir,
       Math.min(1, removed * 0.001) * KICK_BASE * sizeFactor * GameConfig.kickbackScale,
@@ -2787,7 +2882,7 @@ export class CGameController implements ShotWorld {
     const frac = n <= 1 ? 0.5 : i / (n - 1);
     return Math.max(
       60,
-      Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + (Math.random() - 0.5) * 40),
+      Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + this.m_rng.plusMinus(20)),
     );
   }
 
@@ -2855,9 +2950,10 @@ export class CGameController implements ShotWorld {
   private endTurn(): void {
     this.m_turnTimerRunning = false; // the clock never outlives its turn
 
-    // Network match: the server arbitrates turns. Don't advance locally — report the
-    // resolved outcome (m_onNetTurnEnd) and wait for the server's next `turnBegin`.
+    // Network match: the server arbitrates turns. The local simulation has settled — clear
+    // the resolving flag, report the outcome (m_onNetTurnEnd), and wait for `turnBegin`.
     if (this.m_netMode) {
+      this.m_netShotResolving = false;
       this.m_onNetTurnEnd?.();
       return;
     }
@@ -3030,10 +3126,14 @@ export class CGameController implements ShotWorld {
     this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
     this.m_firedThisTurn = true; // a shot was taken → post-fire gloat is eligible at turn end
 
-    // Network: relay this shot so spectators mirror it — the final aim (their turret
-    // points right) then the fire (they fly a ghost arc). The authoritative snapshot
-    // delivers the real damage/terrain at turn end.
+    // Network: this turn's action is now resolving — hold the next hand-off until it
+    // settles (both the acting client and every simulating spectator set this).
+    if (this.m_netMode) this.m_netShotResolving = true;
+    // Relay this shot so every peer SIMULATES it deterministically — the weapon, the final
+    // aim, then the fire. All clients compute the same outcome (seeded RNG + fixed timestep);
+    // the authoritative snapshot at turn end is only a drift keyframe.
     if (this.isLocalNetTurn()) {
+      this.m_onNetCommand?.({t: 'selectWeapon', index: this.m_currentWeaponIndex});
       this.m_onNetCommand?.({t: 'aim', angle: this.m_angle, power: this.m_power});
       this.m_onNetCommand?.({t: 'fire'});
     }
@@ -3151,7 +3251,7 @@ export class CGameController implements ShotWorld {
     if (isBeam) {
       for (let i = 0; i < rounds; i++) {
         const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
-        const jitter = varianceRad > 0 ? plusMinus(varianceRad) : 0;
+        const jitter = varianceRad > 0 ? this.m_rng.plusMinus(varianceRad) : 0;
         this.fireBeam(muzzlePos, baseAngle + fan + jitter, weapon, tank);
       }
       this.m_shots = [];
@@ -3173,7 +3273,7 @@ export class CGameController implements ShotWorld {
     const fireSalvo = (withFx: boolean) => {
       for (let i = 0; i < rounds; i++) {
         const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
-        const jitter = varianceRad > 0 ? plusMinus(varianceRad) : 0;
+        const jitter = varianceRad > 0 ? this.m_rng.plusMinus(varianceRad) : 0;
         const pShot = new CShot();
         pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, dmg, rad, tank);
         pShot.setWeaponIndex(this.m_currentWeaponIndex);
@@ -3282,7 +3382,7 @@ export class CGameController implements ShotWorld {
     // jitter + ragged per-column depth + falling debris, so the collapsed line is
     // noisy, not a clean geometric slot. Our heightmap can't hold a floating tunnel,
     // so the slice drops each crossed column by ~the beam thickness.
-    const jitter = 0.85 + Math.random() * 0.3; // per-fire size wobble
+    const jitter = 0.85 + this.m_rng.float() * 0.3; // per-fire size wobble
     const carveHalf = clamp(weapon.getSize() * 0.5 * jitter, 3, 24);
     this.schedule(BEAM_COLLAPSE_DELAY, () => {
       this.m_land.carveBeamSlice(muzzle.x, muzzle.y, end.x, end.y, carveHalf);
@@ -3650,6 +3750,22 @@ export class CGameController implements ShotWorld {
     this.m_netRoster = opts.roster;
     this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
     this.m_onNetCommand = opts.onCommand ?? null;
+
+    // A network match is authoritative and IDENTICAL on every client, so it ignores all
+    // local dev/URL switches a player may have set (?flatland, ?weapontest, ?weaponsel,
+    // ?skiptexture, demo). Left on, they'd desync clients — e.g. one flat surface vs one
+    // seeded terrain, which corrupts the shared heightmap sync.
+    this.m_flatLand = false; // ?flatland
+    this.setWeaponTest(false); // ?weapontest (also clears economy free-fire)
+    this.m_currentWeaponIndex = getDefaultWeaponIndex(); // ?weaponsel selection
+    GameConfig.demo = false; // demo/attract mode
+    CLand.debugMaterials = false; // ?skiptexture
+    this.m_speedScale = 1; // game speed must match across clients (fixed-step determinism)
+    // Free-fire in network: every weapon is available and firing consumes nothing. This
+    // lets every client simulate any weapon a peer fires without syncing per-tank
+    // inventories (networked economy is a later enhancement).
+    this.m_economy.setFreeFire(true);
+
     this.setHumanCount(opts.players); // every team human → no local bots
     this.setTanksPerTeam(1);
     this.m_bootingNet = true; // keep the net config through startGame's reset
@@ -3662,6 +3778,12 @@ export class CGameController implements ShotWorld {
     return this.m_netMode && this.m_currentPlayerIndex === this.m_netLocalIndex;
   }
 
+  /** True while a turn's action is still resolving (shot in flight / settling). The net
+   *  bridge queues the server's next turn hand-off until this clears. */
+  isNetSimBusy(): boolean {
+    return this.m_netShotResolving;
+  }
+
   /** The acting client's read on whether this shot ended the battle (≤ 1 team left). */
   isNetBattleOver(): boolean {
     return this.m_netMode && this.livingTeamCount() <= 1;
@@ -3670,6 +3792,33 @@ export class CGameController implements ShotWorld {
   /** Server said the match is over → show the standings (winner from the synced state). */
   netFinishBattle(): void {
     if (this.m_netMode) this.finishBattle();
+  }
+
+  /**
+   * A 32-bit FNV-1a hash of the deterministic simulation state — tank positions/health,
+   * the terrain heightmap, and the gameplay RNG cursor. In lockstep every client must
+   * agree on this after each turn; a mismatch is a desync signal (→ request a keyframe).
+   */
+  stateHash(): number {
+    let h = 0x811c9dc5 >>> 0;
+    const mix = (v: number): void => {
+      h = Math.imul(h ^ (v | 0), 0x01000193) >>> 0;
+    };
+    for (const t of this.m_tanks) {
+      const p = t.getPosition();
+      const hp = t.getHealth();
+      mix(Math.round(p.x));
+      mix(Math.round(p.y));
+      mix(hp.nLife | 0);
+      mix(hp.nShield | 0);
+      mix(hp.nArmor | 0);
+      mix(hp.nHazmat | 0);
+      mix(t.isAlive() ? 1 : 0);
+    }
+    const heights = this.m_land.getHeights();
+    for (let i = 0; i < heights.length; i++) mix(heights[i]);
+    mix(this.m_rng.getState());
+    return h >>> 0;
   }
 
   /** Server turn hand-off: make `idx` the active player and begin its turn. */
@@ -3828,7 +3977,7 @@ export class CGameController implements ShotWorld {
   /** Seed a fresh random wind at the start of a game (scaled by Settings → Wind). */
   private updateWind(): void {
     const max = CGameController.MAX_WIND * this.m_windScale;
-    this.m_wind = new Vec2(plusMinus(max), plusMinus(max) * 0.3);
+    this.m_wind = new Vec2(this.m_rng.plusMinus(max), this.m_rng.plusMinus(max) * 0.3);
     this.m_windTimer = 0;
   }
 
@@ -3846,8 +3995,8 @@ export class CGameController implements ShotWorld {
 
     this.m_windTimer -= dt;
     if (this.m_windTimer <= 0) {
-      this.m_windTimer = Math.random() * 8 + 4; // 4..12 s until next drift target
-      this.m_windAccel = new Vec2(plusMinus(2), plusMinus(1));
+      this.m_windTimer = this.m_rng.float() * 8 + 4; // 4..12 s until next drift target
+      this.m_windAccel = new Vec2(this.m_rng.plusMinus(2), this.m_rng.plusMinus(1));
     }
   }
 
@@ -4060,7 +4209,7 @@ export class CGameController implements ShotWorld {
     for (const f of [0.35, 0.62]) {
       const wx = Math.floor(this.m_worldWidth * f);
       const gy = this.m_land.getHeightAt(wx);
-      this.m_land.blastCircle(wx, Math.floor(gy + 30), 90); // deep bowl → obvious fill vs sky
+      this.m_land.carveDiscCollapse(wx, Math.floor(gy + 30), 90, true, false, true); // deep bowl → soil face + backdrop
     }
     this.markDirty();
   }
@@ -4298,9 +4447,17 @@ export class CGameController implements ShotWorld {
   private m_onNetTurnEnd: (() => void) | null = null;
   private m_onNetCommand: ((cmd: GameCommand) => void) | null = null;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
+  // netMode: a turn's action (shot/move/utility) is mid-resolution. The net bridge holds
+  // the server's next `turnBegin` until this clears, so a late hand-off can't interrupt
+  // an in-flight local simulation.
+  private m_netShotResolving = false;
   // Draw-only projectiles a spectator flies from a relayed fire — pure visual (the
   // authoritative snapshot does the real damage/terrain); never carve or hit.
   private m_ghostShots: CShot[] = [];
+  // The single GAMEPLAY random stream — seeded per match so a shot resolves identically
+  // on every client (lockstep). Cosmetic randomness (particles/weather/taunts) stays on
+  // Math.random and must NOT draw from here, or frame-rate differences would desync it.
+  private m_rng = new Prng(1);
 
   private m_particles: CParticleSystem;
   private m_weather: CWeather;
@@ -4388,6 +4545,12 @@ export class CGameController implements ShotWorld {
   private m_windScale = 1; // 0 disables wind
   private m_variance = true; // per-shot inaccuracy on/off
   private m_speedScale = 1; // game-speed multiplier (Update Scale / 10)
+  // Fixed-timestep accumulator: the sim advances in FIXED_DT slices so a shot resolves
+  // in a deterministic number of steps regardless of frame rate — the other half of
+  // lockstep determinism (with the seeded RNG). Tests still drive update(dt) directly.
+  private m_simAccum = 0;
+  private static readonly FIXED_DT = 1 / 60;
+  private static readonly MAX_SIM_STEPS = 5; // catch-up cap (avoids spiral-of-death)
   private m_creditDamage = CREDIT_PER_DAMAGE; // credits earned per point of life removed
   private m_creditKill = CREDIT_PER_KILL; // credits earned per kill (Deathmatch)
   private m_creditTurn = CREDIT_PER_TURN; // credits earned by each survivor per turn

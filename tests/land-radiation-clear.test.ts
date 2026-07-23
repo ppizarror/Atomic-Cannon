@@ -58,7 +58,7 @@ describe('CLand — erasing terrain clears its radiation', () => {
     expect(p.m_heat.length).toBeGreaterThan(0); // it IS smoking
 
     // Fire a cleaner (earth-remover: blastCircle with coatDirt=false) right over the zone.
-    land.blastCircle(150, surf, 44, false);
+    land.carveDiscCollapse(150, surf, 44);
 
     // The damage zone is gone → tanks stop taking fallout damage there…
     expect(land.getRadiationZones().length).toBe(0);
@@ -82,7 +82,7 @@ describe('CLand — erasing terrain clears its radiation', () => {
     expect(land.getRadiationZones().length).toBe(1);
 
     // Clean the FAR side — nowhere near the zone at x=100.
-    land.blastCircle(320, surf, 40, false);
+    land.carveDiscCollapse(320, surf, 40);
 
     // The distant zone survives (a cleaner only clears what it actually erased).
     expect(land.getRadiationZones().length).toBe(1);
