@@ -10,6 +10,7 @@
  * silently misrouted. The underlying runtime values are still the plain numbers 0..18
  * (the cast is type-only), so comparisons, `switch`, and the weapon JSON are unaffected.
  */
+import {makeNominalEnum} from './nominalEnum';
 
 /**
  * The complete 0..18 behaviour map (no bare numbers anywhere) so a value can never be
@@ -55,22 +56,16 @@ declare const EXT_BRAND: unique symbol;
 export type ExtType = {readonly [EXT_BRAND]: never};
 
 /**
- * The behaviour selectors as nominal {@link ExtType} tokens — the ONLY way to name one.
- * Same keys/runtime values as the raw codes above; only the static type differs (the cast
- * is erased), so `EXT.DIGGER` is `1` at runtime but an `ExtType` to the type-checker.
+ * The behaviour selectors as nominal {@link ExtType} tokens (`EXT.DIGGER` is `1` at runtime
+ * but an `ExtType` to the checker) plus {@link toExtType}, which narrows a raw JSON number to
+ * the token — any value not in the table (missing / garbage) falls back to `BALLISTIC`. The
+ * nominal-enum boilerplate is shared via {@link makeNominalEnum}; only the brand + fallback
+ * differ per module, so `ExtType` stays a DISTINCT type from `ExpType`.
  */
-export const EXT = EXT_CODES as unknown as {readonly [K in keyof typeof EXT_CODES]: ExtType};
-
-const EXT_VALUES: ReadonlySet<number> = new Set(Object.values(EXT_CODES));
-
-/**
- * Narrow a raw `extType` (as it comes off the weapon JSON) to the authoritative
- * {@link ExtType} token. Any value not in {@link EXT} — including a missing/garbage
- * field — falls back to `BALLISTIC`, the plain-shot default.
- */
-export function toExtType(n: number): ExtType {
-  return (EXT_VALUES.has(n) ? n : EXT_CODES.BALLISTIC) as unknown as ExtType;
-}
+export const {tokens: EXT, toType: toExtType} = makeNominalEnum<ExtType, typeof EXT_CODES>(
+  EXT_CODES,
+  'BALLISTIC',
+);
 
 /** Beam-family behaviour (an instant carving ray) — BEAM or the reserved BEAM_ALT. */
 export const isBeamExt = (ext: ExtType): boolean => ext === EXT.BEAM || ext === EXT.BEAM_ALT;

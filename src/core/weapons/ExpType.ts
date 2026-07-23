@@ -11,6 +11,7 @@
  * silently misrouted. The underlying runtime values are still the plain numbers 0..4 (the cast is
  * type-only), so `switch`, comparisons, and the weapon JSON are unaffected.
  */
+import {makeNominalEnum} from './nominalEnum';
 
 /**
  * The complete 0..4 explosion-style map (no bare numbers anywhere). The distribution across the
@@ -34,22 +35,15 @@ declare const EXP_BRAND: unique symbol;
 export type ExpType = {readonly [EXP_BRAND]: never};
 
 /**
- * The explosion styles as nominal {@link ExpType} tokens — the ONLY way to name one. Same
- * keys/runtime values as the raw codes above; only the static type differs (the cast is erased),
- * so `EXP.NUKE` is `4` at runtime but an `ExpType` to the type-checker.
+ * The explosion styles as nominal {@link ExpType} tokens (`EXP.NUKE` is `4` at runtime but an
+ * `ExpType` to the checker) plus {@link toExpType}, which narrows a raw JSON number to the token —
+ * any value not in the table (missing / garbage) falls back to `PLAIN`. Shares the nominal-enum
+ * boilerplate via {@link makeNominalEnum}; the brand keeps `ExpType` DISTINCT from `ExtType`.
  */
-export const EXP = EXP_CODES as unknown as {readonly [K in keyof typeof EXP_CODES]: ExpType};
-
-const EXP_VALUES: ReadonlySet<number> = new Set(Object.values(EXP_CODES));
-
-/**
- * Narrow a raw `expType` (as it comes off the weapon JSON) to the authoritative {@link ExpType}
- * token. Any value not in {@link EXP} — including a missing/garbage field — falls back to
- * {@link EXP.PLAIN}, the no-burst default.
- */
-export function toExpType(n: number): ExpType {
-  return (EXP_VALUES.has(n) ? n : EXP_CODES.PLAIN) as unknown as ExpType;
-}
+export const {tokens: EXP, toType: toExpType} = makeNominalEnum<ExpType, typeof EXP_CODES>(
+  EXP_CODES,
+  'PLAIN',
+);
 
 /** Nuke-tier explosion style — the only one that fires the full-screen white-out. */
 export const isNukeExp = (exp: ExpType): boolean => exp === EXP.NUKE;
