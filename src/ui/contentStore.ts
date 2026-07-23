@@ -8,6 +8,7 @@
  */
 import {signal} from '@preact/signals';
 import {WEAPON_DATABASE} from '../core/CWeapon';
+import {loadJSON, saveJSON} from '../util/storage';
 
 const KEY_W = 'atomic.content.weaponsOff';
 const KEY_L = 'atomic.content.landsOff';
@@ -21,21 +22,11 @@ const isOrganic = (i: number): boolean => {
 const defaultWeaponsOff = (): number[] => WEAPON_DATABASE.map((_, i) => i).filter(isOrganic);
 
 function load(key: string, fallback: () => number[]): Set<number> {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) return new Set<number>(JSON.parse(raw) as number[]);
-  } catch {
-    /* corrupt/absent — fall through to the default */
-  }
-  return new Set(fallback());
+  return new Set<number>(loadJSON<number[]>(key, fallback()));
 }
 
 function persist(key: string, s: Set<number>): void {
-  try {
-    localStorage.setItem(key, JSON.stringify([...s]));
-  } catch {
-    /* storage unavailable — the set still applies this session */
-  }
+  saveJSON(key, [...s]);
 }
 
 export const weaponsOff = signal<Set<number>>(load(KEY_W, defaultWeaponsOff));

@@ -6,32 +6,22 @@
  */
 import {signal} from '@preact/signals';
 import {type ActionId, type Bindings, defaultBindings} from '../core/CControls';
+import {loadJSON, saveJSON} from '../util/storage';
 
 const KEY = 'atomic.controls';
 
 function load(): Bindings {
   const base = defaultBindings();
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<Bindings>;
-      // Merge over defaults so a stored file that predates a new action still works.
-      for (const id of Object.keys(base) as ActionId[]) {
-        if (typeof saved[id] === 'string') base[id] = saved[id] as string;
-      }
-    }
-  } catch {
-    /* corrupt/absent — the defaults stand ("using default controls") */
+  const saved = loadJSON<Partial<Bindings>>(KEY, {});
+  // Merge over defaults so a stored file that predates a new action still works.
+  for (const id of Object.keys(base) as ActionId[]) {
+    if (typeof saved[id] === 'string') base[id] = saved[id] as string;
   }
   return base;
 }
 
 function persist(b: Bindings): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(b));
-  } catch {
-    /* storage unavailable — the bindings still apply this session */
-  }
+  saveJSON(KEY, b);
 }
 
 export const bindings = signal<Bindings>(load());

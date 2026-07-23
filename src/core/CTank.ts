@@ -285,14 +285,6 @@ export class CTank {
     return Math.atan2(nx, -ny); // average normal → hull tilt (same convention as before)
   }
 
-  /**
-   * Compute turret base rotation to match terrain slope
-   */
-  computeTurretBase(): void {
-    // Terrain normal gives us the angle of the surface under tank
-    // We use this to keep turret roughly horizontal
-  }
-
   // ========================================================================
   // PHYSICS & MOVEMENT
   // ========================================================================
@@ -550,14 +542,6 @@ export class CTank {
     this.m_bIsMoving = false;
   }
 
-  /**
-   * Set rotation for kick animation
-   */
-  kickRotation(fAngle: number): void {
-    // Applied when a blast throws the tank; accumulates into the body angle.
-    this.m_fAngle += fAngle;
-  }
-
   // ========================================================================
   // COMBAT & DAMAGE
   // ========================================================================
@@ -571,7 +555,6 @@ export class CTank {
    *  `piercing` = the weapon's piercing/secondary flag; only then does Hazmat resistance apply. */
   hit(fDamage: number, piercing: boolean = false): number {
     if (!this.m_bIsAlive) return 0;
-    this.m_nHitCount++;
 
     const lifeBefore = this.m_health.nLife;
     let dmg = fDamage;
@@ -606,13 +589,6 @@ export class CTank {
   }
 
   /**
-   * True when the point (cx,cy) is within nRadius of the tank centre.
-   */
-  isInBlastRadius(cx: number, cy: number, nRadius: number): boolean {
-    return this.distanceTo(cx, cy) <= nRadius + tankRadius();
-  }
-
-  /**
    * Apply radiation fallout damage-over-time. Radiation is a PIERCING/secondary source, so it
    * routes through the same pipeline as a piercing hit — SHIELD soaks it first, then HAZMAT
    * resistance (the whole point of a Hazmat suit), then Armor, then Life. (The original binary has
@@ -643,26 +619,6 @@ export class CTank {
       this.m_bExploded = true;
       this.m_bIsAlive = false;
     }
-  }
-
-  /**
-   * Get number of hits taken by tank in battle
-   */
-  getHitsInt(): number {
-    return this.m_nHitCount;
-  }
-
-  /**
-   * Hit test for click detection on tank sprite
-   */
-  hittest(point: Vec2): boolean {
-    // Check if point is within tank's bounding box
-    // Uses current position and scale
-
-    const dx = Math.abs(point.x - this.m_vPos.x);
-    const dy = Math.abs(point.y - (this.m_vPos.y + tankHeight() / 2));
-
-    return dx < tankRadius() && dy < tankHeight();
   }
 
   // ========================================================================
@@ -1074,28 +1030,6 @@ export class CTank {
     this.m_fTurretAngle = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.m_fTurretAngle));
   }
 
-  /**
-   * Get turret end point (for muzzle position calculation)
-   */
-  turretEnd(): Vec2 {
-    // Returns position of barrel tip for shot spawn
-
-    const fLength = turretLen();
-
-    return new Vec2(
-      this.m_vPos.x + Math.sin(this.m_fTurretAngle) * fLength,
-      this.m_vPos.y - Math.cos(this.m_fTurretAngle) * fLength,
-    );
-  }
-
-  /**
-   * Get turret blit angle for sprite rendering (converts aim to display)
-   */
-  getTurretBlitAngle(): number {
-    // Transform physics angle to sprite rotation angle
-    return this.m_fTurretAngle;
-  }
-
   // ========================================================================
   // ACCESSORS & STATE QUERIES
   // ========================================================================
@@ -1219,10 +1153,6 @@ export class CTank {
     return dx * dx + dy * dy < (tankRadius() + 8) * (tankRadius() + 8);
   }
 
-  isLocalPlayer(): boolean {
-    return false;
-  } // TODO
-
   getPosition(): Vec2 {
     return this.m_vPos.clone();
   }
@@ -1269,14 +1199,6 @@ export class CTank {
       name: `tanks/${this.m_sTankType} ${part}`,
       file: `/assets/tanks/${this.m_sTankType} ${part}.bmp`,
     }));
-  }
-
-  /**
-   * Distance from terrain surface
-   */
-  distFromLand(pLand: CLand): number {
-    const nTerrainHeight = pLand.getHeightAt(Math.floor(this.m_vPos.x));
-    return this.m_vPos.y - (nTerrainHeight - tankHeight());
   }
 
   distanceTo(x: number, y: number): number {
@@ -1340,9 +1262,6 @@ export class CTank {
   private m_bFalling: boolean = false;
   private m_driveTargetX: number | null = null; // ground-drive destination, or null
   public m_bExploded: boolean = false;
-
-  // Statistics tracking
-  private m_nHitCount: number = 0;
 }
 
 // ============================================================================

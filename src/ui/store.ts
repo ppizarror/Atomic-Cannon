@@ -16,7 +16,7 @@ import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
 import {wrapIndex} from '../math/num';
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'depot' | 'about' | 'setup';
+export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'setup';
 
 export const screen = signal<Screen>('battle');
 
@@ -29,7 +29,7 @@ export const ownedCounts = signal<number[]>([]);
 export const mapName = signal('');
 
 /** Pull the current credits + inventory into the signals (after a buy/sell/open). */
-export function refreshEconomy(): void {
+function refreshEconomy(): void {
   const c = controller;
   if (!c) return;
   credits.value = Math.floor(c.getCredits());
@@ -323,8 +323,6 @@ export const statusLeftFrac = signal(0);
 // so below-horizon aim reads 181..359 rather than going negative.
 export const POWER_MIN = 10,
   POWER_MAX = 1000;
-export const ANGLE_MIN = 0,
-  ANGLE_MAX = 359;
 
 /** Fold any angle (deg) into the wrapping 0..359 range the HUD uses. */
 export const wrapAngle = (deg: number): number => wrapIndex(deg, 360);

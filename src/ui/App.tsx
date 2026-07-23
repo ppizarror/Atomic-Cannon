@@ -23,7 +23,6 @@ import {
   warStandings,
 } from './store';
 import {hexToRgb} from '../math/color';
-import {Button} from './Button';
 import {BmpText} from './BmpText';
 import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
@@ -142,14 +141,11 @@ function FramerateHud() {
   );
 }
 
-// Frame counter (dev: ?frame=1) — sits just below the FPS readout, same top-right corner
-// and outlined bitmap font. A raw monotonic tick count for pinning down when effects fire.
+// Frame counter (Show Framerate → Full).
 function FrameCountHud() {
   if (!showFrameCount.value) return null;
-  // Sit below the FPS readout when it's shown; otherwise take the FPS slot itself so it
-  // isn't floating with an empty gap above it.
   return (
-    <div id="frame-hud" class={showFramerate.value ? 'below-fps' : ''}>
+    <div id="frame-hud">
       <BmpText font="beijing-16-out" text={`FRAME ${frameCount.value}`} spacing={-1} />
     </div>
   );
@@ -225,29 +221,6 @@ function TooSmallOverlay() {
   );
 }
 
-function Placeholder({
-  title,
-  backLabel,
-  onBack,
-}: {
-  title: string;
-  backLabel?: string;
-  onBack?: () => void;
-}) {
-  return (
-    <div class="overlay screen-overlay">
-      <div class="screen-card">
-        <h1>{title}</h1>
-        <p>Coming soon.</p>
-        <Button
-          label={backLabel ?? 'Back to battle'}
-          onClick={onBack ?? (() => (screen.value = 'battle'))}
-        />
-      </div>
-    </div>
-  );
-}
-
 function CurrentScreen() {
   switch (screen.value) {
     case 'battle':
@@ -261,8 +234,6 @@ function CurrentScreen() {
       return <Settings />;
     case 'setup':
       return <PlaySetup />;
-    case 'depot':
-      return <Placeholder title="Weapons Depot" />;
     default:
       return <Hud />;
   }

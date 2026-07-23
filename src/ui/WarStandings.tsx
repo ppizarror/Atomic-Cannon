@@ -17,18 +17,17 @@ const pct = (v: number) => `${Math.round(v)}%`;
 function Cell({text}: {text: string}) {
   return <BmpText font="beijing-16-out" text={text} />;
 }
-const HeaderCell = Cell;
 
 function Table({rows, pointsMode}: {rows: WarTeamRow[]; pointsMode: boolean}) {
   return (
     <div class={`war-table ${pointsMode ? 'points' : ''}`}>
       <div class="war-row war-head">
-        <HeaderCell text="Name" />
-        <HeaderCell text={pointsMode ? 'Points' : 'Kills'} />
-        {!pointsMode && <HeaderCell text="Deaths" />}
-        <HeaderCell text="Life" />
-        <HeaderCell text="Accuracy" />
-        <HeaderCell text="Damage/hit" />
+        <Cell text="Name" />
+        <Cell text={pointsMode ? 'Points' : 'Kills'} />
+        {!pointsMode && <Cell text="Deaths" />}
+        <Cell text="Life" />
+        <Cell text="Accuracy" />
+        <Cell text="Damage/hit" />
       </div>
       {rows.map((r, i) => (
         <div key={i} class="war-row">

@@ -3763,6 +3763,8 @@ export class CGameController implements ShotWorld {
     return this.m_totalBattles;
   }
 
+  // Sole reader of m_totalRounds (fed from settings via setTotalRounds); kept so the
+  // Play → Rounds setting stays wired until the round loop consumes it.
   getTotalRounds(): number {
     return this.m_totalRounds;
   }

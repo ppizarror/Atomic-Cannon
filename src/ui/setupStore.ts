@@ -6,6 +6,7 @@
  * (Game Type / Battles / Rounds / Land Size / Difficulty / Wind) live in settingsStore.
  */
 import {signal} from '@preact/signals';
+import {loadJSON, saveJSON} from '../util/storage';
 
 const KEY = 'atomic.setup';
 
@@ -41,28 +42,20 @@ const clampSetup = (s: Partial<Setup>): Setup => ({
 });
 
 function load(): Setup {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const s = clampSetup(JSON.parse(raw) as Partial<Setup>);
-      // Heal an unstartable stored setup (e.g. 1 human + 0 CPU) so the initial view is
-      // always a valid match.
-      return s.humans + s.computers >= MIN_PLAYERS
-        ? s
-        : {...DEFAULT_SETUP, tanksPerTeam: s.tanksPerTeam};
-    }
-  } catch {
-    /* corrupt/absent — fall through to the default (1 human + 1 CPU, 1 tank each) */
+  const raw = loadJSON<Partial<Setup> | null>(KEY, null);
+  if (raw) {
+    const s = clampSetup(raw);
+    // Heal an unstartable stored setup (e.g. 1 human + 0 CPU) so the initial view is
+    // always a valid match.
+    return s.humans + s.computers >= MIN_PLAYERS
+      ? s
+      : {...DEFAULT_SETUP, tanksPerTeam: s.tanksPerTeam};
   }
   return {...DEFAULT_SETUP};
 }
 
 function persist(s: Setup): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(s));
-  } catch {
-    /* storage unavailable — the setup still applies this session */
-  }
+  saveJSON(KEY, s);
 }
 
 export const setup = signal<Setup>(load());

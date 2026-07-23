@@ -9,6 +9,7 @@
 import {signal} from '@preact/signals';
 import {PLAYER_TANKS, TEAM_COLORS} from '../core/CTank';
 import type {PlayerCfg} from '../core/CRoster';
+import {loadJSON, saveJSON} from '../util/storage';
 
 export type {PlayerCfg};
 
@@ -45,30 +46,19 @@ function defaultRoster(): PlayerCfg[] {
 
 function load(): PlayerCfg[] {
   const base = defaultRoster();
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<PlayerCfg>[];
-      for (let i = 0; i < base.length; i++) {
-        const s = saved[i];
-        if (!s) continue;
-        if (typeof s.name === 'string') base[i].name = s.name;
-        if (typeof s.model === 'string') base[i].model = s.model;
-        if (typeof s.color === 'string') base[i].color = s.color;
-      }
-    }
-  } catch {
-    /* corrupt/absent — the defaults stand */
+  const saved = loadJSON<Partial<PlayerCfg>[]>(KEY, []);
+  for (let i = 0; i < base.length; i++) {
+    const s = saved[i];
+    if (!s) continue;
+    if (typeof s.name === 'string') base[i].name = s.name;
+    if (typeof s.model === 'string') base[i].model = s.model;
+    if (typeof s.color === 'string') base[i].color = s.color;
   }
   return base;
 }
 
 function persist(r: PlayerCfg[]): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(r));
-  } catch {
-    /* storage unavailable — the roster still applies this session */
-  }
+  saveJSON(KEY, r);
 }
 
 export const roster = signal<PlayerCfg[]>(load());
