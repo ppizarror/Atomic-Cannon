@@ -10,6 +10,7 @@
 import type {CGameController, NetSnapshot} from '../game/CGameController';
 import type {RoomClient} from './roomClient';
 import type {ServerMessage} from './protocol';
+import {applyCommand} from './commands';
 
 /** What NetGame needs from its embedder (kept free of Preact/store details). */
 export interface NetGameHost {
@@ -47,8 +48,25 @@ export class NetGame {
         return this.host.controller.netSetActivePlayer(msg.playerIdx);
       case 'stateUpdate':
         return this.host.controller.applyNetSnapshot(msg.result as NetSnapshot);
-      // cmd / chat: handled in a later phase (live aim relay, in-match chat).
+      case 'cmd':
+        return this.onRemoteCommand(msg.cmd);
+      case 'gameOver':
+        return this.host.controller.netFinishBattle();
+      // chat: handled in a later phase (in-match chat).
     }
+  }
+
+  /**
+   * A relayed intent from the acting player. Aim rotates their turret on our screen;
+   * fire flies a draw-only ghost arc (the real damage/terrain arrives via stateUpdate).
+   * We must NOT run a real `fire()` here — that would simulate the shot a second time.
+   */
+  private onRemoteCommand(cmd: Parameters<typeof applyCommand>[1]): void {
+    if (cmd.t === 'fire') {
+      this.host.controller.netSpawnGhost();
+      return;
+    }
+    applyCommand(this.host.controller, cmd);
   }
 
   private onStart(seed: number, order: readonly number[]): void {
@@ -67,16 +85,20 @@ export class NetGame {
       localIndex,
       roster,
       onTurnEnd: () => this.reportTurn(),
+      onCommand: cmd => this.client.send({t: 'cmd', seq: ++this.m_seq, cmd}),
     });
     this.host.onMatchStart();
   }
 
   /** The local player's turn resolved → broadcast this client's authoritative state. */
   private reportTurn(): void {
+    // Only the acting player reports; a spectator's local turn machinery never does.
+    if (!this.host.controller.isLocalNetTurn()) return;
     this.client.send({
       t: 'shotResult',
       seq: ++this.m_seq,
       result: this.host.controller.getNetSnapshot(),
+      over: this.host.controller.isNetBattleOver(),
     });
   }
 }

@@ -12,7 +12,7 @@ import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import {Roster} from '../core/CRoster';
-import {CShot} from '../core/CShot';
+import {CShot, REF_TIME_SCALE} from '../core/CShot';
 import {GameConfig, isWargame} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
@@ -49,6 +49,7 @@ import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
 import {plusMinus} from '../math/random';
+import type {GameCommand} from '../net/commands';
 import {
   EXT,
   isBeamExt,
@@ -156,6 +157,11 @@ const sentryMachineGunIndex = (): number => {
 };
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
+
+// Succession bursts louder than this `sucSec` (reference units) re-bark their report +
+// muzzle flash on each salvo; faster bursts (cannon/shotgun ≈ 0.1) fire near-instantly
+// and stay silent after the opener. Matches the original's `0.5 < sucSec` FX gate.
+const SUCCESSION_LOUD_MAX_SEC = 0.5;
 
 // Camera pan speed (world px/sec) — the constant-speed ease toward the follow
 // target (the original scrolls at dt·gameSpeed·scrollSpeed; this is that budget
@@ -409,6 +415,7 @@ export class CGameController implements ShotWorld {
     // Reset state
     this.m_tanks = [];
     this.m_shots = [];
+    this.m_ghostShots = [];
     this.m_mines = [];
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
@@ -703,6 +710,7 @@ export class CGameController implements ShotWorld {
     if (GameConfig.changeWind === 3) this.updateWindDrift(dt);
     this.m_particles.update(dt, this.m_wind);
     this.m_weather.update(dt, this.m_wind);
+    this.updateGhostShots(dt); // spectator-only visual arcs (network match)
     if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.6);
     this.updateMoveSound();
 
@@ -1097,6 +1105,17 @@ export class CGameController implements ShotWorld {
         const sprite = this.m_assets.getSprite(`weapons/${weapon.getBitmap()}`);
         shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize());
       }
+    }
+
+    // Spectator ghost arcs (network match) — the opponent's shot in flight, drawn
+    // exactly like a real projectile but purely visual.
+    for (const g of this.m_ghostShots) {
+      if (g.isDead()) continue;
+      const gw = getWeapon(
+        g.getWeaponIndex() >= 0 ? g.getWeaponIndex() : this.m_currentWeaponIndex,
+      );
+      const sprite = this.m_assets.getSprite(`weapons/${gw.getBitmap()}`);
+      g.draw(ctx, gw.getColor(), sprite?.bitmap ?? null, gw.getSize());
     }
 
     // NOTE: tank badges (life bars / stats) and damage numbers are NOT drawn here —
@@ -2989,6 +3008,14 @@ export class CGameController implements ShotWorld {
     this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
     this.m_firedThisTurn = true; // a shot was taken → post-fire gloat is eligible at turn end
 
+    // Network: relay this shot so spectators mirror it — the final aim (their turret
+    // points right) then the fire (they fly a ghost arc). The authoritative snapshot
+    // delivers the real damage/terrain at turn end.
+    if (this.isLocalNetTurn()) {
+      this.m_onNetCommand?.({t: 'aim', angle: this.m_angle, power: this.m_power});
+      this.m_onNetCommand?.({t: 'fire'});
+    }
+
     // Ammo (human only): never fire a weapon that's out of stock — if the selected one
     // was emptied or sold off, fall back to the unlimited staple first, then consume one
     // round from whatever is actually firing (the Shell never depletes). Done before the
@@ -3111,13 +3138,17 @@ export class CGameController implements ShotWorld {
     }
 
     // One salvo = `rounds` rounds fanned `spacingRad` apart, + per-round variance,
-    // plus the muzzle blast. `sucNum+1` salvos fire in SUCCESSION across the `sucSec`
-    // window (clamped to a rapid cadence) — a burst for machine guns / gatlings.
+    // plus the muzzle blast. `sucNum+1` salvos fire in SUCCESSION `sucSec` apart —
+    // a burst for machine guns / gatlings.
     const dmg = weapon.getDamage(),
       rad = weapon.getRadius();
     const flash = weapon.getMuzzleFlash(),
       muSmoke = weapon.getMuzzleSmoke();
-    const fireSalvo = () => {
+    // `withFx`: replay the report + muzzle flash for this salvo. The original gates the
+    // repeat FX/SFX on `sucSec > 0.5` — slow successions (machine gun, hellfire, rail)
+    // bark once per salvo; fast bursts (cannon/shotgun, sucSec 0.1) are near-instant and
+    // fire silently after the opener, so we skip their repeat flash+sound too.
+    const fireSalvo = (withFx: boolean) => {
       for (let i = 0; i < rounds; i++) {
         const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
         const jitter = varianceRad > 0 ? plusMinus(varianceRad) : 0;
@@ -3126,7 +3157,7 @@ export class CGameController implements ShotWorld {
         pShot.setWeaponIndex(this.m_currentWeaponIndex);
         this.m_shots.push(pShot);
       }
-      if (flash > 0 || muSmoke > 0) {
+      if (withFx && (flash > 0 || muSmoke > 0)) {
         const d = {x: Math.cos(baseAngle), y: -Math.sin(baseAngle)};
         const col = weapon.getColor();
         // FLASH first — the bright barrel burst the instant the round leaves.
@@ -3142,19 +3173,22 @@ export class CGameController implements ShotWorld {
     };
 
     const salvos = 1 + weapon.getSuccessionCount();
-    const gap = salvos > 1 ? clamp(weapon.getSuccessionSec() / salvos, 0.05, 0.14) : 0;
+    // Succession cadence: the original queues each extra salvo `sucSec` apart, where
+    // `sucSec` rides the reference engine's ballistic time-step (the same one `batSec`
+    // uses) — so `REF_TIME_SCALE` converts it to our seconds. Salvo k fires at k·gap, a
+    // FIXED per-salvo interval (not `sucSec/salvos`, which stretched fast bursts and
+    // rushed slow ones). Floor keeps a pathological 0 from stacking every salvo on frame 0.
+    const loudSuccession = weapon.getSuccessionSec() > SUCCESSION_LOUD_MAX_SEC;
+    const gap = salvos > 1 ? Math.max(0.02, weapon.getSuccessionSec() * REF_TIME_SCALE) : 0;
     this.m_pendingSalvos = salvos;
     for (let sv = 0; sv < salvos; sv++) {
-      // Each succession salvo is a fresh weapon dispatch and replays soundFire.
-      // Salvo 0's sound is the one played above at fire(); scheduled salvos play
-      // their own so a Strikers/Machine-Gun burst is heard once per salvo, not
-      // once total. (The ~50–140ms salvo gap clears the SFX retrigger throttle,
-      // so each is audible.)
-      if (sv === 0) fireSalvo();
+      if (sv === 0) fireSalvo(true);
       else
         this.schedule(gap * sv, () => {
-          this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
-          fireSalvo();
+          // Slow successions re-bark each salvo (the gap clears the SFX retrigger
+          // throttle so each is audible); fast bursts stay silent after the opener.
+          if (loudSuccession) this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
+          fireSalvo(loudSuccession);
         });
     }
 
@@ -3586,12 +3620,14 @@ export class CGameController implements ShotWorld {
     localIndex: number;
     roster: {name: string; color: string}[];
     onTurnEnd?: () => void;
+    onCommand?: (cmd: GameCommand) => void;
   }): void {
     this.m_netMode = true;
     this.m_netLocalIndex = opts.localIndex;
     this.m_terrainSeed = opts.seed >>> 0 || 1;
     this.m_netRoster = opts.roster;
     this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
+    this.m_onNetCommand = opts.onCommand ?? null;
     this.setHumanCount(opts.players); // every team human → no local bots
     this.setTanksPerTeam(1);
     this.m_bootingNet = true; // keep the net config through startGame's reset
@@ -3602,6 +3638,16 @@ export class CGameController implements ShotWorld {
   /** True while it is the local player's turn in a network match (drives input/HUD). */
   isLocalNetTurn(): boolean {
     return this.m_netMode && this.m_currentPlayerIndex === this.m_netLocalIndex;
+  }
+
+  /** The acting client's read on whether this shot ended the battle (≤ 1 team left). */
+  isNetBattleOver(): boolean {
+    return this.m_netMode && this.livingTeamCount() <= 1;
+  }
+
+  /** Server said the match is over → show the standings (winner from the synced state). */
+  netFinishBattle(): void {
+    if (this.m_netMode) this.finishBattle();
   }
 
   /** Server turn hand-off: make `idx` the active player and begin its turn. */
@@ -3633,10 +3679,50 @@ export class CGameController implements ShotWorld {
     };
   }
 
+  /**
+   * Fly a draw-only "ghost" projectile from the acting tank so a spectator sees the
+   * opponent's shot arc. Reads the current aim (set by the relayed `aim` command). It
+   * never carves or damages — the authoritative snapshot delivers the real outcome.
+   */
+  netSpawnGhost(): void {
+    if (!this.m_netMode) return;
+    const tank = this.getCurrentTank();
+    if (!tank?.isAlive()) return;
+    const weapon = getWeapon(this.m_currentWeaponIndex);
+    const ext = weapon.getExtType();
+    if (isBeamExt(ext) || ext === EXT.MOVE || ext === EXT.JET) return; // no ballistic arc
+    const g = new CShot();
+    g.initFromTank(tank.getMuzzlePosition(), tank.firingAngle(), this.m_power, 0, 0, tank);
+    g.setWeaponIndex(this.m_currentWeaponIndex);
+    this.m_ghostShots.push(g);
+    this.markDirty();
+  }
+
+  /** Number of in-flight spectator ghost arcs (0 outside a network match). */
+  getGhostShotCount(): number {
+    return this.m_ghostShots.length;
+  }
+
+  /** Step spectator ghost projectiles; drop them on impact / off-world. */
+  private updateGhostShots(dt: number): void {
+    if (!this.m_ghostShots.length) return;
+    this.m_ghostShots = this.m_ghostShots.filter(g => {
+      g.update(dt, this.m_wind);
+      const p = g.getPosition();
+      if (g.isDead()) return false;
+      if (p.x < -50 || p.x > this.m_worldWidth + 50 || p.y > this.m_canvas.height + 50)
+        return false;
+      return p.y < this.m_land.getHeightAt(p.x); // still above ground
+    });
+    this.markDirty();
+  }
+
   /** Apply an authoritative snapshot from the acting client (spectator side). */
   applyNetSnapshot(s: NetSnapshot): void {
+    this.m_ghostShots = []; // the shot resolved — clear any in-flight visual arc
     s.tanks.forEach((st, i) => this.m_tanks[i]?.setNetState(st));
-    if (s.heights.length) this.m_land.initFromArray(Int16Array.from(s.heights));
+    // Reconcile terrain so remote craters/deposits render (not just collision heights).
+    if (s.heights.length) this.m_land.setHeightmap(s.heights);
     this.m_wind.x = s.wind.x;
     this.m_wind.y = s.wind.y;
     this.markDirty();
@@ -4188,7 +4274,11 @@ export class CGameController implements ShotWorld {
   private m_terrainSeed: number | null = null; // shared seed → identical terrain
   private m_netRoster: {name: string; color: string}[] | null = null;
   private m_onNetTurnEnd: (() => void) | null = null;
+  private m_onNetCommand: ((cmd: GameCommand) => void) | null = null;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
+  // Draw-only projectiles a spectator flies from a relayed fire — pure visual (the
+  // authoritative snapshot does the real damage/terrain); never carve or hit.
+  private m_ghostShots: CShot[] = [];
 
   private m_particles: CParticleSystem;
   private m_weather: CWeather;

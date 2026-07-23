@@ -15,6 +15,16 @@ export const SHOT_GRAVITY = 500; // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15; // wind display units -> px/s^2 of sideways drift
 export const SHOT_SPEED_SCALE = 1; // launch speed per unit power
 
+// Reference-engine → our-engine time conversion for weapon fields measured in the
+// original's ballistic time-step (batSec, sucSec). Those fields count the SAME step
+// that integrates gravity/velocity, so a duration in reference units maps to our
+// seconds by the ratio of the two ballistic time-constants τ = launch-speed-per-power
+// ÷ gravity. Both engines' launch coefficients carry a map-scale factor that cancels,
+// leaving τ_ours / τ_ref with no invented number:
+//   τ_ref  = (refPowerScale · refK) / refGravity = (1.5 · 0.1) / 4.9
+//   τ_ours = SHOT_SPEED_SCALE / SHOT_GRAVITY
+export const REF_TIME_SCALE = SHOT_SPEED_SCALE / SHOT_GRAVITY / ((1.5 * 0.1) / 4.9); // ≈ 0.065
+
 /**
  * Muzzle speed for a shot of the given power — the SINGLE source of truth shared by real
  * shots (init/initFromTank), cluster submunitions (WeaponBehavior) and the aim AI (CBotAI),

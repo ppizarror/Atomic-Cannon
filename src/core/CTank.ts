@@ -1173,6 +1173,7 @@ export class CTank {
     this.m_health.nShield = s.shield;
     this.m_health.nArmor = s.armor;
     this.m_health.nHazmat = s.hazmat;
+    this.m_bIsAlive = s.life > 0; // alive is a flag, not derived from nLife
     this.setCredits(s.credits);
   }
 

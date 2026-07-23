@@ -7,7 +7,7 @@
  * damage-over-time, the `earth` deposit amount) are derived from the data fields.
  */
 import {Vec2} from '../../math/Vec2';
-import {CShot, SHOT_GRAVITY, SHOT_SPEED_SCALE, launchSpeed} from '../CShot';
+import {CShot, REF_TIME_SCALE, launchSpeed} from '../CShot';
 import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
@@ -236,25 +236,6 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
   return 'continue';
 }
 
-// Battery drop cadence — DERIVED from the ballistics, not tuned.
-//
-// A battery weapon drops one bomblet every `batSec` while descending, where `batSec` is
-// measured in the reference engine's own time step — the same step that integrates
-// gravity and velocity. So the NUMBER of drops over a descent is a pure function of the
-// trajectory, not of wall-clock time. To reproduce that count we convert `batSec` into
-// our seconds by the ratio of the two ballistic time-constants τ = (launch-speed per unit
-// power) / gravity. In the reference engine the launch coefficient and gravity share a
-// map-scale factor that cancels, leaving:
-//   τ_ref  = (refPowerScale · refK) / refGravity = (1.5 · 0.1) / 4.9
-//   τ_ours = SHOT_SPEED_SCALE / SHOT_GRAVITY     = 0.9 / 500
-// interval = batSec · (τ_ours / τ_ref). This keeps the drop count equal to the reference
-// for ANY power/angle/terrain — no invented number.
-const REF_LAUNCH_K = 0.1,
-  REF_POWER_SCALE = 1.5,
-  REF_GRAVITY = 4.9;
-const BATTERY_TIME_SCALE =
-  SHOT_SPEED_SCALE / SHOT_GRAVITY / ((REF_POWER_SCALE * REF_LAUNCH_K) / REF_GRAVITY); // ≈ 0.0588
-
 /** Battery: drop bomblets straight down at a steady cadence while a primary descends. */
 function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number): void {
   const batSec = weapon.getBatterySeconds();
@@ -262,7 +243,7 @@ function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number
   // Latch the apex the first descending frame, so the cadence starts at the top of the
   // fall (not from launch — otherwise a long ascent would dump a catch-up burst).
   if (shot.batteryApex < 0) shot.batteryApex = shot.getAge();
-  const interval = Math.max(0.03, batSec * BATTERY_TIME_SCALE); // floor = pathological guard only
+  const interval = Math.max(0.03, batSec * REF_TIME_SCALE); // floor = pathological guard only
   const due = Math.floor((shot.getAge() - shot.batteryApex) / interval) + 1; // 1st drop at apex
   if (due <= shot.batteryDrops) return;
   shot.batteryDrops = due;

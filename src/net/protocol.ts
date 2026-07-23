@@ -64,7 +64,13 @@ export type ClientMessage =
   | {readonly t: 'start'} // host only
   | {readonly t: 'settings'; readonly settings: Partial<RoomSettings>} // host only
   | {readonly t: 'cmd'; readonly seq: number; readonly cmd: GameCommand}
-  | {readonly t: 'shotResult'; readonly seq: number; readonly result: ShotResult}
+  | {
+      readonly t: 'shotResult';
+      readonly seq: number;
+      readonly result: ShotResult;
+      /** The acting client detected the battle ended on this shot (one team left). */
+      readonly over?: boolean;
+    }
   | {readonly t: 'chat'; readonly text: string}
   | {readonly t: 'leave'};
 
@@ -84,6 +90,8 @@ export type ServerMessage =
   | {readonly t: 'chat'; readonly from: number; readonly text: string}
   | {readonly t: 'startGame'; readonly seed: number; readonly order: readonly number[]}
   | {readonly t: 'turnBegin'; readonly playerIdx: number; readonly deadline: number}
+  /** The match ended; each client shows the standings (winner computed from synced state). */
+  | {readonly t: 'gameOver'}
   /** A validated intent from the acting player, relayed for spectators to apply. */
   | {readonly t: 'cmd'; readonly from: number; readonly seq: number; readonly cmd: GameCommand}
   /** The acting player's authoritative shot outcome, applied by everyone. */

@@ -12,6 +12,7 @@ import {
   type ServerMessage,
   type PlayerInfo,
   type RoomSettings,
+  type ShotResult,
   parseClientMessage,
   PROTOCOL_VERSION,
 } from '../src/net/protocol';
@@ -32,7 +33,7 @@ interface StoredPlayer {
 
 interface RoomState {
   code: string;
-  phase: 'lobby' | 'playing';
+  phase: 'lobby' | 'playing' | 'ended';
   nextId: number;
   hostId: number | null;
   settings: RoomSettings;
@@ -40,6 +41,8 @@ interface RoomState {
   seed: number;
   order: number[];
   turnIdx: number;
+  /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
+  snapshot: ShotResult | null;
 }
 
 interface Attachment {
@@ -59,6 +62,7 @@ function freshState(code: string): RoomState {
     seed: 0,
     order: [],
     turnIdx: 0,
+    snapshot: null,
   };
 }
 
@@ -202,11 +206,14 @@ export class Room {
         await this.save(s);
         this.send(ws, this.welcomeFor(s, existing));
         this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
+        // Resume an in-progress (or finished) match: reboot from the seed, apply the
+        // latest authoritative state, then hand them the current turn / final result.
+        this.resumeMatch(ws, s);
         return;
       }
     }
 
-    if (s.phase === 'playing') {
+    if (s.phase !== 'lobby') {
       return this.send(ws, {
         t: 'error',
         code: 'game_in_progress',
@@ -235,6 +242,15 @@ export class Room {
 
     this.send(ws, this.welcomeFor(s, player));
     this.broadcast({t: 'roster', players: Room.publicPlayers(s)}, ws);
+  }
+
+  /** Replay the match to one (re)joining socket: boot → latest state → turn/result. */
+  private resumeMatch(ws: WebSocket, s: RoomState): void {
+    if (s.phase !== 'playing' && s.phase !== 'ended') return;
+    this.send(ws, {t: 'startGame', seed: s.seed, order: s.order});
+    if (s.snapshot) this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot});
+    if (s.phase === 'ended') this.send(ws, {t: 'gameOver'});
+    else this.send(ws, {t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
   }
 
   private welcomeFor(s: RoomState, p: StoredPlayer): ServerMessage {
@@ -310,11 +326,34 @@ export class Room {
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
     }
-    // Broadcast the authoritative outcome, then advance the turn arbiter.
+    // Broadcast the authoritative outcome and keep it for reconnecting clients.
+    s.snapshot = msg.result;
     this.broadcast({t: 'stateUpdate', from: pid, seq: msg.seq, result: msg.result});
-    s.turnIdx = s.order.length ? (s.turnIdx + 1) % s.order.length : 0;
+
+    if (msg.over) {
+      // The acting client says the battle ended — stop here and show the standings.
+      s.phase = 'ended';
+      await this.save(s);
+      this.broadcast({t: 'gameOver'});
+      return;
+    }
+
+    s.turnIdx = this.nextLivingTurn(s);
     await this.save(s);
     this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+  }
+
+  /** Advance to the next turn, skipping players whose tank is dead (life ≤ 0). */
+  private nextLivingTurn(s: RoomState): number {
+    const n = s.order.length;
+    if (n === 0) return 0;
+    const alive = (i: number) => (s.snapshot ? (s.snapshot.tanks[i]?.life ?? 1) > 0 : true);
+    let idx = s.turnIdx;
+    for (let step = 0; step < n; step++) {
+      idx = (idx + 1) % n;
+      if (alive(idx)) return idx;
+    }
+    return (s.turnIdx + 1) % n; // everyone dead (shouldn't happen — 'over' fires first)
   }
 
   private onChat(pid: number, text: string): void {
