@@ -56,6 +56,7 @@ import {
   weaponDetonate,
   weaponFlyStep,
 } from '../core/weapons/WeaponBehavior';
+import {EXP, type ExpType} from '../core/weapons/ExpType';
 import {CAudio} from '../audio/CAudio';
 import landData from '../data/land.json';
 
@@ -2249,9 +2250,10 @@ export class CGameController implements ShotWorld {
     radiusPx?: number,
     nuclear = false,
     blastPreset?: string,
-    expType = 0,
+    expType: ExpType = EXP.PLAIN,
     expBitmap?: string,
     deposit = false,
+    isCleaner = false,
   ): void {
     this.m_lastImpactX = x; // the camera holds here while this blast animates
     // Show Blast Circles: a ring at the blast's damage radius, fading out.
@@ -2273,8 +2275,12 @@ export class CGameController implements ShotWorld {
       // Stage 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
       // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
       // It inherits the weapon's colour (uranium reads red, plutonium green, …).
-      if (expType === 4 || nuclear) this.flashScreen(1, color ?? '#ffffff');
-      else if ((radiusPx ?? 0) >= BIG_BLAST_RADIUS) this.flashScreen(0.45, color ?? '#ffffff');
+      // Full-screen white-out is a NUKE (style-4) thing in the original. A big conventional blast
+      // gets a lighter half-flash (port embellishment) — but a Cleaner is an earth-remover, not a
+      // fiery blast, so it never flashes.
+      if (expType === EXP.NUKE || nuclear) this.flashScreen(1, color ?? '#ffffff');
+      else if (!isCleaner && (radiusPx ?? 0) >= BIG_BLAST_RADIUS)
+        this.flashScreen(0.45, color ?? '#ffffff');
     } else this.m_particles.explode(x, y, scale);
   }
 
@@ -2405,6 +2411,8 @@ export class CGameController implements ShotWorld {
         w.getBlastParticle(),
         w.getExpType(),
         w.getExpBitmap(),
+        w.getEarth() > 0,
+        w.isCleaner(),
       );
       // Only big mines shake the camera (see weaponDetonate — shake is reserved for
       // bomb/nuke-scale blasts; a small proximity charge just pops).
@@ -2596,6 +2604,13 @@ export class CGameController implements ShotWorld {
     // Restore THIS player's own weapon so the previous player's (or a bot's)
     // choice never carries over.
     this.m_currentWeaponIndex = tank.getWeaponIndex();
+    // If the human emptied that weapon last turn (fired its last round), fall back to
+    // the unlimited staple so the turn never opens on a weapon that's out of stock.
+    // (Under free-fire every weapon is in stock, so this never trips.)
+    if (tank.isHuman() && !this.m_economy.hasStock(this.m_currentWeaponIndex)) {
+      this.m_currentWeaponIndex = getDefaultWeaponIndex();
+      tank.setWeaponIndex(this.m_currentWeaponIndex);
+    }
     // Likewise restore THIS player's own aim + power (per-tank), so the previous
     // player's shot settings never carry over into this turn.
     this.m_angle = tank.getAimAngle();
@@ -2823,8 +2838,22 @@ export class CGameController implements ShotWorld {
     this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
     this.m_firedThisTurn = true; // a shot was taken → post-fire gloat is eligible at turn end
 
+    // Ammo (human only): never fire a weapon that's out of stock — if the selected one
+    // was emptied or sold off, fall back to the unlimited staple first, then consume one
+    // round from whatever is actually firing (the Shell never depletes). Done before the
+    // ext branch so projectiles, utilities, Move and Jet all consume alike. Bots carry no
+    // inventory; free-fire (weapon-test) makes consume a no-op via the economy; self-playing
+    // Demo fires freely (the AI drives arbitrary weapons, so it doesn't touch real stock).
+    const chargeAmmo = tank.isHuman() && !GameConfig.demo;
+    if (chargeAmmo && !this.m_economy.hasStock(this.m_currentWeaponIndex)) {
+      this.m_currentWeaponIndex = getDefaultWeaponIndex();
+      tank.setWeaponIndex(this.m_currentWeaponIndex);
+    }
+
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
+
+    if (chargeAmmo) this.m_economy.consume(this.m_currentWeaponIndex);
 
     // soundFire, panned to the firing tank.
     this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
@@ -3537,7 +3566,15 @@ export class CGameController implements ShotWorld {
     if (ci >= 0 && this.isPlayerTurn()) return [WEAPON_DATABASE[ci]];
     // Hide weapons disabled in Game Content; the staple (Shell) is always available.
     const staple = getDefaultWeaponIndex();
-    return WEAPON_DATABASE.filter(w => w.index === staple || weaponEnabled(w.index));
+    const enabled = (i: number) => i === staple || weaponEnabled(i);
+    // On the human's turn the arsenal lists only what's IN STOCK — you can't select a
+    // weapon you don't own (the unlimited staple always qualifies; free-fire makes every
+    // weapon in stock). During a bot's turn the full enabled list is shown so the bot's
+    // chosen weapon still appears in the HUD.
+    if (this.isPlayerTurn()) {
+      return WEAPON_DATABASE.filter(w => enabled(w.index) && this.m_economy.hasStock(w.index));
+    }
+    return WEAPON_DATABASE.filter(w => enabled(w.index));
   }
 
   getCurrentWeaponIndex(): number {
@@ -3793,6 +3830,9 @@ export class CGameController implements ShotWorld {
    *  shot timer is disabled, so weapons can be fired back-to-back indefinitely. */
   setWeaponTest(on: boolean): void {
     this.m_weaponTest = on;
+    // Weapon-test = unlimited ammo. Express that ONCE, as economy state, so the depot,
+    // arsenal and fire path all read it from one place (no per-site weapon-test checks).
+    this.m_economy.setFreeFire(on);
   }
 
   /** Wire the audio facade (SFX + music). Optional — the game runs silently without it. */
@@ -3826,7 +3866,9 @@ export class CGameController implements ShotWorld {
   isPlayerTurn(): boolean {
     // In Demo Mode the AI drives the human too, so the human never "has control".
     if (GameConfig.demo) return false;
-    return this.getCurrentTank().isHuman() && this.m_gameState === EGameState.Battle;
+    // Null-safe: before a match starts there is no current tank (the arsenal preview
+    // and other read-only accessors can run then), so no one "has control".
+    return this.getCurrentTank()?.isHuman() === true && this.m_gameState === EGameState.Battle;
   }
 
   // ========================================================================

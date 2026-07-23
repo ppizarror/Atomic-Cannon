@@ -45,6 +45,11 @@ export interface CreditHolder {
 
 export class CEconomy {
   private readonly m_owned: number[]; // per weapon index; UNLIMITED for staples
+  // Free-fire (dev weapon-test): treat EVERY weapon as unlimited. It's a mode of the
+  // inventory itself — the single source of truth for "in stock / unlimited / consume" —
+  // so the depot, the arsenal and the fire path all agree without any external flag.
+  // Deliberately NOT cleared by reset(), so a fresh match under weapon-test stays unlimited.
+  private m_freeFire = false;
   private m_sellRate = SELL_REFUND; // fraction refunded on sell (Economy → Sell Back Rate)
   // Credits live on a bound holder (the human tank) once set; until then an internal
   // balance is used (construction, unit tests).
@@ -94,13 +99,22 @@ export class CEconomy {
     this.creditsAdd(n);
   }
 
-  /** Owned rounds for a weapon (UNLIMITED for staples, 0 if none). */
+  /** Free-fire mode: when on, every weapon reads as unlimited (dev weapon-test). */
+  setFreeFire(on: boolean): void {
+    this.m_freeFire = on;
+  }
+  isFreeFire(): boolean {
+    return this.m_freeFire;
+  }
+
+  /** Owned rounds for a weapon (UNLIMITED for staples / free-fire, 0 if none). */
   getOwned(index: number): number {
+    if (this.m_freeFire) return UNLIMITED;
     return this.m_owned[index] ?? 0;
   }
 
   isUnlimited(index: number): boolean {
-    return this.m_owned[index] === UNLIMITED;
+    return this.m_freeFire || this.m_owned[index] === UNLIMITED;
   }
 
   /** Mark a weapon as unlimited (dev: ?weaponsel=<id>). */
@@ -185,8 +199,10 @@ export class CEconomy {
     }
   }
 
-  /** Snapshot of owned counts (for mirroring to the UI). */
+  /** Snapshot of owned counts (for mirroring to the UI). Free-fire reports every weapon
+   *  as unlimited so the depot's Qty column shows ∞ across the board. */
   ownedSnapshot(): number[] {
+    if (this.m_freeFire) return this.m_owned.map(() => UNLIMITED);
     return this.m_owned.slice();
   }
 }
