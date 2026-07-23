@@ -70,6 +70,8 @@ export type ClientMessage =
       readonly t: 'shotResult';
       readonly seq: number;
       readonly result: ShotResult;
+      /** The acting client's authoritative post-turn state hash (drift detection). */
+      readonly hash: number;
       /** The acting client detected the battle ended on this shot (one team left). */
       readonly over?: boolean;
     }
@@ -102,6 +104,7 @@ export type ServerMessage =
       readonly from: number;
       readonly seq: number;
       readonly result: ShotResult;
+      readonly hash: number;
     }
   | {readonly t: 'kick'; readonly reason: string}
   | {readonly t: 'quit'; readonly reason: string}

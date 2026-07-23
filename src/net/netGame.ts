@@ -33,6 +33,12 @@ const TEAM_HEX = [
 
 export class NetGame {
   private m_seq = 0;
+  // The authoritative keyframe (+ its hash) that arrived WHILE we were still simulating —
+  // checked against our own result once we settle; applied only if we actually drifted.
+  private m_pendingKeyframe: {result: NetSnapshot; hash: number} | null = null;
+  // A server turn hand-off that arrived mid-simulation — applied once our sim settles, so
+  // a late `turnBegin` can never interrupt an in-flight shot.
+  private m_pendingTurn: number | null = null;
 
   constructor(
     private readonly client: RoomClient,
@@ -45,9 +51,9 @@ export class NetGame {
       case 'startGame':
         return this.onStart(msg.seed, msg.order);
       case 'turnBegin':
-        return this.host.controller.netSetActivePlayer(msg.playerIdx);
+        return this.onTurnBegin(msg.playerIdx);
       case 'stateUpdate':
-        return this.host.controller.applyNetSnapshot(msg.result as NetSnapshot);
+        return this.onStateUpdate(msg.result as NetSnapshot, msg.hash);
       case 'cmd':
         return this.onRemoteCommand(msg.cmd);
       case 'gameOver':
@@ -57,19 +63,49 @@ export class NetGame {
   }
 
   /**
-   * A relayed intent from the acting player. Aim rotates their turret on our screen;
-   * fire flies a draw-only ghost arc (the real damage/terrain arrives via stateUpdate).
-   * We must NOT run a real `fire()` here — that would simulate the shot a second time.
+   * A relayed intent from the acting player, replayed verbatim through the command bus:
+   * select-weapon, aim, then fire. Because the sim is deterministic (seeded RNG + fixed
+   * timestep), every client computes the SAME shot outcome — no one has to trust the
+   * shooter's reported damage (that's the cheat-resistance).
    */
   private onRemoteCommand(cmd: Parameters<typeof applyCommand>[1]): void {
-    if (cmd.t === 'fire') {
-      this.host.controller.netSpawnGhost();
-      return;
-    }
     applyCommand(this.host.controller, cmd);
   }
 
+  /** Server turn hand-off — queue it if we're mid-shot, else apply now. */
+  private onTurnBegin(playerIdx: number): void {
+    if (this.host.controller.isNetSimBusy()) this.m_pendingTurn = playerIdx;
+    else this.applyTurn(playerIdx);
+  }
+
+  private applyTurn(playerIdx: number): void {
+    this.m_pendingKeyframe = null; // stale — belongs to the turn that just ended
+    this.host.controller.netSetActivePlayer(playerIdx);
+  }
+
+  /**
+   * The authoritative snapshot is a DRIFT KEYFRAME, not the per-shot source of truth
+   * (every client simulated the shot). Mid-shot it's stashed for a post-settle check;
+   * when idle it's applied ONLY if our own hash disagrees — so an in-sync client keeps
+   * its own simulation (cheat-resistant) and a drifted/reconnecting one is corrected.
+   */
+  private onStateUpdate(result: NetSnapshot, hash: number): void {
+    if (this.host.controller.isNetSimBusy()) {
+      this.m_pendingKeyframe = {result, hash};
+      return;
+    }
+    this.applyKeyframeIfDrifted(result, hash);
+  }
+
+  private applyKeyframeIfDrifted(result: NetSnapshot, hash: number): void {
+    if (this.host.controller.stateHash() !== hash) {
+      this.host.controller.applyNetSnapshot(result); // desync / catch-up → resync
+    }
+  }
+
   private onStart(seed: number, order: readonly number[]): void {
+    this.m_pendingKeyframe = null;
+    this.m_pendingTurn = null;
     const st = this.client.getState();
     const byId = new Map(st.players.map(p => [p.id, p]));
     // Same order on every client → same names, same team colours, same tank indices.
@@ -84,21 +120,35 @@ export class NetGame {
       players: order.length,
       localIndex,
       roster,
-      onTurnEnd: () => this.reportTurn(),
+      onTurnEnd: () => this.onTurnSettled(),
       onCommand: cmd => this.client.send({t: 'cmd', seq: ++this.m_seq, cmd}),
     });
     this.host.onMatchStart();
   }
 
-  /** The local player's turn resolved → broadcast this client's authoritative state. */
-  private reportTurn(): void {
-    // Only the acting player reports; a spectator's local turn machinery never does.
-    if (!this.host.controller.isLocalNetTurn()) return;
-    this.client.send({
-      t: 'shotResult',
-      seq: ++this.m_seq,
-      result: this.host.controller.getNetSnapshot(),
-      over: this.host.controller.isNetBattleOver(),
-    });
+  /**
+   * Our local simulation for this turn just settled (fires on every client). The acting
+   * client reports its authoritative state + hash; a spectator reconciles against any
+   * keyframe that raced in mid-shot. Then we apply a turn hand-off that was held back.
+   */
+  private onTurnSettled(): void {
+    const gc = this.host.controller;
+    if (gc.isLocalNetTurn()) {
+      this.client.send({
+        t: 'shotResult',
+        seq: ++this.m_seq,
+        result: gc.getNetSnapshot(),
+        hash: gc.stateHash(),
+        over: gc.isNetBattleOver(),
+      });
+    } else if (this.m_pendingKeyframe) {
+      this.applyKeyframeIfDrifted(this.m_pendingKeyframe.result, this.m_pendingKeyframe.hash);
+      this.m_pendingKeyframe = null;
+    }
+    if (this.m_pendingTurn !== null) {
+      const idx = this.m_pendingTurn;
+      this.m_pendingTurn = null;
+      this.applyTurn(idx);
+    }
   }
 }

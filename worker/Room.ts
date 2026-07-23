@@ -43,6 +43,8 @@ interface RoomState {
   turnIdx: number;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
+  /** State hash of `snapshot` (so a resync target carries its drift-check hash). */
+  snapshotHash: number;
   /** App build version of the room (first player's) — all players must match. */
   appVersion: string | null;
 }
@@ -65,6 +67,7 @@ function freshState(code: string): RoomState {
     order: [],
     turnIdx: 0,
     snapshot: null,
+    snapshotHash: 0,
     appVersion: null,
   };
 }
@@ -268,7 +271,9 @@ export class Room {
   private resumeMatch(ws: WebSocket, s: RoomState): void {
     if (s.phase !== 'playing' && s.phase !== 'ended') return;
     this.send(ws, {t: 'startGame', seed: s.seed, order: s.order});
-    if (s.snapshot) this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot});
+    if (s.snapshot) {
+      this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
+    }
     if (s.phase === 'ended') this.send(ws, {t: 'gameOver'});
     else this.send(ws, {t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
   }
@@ -346,9 +351,10 @@ export class Room {
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
     }
-    // Broadcast the authoritative outcome and keep it for reconnecting clients.
+    // Broadcast the authoritative outcome + its hash, and keep both for reconnects.
     s.snapshot = msg.result;
-    this.broadcast({t: 'stateUpdate', from: pid, seq: msg.seq, result: msg.result});
+    s.snapshotHash = msg.hash;
+    this.broadcast({t: 'stateUpdate', from: pid, seq: msg.seq, result: msg.result, hash: msg.hash});
 
     if (msg.over) {
       // The acting client says the battle ended — stop here and show the standings.

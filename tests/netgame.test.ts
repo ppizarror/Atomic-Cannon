@@ -40,6 +40,40 @@ describe('network match boot', () => {
     expect(gc.getNetSnapshot().tanks).toHaveLength(2);
   });
 
+  it('boots to an identical deterministic stateHash across clients', () => {
+    // Same seed → same terrain AND same seeded spawn positions → same hash.
+    const a = netController(0);
+    const b = netController(1); // different local index, same seed
+    expect(a.stateHash()).toBe(b.stateHash());
+
+    // A different seed diverges.
+    const c = new CGameController(makeCanvas());
+    c.startNetworkGame({seed: 424242, players: 2, localIndex: 0, roster: ROSTER});
+    expect(c.stateHash()).not.toBe(a.stateHash());
+  });
+
+  it('two clients simulate the same shot to an identical stateHash (lockstep)', () => {
+    const FIXED = 1 / 60;
+    const shotClient = (seed: number): CGameController => {
+      const gc = new CGameController(makeCanvas());
+      gc.startNetworkGame({seed, players: 2, localIndex: 0, roster: ROSTER});
+      gc.netSetActivePlayer(0); // tank 0 is local + active → it fires
+      gc.setAngle(45);
+      gc.setPower(650);
+      gc.fire();
+      return gc;
+    };
+    const a = shotClient(31337);
+    const b = shotClient(31337);
+    // Step both deterministically (fixed dt) through the whole shot resolution.
+    for (let i = 0; i < 1200; i++) {
+      a.update(FIXED);
+      b.update(FIXED);
+    }
+    expect(a.getNetSnapshot().heights).toEqual(b.getNetSnapshot().heights); // terrain carved identically
+    expect(a.stateHash()).toBe(b.stateHash()); // tanks + terrain + RNG all agree
+  });
+
   it('ignores local dev switches (flatland/weapontest) so clients stay identical', () => {
     // One client has ?flatland + ?weapontest set; the match must ignore both.
     const dirty = new CGameController(makeCanvas());
@@ -181,7 +215,7 @@ describe('NetGame bridge', () => {
     expect(sent.find(m => m.t === 'shotResult')).toBeUndefined();
   });
 
-  it('firing on the local turn relays aim + fire commands', () => {
+  it('firing on the local turn relays selectWeapon + aim + fire', () => {
     const {gc, ng, sent} = harness(1); // local index 0
     ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
     gc.netSetActivePlayer(0);
@@ -189,18 +223,75 @@ describe('NetGame bridge', () => {
     gc.setPower(400);
     gc.fire();
     const cmds = sent.filter(m => m.t === 'cmd').map(m => (m.t === 'cmd' ? m.cmd : null));
-    expect(cmds).toEqual([{t: 'aim', angle: 50, power: 400}, {t: 'fire'}]);
+    expect(cmds.map(c => c?.t)).toEqual(['selectWeapon', 'aim', 'fire']);
+    expect(cmds[1]).toEqual({t: 'aim', angle: 50, power: 400});
   });
 
-  it('a relayed opponent fire flies a ghost arc; aim rotates their turret', () => {
+  it('a relayed opponent shot is SIMULATED on spectators (real shot, not a stream)', () => {
     const {gc, ng} = harness(1);
     ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
     ng.handle({t: 'turnBegin', playerIdx: 1, deadline: 0}); // opponent's turn
     ng.handle({t: 'cmd', from: 2, seq: 1, cmd: {t: 'aim', angle: 33, power: 500}});
-    expect(gc.getAngle()).toBe(33);
-    expect(gc.getGhostShotCount()).toBe(0);
+    expect(gc.getAngle()).toBe(33); // their turret tracks
+    expect(gc.getShotCount()).toBe(0);
     ng.handle({t: 'cmd', from: 2, seq: 2, cmd: {t: 'fire'}});
-    expect(gc.getGhostShotCount()).toBe(1); // ghost arc spawned (not a real shot)
+    expect(gc.getShotCount()).toBeGreaterThan(0); // the spectator fires the real shot itself
+  });
+});
+
+describe('lockstep sync (desync detector + turn queuing)', () => {
+  function bridge(youId: number) {
+    const gc = new CGameController(makeCanvas());
+    const sent: ClientMessage[] = [];
+    const state: RoomClientState = {
+      phase: 'playing',
+      status: 'open',
+      code: 'ABCD23',
+      youId,
+      players: [
+        {id: 1, name: 'A', color: '#f00', ready: true, connected: true, isHost: true},
+        {id: 2, name: 'B', color: '#0f0', ready: true, connected: true, isHost: false},
+      ],
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+      isHost: youId === 1,
+      lastError: null,
+    };
+    const client = {getState: () => state, send: (m: ClientMessage) => sent.push(m)} as unknown as RoomClient;
+    const ng = new NetGame(client, {controller: gc, onMatchStart: () => {}});
+    ng.handle({t: 'startGame', seed: 5, order: [1, 2]});
+    return {gc, ng, sent};
+  }
+
+  it('applies a keyframe only when the hash disagrees (drift), never when in sync', () => {
+    const {gc, ng} = bridge(1);
+    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // idle
+    const inSync = gc.stateHash();
+
+    // A keyframe that WOULD kill tank 1, but whose hash claims we're in sync → ignored.
+    const snap = gc.getNetSnapshot();
+    snap.tanks[1].life = 0;
+    ng.handle({t: 'stateUpdate', from: 1, seq: 1, result: snap, hash: inSync});
+    expect(gc.getNetSnapshot().tanks[1].life).toBeGreaterThan(0);
+
+    // Same keyframe, but the hash disagrees → resync (apply it).
+    ng.handle({t: 'stateUpdate', from: 1, seq: 2, result: snap, hash: 999999});
+    expect(gc.getNetSnapshot().tanks[1].life).toBe(0);
+  });
+
+  it('queues a turn hand-off that arrives mid-shot until the sim settles', () => {
+    const {gc, ng} = bridge(1);
+    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0});
+    gc.setAngle(45);
+    gc.setPower(600);
+    gc.fire();
+    expect(gc.isNetSimBusy()).toBe(true);
+
+    ng.handle({t: 'turnBegin', playerIdx: 1, deadline: 0}); // arrives mid-shot
+    expect(gc.isLocalNetTurn()).toBe(true); // NOT advanced — held back
+
+    for (let i = 0; i < 1200; i++) gc.update(1 / 60); // resolve the shot
+    expect(gc.isNetSimBusy()).toBe(false);
+    expect(gc.isLocalNetTurn()).toBe(false); // the queued hand-off applied after settle
   });
 });
 
