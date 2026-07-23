@@ -428,7 +428,7 @@ export const en: Strings = {
       kickback: {
         label: 'Kickback',
         tip: 'How much explosions move the tanks.',
-        options: ['Off', 'Low', 'Normal', 'High'],
+        options: ['OFF', 'Low', 'Normal', 'High'],
       },
       size: {
         label: 'Player Size',
@@ -527,7 +527,7 @@ export const en: Strings = {
       framerate: {
         label: 'Show Framerate',
         tip: 'Off, the FPS counter, or FPS + a frame count (Full)',
-        options: ['Off', 'FPS', 'Full'],
+        options: ['OFF', 'FPS', 'Full'],
       },
       fpsCap: {
         label: 'Max Framerate',
@@ -535,6 +535,7 @@ export const en: Strings = {
         options: ['No Limit', '30 FPS', '60 FPS', '120 FPS', '144 FPS'],
       },
       demo: {label: 'Demo Mode', tip: 'Game automatically plays itself'},
+      ambientLight: {label: 'Ambient Lighting', tip: "Tint the scene toward each map's mood"},
     },
     audio: {
       header: 'Adjust sound and music settings',

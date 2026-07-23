@@ -80,6 +80,7 @@ const CATALOG = {
   'gfx.framerate': {default: 0},
   'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144]},
   'gfx.demo': {default: 0},
+  'gfx.ambientLight': {default: 1},
 
   // ── Audio ── (Sound/Music/volumes/Stereo all bind live to CAudio, not stored here)
 } satisfies Record<string, SettingMeta>;

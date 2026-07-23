@@ -200,8 +200,19 @@ function graphics2Rows(): Widget[] {
     toggle(s.camShake, 'gfx.camShake'),
     enumW(s.framerate, 'gfx.framerate'),
     enumW(s.fpsCap, 'gfx.fpsCap'),
-    toggle(s.demo, 'gfx.demo'),
+    {
+      label: s.more.label,
+      tip: s.more.tip,
+      kind: 'nav',
+      get: () => 0,
+      onClick: () => openSettingsPage('graphics3'),
+    },
   ];
+}
+
+function graphics3Rows(): Widget[] {
+  const s = strings.value.settings.graphics;
+  return [toggle(s.demo, 'gfx.demo'), toggle(s.ambientLight, 'gfx.ambientLight')];
 }
 
 function audioRows(): Widget[] {
@@ -290,6 +301,8 @@ export function getSettingsPage(id: string): PageSpec | null {
       return {id, header: s.graphics.header, rows: graphicsRows()};
     case 'graphics2':
       return {id, header: s.graphics.header, rows: graphics2Rows()};
+    case 'graphics3':
+      return {id, header: s.graphics.header, rows: graphics3Rows()};
     case 'audio':
       return {id, header: s.audio.header, rows: audioRows()};
     case 'content':

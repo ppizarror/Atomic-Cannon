@@ -61,6 +61,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.highContrast = S.highContrast();
   GameConfig.showAiStats = S.showAiStats();
   GameConfig.demo = S.demo();
+  GameConfig.ambientLight = S.ambientLight();
   // Formerly-unwired options (Settings parity).
   GameConfig.rightClickFires = S.rightClickFires();
   GameConfig.smallBuyFonts = S.smallBuyFonts();

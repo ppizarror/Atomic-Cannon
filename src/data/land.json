@@ -32,7 +32,8 @@
         "tile": "land/lrock2.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#8a9298"
   },
   {
     "bg": "bg/01.webp",
@@ -59,7 +60,8 @@
         "tile": "land/lmarb1.bmp",
         "depth": 40
       }
-    ]
+    ],
+    "ambient": "#6e90c0"
   },
   {
     "bg": "bg/02.webp",
@@ -90,7 +92,8 @@
         "tile": "land/lmarb5.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#c88050"
   },
   {
     "bg": "bg/03.webp",
@@ -116,7 +119,8 @@
         "tile": "land/lrock2.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#6496b4"
   },
   {
     "bg": "bg/04.webp",
@@ -147,7 +151,8 @@
         "tile": "land/lmarb4d.bmp",
         "depth": 70
       }
-    ]
+    ],
+    "ambient": "#7890b0"
   },
   {
     "bg": "bg/05.webp",
@@ -173,7 +178,8 @@
         "tile": "land/lrock2.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#78a0c0"
   },
   {
     "bg": "bg/06.webp",
@@ -195,7 +201,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#789673"
   },
   {
     "bg": "bg/07.webp",
@@ -222,7 +229,8 @@
         "tile": "land/lstone.bmp",
         "depth": 70
       }
-    ]
+    ],
+    "ambient": "#9a8c78"
   },
   {
     "bg": "bg/08.webp",
@@ -257,7 +265,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#6480a8"
   },
   {
     "bg": "bg/09.webp",
@@ -284,7 +293,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#64808c"
   },
   {
     "bg": "bg/10.webp",
@@ -311,7 +321,8 @@
         "tile": "land/lmarb4d.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#6e7db4"
   },
   {
     "bg": "bg/11.webp",
@@ -346,7 +357,8 @@
         "tile": "land/lmarb4d.bmp",
         "depth": 70
       }
-    ]
+    ],
+    "ambient": "#7890b0"
   },
   {
     "bg": "bg/12.webp",
@@ -381,7 +393,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#78909c"
   },
   {
     "bg": "bg/13.webp",
@@ -416,7 +429,8 @@
         "tile": "land/lcanyon1.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#aa6e8c"
   },
   {
     "bg": "bg/14.webp",
@@ -438,7 +452,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#b98278"
   },
   {
     "bg": "bg/15.webp",
@@ -473,7 +488,8 @@
         "tile": "land/lrock1.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#82a0c0"
   },
   {
     "bg": "bg/16.webp",
@@ -500,7 +516,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#8296b0"
   },
   {
     "bg": "bg/17.webp",
@@ -527,7 +544,8 @@
         "tile": "land/lmarb4d.bmp",
         "depth": 70
       }
-    ]
+    ],
+    "ambient": "#5f82b4"
   },
   {
     "bg": "bg/18.webp",
@@ -554,7 +572,8 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#64789c"
   },
   {
     "bg": "bg/19.webp",
@@ -589,7 +608,8 @@
         "tile": "land/lcanyon1.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#8c6e82"
   },
   {
     "bg": "bg/20.webp",
@@ -616,7 +636,8 @@
         "tile": "land/lmarb4d.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#878785"
   },
   {
     "bg": "bg/21.webp",
@@ -639,7 +660,8 @@
         "tile": "land/lrock1.bmp",
         "depth": 50
       }
-    ]
+    ],
+    "ambient": "#cd9664"
   },
   {
     "bg": "bg/22.webp",
@@ -662,7 +684,8 @@
         "tile": "land/lmarb4d.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#c88c55"
   },
   {
     "bg": "bg/23.webp",
@@ -681,7 +704,8 @@
         "tile": "land/lsand2.bmp",
         "depth": 8
       }
-    ]
+    ],
+    "ambient": "#c3a082"
   },
   {
     "bg": "bg/24.webp",
@@ -703,6 +727,7 @@
         "tile": "land/ldirt3.bmp",
         "depth": 60
       }
-    ]
+    ],
+    "ambient": "#b9af96"
   }
 ]

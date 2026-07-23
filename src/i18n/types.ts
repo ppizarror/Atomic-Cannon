@@ -380,6 +380,7 @@ export interface Strings {
       framerate: RowCopy;
       fpsCap: RowCopy;
       demo: RowCopy;
+      ambientLight: RowCopy;
     };
     audio: {
       header: string;
