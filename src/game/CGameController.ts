@@ -165,6 +165,19 @@ const sentryMachineGunIndex = (): number => {
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
 
+// DEATH-class weapon indices (Six Under, Burial Mound, Cremation, Ashes, Toxic Grave), in database
+// order. When a tank is destroyed while it still OWNS one of these, the FIRST is detonated on the
+// corpse (posthumous "cook-off"). Memoised — the database is immutable after load.
+let g_deathWeaponIndices: number[] | null = null;
+function deathWeaponIndices(): number[] {
+  if (!g_deathWeaponIndices) {
+    g_deathWeaponIndices = [];
+    for (let i = 0; i < WEAPON_DATABASE.length; i++)
+      if (getWeapon(i).getExtType() === EXT.DEATH) g_deathWeaponIndices.push(i);
+  }
+  return g_deathWeaponIndices;
+}
+
 // Min seconds between live-aim relays to spectators in a net match (~16/s) — smooth turret
 // tracking without flooding the socket on a fast angle/power drag.
 const NET_AIM_INTERVAL = 0.06;
@@ -710,17 +723,18 @@ export class CGameController implements ShotWorld {
     // Precipitation / blowing sand declared by this map (snow, rain, hail, dust).
     this.m_weather.configure(cfg.weather);
 
-    // A themed name for the depot footer, derived from the map's dominant weather.
+    // A themed name for the depot footer, derived from the map's dominant weather (localised).
     const wx = new Set((cfg.weather ?? []).map(w => w.type));
+    const mapNames = strings.value.game.mapNames;
     this.m_mapName = wx.has('snow')
-      ? 'Frozen Wastes'
+      ? mapNames.snow
       : wx.has('dust')
-        ? 'Desert'
+        ? mapNames.dust
         : wx.has('rain')
-          ? 'Wetlands'
+          ? mapNames.rain
           : wx.has('hail')
-            ? 'Highlands'
-            : 'Battlefield';
+            ? mapNames.hail
+            : mapNames.default;
 
     await this.m_assets.loadImage('bg', '/assets/' + cfg.bg);
 
@@ -2886,6 +2900,32 @@ export class CGameController implements ShotWorld {
     this.m_particles.tankDeath(pos.x, pos.y + 12);
     this.m_screenShake.trigger(15, 0.5);
     this.m_audio?.tankExplode(pos.x); // tank explode.wav
+
+    // Posthumous DEATH-weapon cook-off: a tank destroyed while still OWNING a Death-class weapon
+    // detonates it on the corpse (Burial Mound heaps a big earth mound; Cremation/Ashes/Toxic Grave
+    // leave their own coloured fire/radiation blast). Faithful to the original's death loop.
+    this.detonateDeathWeapon(tank);
+  }
+
+  /** The dead tank cooks off the FIRST Death-class weapon it still owns, detonating it right on the
+   *  corpse (the original forces power 0 / angle 90 so it drops straight down — here we detonate in
+   *  place, same result). Sentries carry no arsenal, so they're skipped. Deterministic: the pick
+   *  keys off the mirrored economy and the terrain deposit is seeded, so net clients stay in lockstep.
+   *  A resulting blast can kill a neighbour → its own cook-off, a bounded chain (each weapon is
+   *  consumed, so a tank detonates at most once). */
+  private detonateDeathWeapon(tank: CTank): void {
+    if (tank.isSentry()) return;
+    const econ = this.economyFor(tank);
+    const idx = deathWeaponIndices().find(i => econ.hasStock(i));
+    if (idx === undefined) return;
+    const weapon = getWeapon(idx);
+    econ.consume(idx); // fired → consumed, so it can't detonate twice
+    const pos = tank.getPosition();
+    const surf = this.m_land.getHeightAt(Math.floor(pos.x));
+    const drop = new CShot();
+    drop.initFromVelocity(new Vec2(pos.x, surf), 0, 0, weapon.getDamage(), weapon.getRadius(), tank);
+    drop.setWeaponIndex(idx);
+    weaponDetonate(drop, weapon, this); // full effect at the corpse: blast + earth deposit + FX
   }
 
   /** Kill bounty (Deathmatch only): the killer (the victim's last damager) earns
@@ -5146,7 +5186,7 @@ export class CGameController implements ShotWorld {
   // at turn start and consume rounds as they fire, like the original AI. Lazily created, bound to
   // each bot tank's own credits; cleared per match.
   private readonly m_botEconomy = new Map<CTank, CEconomy>();
-  private m_mapName = 'Battlefield';
+  private m_mapName = ''; // set (localised) on each map load; '' pre-load, never surfaced
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
