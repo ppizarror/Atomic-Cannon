@@ -44,6 +44,10 @@ export const en: Strings = {
     notReady: 'Not ready',
     start: 'Start Game',
     waitingHost: 'Waiting for the host to start…',
+    matchSettings: 'Match Settings',
+    windLabel: 'Wind',
+    mapSizeLabel: 'Map Size',
+    windOpts: {calm: 'Calm', normal: 'Normal', strong: 'Strong'},
     needPlayers: 'Waiting for players ({n}/{min})',
     status: {
       connecting: 'Connecting…',

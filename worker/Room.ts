@@ -53,7 +53,13 @@ interface Attachment {
   playerId: number | null;
 }
 
-const DEFAULT_SETTINGS: RoomSettings = {maxPlayers: 6, minPlayers: 2, battles: 2};
+const DEFAULT_SETTINGS: RoomSettings = {
+  maxPlayers: 6,
+  minPlayers: 2,
+  battles: 2,
+  wind: 1,
+  mapSize: 2,
+};
 
 function freshState(code: string): RoomState {
   return {
@@ -270,7 +276,13 @@ export class Room {
   /** Replay the match to one (re)joining socket: boot → latest state → turn/result. */
   private resumeMatch(ws: WebSocket, s: RoomState): void {
     if (s.phase !== 'playing' && s.phase !== 'ended') return;
-    this.send(ws, {t: 'startGame', seed: s.seed, order: s.order});
+    this.send(ws, {
+      t: 'startGame',
+      seed: s.seed,
+      order: s.order,
+      wind: s.settings.wind,
+      mapSize: s.settings.mapSize,
+    });
     if (s.snapshot) {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
     }
@@ -303,6 +315,8 @@ export class Room {
       maxPlayers: clampInt(patch.maxPlayers ?? s.settings.maxPlayers, 2, 8),
       minPlayers: clampInt(patch.minPlayers ?? s.settings.minPlayers, 2, 8),
       battles: clampInt(patch.battles ?? s.settings.battles, 1, 20),
+      wind: clampInt(patch.wind ?? s.settings.wind, 0, 2),
+      mapSize: clampInt(patch.mapSize ?? s.settings.mapSize, 1, 5),
     };
     s.settings = next;
     await this.save(s);
@@ -324,7 +338,13 @@ export class Room {
     s.turnIdx = 0;
     await this.save(s);
 
-    this.broadcast({t: 'startGame', seed: s.seed, order: s.order});
+    this.broadcast({
+      t: 'startGame',
+      seed: s.seed,
+      order: s.order,
+      wind: s.settings.wind,
+      mapSize: s.settings.mapSize,
+    });
     this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
   }
 

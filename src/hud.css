@@ -1875,6 +1875,48 @@ canvas {
 .net-ready.net-notready {
   color: rgba(220, 180, 90, 0.9);
 }
+
+/* Host lobby match settings (wind / map size). */
+.net-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--green-line);
+}
+.net-set-title {
+  opacity: 0.75;
+}
+.net-set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.net-set-label {
+  flex: 0 0 84px;
+}
+.net-seg {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 auto;
+}
+.net-seg-btn {
+  flex: 1 1 auto;
+  padding: 5px 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--green-line);
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+.net-seg-btn:hover {
+  border-color: var(--green-focus);
+}
+.net-seg-btn.net-seg-on {
+  border-color: var(--green-focus);
+  background: rgba(80, 200, 120, 0.18);
+}
 .net-status {
   opacity: 0.8;
 }

@@ -28,6 +28,10 @@ export interface RoomSettings {
   readonly maxPlayers: number;
   readonly minPlayers: number;
   readonly battles: number;
+  /** Host-chosen wind strength: 0 = calm, 1 = normal, 2 = strong. */
+  readonly wind: number;
+  /** Host-chosen map width in viewport-widths (1 = single screen … 5 = widest). */
+  readonly mapSize: number;
 }
 
 /**
@@ -92,7 +96,14 @@ export type ServerMessage =
   | {readonly t: 'roster'; readonly players: readonly PlayerInfo[]}
   | {readonly t: 'settings'; readonly settings: RoomSettings}
   | {readonly t: 'chat'; readonly from: number; readonly text: string}
-  | {readonly t: 'startGame'; readonly seed: number; readonly order: readonly number[]}
+  | {
+      readonly t: 'startGame';
+      readonly seed: number;
+      readonly order: readonly number[];
+      /** Match settings captured at start (so a reconnect rebuilds an identical world). */
+      readonly wind: number;
+      readonly mapSize: number;
+    }
   | {readonly t: 'turnBegin'; readonly playerIdx: number; readonly deadline: number}
   /** The match ended; each client shows the standings (winner computed from synced state). */
   | {readonly t: 'gameOver'}

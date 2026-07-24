@@ -29,6 +29,12 @@ export const SFX = {
   PANEL_OPEN: 'Panel1.wav', // a screen / dialog panel opens
   PANEL_CLOSE: 'Panel3.wav', // …and closes
   START_GAME: 'Mechanismus4.wav', // the Start Game "chunk" as a battle launches
+  // Front-end menu polish. The original preloaded these alongside click/Start Game as
+  // its "menu" sound set but never wired their play calls (dead in the shipped build);
+  // we give them the menu homes their grouping and character imply.
+  MENU_HOVER: 'Pacdot2.wav', // blip as the highlighted menu item changes
+  MENU_FORWARD: 'Mechanismus1.wav', // navigating INTO a menu screen (Play / Settings / …)
+  MENU_BACK: 'Mechanismus2.wav', // …and Back to the main menu
   FIREWORK: ['Slapthunder1.wav', 'Slapthunder2.wav'] as const,
 } as const;
 
@@ -172,6 +178,12 @@ export class CAudio {
     void this.m_sfx.preload(COMBAT_PRELOAD);
   }
 
+  /** Preload the front-end menu effect set (fire-and-forget) so the first hover /
+   *  navigation isn't a silent cache miss. Idempotent — buffers are cached. */
+  preloadMenu(): void {
+    void this.m_sfx.preload([SFX.MENU_HOVER, SFX.MENU_FORWARD, SFX.MENU_BACK, SFX.CLICK]);
+  }
+
   // ── Semantic game events (the play funnel) ──────────────────────────────────
 
   /** Weapon fire — the weapon's `soundFire` string, panned to the muzzle. */
@@ -243,6 +255,22 @@ export class CAudio {
     this.m_sfx.play(SFX.START_GAME);
   }
 
+  /** Blip as the highlighted main-menu item changes (throttled, so a fast sweep
+   *  across items doesn't machine-gun). */
+  menuHover(): void {
+    this.m_sfx.play(SFX.MENU_HOVER);
+  }
+
+  /** Mechanical whirr when navigating INTO a menu screen from the main menu. */
+  menuForward(): void {
+    this.m_sfx.play(SFX.MENU_FORWARD);
+  }
+
+  /** …and its counterpart when stepping Back to the main menu. */
+  menuBack(): void {
+    this.m_sfx.play(SFX.MENU_BACK);
+  }
+
   /** A keystroke while typing a name (Customize Players). */
   typingSound(): void {
     this.m_sfx.play(SFX.TYPING);
@@ -251,6 +279,7 @@ export class CAudio {
   // ── Music ────────────────────────────────────────────────────────────────
 
   menuMusic(): void {
+    this.preloadMenu(); // warm the menu SFX so the first hover / click isn't silent
     void this.m_music.play(MENU_MUSIC, true);
   }
 

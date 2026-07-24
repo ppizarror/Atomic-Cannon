@@ -18,7 +18,7 @@ const initialState: RoomClientState = {
   code: '',
   youId: null,
   players: [],
-  settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+  settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2},
   isHost: false,
   lastError: null,
 };
@@ -84,6 +84,10 @@ export function joinRoom(raw: string): void {
 
 export const setReady = (ready: boolean): void => client?.setReady(ready);
 export const startMatch = (): void => client?.startMatch();
+
+/** Host-only: change a lobby match setting (wind / map size); broadcast to everyone. */
+export const updateSettings = (patch: Partial<RoomClientState['settings']>): void =>
+  client?.updateSettings(patch);
 
 /** Leave the room and reset the screen back to the entry state. */
 export function leaveRoom(): void {

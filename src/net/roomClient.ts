@@ -53,7 +53,13 @@ export interface RoomClientOptions {
   onGameMessage?: (msg: ServerMessage) => void;
 }
 
-const DEFAULT_SETTINGS: RoomSettings = {maxPlayers: 6, minPlayers: 2, battles: 2};
+const DEFAULT_SETTINGS: RoomSettings = {
+  maxPlayers: 6,
+  minPlayers: 2,
+  battles: 2,
+  wind: 1,
+  mapSize: 2,
+};
 
 /** ws(s):// URL for a room code on a given http(s) origin. */
 export function roomUrl(origin: string, code: string): string {

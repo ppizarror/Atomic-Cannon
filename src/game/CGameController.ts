@@ -355,7 +355,7 @@ export interface ActiveTaunt {
  */
 const NET_VIEW_W = 1280;
 const NET_VIEW_H = 720;
-const NET_LAND_SCALE = 2;
+const NET_LAND_SCALE = 2; // default net world width until the host picks a map size
 
 /** Authoritative per-turn state shared between clients in a network match. */
 export interface NetSnapshot {
@@ -382,10 +382,11 @@ export class CGameController implements ShotWorld {
   // ========================================================================
 
   constructor(canvas: HTMLCanvasElement) {
-    this.m_canvas = canvas;
     this.m_ctx = canvas.getContext('2d')!;
-    this.m_nativeCanvasW = canvas.width; // native (solo) scene size, restored after a net match
-    this.m_nativeCanvasH = canvas.height;
+    this.m_viewW = canvas.width; // logical view size (solo default = boot window size)
+    this.m_viewH = canvas.height;
+    this.m_displayW = canvas.width; // live native display size (main keeps it current)
+    this.m_displayH = canvas.height;
 
     // Large maps: the WORLD can be several viewports wide (Land Size); the scene
     // canvas is the VIEW. World width = viewWidth × landScale (1 = no scroll);
@@ -442,9 +443,14 @@ export class CGameController implements ShotWorld {
       this.m_terrainSeed = null;
       this.m_netRoster = null;
       this.m_onNetTurnEnd = null;
-      // Restore the native (window) scene size a prior net match may have overridden.
-      this.resizeSceneCanvas(this.m_nativeCanvasW, this.m_nativeCanvasH);
     }
+
+    // Fix the LOGICAL world/view size for this match. A net match uses a shared constant
+    // so every client's heightmap has the same length; solo captures the live canvas size
+    // at match start (native "OG" detail). draw() scales this to the native canvas — a later
+    // window resize only re-scales the render, it never rebuilds the world.
+    this.m_viewW = this.m_netMode ? NET_VIEW_W : this.m_displayW;
+    this.m_viewH = this.m_netMode ? NET_VIEW_H : this.m_displayH;
 
     // Reset state
     this.m_simAccum = 0; // fresh fixed-timestep accumulator
@@ -465,12 +471,12 @@ export class CGameController implements ShotWorld {
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
     // land + bounds if the size changed since the last match.
-    const worldW = Math.round(this.m_canvas.width * this.landScale());
+    const worldW = Math.round(this.m_viewW * this.landScale());
     if (worldW !== this.m_worldWidth) {
       this.m_worldWidth = worldW;
-      GameConfig.worldScale = worldW / this.m_canvas.width;
-      this.m_land = new CLand(worldW, this.m_canvas.height);
-      this.m_particles.setBounds(worldW, this.m_canvas.height);
+      GameConfig.worldScale = worldW / this.m_viewW;
+      this.m_land = new CLand(worldW, this.m_viewH);
+      this.m_particles.setBounds(worldW, this.m_viewH);
     }
 
     // Seed the gameplay RNG from the match seed (shared in a network match → identical
@@ -1020,7 +1026,7 @@ export class CGameController implements ShotWorld {
 
   /** Land-Size scale (1..5); world width = viewWidth × scale. */
   private landScale(): number {
-    if (this.m_netMode) return NET_LAND_SCALE; // fixed across clients (world width must match)
+    if (this.m_netMode) return this.m_netLandScale; // host-chosen, shared across clients
     return clamp(Math.round(GameConfig.landSize), 1, 5);
   }
 
@@ -1031,7 +1037,7 @@ export class CGameController implements ShotWorld {
    * canvas so it always tracks the current window size (no resize-timing state to keep in sync).
    */
   get blastScale(): number {
-    return this.computeBlastScale(this.m_canvas.width, this.m_canvas.height);
+    return this.computeBlastScale(this.m_viewW, this.m_viewH);
   }
 
   /**
@@ -1052,7 +1058,7 @@ export class CGameController implements ShotWorld {
 
   /** Widest the camera can scroll; 0 when the world fits the view (no scroll). */
   private maxCamX(): number {
-    return Math.max(0, this.m_worldWidth - this.m_canvas.width);
+    return Math.max(0, this.m_worldWidth - this.m_viewW);
   }
 
   private clampCamX(x: number): number {
@@ -1104,9 +1110,7 @@ export class CGameController implements ShotWorld {
       return;
     }
     if (GameConfig.autoScroll && !this.m_manualScroll) {
-      this.m_camTargetX = this.clampCamX(
-        this.cameraFollowX() - this.m_canvas.width * CAMERA_CENTER,
-      );
+      this.m_camTargetX = this.clampCamX(this.cameraFollowX() - this.m_viewW * CAMERA_CENTER);
       const step = CAMERA_SCROLL_SPEED * dt;
       const d = this.m_camTargetX - this.m_camX;
       this.m_camX = Math.abs(d) <= step ? this.m_camTargetX : this.m_camX + Math.sign(d) * step;
@@ -1116,7 +1120,7 @@ export class CGameController implements ShotWorld {
 
   /** Snap the camera to centre `worldX` immediately (battle start / recenter). */
   private centerCameraOn(worldX: number): void {
-    this.m_camTargetX = this.clampCamX(worldX - this.m_canvas.width * CAMERA_CENTER);
+    this.m_camTargetX = this.clampCamX(worldX - this.m_viewW * CAMERA_CENTER);
     this.m_camX = this.m_camTargetX;
   }
 
@@ -1126,6 +1130,9 @@ export class CGameController implements ShotWorld {
   draw(): void {
     const ctx = this.m_ctx;
 
+    // The scene canvas IS the logical world (m_viewW × m_viewH); the compositor stretches it
+    // to the display (GPU, linear-filtered — no CPU-scale moiré on the pixel terrain).
+
     // Apply screen shake offset
     const shakeOffset = this.m_screenShake.getOffset();
     ctx.save();
@@ -1134,15 +1141,15 @@ export class CGameController implements ShotWorld {
     // Backdrop: real background image once loaded, else a night-sky gradient.
     const bg = this.m_assets.getSprite('bg');
     if (bg) {
-      ctx.drawImage(bg.bitmap, 0, 0, this.m_canvas.width, this.m_canvas.height);
+      ctx.drawImage(bg.bitmap, 0, 0, this.m_viewW, this.m_viewH);
     } else {
-      const skyGradient = ctx.createLinearGradient(0, 0, 0, this.m_canvas.height - 120);
+      const skyGradient = ctx.createLinearGradient(0, 0, 0, this.m_viewH - 120);
       skyGradient.addColorStop(0, '#1a1a2e'); // Dark night
       skyGradient.addColorStop(0.6, '#16213e'); // Mid blue
       skyGradient.addColorStop(1, '#0f3460'); // Horizon
 
       ctx.fillStyle = skyGradient;
-      ctx.fillRect(0, 0, this.m_canvas.width, this.m_canvas.height);
+      ctx.fillRect(0, 0, this.m_viewW, this.m_viewH);
 
       // Draw stars (subtle background)
       this.drawStars(ctx);
@@ -1251,7 +1258,7 @@ export class CGameController implements ShotWorld {
       ctx.globalCompositeOperation = 'soft-light';
       ctx.globalAlpha = 0.55;
       ctx.fillStyle = `rgb(${this.m_ambient.r},${this.m_ambient.g},${this.m_ambient.b})`;
-      ctx.fillRect(0, 0, this.m_canvas.width, this.m_canvas.height);
+      ctx.fillRect(0, 0, this.m_viewW, this.m_viewH);
       ctx.restore();
     }
 
@@ -1278,6 +1285,9 @@ export class CGameController implements ShotWorld {
    * + camera transform as draw() so it stays pixel-aligned with the world.
    */
   drawOverlay(octx: CanvasRenderingContext2D): void {
+    // Caller pre-scales octx from logical → screen (the fx overlay spans the whole
+    // window, but the world maps only to the container region above the HUD, so the
+    // scale must use the container size — done in the caller, not here).
     octx.save();
     const shake = this.m_screenShake.getOffset();
     octx.translate(shake.x, shake.y);
@@ -1312,10 +1322,10 @@ export class CGameController implements ShotWorld {
    * active player's dot gets a white outline). Screen-space, with drag-to-pan.
    */
   private drawMinimap(ctx: CanvasRenderingContext2D): void {
-    const Vw = this.m_canvas.width;
+    const Vw = this.m_viewW;
     const W = this.m_worldWidth;
     if (W <= Vw) return; // no scroll → no minimap
-    const Vh = this.m_canvas.height;
+    const Vh = this.m_viewH;
     const r = this.minimapRect();
     const {m, width, height} = r;
     const sx = width / W; // world → minimap X
@@ -1375,14 +1385,14 @@ export class CGameController implements ShotWorld {
    * life lines sit to the RIGHT of the overview strip.
    */
   getMinimapRightFrac(): number {
-    if (this.m_worldWidth <= this.m_canvas.width) return 0;
+    if (this.m_worldWidth <= this.m_viewW) return 0;
     const r = this.minimapRect();
-    return (r.m + r.width + 6) / this.m_canvas.width;
+    return (r.m + r.width + 6) / this.m_viewW;
   }
 
   /** True when scene-pixel (px, py) is inside the minimap strip (false if no minimap). */
   hitMinimap(px: number, py: number): boolean {
-    if (this.m_worldWidth <= this.m_canvas.width) return false;
+    if (this.m_worldWidth <= this.m_viewW) return false;
     const r = this.minimapRect();
     return px >= r.m && px <= r.m + r.width && py >= r.m && py <= r.m + r.height;
   }
@@ -1393,11 +1403,11 @@ export class CGameController implements ShotWorld {
    * grab cursor and starts a pan; the rest of the strip is inert.
    */
   hitMinimapBox(px: number, py: number): boolean {
-    if (this.m_worldWidth <= this.m_canvas.width) return false;
+    if (this.m_worldWidth <= this.m_viewW) return false;
     const r = this.minimapRect();
     const sx = r.width / this.m_worldWidth;
     const boxX = r.m + this.m_camX * sx;
-    const boxW = this.m_canvas.width * sx;
+    const boxW = this.m_viewW * sx;
     return px >= boxX && px <= boxX + boxW && py >= r.m && py <= r.m + r.height;
   }
 
@@ -1408,9 +1418,9 @@ export class CGameController implements ShotWorld {
    * yields until the next fire/turn.
    */
   panFromMinimap(px: number): void {
-    if (this.m_worldWidth <= this.m_canvas.width) return;
+    if (this.m_worldWidth <= this.m_viewW) return;
     const r = this.minimapRect();
-    const cam = ((px - r.m) / r.width) * this.m_worldWidth - this.m_canvas.width * CAMERA_CENTER;
+    const cam = ((px - r.m) / r.width) * this.m_worldWidth - this.m_viewW * CAMERA_CENTER;
     this.m_camX = this.m_camTargetX = this.clampCamX(cam);
     this.m_manualScroll = true;
     this.markDirty();
@@ -1423,7 +1433,7 @@ export class CGameController implements ShotWorld {
    * over-elongated.
    */
   private minimapRect(): {m: number; width: number; height: number} {
-    const Vw = this.m_canvas.width;
+    const Vw = this.m_viewW;
     const m = Vw < 240 ? 2 : Vw > 320 ? 4 : 3;
     const height = Vw < 240 ? 24 : Vw > 320 ? 64 : 29;
     const width = Math.floor(Vw / 2 - (Vw < 240 ? 8 : 19));
@@ -1442,8 +1452,8 @@ export class CGameController implements ShotWorld {
   private drawShotNotches(ctx: CanvasRenderingContext2D): void {
     const live = this.m_shots.filter(s => !s.isDead());
     if (live.length === 0) return;
-    const W = this.m_canvas.width,
-      H = this.m_canvas.height;
+    const W = this.m_viewW,
+      H = this.m_viewH;
     const up = this.m_assets.getSprite('gui/notch-center'); // rising  → arrow up
     const down = this.m_assets.getSprite('gui/notch-decent'); // falling → arrow down
     const left = this.m_assets.getSprite('gui/notch-left');
@@ -1639,8 +1649,8 @@ export class CGameController implements ShotWorld {
    *  bubble over its final TAUNT_FADE seconds. */
   getActiveTaunts(): ActiveTaunt[] {
     if (!this.m_bubbles.length) return [];
-    const vw = this.m_canvas.width,
-      vh = this.m_canvas.height;
+    const vw = this.m_viewW,
+      vh = this.m_viewH;
     return this.m_bubbles.map(b => {
       const p = b.speaker.getPosition();
       const remain = TAUNT_LIFE - b.age;
@@ -1929,7 +1939,7 @@ export class CGameController implements ShotWorld {
       loadBurstPixels(); // shapes not sampled yet — kick off the load and skip this beat
       return;
     }
-    const vw = this.m_canvas.width;
+    const vw = this.m_viewW;
     const margin = 32 * FW_SCALE; // keep the whole 64px burst on screen
     const cx = this.m_camX + margin + Math.random() * Math.max(1, vw - 2 * margin);
     const ground = this.m_land.getHeightAt(cx); // terrain surface — the launch pad
@@ -3785,6 +3795,10 @@ export class CGameController implements ShotWorld {
     players: number;
     localIndex: number;
     roster: {name: string; color: string}[];
+    /** Host wind strength: 0 = calm, 1 = normal, 2 = strong. */
+    wind: number;
+    /** Host map width in viewport-widths (1..5). */
+    mapSize: number;
     onTurnEnd?: () => void;
     onCommand?: (cmd: GameCommand) => void;
   }): void {
@@ -3795,9 +3809,9 @@ export class CGameController implements ShotWorld {
     this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
     this.m_onNetCommand = opts.onCommand ?? null;
     this.m_landMode = -1; // shape is random-from-seed (deterministic), not a local override
-    // Fix the scene/world to a shared logical resolution BEFORE the world is built, so
-    // every client's heightmap has the same length regardless of their window size.
-    this.resizeSceneCanvas(NET_VIEW_W, NET_VIEW_H);
+    this.m_netLandScale = clamp(Math.round(opts.mapSize), 1, 5); // shared world width
+    // The shared logical view size (NET_VIEW_W/H) is applied in startGame → every client
+    // builds the same-length heightmap; draw() scales it to each client's native canvas.
 
     // A network match is authoritative and IDENTICAL on every client, so it ignores all
     // local dev/URL switches a player may have set (?flatland, ?weapontest, ?weaponsel,
@@ -3809,6 +3823,12 @@ export class CGameController implements ShotWorld {
     GameConfig.demo = false; // demo/attract mode
     CLand.debugMaterials = false; // ?skiptexture
     this.m_speedScale = 1; // game speed must match across clients (fixed-step determinism)
+    // Wind is host-chosen and must be identical + deterministic on every client. Force the
+    // shared strength, a constant per-game wind (seeded, so no local Change-Wind mode drifts
+    // it), and the Linear model (Realistic gusts breathe over wall-clock time — a desync risk).
+    this.m_windScale = clamp(Math.round(opts.wind), 0, 2);
+    GameConfig.changeWind = 0; // Per-game: wind set once from the seed, constant all match
+    GameConfig.windModel = 0; // Linear (uniform) — no time-based gusts
     // Free-fire in network: every weapon is available and firing consumes nothing. This
     // lets every client simulate any weapon a peer fires without syncing per-tank
     // inventories (networked economy is a later enhancement).
@@ -3821,19 +3841,24 @@ export class CGameController implements ShotWorld {
     this.m_bootingNet = false;
   }
 
-  /** The presenter (compositor + FX overlay) registers here to refresh after the scene
-   *  canvas is resized (entering / leaving a network match). */
-  setViewResizeHook(fn: () => void): void {
-    this.m_onViewResize = fn;
+  /** The fixed LOGICAL view/world size (px). The sim, camera, terrain and physics all
+   *  work in these coordinates; `draw()` scales them to the live native canvas. Solo =
+   *  the boot window size ("OG" native detail); network = a shared constant so every
+   *  client's heightmap has the same length. Fixed after startGame (a window resize only
+   *  changes the render scale, never the world). */
+  getViewWidth(): number {
+    return this.m_viewW;
+  }
+  getViewHeight(): number {
+    return this.m_viewH;
   }
 
-  /** Resize the scene canvas (the render target = world view) and notify the presenter.
-   *  No-op if already that size. */
-  private resizeSceneCanvas(w: number, h: number): void {
-    if (this.m_canvas.width === w && this.m_canvas.height === h) return;
-    this.m_canvas.width = w;
-    this.m_canvas.height = h;
-    this.m_onViewResize?.();
+  /** The live NATIVE display size (container px). main keeps this current on every resize; a
+   *  solo match captures it at start as its logical world size (so the world fills the window
+   *  crisply). Does NOT resize a match already in progress — only the next startGame reads it. */
+  setDisplaySize(w: number, h: number): void {
+    this.m_displayW = Math.max(1, Math.round(w));
+    this.m_displayH = Math.max(1, Math.round(h));
   }
 
   /** True while it is the local player's turn in a network match (drives input/HUD). */
@@ -3944,8 +3969,7 @@ export class CGameController implements ShotWorld {
       g.update(dt, this.m_effWind, this.m_windGroundAt);
       const p = g.getPosition();
       if (g.isDead()) return false;
-      if (p.x < -50 || p.x > this.m_worldWidth + 50 || p.y > this.m_canvas.height + 50)
-        return false;
+      if (p.x < -50 || p.x > this.m_worldWidth + 50 || p.y > this.m_viewH + 50) return false;
       return p.y < this.m_land.getHeightAt(p.x); // still above ground
     });
     this.markDirty();
@@ -4501,7 +4525,6 @@ export class CGameController implements ShotWorld {
   // MEMBER VARIABLES
   // ========================================================================
 
-  private m_canvas: HTMLCanvasElement;
   private m_ctx: CanvasRenderingContext2D;
 
   // Large-map camera (horizontal only). The world is `m_worldWidth` px wide; the
@@ -4537,15 +4560,18 @@ export class CGameController implements ShotWorld {
   private m_onNetTurnEnd: (() => void) | null = null;
   private m_onNetCommand: ((cmd: GameCommand) => void) | null = null;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
+  private m_netLandScale = NET_LAND_SCALE; // host-chosen net world width (viewport-widths)
   // netMode: a turn's action (shot/move/utility) is mid-resolution. The net bridge holds
   // the server's next `turnBegin` until this clears, so a late hand-off can't interrupt
   // an in-flight local simulation.
   private m_netShotResolving = false;
-  // Scene-canvas (view) size decoupling: a net match forces a fixed logical resolution;
-  // native size is restored for solo. The hook lets the presenter refresh (compositor + FX).
-  private m_nativeCanvasW = 0;
-  private m_nativeCanvasH = 0;
-  private m_onViewResize: (() => void) | null = null;
+  // Fixed LOGICAL view/world dimensions (px), decoupled from the render canvas. The sim
+  // works in these; draw() scales them to the live native canvas so a resize stays crisp
+  // and never regenerates the world. Set in startGame (solo = boot size, net = constant).
+  private m_viewW = 1;
+  private m_viewH = 1;
+  private m_displayW = 1;
+  private m_displayH = 1;
   // Draw-only projectiles a spectator flies from a relayed fire — pure visual (the
   // authoritative snapshot does the real damage/terrain); never carve or hit.
   private m_ghostShots: CShot[] = [];

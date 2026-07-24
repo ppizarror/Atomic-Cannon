@@ -111,7 +111,10 @@ export function openSettings(from: 'pause' | 'menu'): void {
   settingsPage.value = 'root';
   showPause.value = false;
   screen.value = 'settings';
-  uiOpen();
+  // From the main menu this is a menu navigation (Mechanismus forward); from the
+  // in-battle pause menu it's a dialog panel opening over the frozen battle.
+  if (from === 'menu') uiMenuForward();
+  else uiOpen();
 }
 
 /** Enter a category's option page (from the Settings root). */
@@ -131,10 +134,11 @@ export function closeSettings(): void {
   if (settingsOrigin.value === 'pause') {
     screen.value = 'battle';
     showPause.value = true;
+    uiClose();
   } else {
     screen.value = 'menu';
+    uiMenuBack(); // returning to the main menu — the menu "back" whirr
   }
-  uiClose();
 }
 
 /** Enter the main menu: freeze the battle behind it and play menu music. We freeze
@@ -176,7 +180,7 @@ export function startBattle(): void {
 /** Play → open the game-setup screen (the "Play" config page). */
 export function openPlaySetup(): void {
   screen.value = 'setup';
-  uiClick();
+  uiMenuForward();
 }
 
 /** Quick Play → start immediately with the last-used setup. */
@@ -187,7 +191,7 @@ export function quickPlay(): void {
 /** Main menu → Network Game (create / join a room). */
 export function openNetworkGame(): void {
   screen.value = 'network';
-  uiClick();
+  uiMenuForward();
 }
 
 /** A plain 2-player battle (dev URL affordances + boot) — does not touch the setup. */
@@ -199,23 +203,23 @@ export function playNewGame(): void {
 /** Main menu → About, and back. */
 export function openAbout(): void {
   screen.value = 'about';
-  uiClick();
+  uiMenuForward();
 }
 
 /** Main menu → Manual (the how-to-play document), and back. */
 export function openManual(): void {
   screen.value = 'manual';
-  uiClick();
+  uiMenuForward();
 }
 
 /** Main menu → High Scores (the Battle Heroes hall of fame). */
 export function openHighScores(): void {
   screen.value = 'highscores';
-  uiClick();
+  uiMenuForward();
 }
 export function backToMenu(): void {
   screen.value = 'menu';
-  uiClick();
+  uiMenuBack();
 }
 
 /** Quit the current battle back to the main menu (UI). */
@@ -388,6 +392,20 @@ export function uiClose(): void {
 /** A keystroke while typing a name (typing.wav). */
 export function uiTyping(): void {
   controller?.getAudio()?.typingSound();
+}
+
+/** Front-end menu polish sounds (Pacdot2 / Mechanismus1 / Mechanismus2). */
+/** Blip as the highlighted menu item changes (menu-list hover). */
+export function uiMenuHover(): void {
+  controller?.getAudio()?.menuHover();
+}
+/** Navigating INTO a menu screen from the main menu (Play / Settings / About / …). */
+export function uiMenuForward(): void {
+  controller?.getAudio()?.menuForward();
+}
+/** Stepping Back to the main menu. */
+export function uiMenuBack(): void {
+  controller?.getAudio()?.menuBack();
 }
 
 /** Copy the current game state into the signals (called each frame). */

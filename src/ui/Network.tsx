@@ -7,7 +7,7 @@
 import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
-import {goToMenu} from './store';
+import {goToMenu, uiMenuBack} from './store';
 import {formatRoomCode, formatCodeInput} from '../net/roomCode';
 import {
   netState,
@@ -17,6 +17,7 @@ import {
   joinRoom,
   setReady,
   startMatch,
+  updateSettings,
   leaveRoom,
   resetNet,
 } from './networkStore';
@@ -40,6 +41,7 @@ function BigButton({
 function toMenu(): void {
   resetNet();
   goToMenu();
+  uiMenuBack(); // match the other screens' "back to menu" whirr
 }
 
 function Entry() {
@@ -143,6 +145,60 @@ function CodeDisplay({code}: {code: string}) {
   );
 }
 
+/**
+ * Host-only match settings shown in the lobby: wind strength and map size. Both broadcast
+ * to every client and are captured at Start so the world is identical (and deterministic)
+ * on all machines. Non-hosts see the same values read-only via the roster/summary.
+ */
+function MatchSettings() {
+  const n = strings.value.net;
+  const s = netState.value;
+  if (!s.isHost) return null;
+  const windLabels = [n.windOpts.calm, n.windOpts.normal, n.windOpts.strong];
+
+  return (
+    <div class="net-settings">
+      <div class="net-set-title">
+        <BmpText font="beijing-16-out" text={n.matchSettings} spacing={-1} />
+      </div>
+
+      <div class="net-set-row">
+        <span class="net-set-label">
+          <BmpText font="beijing-16-out" text={n.windLabel} spacing={-1} />
+        </span>
+        <div class="net-seg">
+          {windLabels.map((label, i) => (
+            <button
+              key={i}
+              class={`net-seg-btn ${s.settings.wind === i ? 'net-seg-on' : ''}`}
+              onClick={() => updateSettings({wind: i})}
+            >
+              <BmpText font="beijing-16-out" text={label} spacing={-1} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="net-set-row">
+        <span class="net-set-label">
+          <BmpText font="beijing-16-out" text={n.mapSizeLabel} spacing={-1} />
+        </span>
+        <div class="net-seg">
+          {[1, 2, 3, 4, 5].map(size => (
+            <button
+              key={size}
+              class={`net-seg-btn ${s.settings.mapSize === size ? 'net-seg-on' : ''}`}
+              onClick={() => updateSettings({mapSize: size})}
+            >
+              <BmpText font="beijing-16-out" text={String(size)} spacing={-1} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Lobby() {
   const n = strings.value.net;
   const s = netState.value;
@@ -182,6 +238,8 @@ function Lobby() {
           </div>
         ))}
       </div>
+
+      <MatchSettings />
 
       <button class="settings-row srow-done menu-btn" onClick={() => setReady(!you?.ready)}>
         <BmpText font="bazouk-28" text={you?.ready ? n.notReady : n.ready} />

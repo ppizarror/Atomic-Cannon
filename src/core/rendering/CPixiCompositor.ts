@@ -93,17 +93,26 @@ export class CPixiCompositor {
    * miss a fast resize, e.g. toggling devtools) and then fits the scene sprite.
    */
   /**
-   * The scene canvas was resized externally (e.g. a network match fixes a shared logical
-   * resolution). Rebuild the GPU texture at the new size and re-fit. World→screen mapping
-   * reads `m_worldW/H`, so update those too.
+   * The scene render target was resized externally (a window resize re-renders the world at
+   * native pixels). Rebuild the GPU texture from the (already-resized) scene canvas and re-fit.
+   * This is the NATIVE pixel size and is independent of the logical world→screen mapping, which
+   * is set separately via setWorldSize().
    */
-  setSceneSize(w: number, h: number): void {
-    this.m_worldW = w;
-    this.m_worldH = h;
+  setSceneSize(): void {
     this.m_sceneTexture.destroy();
     this.m_sceneTexture = Texture.from(this.m_sceneCanvas);
     this.m_scene.texture = this.m_sceneTexture;
     this.resize();
+  }
+
+  /**
+   * Set the LOGICAL world size used to map world coords → screen for the shockwave. This is the
+   * controller's fixed logical view size, not the native canvas size, so a window resize (which
+   * changes only the render resolution) leaves the shockwave placement correct.
+   */
+  setWorldSize(w: number, h: number): void {
+    this.m_worldW = w;
+    this.m_worldH = h;
   }
 
   resize(): void {

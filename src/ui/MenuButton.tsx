@@ -7,6 +7,7 @@
  * handlers to drive the bottom subtitle. `class` is for rare extra styling.
  */
 import {BmpText, type FontId} from './BmpText';
+import {uiMenuHover} from './store';
 
 export function MenuButton({
   label,
@@ -27,7 +28,10 @@ export function MenuButton({
     <button
       class={`menu-btn menu-item ${cls ?? ''}`}
       onClick={onClick}
-      onMouseEnter={onEnter}
+      onMouseEnter={() => {
+        uiMenuHover(); // blip as the highlight lands on this item (pointer only)
+        onEnter?.();
+      }}
       onFocus={onEnter}
       onMouseLeave={onLeave}
       onBlur={onLeave}

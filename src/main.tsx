@@ -85,16 +85,15 @@ async function main(): Promise<void> {
 
   const gameController = new CGameController(scene);
   gameController.setImpactListener((x, y, s) => {
+    // The shockwave maps world→screen against the controller's fixed LOGICAL size (which the
+    // scene is authored in), not the native canvas size, so keep the compositor in sync here.
+    compositor.setWorldSize(gameController.getViewWidth(), gameController.getViewHeight());
     // The impact is in WORLD coords; the compositor warps in scene (screen) pixels,
     // so subtract the camera scroll (Y never scrolls) or a large-map blast warps in
     // the wrong place / off-screen.
     compositor.shockwave(x - gameController.getCameraX(), y, s); // warp the game scene (WebGL)
     triggerHudWave(s); // and ripple the DOM HUD in sync (SVG displacement)
   });
-  // A network match fixes the scene to a shared logical resolution; refresh the compositor
-  // (GPU texture + world→screen mapping) whenever the controller resizes the scene canvas.
-  gameController.setViewResizeHook(() => compositor.setSceneSize(scene.width, scene.height));
-
   // Audio: one shared AudioContext (SFX + libopenmpt .it music), unlocked on the
   // first user gesture per the browser autoplay policy. Wired before startGame so
   // the combat preload + battle track kick off with the round.
@@ -314,10 +313,12 @@ async function main(): Promise<void> {
   // CSS-stretched). The minimap lives here. Adding the camera scroll gives WORLD
   // space, where aiming/hover happen (Y never scrolls).
   const toScene = (e: PointerEvent): [number, number] => {
+    // Map the pointer from CSS pixels into the controller's fixed LOGICAL space
+    // (the container's on-screen size represents getViewWidth × getViewHeight).
     const r = container.getBoundingClientRect();
     return [
-      (e.clientX - r.left) * (scene.width / r.width),
-      (e.clientY - r.top) * (scene.height / r.height),
+      (e.clientX - r.left) * (gameController.getViewWidth() / r.width),
+      (e.clientY - r.top) * (gameController.getViewHeight() / r.height),
     ];
   };
   const toWorld = (e: PointerEvent): [number, number] => {
@@ -411,6 +412,14 @@ async function main(): Promise<void> {
     resizePending = true;
     requestAnimationFrame(() => {
       resizePending = false;
+      // A window resize only re-fits the GPU presentation: the compositor stretches the
+      // fixed logical scene canvas to the new viewport (linear-filtered — smooth, no moiré).
+      // The scene canvas itself stays at the world's logical size (synced in the render loop).
+      // Record the live native size so the NEXT solo match builds its world to fit the window.
+      gameController.setDisplaySize(
+        container.clientWidth || window.innerWidth,
+        container.clientHeight || window.innerHeight,
+      );
       compositor.resize();
       sizeFx(); // keep the FX overlay matched to the viewport
     });
@@ -440,6 +449,16 @@ async function main(): Promise<void> {
 
   compositor.app.ticker.add(ticker => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
+    // Keep the scene render target at the world's LOGICAL size. It only changes when a new
+    // match sets it (solo = the window size at start; net = a fixed shared resolution), so
+    // this is a no-op almost every frame; the compositor stretches it to the live viewport.
+    const vw = gameController.getViewWidth();
+    const vh = gameController.getViewHeight();
+    if (scene.width !== vw || scene.height !== vh) {
+      scene.width = vw;
+      scene.height = vh;
+      compositor.setSceneSize();
+    }
     // advance() runs the sim in fixed timesteps (deterministic; frame-rate-independent).
     if (!pausedSignal.value) gameController.advance(dt);
     // Present-on-demand: the loop always ticks (so the sim keeps advancing), but the
@@ -453,12 +472,15 @@ async function main(): Promise<void> {
     // gate), clearing first so it's transparent everywhere except its own content.
     if (redraw) {
       fxCtx.clearRect(0, 0, fx.width, fx.height);
-      // The scene renders at its own logical size and is stretched to fill the GAME
-      // CONTAINER (window minus the HUD) by the compositor. Map world→container so
-      // badges/damage numbers line up with the presented scene — using the container
-      // size, NOT the full-window FX canvas (1:1 in solo, ≠1 in a fixed-res net match).
+      // The world is authored in the controller's fixed LOGICAL space and presented
+      // stretched to fill the GAME CONTAINER (window minus the HUD). Map logical→container
+      // so badges/damage numbers line up with the presented world — using the container
+      // size, NOT the full-window FX canvas (which also spans the HUD region below).
       fxCtx.save();
-      fxCtx.scale(container.clientWidth / scene.width, container.clientHeight / scene.height);
+      fxCtx.scale(
+        container.clientWidth / gameController.getViewWidth(),
+        container.clientHeight / gameController.getViewHeight(),
+      );
       gameController.drawOverlay(fxCtx);
       fxCtx.restore();
     }

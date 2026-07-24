@@ -94,6 +94,11 @@ export interface Strings {
     notReady: string;
     start: string;
     waitingHost: string;
+    /** Host lobby match settings (wind + map size). */
+    matchSettings: string;
+    windLabel: string;
+    mapSizeLabel: string;
+    windOpts: {calm: string; normal: string; strong: string};
     /** fmt: {n} connected of {min} required. */
     needPlayers: string;
     /** Connection status pills. */
