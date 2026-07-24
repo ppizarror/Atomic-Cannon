@@ -102,7 +102,8 @@ export function closeHelp(): void {
 export const settingsOrigin = signal<'pause' | 'menu'>('pause');
 
 // Which Settings page is showing: 'root' (the category list) or a category id
-// ('economy' | 'tank' | 'gameplay' | 'graphics' | 'graphics2' | 'audio' | 'content').
+// ('economy' | 'tank' | 'gameplay' | 'graphics' | 'audio' | 'content'), optionally with a
+// '~<n>' suffix for an auto-paginated sub-page (e.g. 'graphics~2' = the 3rd graphics page).
 export const settingsPage = signal<string>('root');
 
 /** Open the Settings screen, remembering where to return (pause vs main menu). */

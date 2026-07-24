@@ -8,6 +8,7 @@
  */
 import {PLAYER_TANKS, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import type {PlayerCfg} from '../core/CRoster';
+import {ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 import {strings} from '../i18n';
 import {createPersistedSignal} from './persistedSignal';
 
@@ -18,13 +19,21 @@ export const MAX_PLAYERS = 16;
 
 const KEY = 'atomic.players';
 
-// Default names come from i18n: player 0 is the localised "Player", the rest cycle the
-// human-player name pool (Spider, Ice, … — repeating if the roster runs past it). These
-// seed a fresh roster only; once a name is edited/persisted it is stored verbatim.
+// Default names come from i18n, split by the roster's two pools (see ROSTER_HUMAN_SLOTS): the human
+// slots (0..7) cycle the human name pool (player 0 is the localised "Player"); the bot slots (8..15)
+// cycle the "…Bot" pool (AlphaBot, MechaBot, …), matching how the original names CPU opponents. Both
+// repeat if a pool runs short. These seed a fresh roster only; an edited/persisted name is verbatim.
 function defaultPlayer(i: number): PlayerCfg {
-  const names = strings.value.playerNames;
+  const bot = i >= ROSTER_HUMAN_SLOTS;
+  const botNames = strings.value.botNames;
+  const humanNames = strings.value.playerNames;
+  const name = bot
+    ? botNames[(i - ROSTER_HUMAN_SLOTS) % botNames.length]
+    : i === 0
+      ? strings.value.game.defaultPlayer
+      : humanNames[(i - 1) % humanNames.length];
   return {
-    name: i === 0 ? strings.value.game.defaultPlayer : names[(i - 1) % names.length],
+    name,
     model: PLAYER_TANKS[i % PLAYER_TANKS.length],
     color: TEAM_COLORS[i] ?? DEFAULT_TEAM_COLOR,
   };

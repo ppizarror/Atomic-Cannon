@@ -131,19 +131,6 @@ function gameplayRows(): Widget[] {
     toggle(s.randTurns, 'gp.randTurns'),
     toggle(s.altTurns, 'gp.altTurns'),
     stepper(s.crates, 'gp.crates', 0, 100, 5, pct),
-    {
-      label: s.more.label,
-      tip: s.more.tip,
-      kind: 'nav',
-      get: () => 0,
-      onClick: () => openSettingsPage('gameplay2'),
-    },
-  ];
-}
-
-function gameplay2Rows(): Widget[] {
-  const s = strings.value.settings.gameplay;
-  return [
     stepper(s.updateScale, 'gp.updateScale', 1, 30, 1),
     toggle(s.rcFires, 'gp.rcFires'),
     toggle(s.radiation, 'gp.radiationDamage'),
@@ -192,19 +179,6 @@ function graphicsRows(): Widget[] {
     toggle(s.aiStats, 'gfx.aiStats'),
     toggle(s.teamColor, 'gfx.teamColor'),
     toggle(s.smallBuy, 'gfx.smallBuy'),
-    {
-      label: s.more.label,
-      tip: s.more.tip,
-      kind: 'nav',
-      get: () => 0,
-      onClick: () => openSettingsPage('graphics2'),
-    },
-  ];
-}
-
-function graphics2Rows(): Widget[] {
-  const s = strings.value.settings.graphics;
-  return [
     toggle(s.showTurn, 'gfx.showTurn'),
     toggle(s.blastCircles, 'gfx.blastCircles'),
     toggle(s.showPoints, 'gfx.showPoints'),
@@ -214,22 +188,12 @@ function graphics2Rows(): Widget[] {
     toggle(s.lastAim, 'gfx.lastAim'),
     toggle(s.expWaves, 'gfx.expWaves'),
     toggle(s.camShake, 'gfx.camShake'),
-    toggle(s.explodeLosers, 'gfx.explodeLosers'),
     enumW(s.framerate, 'gfx.framerate'),
     enumW(s.fpsCap, 'gfx.fpsCap'),
-    {
-      label: s.more.label,
-      tip: s.more.tip,
-      kind: 'nav',
-      get: () => 0,
-      onClick: () => openSettingsPage('graphics3'),
-    },
+    toggle(s.demo, 'gfx.demo'),
+    toggle(s.ambientLight, 'gfx.ambientLight'),
+    toggle(s.explodeLosers, 'gfx.explodeLosers'),
   ];
-}
-
-function graphics3Rows(): Widget[] {
-  const s = strings.value.settings.graphics;
-  return [toggle(s.demo, 'gfx.demo'), toggle(s.ambientLight, 'gfx.ambientLight')];
 }
 
 function audioRows(): Widget[] {
@@ -313,27 +277,53 @@ function contentRows(): Widget[] {
   ];
 }
 
+/** Max real options shown on one settings page. Anything longer auto-splits into sub-pages, each
+ *  ending in a free "More Options" nav (the nav itself does NOT count toward the cap). */
+const PAGE_SIZE = 12;
+
+/** Slice a category's full row list to the requested sub-page, appending a "next page" nav to every
+ *  page but the last. The sub-page index rides in the route id as `<base>~<n>` (page 0 = bare id),
+ *  and back always returns to root — matching the flat nav the manual "More …" rows used before. */
+function paginate(base: string, allRows: Widget[], pageIdx: number): Widget[] {
+  const start = pageIdx * PAGE_SIZE;
+  const rows = allRows.slice(start, start + PAGE_SIZE);
+  if (start + PAGE_SIZE < allRows.length) {
+    const c = strings.value.settings.nextPage;
+    rows.push({
+      label: c.label,
+      tip: c.tip,
+      kind: 'nav',
+      get: () => 0,
+      onClick: () => openSettingsPage(`${base}~${pageIdx + 1}`),
+    });
+  }
+  return rows;
+}
+
 export function getSettingsPage(id: string): PageSpec | null {
   const s = strings.value.settings;
-  switch (id) {
+  // Route ids carry an optional `~<page>` suffix for auto-paginated sub-pages.
+  const sep = id.indexOf('~');
+  const base = sep >= 0 ? id.slice(0, sep) : id;
+  const pageIdx = sep >= 0 ? Math.max(0, parseInt(id.slice(sep + 1), 10) || 0) : 0;
+  const paged = (header: string, allRows: Widget[]): PageSpec => ({
+    id,
+    header,
+    rows: paginate(base, allRows, pageIdx),
+  });
+  switch (base) {
     case 'economy':
-      return {id, header: s.economy.header, rows: economyRows()};
+      return paged(s.economy.header, economyRows());
     case 'tank':
-      return {id, header: s.tank.header, rows: tankRows()};
+      return paged(s.tank.header, tankRows());
     case 'gameplay':
-      return {id, header: s.gameplay.header, rows: gameplayRows()};
-    case 'gameplay2':
-      return {id, header: s.gameplay.header, rows: gameplay2Rows()};
+      return paged(s.gameplay.header, gameplayRows());
     case 'graphics':
-      return {id, header: s.graphics.header, rows: graphicsRows()};
-    case 'graphics2':
-      return {id, header: s.graphics.header, rows: graphics2Rows()};
-    case 'graphics3':
-      return {id, header: s.graphics.header, rows: graphics3Rows()};
+      return paged(s.graphics.header, graphicsRows());
     case 'audio':
-      return {id, header: s.audio.header, rows: audioRows()};
+      return paged(s.audio.header, audioRows());
     case 'content':
-      return {id, header: s.content.header, rows: contentRows()};
+      return paged(s.content.header, contentRows());
     default:
       return null;
   }

@@ -80,24 +80,18 @@ export interface Strings {
     nameLabel: string;
     codeLabel: string;
     codePlaceholder: string;
-    joinAction: string;
     creating: string;
     /** Above the room code on the host's lobby. */
     shareHint: string;
     copy: string;
     copied: string;
     lobbyTitle: string;
-    playersLabel: string;
     you: string;
     host: string;
     ready: string;
     notReady: string;
     start: string;
     waitingHost: string;
-    /** Host lobby match settings (wind + map size). */
-    matchSettings: string;
-    windLabel: string;
-    mapSizeLabel: string;
     windOpts: {calm: string; normal: string; strong: string};
     /** The read-only "match settings" dialog shown in the lobby (host's config, for everyone). */
     matchInfo: {
@@ -349,6 +343,8 @@ export interface Strings {
     pageDoneSub: string;
     /** Percent formatter suffix for stepper values — `{n}%`. */
     percent: string;
+    /** Auto-pagination nav row appended when a page overflows the per-page option cap. */
+    nextPage: RowCopy;
 
     economy: {
       header: string;
@@ -388,7 +384,6 @@ export interface Strings {
       updateScale: RowCopy;
       rcFires: RowCopy;
       radiation: RowCopy;
-      more: RowCopy;
     };
     graphics: {
       header: string;
@@ -403,8 +398,6 @@ export interface Strings {
       aiStats: RowCopy;
       teamColor: RowCopy;
       smallBuy: RowCopy;
-      more: RowCopy;
-      // More graphics (page 2)
       showTurn: RowCopy;
       blastCircles: RowCopy;
       showPoints: RowCopy;
@@ -567,7 +560,8 @@ export interface Strings {
    *  separate pool from the bot names. */
   playerNames: readonly string[];
 
-  /** Computer-opponent names — assigned to CPU players, distinct from the human pool. */
+  /** Computer-opponent names — the "…Bot" pool assigned to CPU players; seeds the roster's
+   *  bot-pool slot defaults, distinct from the human name pool. */
   botNames: readonly string[];
 
   /** Default taunt content, editable in the Taunt editor and spoken in-game. */

@@ -11,7 +11,7 @@
 import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
-import {Roster} from '../core/CRoster';
+import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
 import {windProfile, isRealisticWind} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
@@ -514,11 +514,11 @@ export class CGameController implements ShotWorld {
     const MAX_TANKS = 16;
 
     const playerNames = strings.value.playerNames;
-    // Roster layout (Customize Players): slots 0..7 are the HUMAN pool, slots 8..15 the BOT pool
-    // (mirrors MAX_HUMANS/MAX_COMPUTERS and the editor's two sections). A local match with H humans +
-    // C CPUs draws humans from 0..H-1 and bots from 8..8+C-1, so editing "Bot 1" configures the CPU
-    // you actually face. (Network matches use the lobby roster in turn order — no split.)
-    const BOT_POOL_START = 8;
+    // Roster layout (Customize Players): the first ROSTER_HUMAN_SLOTS entries are the HUMAN pool, the
+    // rest the BOT pool (the editor's two sections). A local match with H humans + C CPUs draws humans
+    // from 0..H-1 and bots from the bot pool, so editing "Bot 1" configures the CPU you actually face.
+    // (Network matches use the lobby roster in turn order — no split.)
+    const BOT_POOL_START = ROSTER_HUMAN_SLOTS;
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
     for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
       // In a network match the roster comes from the lobby (same on every client, in

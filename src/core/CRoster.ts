@@ -13,3 +13,9 @@ export interface PlayerCfg {
 }
 
 export const Roster: {players: PlayerCfg[]} = {players: []};
+
+/** The Customize Players roster (16 slots) is split into two pools: slots 0..7 are the HUMAN
+ *  players, slots 8..15 the BOTS. This is the split point (= the human-pool size / MAX_HUMANS), so a
+ *  match draws humans from 0.. and CPUs from here up. It is NOT "half the tank cap" — that MAX_TANKS
+ *  and this are both 8 today is a coincidence; the human/bot boundary is what this names. */
+export const ROSTER_HUMAN_SLOTS = 8;

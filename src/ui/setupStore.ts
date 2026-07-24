@@ -6,6 +6,7 @@
  * (Game Type / Battles / Rounds / Land Size / Difficulty / Wind) live in settingsStore.
  */
 import {createPersistedSignal} from './persistedSignal';
+import {ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 
 const KEY = 'atomic.setup';
 
@@ -14,8 +15,9 @@ const KEY = 'atomic.setup';
 const DEFAULT_SETUP: Setup = {humans: 1, computers: 1, tanksPerTeam: 1};
 const MIN_PLAYERS = 2;
 
-// Ranges from the original's Play page (Humans/Computers 0..8, Tanks 1..5).
-export const MAX_HUMANS = 8;
+// Ranges from the original's Play page (Humans/Computers 0..8, Tanks 1..5). The human/computer
+// caps ARE the roster's two pools (slots 0..7 human, 8..15 bot), so they share one source of truth.
+export const MAX_HUMANS = ROSTER_HUMAN_SLOTS;
 export const MAX_COMPUTERS = 8;
 export const MIN_TANKS_PER_TEAM = 1;
 export const MAX_TANKS_PER_TEAM = 5;

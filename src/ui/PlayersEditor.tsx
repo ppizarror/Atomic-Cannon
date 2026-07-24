@@ -1,6 +1,8 @@
 /**
- * "Customize Players" — the per-player card editor. Paged one player at a time
- * (`< / >`), each with an editable name, a colour picked from the rainbow
+ * "Customize Players" — the per-player card editor. Paged one slot at a time (`< / >`)
+ * through two pools: the human players (slots 1..8), then the bots (slots 1..8) — the
+ * same split the match reads (setupTanks), so a "Bot N" card configures the CPU you
+ * actually face. Each card has an editable name, a colour picked from the rainbow
  * `color pallette.bmp` (with a live swatch), and a tank model cycled through the
  * available hulls (with a recoloured preview). Colour is the player's team identity —
  * players who pick the same colour are teammates. Edits persist (playersStore) and
@@ -111,7 +113,10 @@ export function PlayersEditor() {
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
-          <BmpText font="beijing-16-out" text={fmt(isHuman ? e.playerName : e.botName, {n: slotN})} />
+          <BmpText
+            font="beijing-16-out"
+            text={fmt(isHuman ? e.playerName : e.botName, {n: slotN})}
+          />
           <span class={`player-kind ${isHuman ? 'is-human' : 'is-cpu'}`}>
             <BmpText font="beijing-16-out" text={isHuman ? e.human : e.computer} spacing={-1} />
           </span>
