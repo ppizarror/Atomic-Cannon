@@ -136,6 +136,8 @@ export interface Strings {
     chatPlaceholder: string;
     /** In-battle banner when a lockstep divergence (cheat/desync) is detected. */
     desyncWarning: string;
+    /** In-battle pill shown to a mid-match spectator. */
+    spectating: string;
   };
 
   // ── About card ────────────────────────────────────────────────────────────

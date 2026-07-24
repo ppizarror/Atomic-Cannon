@@ -31,6 +31,14 @@ export const SHOT_DRAG_K = 0.0002;
 //   τ_ours = SHOT_SPEED_SCALE / SHOT_GRAVITY
 export const REF_TIME_SCALE = SHOT_SPEED_SCALE / SHOT_GRAVITY / ((1.5 * 0.1) / 4.9); // ≈ 0.065
 
+// Reference view width for the resolution-normalised launch speed. The world is sized in DISPLAY
+// pixels, so without this a fixed px/s launch speed reaches a shrinking fraction of the world as the
+// screen widens. `launchSpeed` multiplies by √(viewWidth / LAUNCH_REF_WIDTH), so max power (1000)
+// reaches ~2× the world width at 1× land size on EVERY resolution (it "easily passes the other end",
+// matching the original — where power/gravity were in a fixed reference space, not display pixels).
+// Lower this to make max power overshoot even more; raise it for a tighter max range.
+export const LAUNCH_REF_WIDTH = 1000;
+
 /**
  * Muzzle speed for a shot of the given power — the SINGLE source of truth shared by real
  * shots (init/initFromTank), cluster submunitions (WeaponBehavior) and the aim AI (CBotAI),
@@ -38,7 +46,16 @@ export const REF_TIME_SCALE = SHOT_SPEED_SCALE / SHOT_GRAVITY / ((1.5 * 0.1) / 4
  * √worldScale zoom) so scaled maps stay consistent.
  */
 export function launchSpeed(power: number): number {
-  return power * SHOT_SPEED_SCALE * GameConfig.powerScale * Math.sqrt(GameConfig.worldScale);
+  // × √worldScale: the map-size zoom (landSize), same as gravity/wind below. × √(viewWidth/REF):
+  // resolution normalisation, so max-power range is a consistent multiple of the world width at
+  // any display size (fixes "power 1000 can't cross the map" on wide/ultrawide screens).
+  return (
+    power *
+    SHOT_SPEED_SCALE *
+    GameConfig.powerScale *
+    Math.sqrt(GameConfig.worldScale) *
+    Math.sqrt(GameConfig.viewWidth / LAUNCH_REF_WIDTH)
+  );
 }
 
 interface TrailPoint {

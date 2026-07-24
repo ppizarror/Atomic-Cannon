@@ -186,6 +186,7 @@ export class RoomClient {
       case 'cmd':
       case 'stateUpdate':
       case 'chat':
+      case 'desyncFlag':
         this.opts.onGameMessage?.(msg);
         return;
     }

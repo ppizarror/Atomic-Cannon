@@ -22,6 +22,13 @@ export const GameConfig = {
   // scale would over-tall the arc; √ keeps range strong AND the arc on-screen.
   worldScale: 1,
 
+  // Live view width in px (set at map load). Our world is sized in DISPLAY pixels, but the launch
+  // SPEED was a fixed px/s — so a full-power shot's range (a fixed ~2000px) covered a shrinking
+  // fraction of the world as the display widened (on an ultrawide it couldn't even cross the map).
+  // `launchSpeed` scales by √(viewWidth / LAUNCH_REF_WIDTH) so max-power range is a consistent
+  // multiple of the world width at every resolution. Default = the reference (no change when unset).
+  viewWidth: 1000,
+
   // (Blast SIZE scale is a DERIVED render value — `CGameController.blastScale`, off the live canvas —
   // NOT a setting, so it does not live here. `worldScale` below IS kept here: shot PHYSICS read it.)
 

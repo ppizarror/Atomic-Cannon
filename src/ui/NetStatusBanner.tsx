@@ -5,7 +5,7 @@
  * looking frozen. Clears itself the moment everyone is back.
  */
 import {screen} from './store';
-import {netState, netDesync, leaveMatch} from './networkStore';
+import {netState, netDesync, netSpectating, leaveMatch} from './networkStore';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 
@@ -31,7 +31,16 @@ export function NetStatusBanner() {
   // connection banner is up. We keep our own trusted state, so this is a warning, not a stall.
   if (!text && netDesync.value) text = n.desyncWarning;
 
-  if (!text) return null;
+  // Nothing wrong, but we're a spectator → a neutral, persistent "Spectating" tag (not the amber
+  // trouble banner). Trouble/desync text takes precedence when present.
+  if (!text) {
+    if (!netSpectating.value) return null;
+    return (
+      <div class="net-banner net-banner-info">
+        <BmpText font="beijing-16-out" text={n.spectating} spacing={-1} />
+      </div>
+    );
+  }
   return (
     <div class="net-banner">
       <BmpText font="beijing-16-out" text={text} spacing={-1} />

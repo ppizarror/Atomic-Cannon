@@ -41,6 +41,9 @@ export const netState = signal<RoomClientState>(initialState);
  *  a warning banner. Sticky for the match (cleared on a fresh room). */
 export const netDesync = signal(false);
 
+/** True when this client joined an in-progress match as a spectator (watching, no turn). */
+export const netSpectating = signal(false);
+
 /** One line in the in-match chat log. */
 export interface ChatMsg {
   seq: number;
@@ -89,6 +92,7 @@ function makeClient(): RoomClient {
   configPublished = false;
   chatLog.value = []; // fresh transcript per room
   netDesync.value = false; // clear any prior match's divergence flag
+  netSpectating.value = false;
   const c = new RoomClient({
     identity: {name: playerName.value.trim() || 'Player', color: roster.value[0]?.color},
     appVersion: __APP_VERSION__,
@@ -104,6 +108,9 @@ function makeClient(): RoomClient {
     onGameMessage: msg => {
       // Chat is a UI concern, not a game-sim message — capture it here; NetGame ignores it.
       if (msg.t === 'chat') return pushChat(msg.from, msg.text);
+      // The server flagged the whole match as contested (someone reported a divergence) — surface
+      // it on this client too, even if WE weren't the one who detected the mismatch.
+      if (msg.t === 'desyncFlag') return void (netDesync.value = true);
       netGame?.handle(msg);
     },
   });
@@ -115,6 +122,7 @@ function makeClient(): RoomClient {
       screen.value = 'battle';
       game().setPaused(false);
       paused.value = false;
+      netSpectating.value = game().isNetSpectator(); // joined mid-match with no turn slot
     },
     // True lockstep: we detected a peer's keyframe disagree with our own result. Keep our state,
     // flag it for the player, and report it so the server can log the divergent match.

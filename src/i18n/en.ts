@@ -85,6 +85,7 @@ export const en: Strings = {
     endMatch: 'End match',
     chatPlaceholder: 'Press Enter to chat…',
     desyncWarning: 'Game state out of sync with another player',
+    spectating: 'Spectating',
   },
 
   about: {

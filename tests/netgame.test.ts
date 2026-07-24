@@ -683,6 +683,29 @@ describe('NetGame bridge', () => {
     expect(gc.isLocalNetTurn()).toBe(true);
   });
 
+  it('spectator: a client not in the turn order boots as a watcher and never owns a turn', () => {
+    const {gc, ng, started} = harness(9); // youId 9 is NOT in order [1,2] → a late-join spectator
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      tanksPerTeam: 1,
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
+    expect(started()).toBe(true);
+    expect(gc.isNetSpectator()).toBe(true); // local index resolved to -1, not clamped to 0
+    gc.netSetActivePlayer(0);
+    expect(gc.isLocalNetTurn()).toBe(false);
+    gc.netSetActivePlayer(1);
+    expect(gc.isLocalNetTurn()).toBe(false); // no tank is ever ours
+  });
+
   it('turnBegin advances the active player', () => {
     const {gc, ng} = harness(1);
     ng.handle({

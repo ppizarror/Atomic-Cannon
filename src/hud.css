@@ -2013,6 +2013,11 @@ canvas {
   pointer-events: none;
   white-space: nowrap;
 }
+/* Neutral variant (e.g. "Spectating") — green theme, not the amber trouble colours. */
+.net-banner-info {
+  background: rgba(10, 60, 25, 0.82);
+  border-color: var(--green-focus);
+}
 /* The action button re-enables input on itself (the banner is click-through). */
 .net-banner-btn {
   pointer-events: auto;

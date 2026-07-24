@@ -177,7 +177,9 @@ export class NetGame {
       name: byId.get(id)?.name ?? `Player ${id}`,
       color: TEAM_HEX[i % TEAM_HEX.length],
     }));
-    const localIndex = Math.max(0, order.indexOf(st.youId ?? -1));
+    // A local index of -1 means we're NOT in the turn order — i.e. a mid-match spectator. Keep it
+    // -1 (don't clamp to 0): isLocalNetTurn then never fires, so we watch without ever controlling.
+    const localIndex = order.indexOf(st.youId ?? -1);
 
     this.host.controller.startNetworkGame({
       seed,

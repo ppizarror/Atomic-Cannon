@@ -30,7 +30,13 @@ interface StoredPlayer {
   token: string; // reconnect secret (never sent to other clients)
   connected: boolean;
   isHost: boolean;
+  /** A late joiner who is watching, not playing: never in `order`, never gets a turn, and never
+   *  counts toward the playable population (start/min/end checks). Can chat and reconnect. */
+  spectator?: boolean;
 }
+
+/** Max spectators who may watch one in-progress match (separate from the player cap). */
+const MAX_SPECTATORS = 8;
 
 interface RoomState {
   code: string;
@@ -60,6 +66,10 @@ interface RoomState {
   snapshotHash: number;
   /** App build version of the room (first player's) — all players must match. */
   appVersion: string | null;
+  /** A client reported a lockstep divergence (cheat/desync) at some point this match. Sticky —
+   *  once set, every current and future (reconnect/spectator) client is flagged, so a cheating
+   *  actor's stored snapshot can't silently poison a late joiner without the warning showing. */
+  contested: boolean;
 }
 
 interface Attachment {
@@ -97,6 +107,7 @@ function freshState(code: string): RoomState {
     snapshot: null,
     snapshotHash: 0,
     appVersion: null,
+    contested: false,
   };
 }
 
@@ -180,6 +191,7 @@ export class Room {
       ready: p.ready,
       connected: p.connected,
       isHost: p.isHost,
+      spectator: p.spectator,
     }));
   }
 
@@ -292,12 +304,31 @@ export class Room {
       }
     }
 
+    // A new joiner (no reconnect token) once the match is underway comes in as a SPECTATOR — they
+    // watch the deterministic sim but never take a slot in the turn order.
     if (s.phase !== 'lobby') {
-      return this.send(ws, {
-        t: 'error',
-        code: 'game_in_progress',
-        message: 'match already started',
-      });
+      const specs = Object.values(s.players).filter(p => p.spectator).length;
+      if (specs >= MAX_SPECTATORS) {
+        return this.send(ws, {t: 'error', code: 'room_full', message: 'no spectator slots left'});
+      }
+      const sid = s.nextId++;
+      const spec: StoredPlayer = {
+        id: sid,
+        name: (msg.name || `Spectator ${sid}`).slice(0, 24),
+        color: msg.color ?? '#cccccc',
+        ready: true,
+        token: crypto.randomUUID(),
+        connected: true,
+        isHost: false,
+        spectator: true,
+      };
+      s.players[sid] = spec;
+      ws.serializeAttachment({playerId: sid} satisfies Attachment);
+      await this.save(s);
+      this.send(ws, this.welcomeFor(s, spec));
+      this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
+      this.resumeMatch(ws, s); // boot them to the current state + turn (as an observer)
+      return;
     }
     if (Object.keys(s.players).length >= s.settings.maxPlayers) {
       return this.send(ws, {t: 'error', code: 'room_full', message: 'room is full'});
@@ -347,6 +378,9 @@ export class Room {
     }
     if (s.phase === 'ended') this.send(ws, {t: 'gameOver'});
     else this.send(ws, {t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
+    // A contested match: warn the (re)joiner too, since their bootstrap snapshot came from a state
+    // some client already flagged as divergent.
+    if (s.contested) this.send(ws, {t: 'desyncFlag'});
   }
 
   private welcomeFor(s: RoomState, p: StoredPlayer): ServerMessage {
@@ -566,11 +600,24 @@ export class Room {
    *  the reporter keeps its own (trusted) state, so we don't overwrite anything server-side — we log
    *  the divergence so a cheating/desyncing match is visible to the operator. (No auto-resolution:
    *  in a 2-player game there's no majority to arbitrate; this is detection, not correction.) */
-  private onDesync(s: RoomState, pid: number, localHash: number, keyframeHash: number): void {
+  private async onDesync(
+    s: RoomState,
+    pid: number,
+    localHash: number,
+    keyframeHash: number,
+  ): Promise<void> {
     console.warn(
       `[desync] room=${s.code} reporter=${pid} turnActor=${Room.ownerOf(s, s.turnIdx)} ` +
         `localHash=${localHash} keyframeHash=${keyframeHash}`,
     );
+    // Flag the whole room (once). Every present client — and any future reconnect/spectator (see
+    // resumeMatch) — is told the state is contested, so a cheating actor can't quietly poison a
+    // late joiner's bootstrap without the warning appearing everywhere.
+    if (!s.contested) {
+      s.contested = true;
+      await this.save(s);
+      this.broadcast({t: 'desyncFlag'});
+    }
   }
 
   private async onLeave(ws: WebSocket, s: RoomState, pid: number): Promise<void> {
@@ -584,8 +631,9 @@ export class Room {
     }
   }
 
+  /** Connected PLAYABLE players (spectators excluded) — drives the "<2 left → end the match" rule. */
   private connectedCount(s: RoomState): number {
-    return Object.values(s.players).filter(p => p.connected).length;
+    return Object.values(s.players).filter(p => p.connected && !p.spectator).length;
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
@@ -609,9 +657,9 @@ export class Room {
     if (removeSlot) delete s.players[pid];
     else p.connected = false;
 
-    // Reassign host if the host left.
+    // Reassign host if the host left — to another PLAYER, never a spectator.
     if (s.hostId === pid) {
-      const next = Object.values(s.players).find(q => q.connected);
+      const next = Object.values(s.players).find(q => q.connected && !q.spectator);
       s.hostId = next?.id ?? null;
       for (const q of Object.values(s.players)) q.isHost = q.id === s.hostId;
     }

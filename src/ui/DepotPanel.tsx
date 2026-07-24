@@ -6,7 +6,7 @@
  * weapon under the cursor, and Buy / Sell / Auto Buy / Stats / Close controls
  * (the metal button art) over a Credits readout.
  */
-import {useMemo, useState} from 'preact/hooks';
+import {useMemo, useState, useEffect, useRef} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Tooltip} from './Tooltip';
 import {ClassicScrollbar} from './ClassicScrollbar';
@@ -134,6 +134,12 @@ export function DepotPanel() {
   if (!showDepot.value) return null;
 
   const [sel, setSel] = useState(weaponIndex.value);
+  // On OPEN, scroll the list so the currently-selected weapon is visible (centered) rather than
+  // always starting at the top — the depot opens on whatever weapon you had equipped. Mount-only.
+  const selRowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    selRowRef.current?.scrollIntoView({block: 'center'});
+  }, []);
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'cost', dir: 1});
   const [hover, setHover] = useState<number | null>(null);
   const [pos, setPos] = useState({x: 0, y: 0});
@@ -254,6 +260,7 @@ export function DepotPanel() {
             return (
               <div
                 key={w.index}
+                ref={isSel ? selRowRef : undefined}
                 class={`dep-row${isSel ? ' sel' : ''}${affordable ? ' afford' : ' broke'}`}
                 onClick={() => selectRow(w.index)}
                 onMouseEnter={() => setHover(w.index)}

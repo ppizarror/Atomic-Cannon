@@ -409,6 +409,7 @@ export class CGameController implements ShotWorld {
     // Publish the world scale so shot PHYSICS grow with the map (a full-power shot stays powerful on
     // big maps instead of only crossing a fraction of them). Blast SIZE is a separate resolution axis.
     GameConfig.worldScale = this.m_worldWidth / canvas.width;
+    GameConfig.viewWidth = canvas.width; // resolution-normalise launchSpeed (see CShot.LAUNCH_REF_WIDTH)
 
     // Terrain fills the full world so its body covers the bottom of the screen —
     // the background's foreground never shows in the HUD strip.
@@ -466,6 +467,9 @@ export class CGameController implements ShotWorld {
     // heightmap; the host renders it 1:1, other players stretch it to their own window.
     this.m_viewW = this.m_netMode ? this.m_netViewW : this.m_displayW;
     this.m_viewH = this.m_netMode ? this.m_netViewH : this.m_displayH;
+    // Resolution-normalise shot physics: launchSpeed scales by √(viewWidth/REF) so max power crosses
+    // the world on any display (net uses the shared host width → identical lockstep on every client).
+    GameConfig.viewWidth = this.m_viewW;
 
     // Rounds/Point mode is NON-LETHAL (faithful to the original): a tank at 0 life is never marked
     // destroyed and keeps taking turns — the round is scored by damage points, not eliminations.
@@ -4325,6 +4329,12 @@ export class CGameController implements ShotWorld {
       this.m_netMode &&
       Math.floor(this.m_currentPlayerIndex / this.m_netTanksPerTeam) === this.m_netLocalIndex
     );
+  }
+
+  /** True when this client is a mid-match SPECTATOR: online, but not in the turn order (local index
+   *  below 0). Such a client watches the deterministic sim and never owns a turn. */
+  isNetSpectator(): boolean {
+    return this.m_netMode && this.m_netLocalIndex < 0;
   }
 
   /** True while a turn's action is still resolving (shot in flight / settling) OR while the

@@ -21,6 +21,8 @@ export interface PlayerInfo {
   readonly ready: boolean;
   readonly connected: boolean;
   readonly isHost: boolean;
+  /** A watcher who joined mid-match: not in the turn order, never plays. */
+  readonly spectator?: boolean;
 }
 
 /** Room-level settings the host controls. */
@@ -177,6 +179,9 @@ export type ServerMessage =
   | {readonly t: 'nextBattle'; readonly battle: number; readonly seed: number}
   /** The match ended; each client shows the standings (winner computed from synced state). */
   | {readonly t: 'gameOver'}
+  // A lockstep divergence was reported in this match — flag every client (incl. late joiners) so
+  // the whole room knows the state is contested (detection, not correction).
+  | {readonly t: 'desyncFlag'}
   /** A validated intent from the acting player, relayed for spectators to apply. */
   | {readonly t: 'cmd'; readonly from: number; readonly seq: number; readonly cmd: GameCommand}
   /** The acting player's authoritative shot outcome, applied by everyone. */
