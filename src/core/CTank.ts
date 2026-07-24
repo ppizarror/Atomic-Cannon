@@ -140,7 +140,6 @@ export class CTank {
     this.m_nTeamId = nTeamId;
     this.m_sColor = TEAM_COLORS[nTeamId] ?? DEFAULT_TEAM_COLOR; // default until the roster sets it
     this.m_bIsHuman = false;
-    // TEMP: random player hull per tank (until per-player tank selection exists in settings).
     this.m_sTankType = PLAYER_TANKS[Math.floor(Math.random() * PLAYER_TANKS.length)];
 
     // Position and physics

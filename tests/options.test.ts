@@ -269,6 +269,20 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.buryTanks = false; // restore
   });
 
+  it('a destroyed wreck falls into a crater carved under it (not left floating)', () => {
+    const gc = humanGame(4); // 4 teams → killing one leaves the battle running (no BattleEnd)
+    const p = gc as unknown as {m_tanks: CTank[]; m_land: CLand};
+    const wreck = p.m_tanks[1] as unknown as CTank & {m_bIsAlive: boolean; m_bExploded: boolean};
+    wreck.m_bIsAlive = false; // a destroyed tank...
+    wreck.m_bExploded = true; // ...that leaves a drawn wreck
+    const yBefore = wreck.getPosition().y;
+    const wx = Math.floor(wreck.getPosition().x);
+    // Blow the ground out from under the wreck.
+    p.m_land.carveDiscCollapse(wx, p.m_land.getHeightAt(wx), 100, true, true, true);
+    for (let i = 0; i < 240; i++) gc.update(1 / 60);
+    expect(wreck.getPosition().y).toBeGreaterThan(yBefore + 10); // the wreck fell (was left floating)
+  });
+
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {
     const gc = humanGame();
     GameConfig.buyTime = 0; // Anytime

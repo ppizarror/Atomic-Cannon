@@ -96,6 +96,28 @@ function stepN(ps: CParticleSystem, n: number, dt: number, wind?: Vec2) {
 }
 
 describe('Particle system', () => {
+  it('crater fumes only rise off SOIL — none over columns eroded to the void (no land)', () => {
+    const ps = new CParticleSystem() as unknown as {
+      setBounds(w: number, h: number): void;
+      setViewport(camX: number, w: number, h: number): void;
+      setGroundProvider(fn: (x: number) => number): void;
+      spawnVentPuff(x: number, y: number, r: number): void;
+      count(): number;
+    };
+    ps.setBounds(800, 600);
+    ps.setViewport(0, 800, 500); // world/view height = 500 → the floor a "no land" column reports
+
+    // No land anywhere: the surface reads at the floor (== view height) → NOT one puff should spawn.
+    ps.setGroundProvider(() => 500);
+    for (let i = 0; i < 60; i++) ps.spawnVentPuff(400, 480, 40);
+    expect(ps.count()).toBe(0); // no fume into the empty sky
+
+    // Real soil (surface above the floor) → fumes DO rise.
+    ps.setGroundProvider(() => 300);
+    for (let i = 0; i < 60; i++) ps.spawnVentPuff(400, 300, 40);
+    expect(ps.count()).toBeGreaterThan(0);
+  });
+
   it('blast() emits, and everything expires within its max lifetime', () => {
     const ps = new CParticleSystem();
     ps.setBounds(800, 600);

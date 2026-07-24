@@ -2432,8 +2432,11 @@ export class CGameController implements ShotWorld {
     if (zones) for (const z of zones) if (z.damagePerSecond > radDps) radDps = z.damagePerSecond;
 
     for (const tank of this.m_tanks) {
-      if (!tank.isAlive()) continue;
+      // Gravity/physics for EVERY tank, INCLUDING a destroyed wreck — a dead tank over a freshly
+      // carved crater must fall into it just like a live one (it was being skipped, so wrecks hung
+      // in mid-air). A dead tank takes no radiation and no turn logic — that's gated just below.
       tank.update(this.m_land, dt);
+      if (!tank.isAlive()) continue;
 
       // Radiation fallout DAMAGE-OVER-TIME: a tank standing on the visible fallout carpet takes the
       // live zone's irDmg/sec. Keyed on the settled specks (what the player sees), not a fixed blast

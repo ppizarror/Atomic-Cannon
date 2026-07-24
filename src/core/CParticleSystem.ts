@@ -770,6 +770,9 @@ export class CParticleSystem {
     const surf = this.m_groundAt
       ? this.m_groundAt(fx)
       : y + Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.7;
+    // Fume only from SOIL. Where the ground has been eroded down to the world floor (surface at the
+    // view height → no land left in this column), there's nothing to smoke — don't puff into the void.
+    if (this.m_groundAt && this.m_viewH > 0 && surf >= this.m_viewH) return;
     const fy = surf - between(0, 4); // just at the dirt
     const v = 225 + Math.floor(rnd() * 28); // near-white 225..253
     const life = FUME_LIFE_BASE + r * between(FUME_LIFE_MIN, FUME_LIFE_MAX); // ∝ radius
