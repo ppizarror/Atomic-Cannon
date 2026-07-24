@@ -10,6 +10,7 @@ import {CGameController, EGameState} from '../src/game/CGameController';
 import {GameConfig} from '../src/core/CGameConfig';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {NetGame, type NetGameHost} from '../src/net/netGame';
+import {applyCommand} from '../src/net/commands';
 import type {RoomClient, RoomClientState} from '../src/net/roomClient';
 import type {ClientMessage} from '../src/net/protocol';
 
@@ -26,11 +27,18 @@ const CFG = {
   powerScale: 1,
   kickbackScale: 1,
   buryTanks: false,
+  variance: true,
   relativeTurrets: false,
   utilityTurn: false,
   crateChance: 20,
+  radiationDamage: true,
   startCredits: 3000,
   gameType: 1,
+  sellRate: 0.5,
+  creditDamage: 1,
+  creditKill: 500,
+  creditTurn: 0,
+  creditRound: 1000,
 };
 
 function netController(localIndex: number, seed = 12345): CGameController {
@@ -43,6 +51,7 @@ function netController(localIndex: number, seed = 12345): CGameController {
     wind: 1,
     mapSize: 2,
     battles: 2,
+    currentBattle: 1,
     viewW: 1280,
     viewH: 720,
     config: CFG,
@@ -79,6 +88,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize,
         battles: 2,
+        currentBattle: 1,
         viewW: 1280,
         viewH: 720,
         config: CFG,
@@ -110,6 +120,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1400,
       viewH: 900,
       config: CFG,
@@ -122,6 +133,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1400,
       viewH: 900,
       config: CFG,
@@ -146,6 +158,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize: 2,
         battles: 2,
+        currentBattle: 1,
         viewW,
         viewH: 720,
         config: CFG,
@@ -171,6 +184,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -190,6 +204,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize: 2,
         battles: 2,
+        currentBattle: 1,
         viewW: 1280,
         viewH: 720,
         config: CFG,
@@ -224,6 +239,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -238,6 +254,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -303,6 +320,57 @@ describe('network match boot', () => {
     expect(gc.getOwnedCounts()[costly]).toBe(1);
   });
 
+  it('relays a buy on the local turn so peers apply it to the buyer', () => {
+    const cmds: {t: string; index?: number}[] = [];
+    const gc = new CGameController(makeCanvas());
+    gc.startNetworkGame({
+      seed: 5,
+      players: 2,
+      localIndex: 0,
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+      onCommand: c => cmds.push(c as {t: string; index?: number}),
+    });
+    gc.netSetActivePlayer(0); // my turn
+    const costly = WEAPON_DATABASE.findIndex(w => w.cost > 0);
+    gc.buyWeapon(costly);
+    expect(cmds).toContainEqual({t: 'buy', index: costly}); // buy is relayed to the room
+
+    // A relayed buy applied on a SPECTATOR hits the ACTIVE (buyer's) economy, not the spectator's.
+    const spectator = netController(1); // I am tank 1; tank 0 is buying
+    spectator.netSetActivePlayer(0); // it's tank 0's turn
+    const cost = WEAPON_DATABASE[costly].cost;
+    applyCommand(spectator, {t: 'buy', index: costly});
+    // The buyer (tank 0) — not me (tank 1) — is charged; and no re-relay off my turn.
+    expect(spectator.getNetSnapshot().tanks[0].credits).toBe(3000 - cost);
+    expect(spectator.getNetSnapshot().tanks[1].credits).toBe(3000);
+  });
+
+  it('two clients earn credits deterministically from the same shot', () => {
+    const FIXED = 1 / 60;
+    const shoot = (): CGameController => {
+      const gc = netController(0);
+      gc.netSetActivePlayer(0);
+      gc.setAngle(60);
+      gc.setPower(700);
+      gc.fire();
+      for (let i = 0; i < 1200; i++) gc.update(FIXED);
+      return gc;
+    };
+    const a = shoot();
+    const b = shoot();
+    // Same seed + synced rates → identical per-tank credit balances on both clients.
+    expect(a.getNetSnapshot().tanks.map(t => t.credits)).toEqual(
+      b.getNetSnapshot().tanks.map(t => t.credits),
+    );
+  });
+
   it('two clients with different local settings still simulate a shot to the same hash', () => {
     const FIXED = 1 / 60;
     // Each client boots with a DIFFERENT local explosionScale; startNetworkGame must overwrite
@@ -318,6 +386,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize: 2,
         battles: 2,
+        currentBattle: 1,
         viewW: 1280,
         viewH: 720,
         config: CFG,
@@ -445,6 +514,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -465,6 +535,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -482,6 +553,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -502,6 +574,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -520,6 +593,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -542,6 +616,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -584,6 +659,7 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -662,6 +738,7 @@ describe('network battle-end', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      currentBattle: 1,
       viewW: 1280,
       viewH: 720,
       config: CFG,

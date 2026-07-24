@@ -520,6 +520,11 @@ export const en: Strings = {
         tip: 'The speed at which the game is animated (default 10)',
       },
       rcFires: {label: 'Right Click Fires', tip: 'If you are accidentally firing disable this'},
+      radiation: {
+        label: 'Radiation Damage',
+        tip: 'On: tanks standing on radioactive fallout take damage. Off: fallout is cosmetic only (legacy)',
+      },
+      more: {label: 'More Gameplay Options', tip: 'Adjust gameplay settings'},
     },
     graphics: {
       header: 'Adjust graphics settings',

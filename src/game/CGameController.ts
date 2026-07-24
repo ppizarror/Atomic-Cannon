@@ -32,6 +32,7 @@ import {CWeather} from '../core/CWeather';
 import {
   CEconomy,
   START_CREDITS,
+  SELL_REFUND,
   CREDIT_PER_DAMAGE,
   CREDIT_PER_KILL,
   CREDIT_PER_TURN,
@@ -2290,7 +2291,9 @@ export class CGameController implements ShotWorld {
       }
       case 'weapon':
       case 'bomb':
-        if (tank.isHuman() && c.weaponIndex >= 0) this.m_economy.grant(c.weaponIndex);
+        // Grant to the PICKING tank's economy (net: its own; solo human: the shared depot).
+        if ((tank.isHuman() || this.m_netMode) && c.weaponIndex >= 0)
+          this.economyFor(tank).grant(c.weaponIndex);
         msg = fmt(strings.value.game.foundWeapon, {weapon: getWeapon(c.weaponIndex).getName()});
         color = '#bfe9b0';
         break;
@@ -2405,21 +2408,26 @@ export class CGameController implements ShotWorld {
    *  begin falling within one frame — the explosion's fireball / particles / screen-shake
    *  never gate the fall (they only gate the turn hand-off). */
   private updateTanks(dt: number): void {
+    // Radiation Damage OFF (legacy/faithful): fallout is purely cosmetic — the original binary
+    // never damages a tank with it (only the radioactive weapon's INITIAL blast is armor-piercing,
+    // wired separately via isRadioactive). ON (default): "green ground = danger", handled below.
+    const zones = GameConfig.radiationDamage ? this.m_land.getRadiationZones() : null;
+    // The strongest live zone drives the DOT rate; fallout only exists while a zone is live.
+    let radDps = 0;
+    if (zones) for (const z of zones) if (z.damagePerSecond > radDps) radDps = z.damagePerSecond;
+
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
       tank.update(this.m_land, dt);
 
-      // Radiation fallout DAMAGE-OVER-TIME for any tank inside a live radiation zone
-      // (irDmg/sec while inside, for irTime).
-      for (const rZone of this.m_land.getRadiationZones()) {
-        const dist = tank.distanceTo(rZone.x, rZone.y);
-        if (dist < rZone.radius + 16) {
-          // + TANK_RADIUS
-          tank.applyRadiationDamage(rZone.damagePerSecond * dt, dt);
-          if (!tank.isAlive()) {
-            this.handleTankDestroyed(tank);
-            break;
-          }
+      // Radiation fallout DAMAGE-OVER-TIME: a tank standing on the visible fallout carpet takes the
+      // live zone's irDmg/sec. Keyed on the settled specks (what the player sees), not a fixed blast
+      // circle — the carpet spreads wider than the crater, especially airbursts raining down a slope.
+      if (radDps > 0 && this.m_land.radiationAt(tank.getPosition().x)) {
+        tank.applyRadiationDamage(radDps * dt, dt);
+        if (!tank.isAlive()) {
+          this.handleTankDestroyed(tank);
+          continue;
         }
       }
     }
@@ -2989,12 +2997,12 @@ export class CGameController implements ShotWorld {
   private beginTurn(): void {
     this.m_movePlacing = false; // a fresh turn is never mid-placement
     const tank = this.getCurrentTank();
-    // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it
-    // up on the human's turn-begin from whatever credits are on hand (a no-op when broke).
-    // In net, only the LOCAL player auto-buys its OWN economy (m_economy is bound to the local
-    // tank) — a spectator must not auto-buy on the active player's turn.
+    // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it up
+    // on the human's turn-begin from whatever credits are on hand (a no-op when broke). In net,
+    // only the LOCAL player runs it here (autoBuyWeapons relays {t:'autobuy'} + is deterministic,
+    // so peers mirror it via the command); a spectator applies the relayed autobuy instead.
     if (GameConfig.buyTime === 3 && tank.isHuman() && (!this.m_netMode || this.isLocalNetTurn())) {
-      this.m_economy.autoBuy();
+      this.autoBuyWeapons();
     }
     // Restore THIS player's own weapon so the previous player's (or a bot's)
     // choice never carries over.
@@ -3138,8 +3146,11 @@ export class CGameController implements ShotWorld {
   private endTurn(): void {
     this.m_turnTimerRunning = false; // the clock never outlives its turn
 
-    // Network match: the server arbitrates turns. The local simulation has settled — clear
-    // the resolving flag, report the outcome (m_onNetTurnEnd), and wait for `turnBegin`.
+    // Network match: the server arbitrates turns. The local simulation has settled — clear the
+    // resolving flag, report the outcome, and wait for turnBegin. (endTurn can fire repeatedly
+    // here once a team is eliminated — endBattleIfDecided re-checks every frame — so the
+    // deterministic turn-hand-off effects (crate roll, income) are driven ONCE by the server's
+    // hand-off turnBegin instead; see netTurnHandoff / netAwardRoundCredit.)
     if (this.m_netMode) {
       this.m_netShotResolving = false;
       this.m_onNetTurnEnd?.();
@@ -3736,17 +3747,26 @@ export class CGameController implements ShotWorld {
     this.setCurrentWeapon(tank, getDefaultWeaponIndex());
   }
 
-  /** The inventory a tank fires from: the shared human depot, or the tank's own bot loadout
-   *  (lazily created, bound to the bot's credits, stocked with only the Shell staple to start). */
+  /** The inventory a tank fires/buys from. Solo: the shared human depot (m_economy) or a bot's
+   *  own lazily-created loadout. NET: EVERY tank owns its economy, so a relayed buy/sell hits the
+   *  buyer's inventory + credits on every client (credits then stay identical across the room).
+   *  Each per-tank economy is bound to that tank's credits and stocked with the Shell staple. */
   private economyFor(tank: CTank): CEconomy {
-    if (tank.isHuman()) return this.m_economy;
+    if (!this.m_netMode && tank.isHuman()) return this.m_economy;
     let e = this.m_botEconomy.get(tank);
     if (!e) {
-      e = new CEconomy();
-      e.bindCredits(tank); // spend against the bot tank's own credits
+      e = new CEconomy(this.m_startCredits);
+      e.setSellRate(this.m_sellRate); // shared refund rate (net) / local (solo bots)
+      e.bindCredits(tank); // spend against the tank's own credits
       this.m_botEconomy.set(tank, e);
     }
     return e;
+  }
+
+  /** The economy the DEPOT operates on — always the ACTIVE player's (buying happens on your own
+   *  turn, so getCurrentTank() is you; a relayed buy applies on the buyer's turn on every peer). */
+  private activeEconomy(): CEconomy {
+    return this.economyFor(this.getCurrentTank());
   }
 
   /** Does `econ` own any weapon of this extType? */
@@ -4060,6 +4080,8 @@ export class CGameController implements ShotWorld {
     mapSize: number;
     /** War length — number of battles (Deathmatch); 1 for Rounds/Points. */
     battles: number;
+    /** Which battle this boot is (1-based) — >1 when replayed to a reconnect mid-war. */
+    currentBattle: number;
     /** The HOST's logical view size — the shared world resolution every client builds at. */
     viewW: number;
     viewH: number;
@@ -4071,7 +4093,7 @@ export class CGameController implements ShotWorld {
     this.m_netMode = true;
     this.m_netLocalIndex = opts.localIndex;
     this.m_terrainSeed = opts.seed >>> 0 || 1;
-    this.m_currentBattle = 1; // fresh war
+    this.m_currentBattle = Math.max(1, Math.round(opts.currentBattle)); // 1 fresh; >1 on reconnect
     this.setTotalBattles(opts.battles); // shared war length (server drives per-battle advance)
     this.m_netRoster = opts.roster;
     this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
@@ -4110,15 +4132,24 @@ export class CGameController implements ShotWorld {
     GameConfig.powerScale = c.powerScale;
     GameConfig.kickbackScale = c.kickbackScale;
     GameConfig.buryTanks = c.buryTanks;
+    this.m_variance = c.variance; // per-shot inaccuracy gates a seeded draw — must match on all
     GameConfig.relativeTurrets = c.relativeTurrets;
     GameConfig.utilityTurn = c.utilityTurn;
     GameConfig.crateChance = c.crateChance;
+    GameConfig.radiationDamage = c.radiationDamage; // fallout DOT rule — host is source of truth
     // Randomize Turns is FORCED OFF in net: the server owns the turn order, and the local
     // shuffle uses Math.random() AND reorders the tank array — which would break the
     // index-based turn hand-off and snapshot mapping. (Also guarded at the call sites.)
     GameConfig.randomizeTurns = false;
     this.m_startCredits = c.startCredits;
     this.m_gameType = c.gameType === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch;
+    // Economy rates must match on every client — buys are relayed and earning runs in each
+    // client's sim, so a rate mismatch would diverge the (now fully deterministic) credit totals.
+    this.setSellRate(c.sellRate);
+    this.m_creditDamage = c.creditDamage;
+    this.m_creditKill = c.creditKill;
+    this.m_creditTurn = c.creditTurn;
+    this.m_creditRound = c.creditRound;
     // Real economy in network: clear any leftover free-fire (dev weapon-test) so each player
     // spends its own credits + inventory. The acting client charges ammo from its own economy
     // (see fire()); spectators only simulate the relayed weapon, so no inventory sync is needed —
@@ -4154,11 +4185,18 @@ export class CGameController implements ShotWorld {
       powerScale: GameConfig.powerScale,
       kickbackScale: GameConfig.kickbackScale,
       buryTanks: GameConfig.buryTanks,
+      variance: this.m_variance,
       relativeTurrets: GameConfig.relativeTurrets,
       utilityTurn: GameConfig.utilityTurn,
       crateChance: GameConfig.crateChance,
+      radiationDamage: GameConfig.radiationDamage,
       startCredits: this.m_startCredits,
       gameType: this.m_gameType,
+      sellRate: this.m_sellRate,
+      creditDamage: this.m_creditDamage,
+      creditKill: this.m_creditKill,
+      creditTurn: this.m_creditTurn,
+      creditRound: this.m_creditRound,
     };
   }
 
@@ -4199,6 +4237,21 @@ export class CGameController implements ShotWorld {
   /** The acting client's read on whether this shot ended the battle (≤ 1 team left). */
   isNetBattleOver(): boolean {
     return this.m_netMode && this.livingTeamCount() <= 1;
+  }
+
+  /** Server-driven turn hand-off (a turnBegin that follows a shot): the once-per-turn effects that
+   *  the local endTurn can't own in net (it may fire repeatedly). Deterministic across clients —
+   *  every client is at the same settled sim state + shares the seeded RNG cursor and rates. */
+  netTurnHandoff(): void {
+    if (!this.m_netMode) return;
+    this.maybeSpawnCrate(); // seeded → identical crate (or none) on every client
+    this.awardSurvivorCredit(this.m_creditTurn); // per-turn income (synced rate)
+  }
+
+  /** Server-signalled: a full round just completed → pay per-round survivor income. Deterministic
+   *  (same survivors + synced rate on every client), applied on the turnBegin that wraps. */
+  netAwardRoundCredit(): void {
+    if (this.m_netMode) this.awardSurvivorCredit(this.m_creditRound);
   }
 
   /** Show the battle-winner celebration (standings if the war is over). Idempotent — a second
@@ -4326,6 +4379,7 @@ export class CGameController implements ShotWorld {
 
   /** Depot sell-back refund fraction (0..1), live. */
   setSellRate(fraction: number): void {
+    this.m_sellRate = fraction;
     this.m_economy.setSellRate(fraction);
   }
 
@@ -4529,7 +4583,9 @@ export class CGameController implements ShotWorld {
     // weapon in stock). During a bot's turn the full enabled list is shown so the bot's
     // chosen weapon still appears in the HUD.
     if (this.isPlayerTurn()) {
-      return WEAPON_DATABASE.filter(w => enabled(w.index) && this.m_economy.hasStock(w.index));
+      return WEAPON_DATABASE.filter(
+        w => enabled(w.index) && this.activeEconomy().hasStock(w.index),
+      );
     }
     return WEAPON_DATABASE.filter(w => enabled(w.index));
   }
@@ -4543,8 +4599,11 @@ export class CGameController implements ShotWorld {
   }
 
   // --- Weapons Depot / economy ----------------------------------------------
+  // All depot reads/writes go through the ACTIVE player's economy: solo that's the human's
+  // shared depot; net it's the current player's own per-tank economy (so a relayed buy applies
+  // to the buyer on every client). buy/sell/autobuy relay on the local turn so peers mirror them.
   getCredits(): number {
-    return this.m_economy.getCredits();
+    return this.activeEconomy().getCredits();
   }
 
   getMapName(): string {
@@ -4553,23 +4612,30 @@ export class CGameController implements ShotWorld {
 
   /** Per-weapon owned rounds (Infinity = unlimited staple). */
   getOwnedCounts(): number[] {
-    return this.m_economy.ownedSnapshot();
+    return this.activeEconomy().ownedSnapshot();
   }
 
   isUnlimitedWeapon(i: number): boolean {
-    return this.m_economy.isUnlimited(i);
+    return this.activeEconomy().isUnlimited(i);
   }
 
   buyWeapon(i: number): boolean {
-    return this.m_economy.buy(i);
+    const ok = this.activeEconomy().buy(i);
+    if (ok && this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'buy', index: i});
+    return ok;
   }
 
   sellWeapon(i: number): boolean {
-    return this.m_economy.sell(i);
+    const ok = this.activeEconomy().sell(i);
+    if (ok && this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'sell', index: i});
+    return ok;
   }
 
   autoBuyWeapons(): void {
-    this.m_economy.autoBuy();
+    // Net: deterministic (index-order, no Math.random) so a relayed autobuy yields the SAME
+    // loadout + credit spend on every client. Solo keeps the varied random assortment.
+    this.activeEconomy().autoBuy({deterministic: this.m_netMode});
+    if (this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'autobuy'});
   }
 
   /**
@@ -5038,6 +5104,7 @@ export class CGameController implements ShotWorld {
   // Max accumulated sim time (s). Bounds catch-up after a long stall without DROPPING
   // steps (which would desync a networked match). ~0.5s covers any frame hitch.
   private static readonly MAX_SIM_ACCUM = 0.5;
+  private m_sellRate = SELL_REFUND; // depot sell-back fraction (mirrors m_economy's, for config)
   private m_creditDamage = CREDIT_PER_DAMAGE; // credits earned per point of life removed
   private m_creditKill = CREDIT_PER_KILL; // credits earned per kill (Deathmatch)
   private m_creditTurn = CREDIT_PER_TURN; // credits earned by each survivor per turn

@@ -104,11 +104,18 @@ function sanitizeConfig(c: MatchConfig): MatchConfig {
     powerScale: num(c?.powerScale, 0.25, 4, 1),
     kickbackScale: num(c?.kickbackScale, 0, 8, 1),
     buryTanks: !!c?.buryTanks,
+    variance: c?.variance ?? true, // default ON (matches the game default)
     relativeTurrets: !!c?.relativeTurrets,
     utilityTurn: !!c?.utilityTurn,
+    radiationDamage: c?.radiationDamage ?? true,
     crateChance: num(c?.crateChance, 0, 100, 20),
     startCredits: num(c?.startCredits, 0, 1000000, 3000),
     gameType: num(c?.gameType, 0, 1, 1) === 0 ? 0 : 1,
+    sellRate: num(c?.sellRate, 0, 1, 0.5),
+    creditDamage: num(c?.creditDamage, 0, 1000, 1),
+    creditKill: num(c?.creditKill, 0, 100000, 500),
+    creditTurn: num(c?.creditTurn, 0, 100000, 0),
+    creditRound: num(c?.creditRound, 0, 100000, 1000),
   };
 }
 
@@ -319,6 +326,7 @@ export class Room {
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
       battles: s.totalBattles,
+      currentBattle: s.currentBattle,
       viewW: s.viewW,
       viewH: s.viewH,
       config: s.config ?? sanitizeConfig({} as MatchConfig),
@@ -409,6 +417,7 @@ export class Room {
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
       battles: s.totalBattles,
+      currentBattle: s.currentBattle,
       viewW: s.viewW,
       viewH: s.viewH,
       config: s.config,
@@ -451,6 +460,11 @@ export class Room {
         s.currentBattle++;
         s.seed = newSeed(); // fresh terrain for the new battle (identical on every client)
         s.turnIdx = 0;
+        // Drop the previous battle's authoritative state — it belongs to terrain that no longer
+        // exists. Without this, a player reconnecting before the new battle's first shot would
+        // have last battle's heightmap + dead-tank positions stamped over the fresh battle.
+        s.snapshot = null;
+        s.snapshotHash = 0;
         await this.save(s);
         // Clients show the battle-winner celebration, then advance on this message; the turn
         // hand-off is queued behind that intermission (see NetGame). Order is unchanged.
@@ -465,22 +479,37 @@ export class Room {
       return;
     }
 
+    const prevIdx = s.turnIdx;
     s.turnIdx = this.nextLivingTurn(s);
+    const roundWrapped = s.turnIdx <= prevIdx; // advanced past the last player → a round completed
     await this.save(s);
-    this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+    // handoff:true → this turn follows a shot, so clients run the once-per-turn effects (crate
+    // roll + income). The match/battle's first turnBegin (onStart/nextBattle) omits it.
+    this.broadcast({
+      t: 'turnBegin',
+      playerIdx: s.turnIdx,
+      deadline: 0,
+      handoff: true,
+      roundWrapped,
+    });
   }
 
-  /** Advance to the next turn, skipping players whose tank is dead (life ≤ 0). */
+  /** Advance to the next turn, skipping players whose tank is DEAD (life ≤ 0) or whose socket
+   *  is DISCONNECTED — a dropped player must never hold the turn, or the match stalls. */
   private nextLivingTurn(s: RoomState): number {
     const n = s.order.length;
     if (n === 0) return 0;
-    const alive = (i: number) => (s.snapshot ? (s.snapshot.tanks[i]?.life ?? 1) > 0 : true);
+    const playable = (i: number) => {
+      const p = s.players[s.order[i]];
+      if (!p || !p.connected) return false; // dropped → skip
+      return s.snapshot ? (s.snapshot.tanks[i]?.life ?? 1) > 0 : true;
+    };
     let idx = s.turnIdx;
     for (let step = 0; step < n; step++) {
       idx = (idx + 1) % n;
-      if (alive(idx)) return idx;
+      if (playable(idx)) return idx;
     }
-    return (s.turnIdx + 1) % n; // everyone dead (shouldn't happen — 'over' fires first)
+    return (s.turnIdx + 1) % n; // no one playable (shouldn't happen — <2-connected ends the game)
   }
 
   private onChat(pid: number, text: string): void {
@@ -489,15 +518,9 @@ export class Room {
   }
 
   private async onLeave(ws: WebSocket, s: RoomState, pid: number): Promise<void> {
-    await this.dropPlayer(s, pid, /*removeSlot=*/ s.phase === 'lobby');
-    // An explicit leave mid-match that leaves fewer than two players ends the game, so
-    // the last player sees the result instead of waiting forever. (A transient socket
-    // drop keeps the slot for reconnect — that path is webSocketClose, handled below.)
-    if (s.phase === 'playing' && this.connectedCount(s) < 2) {
-      s.phase = 'ended';
-      await this.save(s);
-      this.broadcast({t: 'gameOver'});
-    }
+    // dropPlayer handles the mid-match consequences (end if <2 remain, or hand off the turn
+    // if the leaver held it). An explicit leave frees the slot even mid-match.
+    await this.dropPlayer(s, pid, /*removeSlot=*/ true);
     try {
       ws.close(1000, 'left');
     } catch {
@@ -524,6 +547,9 @@ export class Room {
   private async dropPlayer(s: RoomState, pid: number, removeSlot: boolean): Promise<void> {
     const p = s.players[pid];
     if (!p) return;
+    if (!removeSlot && !p.connected) return; // already dropped (e.g. leave → ws.close double-fires)
+    // Did the departing player hold the current turn? (Check before mutating the roster.)
+    const wasActive = s.phase === 'playing' && s.order[s.turnIdx] === pid;
     if (removeSlot) delete s.players[pid];
     else p.connected = false;
 
@@ -532,6 +558,26 @@ export class Room {
       const next = Object.values(s.players).find(q => q.connected);
       s.hostId = next?.id ?? null;
       for (const q of Object.values(s.players)) q.isHost = q.id === s.hostId;
+    }
+
+    // Mid-match consequences: end the game if fewer than two players are connected (the last
+    // one sees the result instead of waiting forever), otherwise hand the turn off if the
+    // departed player was holding it — a dropped active player would otherwise stall the match.
+    if (s.phase === 'playing') {
+      if (this.connectedCount(s) < 2) {
+        s.phase = 'ended';
+        await this.save(s);
+        this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
+        this.broadcast({t: 'gameOver'});
+        return;
+      }
+      if (wasActive) {
+        s.turnIdx = this.nextLivingTurn(s);
+        await this.save(s);
+        this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
+        this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+        return;
+      }
     }
     await this.save(s);
     this.broadcast({t: 'roster', players: Room.publicPlayers(s)});

@@ -44,6 +44,8 @@ export class NetGame {
   // A server turn hand-off that arrived mid-simulation — applied once our sim settles, so
   // a late `turnBegin` can never interrupt an in-flight shot.
   private m_pendingTurn: number | null = null;
+  private m_pendingHandoff = false; // the queued turn's hand-off flag (crate roll + per-turn income)
+  private m_pendingRoundWrapped = false; // the queued turn's round-wrap flag (per-round income)
 
   constructor(
     private readonly client: RoomClient,
@@ -60,12 +62,13 @@ export class NetGame {
           msg.wind,
           msg.mapSize,
           msg.battles,
+          msg.currentBattle,
           msg.viewW,
           msg.viewH,
           msg.config,
         );
       case 'turnBegin':
-        return this.onTurnBegin(msg.playerIdx);
+        return this.onTurnBegin(msg.playerIdx, msg.handoff ?? false, msg.roundWrapped ?? false);
       case 'nextBattle':
         return this.onNextBattle(msg.seed);
       case 'stateUpdate':
@@ -89,14 +92,25 @@ export class NetGame {
   }
 
   /** Server turn hand-off — queue it if we're mid-shot, else apply now. */
-  private onTurnBegin(playerIdx: number): void {
-    if (this.host.controller.isNetSimBusy()) this.m_pendingTurn = playerIdx;
-    else this.applyTurn(playerIdx);
+  private onTurnBegin(playerIdx: number, handoff: boolean, roundWrapped: boolean): void {
+    if (this.host.controller.isNetSimBusy()) {
+      this.m_pendingTurn = playerIdx;
+      this.m_pendingHandoff = handoff;
+      this.m_pendingRoundWrapped = roundWrapped;
+    } else {
+      this.applyTurn(playerIdx, handoff, roundWrapped);
+    }
   }
 
-  private applyTurn(playerIdx: number): void {
+  private applyTurn(playerIdx: number, handoff: boolean, roundWrapped: boolean): void {
     this.m_pendingKeyframe = null; // stale — belongs to the turn that just ended
-    this.host.controller.netSetActivePlayer(playerIdx);
+    const gc = this.host.controller;
+    // Once-per-turn hand-off effects, driven by the server so they fire EXACTLY once (the local
+    // endTurn can repeat). Deterministic: every client runs them from the same settled sim state
+    // + shared rates. Crate roll + per-turn income on any hand-off; per-round income on a wrap.
+    if (handoff) gc.netTurnHandoff();
+    if (roundWrapped) gc.netAwardRoundCredit();
+    gc.netSetActivePlayer(playerIdx);
   }
 
   /**
@@ -125,6 +139,7 @@ export class NetGame {
     wind: number,
     mapSize: number,
     battles: number,
+    currentBattle: number,
     viewW: number,
     viewH: number,
     config: MatchConfig,
@@ -148,6 +163,7 @@ export class NetGame {
       wind,
       mapSize,
       battles,
+      currentBattle,
       viewW,
       viewH,
       config,
@@ -186,7 +202,7 @@ export class NetGame {
     if (this.m_pendingTurn !== null) {
       const idx = this.m_pendingTurn;
       this.m_pendingTurn = null;
-      this.applyTurn(idx);
+      this.applyTurn(idx, this.m_pendingHandoff, this.m_pendingRoundWrapped);
     }
   }
 
@@ -204,7 +220,7 @@ export class NetGame {
       if (this.m_pendingTurn !== null) {
         const idx = this.m_pendingTurn;
         this.m_pendingTurn = null;
-        this.applyTurn(idx);
+        this.applyTurn(idx, this.m_pendingHandoff, this.m_pendingRoundWrapped);
       }
     }, NET_BATTLE_INTERMISSION_MS);
   }

@@ -48,11 +48,20 @@ export interface MatchConfig {
   readonly powerScale: number; // shot launch speed
   readonly kickbackScale: number; // post-fire tank recoil displacement
   readonly buryTanks: boolean; // a tank can be trapped underground (rest-Y)
+  readonly variance: boolean; // per-shot inaccuracy (gates a seeded-RNG draw + jitters the arc)
   readonly relativeTurrets: boolean; // human aim is relative to the tank's terrain tilt
   readonly utilityTurn: boolean; // using a utility ends the turn
   readonly crateChance: number; // supply-crate drop chance (gates the seeded RNG)
+  readonly radiationDamage: boolean; // fallout deals DOT to tanks on it (vs cosmetic-only) — sim-affecting
   readonly startCredits: number; // starting purse per tank
   readonly gameType: number; // 0 = Rounds/Points, 1 = Deathmatch (damage model)
+  // Economy rates — must match so every client awards/refunds the same credits (buys are relayed,
+  // earning runs in every client's sim; a rate mismatch would diverge credit balances).
+  readonly sellRate: number; // depot sell-back fraction (0..1)
+  readonly creditDamage: number; // credits earned per point of life removed
+  readonly creditKill: number; // credits earned per kill (Deathmatch)
+  readonly creditTurn: number; // credits earned by each survivor per turn
+  readonly creditRound: number; // credits earned by each survivor per round
 }
 
 /**
@@ -136,13 +145,24 @@ export type ServerMessage =
       readonly mapSize: number;
       /** War length — number of battles (Deathmatch); 1 for Rounds/Points. */
       readonly battles: number;
+      /** Which battle this boot is (1-based) — >1 when replayed to a reconnect mid-war. */
+      readonly currentBattle: number;
       /** The host's logical resolution — the shared world size every client builds at. */
       readonly viewW: number;
       readonly viewH: number;
       /** The host's gameplay settings, applied identically on every client (determinism). */
       readonly config: MatchConfig;
     }
-  | {readonly t: 'turnBegin'; readonly playerIdx: number; readonly deadline: number}
+  | {
+      readonly t: 'turnBegin';
+      readonly playerIdx: number;
+      readonly deadline: number;
+      /** True when this turn begins right after a SHOT (a real hand-off) → run the once-per-turn
+       *  effects (seeded crate roll + per-turn income). False for the match/battle's first turn. */
+      readonly handoff?: boolean;
+      /** True when the turn order just wrapped (a full round completed) → award per-round income. */
+      readonly roundWrapped?: boolean;
+    }
   /** A Deathmatch battle ended but the war continues — advance to a fresh battle. `seed`
    *  regenerates the terrain identically on every client; `battle` is the new battle number. */
   | {readonly t: 'nextBattle'; readonly battle: number; readonly seed: number}

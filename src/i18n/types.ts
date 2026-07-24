@@ -384,6 +384,8 @@ export interface Strings {
       crates: RowCopy;
       updateScale: RowCopy;
       rcFires: RowCopy;
+      radiation: RowCopy;
+      more: RowCopy;
     };
     graphics: {
       header: string;

@@ -136,9 +136,16 @@ describe('RoomClient', () => {
       buryTanks: true,
       relativeTurrets: false,
       utilityTurn: false,
+      radiationDamage: true,
       crateChance: 0,
       startCredits: 5000,
       gameType: 0,
+      variance: true,
+      sellRate: 0.5,
+      creditDamage: 1,
+      creditKill: 500,
+      creditTurn: 0,
+      creditRound: 1000,
     };
     t.recv({
       t: 'welcome',
@@ -230,9 +237,16 @@ describe('RoomClient', () => {
       buryTanks: false,
       relativeTurrets: false,
       utilityTurn: false,
+      radiationDamage: true,
       crateChance: 20,
       startCredits: 3000,
       gameType: 1,
+      variance: true,
+      sellRate: 0.5,
+      creditDamage: 1,
+      creditKill: 500,
+      creditTurn: 0,
+      creditRound: 1000,
     };
     client.startMatch(1280, 720, cfg);
     client.updateSettings({battles: 5});

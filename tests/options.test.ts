@@ -86,6 +86,30 @@ describe('Formerly-no-op Settings options', () => {
     applyGameSettings(gc);
   });
 
+  it('Radiation Damage ON drains a tank standing on fallout; OFF does not (legacy cosmetic)', () => {
+    const run = (on: boolean): {before: number; after: number} => {
+      const gc = humanGame(2);
+      GameConfig.radiationDamage = on; // set AFTER startGame so nothing resets it under us
+      const p = gc as unknown as {m_tanks: CTank[]; m_land: CLand};
+      const tank = p.m_tanks[0];
+      const x = Math.floor(tank.getPosition().x);
+      const surf = p.m_land.getHeightAt(x);
+      const before = tank.getHealth().nLife;
+      // Irradiate directly under the tank (modest DOT so it hurts without killing).
+      p.m_land.blastIradiate(x, surf, 70, 120, 6, [80, 255, 80]);
+      for (let i = 0; i < 180; i++) gc.update(1 / 60); // specks settle onto its column, then DOT ticks
+      return {before, after: tank.getHealth().nLife};
+    };
+
+    const onR = run(true);
+    expect(onR.after).toBeLessThan(onR.before); // "green = danger": fallout under the tank drained it
+
+    const offR = run(false);
+    expect(offR.after).toBe(offR.before); // legacy: fallout is purely cosmetic, no tank damage
+
+    GameConfig.radiationDamage = true; // restore default
+  });
+
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {
     const gc = humanGame();
     GameConfig.buyTime = 0; // Anytime

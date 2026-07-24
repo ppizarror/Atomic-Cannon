@@ -188,7 +188,7 @@ export class CEconomy {
    * tough-AI branch — half the time it grabs the weakest affordable filler to hoard credits
    * for pricier rounds; the difficulty-gated support front-load pass isn't modelled here.
    */
-  autoBuy(opts?: {conserve?: boolean}): void {
+  autoBuy(opts?: {conserve?: boolean; deterministic?: boolean}): void {
     // Guard against pathological loops (every buy removes at least the cheapest cost).
     for (let guard = 0; guard < 5000; guard++) {
       const affordable: number[] = [];
@@ -205,10 +205,12 @@ export class CEconomy {
         }
       }
       if (affordable.length === 0) break;
-      // Tough AI conserves: half the buys grab the lowest-"Power" (weakest) affordable weapon
-      // instead of a random one, so it stocks cheap filler and saves for the expensive rounds.
-      const pick =
-        opts?.conserve && Math.random() < 0.5
+      // Deterministic (network): cycle through the affordable list by the loop counter so every
+      // client autobuys the SAME varied loadout + spends the SAME credits — no Math.random.
+      // Solo: tough-AI conserve grabs the weakest affordable half the time, else a random pick.
+      const pick = opts?.deterministic
+        ? affordable[guard % affordable.length]
+        : opts?.conserve && Math.random() < 0.5
           ? affordable.reduce((lo, i) =>
               WEAPON_DATABASE[i].damage < WEAPON_DATABASE[lo].damage ? i : lo,
             )
