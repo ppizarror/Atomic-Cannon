@@ -273,3 +273,63 @@ export function pickWeapon(level: number, rnd: () => number = Math.random): numb
   }
   return pool[Math.floor(rnd() * pool.length)];
 }
+
+/**
+ * The computer player's full weapon/utility decision, over the bot's OWNED inventory.
+ * In order: a random offensive round (never Shell, never Death); a level>8
+ * "strongest weapon" upgrade (70%); a no-arc FALLBACK ladder when the solver found no hitting shot
+ * (Escape → Cleaner → Rebound → Beam — weapons that don't need a good arc); then a DEFENSIVE
+ * self-buff pass that overwrites the choice when a stat is low, last-match-wins so Heal > Hazmat >
+ * Armor > Shield. Returns the chosen weapon index (into WEAPON_DATABASE).
+ *
+ * `owned` = indices the bot has in stock (the Shell staple always among them). `solutionFound` =
+ * the ballistic solver found an arc that actually hits (so the fallback is skipped).
+ */
+export function chooseBotWeapon(
+  owned: number[],
+  level: number,
+  solutionFound: boolean,
+  stats: BotStats,
+  rnd: () => number = Math.random,
+): number {
+  const db = WEAPON_DATABASE;
+  const shell = getDefaultWeaponIndex();
+  const ext = (i: number): number => db[i].extType ?? 0;
+  const val = (i: number): number => db[i].damage; // the magnitude field (dmg / heal / shield / armor value)
+  const firstOwned = (e: number): number | undefined => owned.find(i => ext(i) === e);
+
+  // E — random OFFENSIVE pick: any owned non-Shell, non-utility, damaging weapon, skipping Death.
+  const offensive = owned.filter(i => i !== shell && !BOT_UTILITY_EXT.has(ext(i)) && val(i) > 0);
+  const nonDeath = offensive.filter(i => ext(i) !== BOT_EXT.DEATH);
+  let sel = nonDeath.length ? nonDeath[Math.floor(rnd() * nonDeath.length)] : shell;
+
+  // F — "strongest weapon" upgrade: level>8, 70% → the highest-power (damage) non-Death round.
+  if (level > 8 && rnd() < 0.7 && nonDeath.length) {
+    sel = nonDeath.reduce((b, i) => (val(i) > val(b) ? i : b), nonDeath[0]);
+  }
+
+  // G — no-arc fallback (level>4, the solver found no hitting arc): reach for a weapon that
+  // doesn't need one, in the original's order. Leave the pick as-is if none are owned.
+  if (level > 4 && !solutionFound) {
+    const ladder = [
+      firstOwned(BOT_EXT.ESCAPE),
+      owned.find(i => db[i].id === 'cleaner'),
+      firstOwned(BOT_EXT.REBOUND),
+      firstOwned(BOT_EXT.BEAM),
+    ];
+    const pick = ladder.find(i => i !== undefined);
+    if (pick !== undefined) sel = pick;
+  }
+
+  // H — defensive self-buff (each overwrites `sel`; last match wins → Heal > Hazmat > Armor > Shield).
+  const s7 = firstOwned(BOT_EXT.SHIELD);
+  const s11 = firstOwned(BOT_EXT.ARMOR);
+  const s14 = firstOwned(BOT_EXT.HAZMAT);
+  const s10 = firstOwned(BOT_EXT.HEAL);
+  if (s7 !== undefined && stats.shield < 1000 - val(s7)) sel = s7; // won't overflow the 1000 cap
+  if (s11 !== undefined && stats.armor < val(s11)) sel = s11; // upgrade to a better armor level
+  if (s14 !== undefined && stats.hazmat < val(s14)) sel = s14;
+  if (s10 !== undefined && stats.life < stats.maxLife - val(s10) * 0.7) sel = s10; // hurt enough to heal
+
+  return sel;
+}
