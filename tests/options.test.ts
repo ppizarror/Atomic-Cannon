@@ -136,6 +136,35 @@ describe('Formerly-no-op Settings options', () => {
     expect(gc.getWeaponDefs().length).toBe(before + 1);
   });
 
+  it('the arsenal numbers by BUY ORDER: Shell stays #1, bought weapons follow in acquisition order', () => {
+    const gc = humanGame(2);
+    const p = gc as unknown as {
+      m_tanks: CTank[];
+      m_currentPlayerIndex: number;
+      economyFor(t: CTank): {grant(i: number): void};
+    };
+    const humanIdx = p.m_tanks.findIndex(t => t.isHuman());
+    p.m_currentPlayerIndex = humanIdx; // getWeaponDefs reads the ACTIVE tank's economy
+    const econ = p.economyFor(p.m_tanks[humanIdx]);
+
+    const staple = WEAPON_DATABASE.findIndex(w => w.id === 'shell');
+    // Two enabled non-staple weapons, one with a HIGHER database index than the other.
+    const others = WEAPON_DATABASE.filter(w => w.index !== staple && weaponEnabled(w.index)).map(w => w.index);
+    const wHi = others[others.length - 1];
+    const wLo = others[0];
+    expect(wHi).toBeGreaterThan(wLo); // db order alone would put wLo first
+
+    econ.grant(wHi); // bought FIRST (higher db index)
+    econ.grant(wLo); // bought SECOND (lower db index)
+
+    const defs = gc.getWeaponDefs().map(d => d.index);
+    expect(defs[0]).toBe(staple); // the Shell keeps position 1
+    const iHi = defs.indexOf(wHi);
+    const iLo = defs.indexOf(wLo);
+    expect(iHi).toBeGreaterThan(0); // after the staple
+    expect(iLo).toBeGreaterThan(iHi); // bought later → later in the list, despite its LOWER db index
+  });
+
   it('the camera snaps to the active tank at turn-begin when it is off-screen (large maps)', () => {
     GameConfig.landSize = 5; // wide world → the two tanks are off-screen from each other
     const gc = humanGame(2);
@@ -289,6 +318,32 @@ describe('Formerly-no-op Settings options', () => {
     p.m_land.carveDiscCollapse(wx, p.m_land.getHeightAt(wx), 100, true, true, true);
     for (let i = 0; i < 240; i++) gc.update(1 / 60);
     expect(wreck.getPosition().y).toBeGreaterThan(yBefore + 10); // the wreck fell (was left floating)
+  });
+
+  it('a tank that dies still owning a Death weapon (Burial Mound) cooks it off — heaps earth', () => {
+    const burial = WEAPON_DATABASE.findIndex(w => w.id === 'burial.mound');
+    expect(burial).toBeGreaterThanOrEqual(0);
+    type Priv = {
+      m_tanks: CTank[];
+      m_land: CLand;
+      economyFor(t: CTank): {grant(i: number): void};
+      handleTankDestroyed(t: CTank): void;
+    };
+    const kill = (owns: boolean): number => {
+      const p = humanGame(4) as unknown as Priv; // 4 teams → no BattleEnd when one dies
+      const victim = p.m_tanks[1] as unknown as CTank & {m_bIsAlive: boolean; m_bExploded: boolean};
+      if (owns) p.economyFor(victim).grant(burial); // still holds a Burial Mound on death
+      const x = Math.floor(victim.getPosition().x);
+      const before = p.m_land.getHeightAt(x);
+      victim.m_bIsAlive = false;
+      victim.m_bExploded = true;
+      p.handleTankDestroyed(victim); // → posthumous Death-weapon cook-off
+      for (let i = 0; i < 300; i++) p.m_land.update(1 / 60); // settle the thrown dirt into a mound
+      return before - p.m_land.getHeightAt(x); // >0 = surface ROSE (Y smaller = higher)
+    };
+
+    expect(kill(true)).toBeGreaterThan(8); // Burial Mound raised the ground over the corpse
+    expect(Math.abs(kill(false))).toBeLessThan(3); // no Death weapon → no mound
   });
 
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {

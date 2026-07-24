@@ -4757,7 +4757,18 @@ export class CGameController implements ShotWorld {
     // the acting player's real inventory (e.g. a Shell-only bot shows only Shell), not the whole
     // arsenal. The unlimited staple always qualifies; free-fire puts every weapon in stock; the active
     // player's chosen weapon is by definition in their stock, so it always appears.
-    return WEAPON_DATABASE.filter(w => enabled(w.index) && this.economyFor(tank).hasStock(w.index));
+    const econ = this.economyFor(tank);
+    const owned = WEAPON_DATABASE.filter(w => enabled(w.index) && econ.hasStock(w.index));
+    // Arsenal numbering: the unlimited STAPLE (Shell) always keeps position 1, then BOUGHT weapons
+    // follow in buy order ("2." = the first weapon you bought, "3." the next, …). The HUD numbers the
+    // rows by position (1..N), so the numbers track acquisition, not a fixed database id.
+    const order = econ.getAcquireOrder();
+    const rank = (i: number): number => {
+      const r = order.indexOf(i);
+      // staples (not bought, r<0) FIRST, in database order; then bought weapons in buy order after.
+      return r >= 0 ? WEAPON_DATABASE.length + r : i;
+    };
+    return owned.sort((a, b) => rank(a.index) - rank(b.index));
   }
 
   getCurrentWeaponIndex(): number {

@@ -279,7 +279,7 @@ function contentRows(): Widget[] {
 
 /** Max real options shown on one settings page. Anything longer auto-splits into sub-pages, each
  *  ending in a free "More Options" nav (the nav itself does NOT count toward the cap). */
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 10;
 
 /** Slice a category's full row list to the requested sub-page, appending a "next page" nav to every
  *  page but the last. The sub-page index rides in the route id as `<base>~<n>` (page 0 = bare id),

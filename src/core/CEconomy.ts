@@ -50,6 +50,10 @@ export interface CreditHolder {
 
 export class CEconomy {
   private readonly m_owned: number[]; // per weapon index; UNLIMITED for staples
+  // Weapon indices in the order they were FIRST acquired (bought / granted) — drives the arsenal's
+  // buy-order numbering. Unlimited staples (the Shell) are never recorded here: they keep position 1,
+  // then bought weapons follow in this order ("2." = first bought, "3." next, …).
+  private m_order: number[] = [];
   // Free-fire (dev weapon-test): treat EVERY weapon as unlimited. It's a mode of the
   // inventory itself — the single source of truth for "in stock / unlimited / consume" —
   // so the depot, the arsenal and the fire path all agree without any external flag.
@@ -88,7 +92,20 @@ export class CEconomy {
   reset(startCredits = START_CREDITS, unlimited: number[] = defaultUnlimited()): void {
     this.creditsSet(startCredits);
     this.m_owned.fill(0);
+    this.m_order.length = 0; // fresh match → buy-order numbering restarts
     for (const i of unlimited) if (i >= 0 && i < this.m_owned.length) this.m_owned[i] = UNLIMITED;
+  }
+
+  /** Record a weapon as acquired (first buy/grant) for the arsenal's buy-order numbering. Idempotent
+   *  — the first acquisition fixes its rank; buying more of the same weapon doesn't change it. */
+  private recordAcquire(index: number): void {
+    if (!this.m_order.includes(index)) this.m_order.push(index);
+  }
+
+  /** Weapon indices in first-acquired order (bought/granted, excluding unlimited staples). The
+   *  arsenal renders the staple(s) first, then bought weapons in this order. */
+  getAcquireOrder(): readonly number[] {
+    return this.m_order;
   }
 
   /** Set the sell-back refund fraction (0..1). */
@@ -147,6 +164,7 @@ export class CEconomy {
     if (!this.canBuy(index)) return false;
     this.creditsAdd(-this.cost(index));
     this.m_owned[index] = this.getOwned(index) + 1;
+    this.recordAcquire(index); // buy-order numbering
     return true;
   }
 
@@ -155,6 +173,7 @@ export class CEconomy {
   grant(index: number): void {
     if (index < 0 || index >= this.m_owned.length || this.isUnlimited(index)) return;
     this.m_owned[index] = this.getOwned(index) + 1;
+    this.recordAcquire(index); // buy-order numbering
   }
 
   /** True if this weapon can be sold (owned, finite, at least one round). */

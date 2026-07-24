@@ -81,6 +81,8 @@ export const en: Strings = {
     },
     errorTitle: 'Connection problem',
     retry: 'Back',
+    errCreateRoom: 'Could not reach the server to create a room.',
+    errBadCode: 'That room code looks wrong — check it and try again.',
     ownReconnecting: 'Connection lost — reconnecting…',
     playerDropped: '{name} lost connection — waiting to reconnect…',
     playersDropped: '{n} players disconnected — waiting…',
@@ -620,6 +622,23 @@ export const en: Strings = {
       colAction: 'Action',
       colButton: 'Button',
       pressKey: 'Press a key…',
+      unassigned: 'Unassigned',
+      // Player-facing names for each bindable action (keyed by ActionId), shown in the Action column.
+      actions: {
+        fire: 'Fire cannon',
+        prevWeapon: 'Previous weapon',
+        nextWeapon: 'Next weapon',
+        aimLeft: 'Left',
+        powerUp: 'Up',
+        aimRight: 'Right',
+        powerDown: 'Down',
+        exit: 'Exit',
+        minimize: 'Minimize',
+        screenshot: 'Screen shot',
+        tutorial: 'Show tutorial',
+        fullscreen: 'Toggle full screen',
+        taunt: 'Chat Taunt',
+      },
     },
     players: {
       color: 'Color:',
@@ -686,6 +705,14 @@ export const en: Strings = {
 
   game: {
     defaultPlayer: 'Player',
+    // Themed map name (depot footer), by the map's dominant weather.
+    mapNames: {
+      snow: 'Frozen Wastes',
+      dust: 'Desert',
+      rain: 'Wetlands',
+      hail: 'Highlands',
+      default: 'Battlefield',
+    },
     teamMember: '{name} {n}',
     foundCredits: 'You found {n} credits.',
     gainedHealth: 'You gained {n} health.',

@@ -32,28 +32,28 @@ export type ActionId =
 
 export interface ActionDef {
   id: ActionId;
-  label: string;
   /** DOM KeyboardEvent.code the action binds to by default. */
   defaultCode: string;
   /** Actions the gameplay input loop actually reads (the rest are shell/cosmetic). */
   gameplay: boolean;
 }
 
-/** The bindable actions in editor display order, with their default keys. */
+/** The bindable actions in editor display order, with their default keys. The player-facing action
+ *  NAME is not stored here (core holds no copy) — it comes from i18n `editors.controls.actions[id]`. */
 export const ACTIONS: ActionDef[] = [
-  {id: 'fire', label: 'Fire cannon', defaultCode: 'Space', gameplay: true},
-  {id: 'prevWeapon', label: 'Previous weapon', defaultCode: 'KeyQ', gameplay: true},
-  {id: 'nextWeapon', label: 'Next weapon', defaultCode: 'KeyA', gameplay: true},
-  {id: 'aimLeft', label: 'Left', defaultCode: 'ArrowLeft', gameplay: true},
-  {id: 'powerUp', label: 'Up', defaultCode: 'ArrowUp', gameplay: true},
-  {id: 'aimRight', label: 'Right', defaultCode: 'ArrowRight', gameplay: true},
-  {id: 'powerDown', label: 'Down', defaultCode: 'ArrowDown', gameplay: true},
-  {id: 'exit', label: 'Exit', defaultCode: 'Escape', gameplay: true},
-  {id: 'minimize', label: 'Minimize', defaultCode: 'NumpadSubtract', gameplay: false},
-  {id: 'screenshot', label: 'Screen shot', defaultCode: 'F9', gameplay: false},
-  {id: 'tutorial', label: 'Show tutorial', defaultCode: 'F1', gameplay: false},
-  {id: 'fullscreen', label: 'Toggle full screen', defaultCode: 'F11', gameplay: false},
-  {id: 'taunt', label: 'Chat Taunt', defaultCode: 'Enter', gameplay: false},
+  {id: 'fire', defaultCode: 'Space', gameplay: true},
+  {id: 'prevWeapon', defaultCode: 'KeyQ', gameplay: true},
+  {id: 'nextWeapon', defaultCode: 'KeyA', gameplay: true},
+  {id: 'aimLeft', defaultCode: 'ArrowLeft', gameplay: true},
+  {id: 'powerUp', defaultCode: 'ArrowUp', gameplay: true},
+  {id: 'aimRight', defaultCode: 'ArrowRight', gameplay: true},
+  {id: 'powerDown', defaultCode: 'ArrowDown', gameplay: true},
+  {id: 'exit', defaultCode: 'Escape', gameplay: true},
+  {id: 'minimize', defaultCode: 'NumpadSubtract', gameplay: false},
+  {id: 'screenshot', defaultCode: 'F9', gameplay: false},
+  {id: 'tutorial', defaultCode: 'F1', gameplay: false},
+  {id: 'fullscreen', defaultCode: 'F11', gameplay: false},
+  {id: 'taunt', defaultCode: 'Enter', gameplay: false},
 ];
 
 /** A binding map: one key `code` per action id ('' = unassigned). */
@@ -84,7 +84,7 @@ export function resolveAction(bindings: Bindings, code: string): ActionId | null
  * back to a trimmed form of the raw code otherwise.
  */
 export function keyName(code: string): string {
-  if (!code) return 'Unassigned';
+  if (!code) return ''; // unassigned — the editor substitutes the localised "Unassigned" label
   const named: Record<string, string> = {
     Space: 'Space',
     Enter: 'Enter',

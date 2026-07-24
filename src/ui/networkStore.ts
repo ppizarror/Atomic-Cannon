@@ -145,14 +145,14 @@ export async function createRoom(): Promise<void> {
   try {
     await makeClient().create();
   } catch {
-    fail('Could not reach the server to create a room.');
+    fail(strings.value.net.errCreateRoom);
   }
 }
 
 export function joinRoom(raw: string): void {
   const code = normalizeRoomCode(raw);
   if (!isValidRoomCode(code)) {
-    fail('That room code looks wrong — check it and try again.');
+    fail(strings.value.net.errBadCode);
     return;
   }
   makeClient().join(code);

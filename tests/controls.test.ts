@@ -73,6 +73,7 @@ describe('Customize Controls', () => {
   it('renders friendly key names', () => {
     expect(keyName('KeyQ')).toBe('Q');
     expect(keyName('ArrowLeft')).toBe('Left');
-    expect(keyName('')).toBe('Unassigned');
+    // An unbound action returns '' — the editor substitutes the localised "Unassigned" label.
+    expect(keyName('')).toBe('');
   });
 });

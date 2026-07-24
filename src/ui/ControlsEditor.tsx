@@ -50,7 +50,7 @@ export function ControlsEditor() {
   }, [armed, sweep]);
 
   const e = strings.value.editors.controls;
-  const armLabel = armed ? ACTIONS.find(a => a.id === armed)?.label : '';
+  const armLabel = armed ? e.actions[armed] : '';
 
   // Clicking the screen while armed unassigns the armed action (matching the editor's
   // "or click to unassign"); clicking a row arms that row instead.
@@ -109,10 +109,13 @@ export function ControlsEditor() {
               }}
             >
               <span class="editor-body">
-                <BmpText font="beijing-16-out" text={a.label} />
+                <BmpText font="beijing-16-out" text={e.actions[a.id]} />
               </span>
               <span class="editor-state">
-                <BmpText font="beijing-16-out" text={isArmed ? e.pressKey : keyName(map[a.id])} />
+                <BmpText
+                  font="beijing-16-out"
+                  text={isArmed ? e.pressKey : keyName(map[a.id]) || e.unassigned}
+                />
               </span>
             </button>
           );

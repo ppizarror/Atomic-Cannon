@@ -13,6 +13,8 @@
  * stable weapon id from data/weapons.json; weapon category labels live in `weaponTypes`.
  */
 
+import type {ActionId} from '../core/CControls';
+
 /** One block of the About screen: an optional heading, flowing body paragraphs, and
  *  an optional bullet list. Each paragraph / bullet is a single flowing string. */
 export interface AboutSection {
@@ -129,6 +131,9 @@ export interface Strings {
     status: {connecting: string; open: string; reconnecting: string; closed: string};
     errorTitle: string;
     retry: string;
+    /** Client-side failure messages shown in the network error screen. */
+    errCreateRoom: string;
+    errBadCode: string;
     /** In-battle banners. `{name}` / `{n}` substituted. */
     ownReconnecting: string;
     playerDropped: string;
@@ -452,6 +457,10 @@ export interface Strings {
       colAction: string;
       colButton: string;
       pressKey: string;
+      /** Shown in the Button column when an action has no key bound. */
+      unassigned: string;
+      /** Player-facing action names, keyed by the core ActionId (core holds no copy). */
+      actions: Record<ActionId, string>;
     };
     players: {
       color: string;
@@ -532,6 +541,8 @@ export interface Strings {
   game: {
     /** Default human player name. */
     defaultPlayer: string;
+    /** Themed map names by dominant weather (depot footer). */
+    mapNames: {snow: string; dust: string; rain: string; hail: string; default: string};
     /** Team member suffix — `{name} {n}`. */
     teamMember: string;
     /** Crate pickup — `{n}` credits. */

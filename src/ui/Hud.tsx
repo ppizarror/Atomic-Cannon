@@ -49,7 +49,6 @@ import {
 import {
   weaponPower,
   weaponDamagePerArea,
-  weaponDisplayNumber,
   weaponName,
   weaponTypeName,
 } from '../core/CWeapon';
@@ -376,7 +375,7 @@ function WeaponList() {
       ref={listRef}
       onWheel={onWheel}
     >
-      {weapons.value.map(wp => {
+      {weapons.value.map((wp, i) => {
         const active = wp.index === idx;
         return (
           <div
@@ -391,7 +390,8 @@ function WeaponList() {
             <BmpText
               class="wtext"
               font="beijing-16-out"
-              text={`${weaponDisplayNumber(wp)}. ${weaponName(wp)}`}
+              // Number by POSITION in the arsenal (buy order): "1." = first weapon bought, etc.
+              text={`${i + 1}. ${weaponName(wp)}`}
               spacing={-1}
             />
           </div>
