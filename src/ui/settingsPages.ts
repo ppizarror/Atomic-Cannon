@@ -214,6 +214,7 @@ function graphics2Rows(): Widget[] {
     toggle(s.lastAim, 'gfx.lastAim'),
     toggle(s.expWaves, 'gfx.expWaves'),
     toggle(s.camShake, 'gfx.camShake'),
+    toggle(s.explodeLosers, 'gfx.explodeLosers'),
     enumW(s.framerate, 'gfx.framerate'),
     enumW(s.fpsCap, 'gfx.fpsCap'),
     {

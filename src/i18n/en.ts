@@ -573,6 +573,10 @@ export const en: Strings = {
       lastAim: {label: 'Show Last Aim', tip: 'Show last power and angle position'},
       expWaves: {label: 'Explosion Waves', tip: 'A very cool refractive wave effect for nukes'},
       camShake: {label: 'Camera Shake', tip: 'Shake the screen on big and nuclear explosions'},
+      explodeLosers: {
+        label: 'Explode Losers',
+        tip: 'Blow up the losing teams when a battle ends',
+      },
       framerate: {
         label: 'Show Framerate',
         tip: 'Off, the FPS counter, or FPS + a frame count (Full)',
@@ -625,6 +629,7 @@ export const en: Strings = {
       footer: 'Players sharing a colour are a team',
       done: 'Done',
       playerName: 'Player {n} Name:',
+      botName: 'Bot {n} Name:',
       human: 'Human',
       computer: 'Computer',
     },

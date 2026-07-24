@@ -80,6 +80,7 @@ const CATALOG = {
   'gfx.lastAim': {default: 1},
   'gfx.expWaves': {default: 1},
   'gfx.camShake': {default: 1},
+  'gfx.explodeLosers': {default: 1}, // blow up the non-winning teams when a battle ends (cosmetic)
   'gfx.framerate': {default: 0},
   'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144]},
   'gfx.demo': {default: 0},

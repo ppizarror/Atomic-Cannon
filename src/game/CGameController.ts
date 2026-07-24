@@ -514,11 +514,19 @@ export class CGameController implements ShotWorld {
     const MAX_TANKS = 16;
 
     const playerNames = strings.value.playerNames;
+    // Roster layout (Customize Players): slots 0..7 are the HUMAN pool, slots 8..15 the BOT pool
+    // (mirrors MAX_HUMANS/MAX_COMPUTERS and the editor's two sections). A local match with H humans +
+    // C CPUs draws humans from 0..H-1 and bots from 8..8+C-1, so editing "Bot 1" configures the CPU
+    // you actually face. (Network matches use the lobby roster in turn order — no split.)
+    const BOT_POOL_START = 8;
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
     for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
       // In a network match the roster comes from the lobby (same on every client, in
       // turn order) so names/colours — and thus team identity — match across clients.
       const netCfg = this.m_netRoster?.[p];
+      const human = p < this.m_humanCount;
+      // Local roster index: humans map straight through; CPUs draw from the bot pool (slot 8+).
+      const rosterIdx = human ? p : BOT_POOL_START + (p - this.m_humanCount);
       const cfg = netCfg
         ? // Pick the hull sprite deterministically from the shared seed + slot so every client
           // shows the same tank (the local default is Math.random → each client differs). Purely
@@ -531,13 +539,13 @@ export class CGameController implements ShotWorld {
               ],
             color: netCfg.color,
           }
-        : (roster[p] ?? {
+        : (roster[rosterIdx] ?? {
             name:
-              p === 0
+              rosterIdx === 0
                 ? strings.value.game.defaultPlayer
-                : playerNames[(p - 1) % playerNames.length],
+                : playerNames[(rosterIdx - 1) % playerNames.length],
             model: '',
-            color: TEAM_COLORS[p] ?? DEFAULT_TEAM_COLOR,
+            color: TEAM_COLORS[rosterIdx] ?? DEFAULT_TEAM_COLOR,
           });
       // Team = the colour's group; the first tank of a colour defines a new team id.
       let team = teamOfColor.get(cfg.color);
@@ -545,7 +553,6 @@ export class CGameController implements ShotWorld {
         team = teamOfColor.size;
         teamOfColor.set(cfg.color, team);
       }
-      const human = p < this.m_humanCount;
       // Humans (and network players) keep their roster/lobby name from the human pool;
       // local CPU opponents are named from the separate bot pool instead. The Wargame
       // Detail preset overrides every CPU to "Whopper" (the WarGames reference).
@@ -3264,6 +3271,12 @@ export class CGameController implements ShotWorld {
     // A Rounds tie across all teams → no winner (a Draw), so no banner name.
     const leader = this.getLeadingTeam();
     this.m_winnerName = leader ? leader.members[0].getName() : '';
+
+    // Explode Losers (Graphics): once the result is decided, detonate every still-standing tank
+    // that is NOT on the winning team — the original's end-of-round wipeout cinematic. Purely
+    // cosmetic (no scoring), and the main reason to have it in Rounds, where losers are otherwise
+    // never destroyed. Skipped on a Draw (no leader) since there are no "losers".
+    this.explodeLosingTeams(leader);
     const speaker = leader?.rep ?? null;
     const victorLine = pickTaunt('postFire');
     if (speaker && victorLine && GameConfig.chatter && !speaker.isSentry()) {
@@ -3285,6 +3298,27 @@ export class CGameController implements ShotWorld {
     // once (takeBattleOutcome) to advance the persisted won/lost counters.
     if (this.m_tanks.some(t => t.isHuman())) {
       this.m_pendingBattleOutcome = humanWon ? 'won' : 'lost';
+    }
+  }
+
+  /** Explode Losers (Graphics): blow up every still-standing tank not on the winning team as the
+   *  battle ends — the original's end-of-round wipeout. Cosmetic only (no kills/credit): it forces
+   *  the wreck state + spawns one explosion per tank, staggered so it reads as a cascade rather
+   *  than a single flash. Deterministic (no RNG), so it stays in lockstep across net clients. */
+  private explodeLosingTeams(leader: {members: CTank[]} | null): void {
+    if (!GameConfig.explodeLosers || !leader) return;
+    const winTeam = leader.members[0].getTeamId();
+    let n = 0;
+    for (const t of this.m_tanks) {
+      if (t.isSentry() || t.getTeamId() === winTeam || !t.isAlive()) continue;
+      const delay = n++ * 0.18; // cascade the blasts
+      this.schedule(delay, () => {
+        const pos = t.getPosition();
+        t.explode();
+        this.m_particles.tankDeath(pos.x, pos.y + 12);
+        this.m_screenShake.trigger(15, 0.5);
+        this.m_audio?.tankExplode(pos.x);
+      });
     }
   }
 

@@ -613,6 +613,15 @@ export class CTank {
     return lifeBefore - this.m_health.nLife;
   }
 
+  /** Force this tank into its destroyed (wreck) state, bypassing the damage pipeline. Used for the
+   *  end-of-battle "explode the losers" cinematic — a Rounds tank is never killed by damage, so the
+   *  controller detonates the non-winning teams directly once the result is decided. Idempotent. */
+  explode(): void {
+    this.m_health.nLife = 0;
+    this.m_bExploded = true;
+    this.m_bIsAlive = false;
+  }
+
   /**
    * Apply radiation fallout damage-over-time. Radiation is a PIERCING/secondary source, so it
    * routes through the same pipeline as a piercing hit — SHIELD soaks it first, then HAZMAT

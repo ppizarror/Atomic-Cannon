@@ -62,6 +62,7 @@ export const GameConfig = {
   cameraShake: true, // More Graphics Options → Camera Shake (screen shake on big/nuke blasts; port-only)
   blastCircles: false, // More Graphics Options → Show Blast Circles (ring at each explosion's radius)
   highContrast: false, // Graphics → High Contrast (white outline around tanks)
+  explodeLosers: true, // Graphics → Explode Losers (blow up the non-winning teams when a battle ends)
   showAiStats: false, // Graphics → Show AI Stats (the active bot's aim solution)
   demo: false, // More Graphics Options → Demo Mode (the human's turns are played by the AI)
   ambientLight: true, // More Graphics Options → Ambient Lighting (tint the scene toward the map's mood)

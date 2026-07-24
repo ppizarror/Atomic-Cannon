@@ -14,7 +14,7 @@ import {BmpText} from './BmpText';
 import {Button} from './Button';
 import {openSettingsPage, uiClick, uiTyping} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
-import {setup, playersOf} from './setupStore';
+import {MAX_HUMANS} from './setupStore';
 import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
 import {usePointerDrag} from './usePointerDrag';
 import {EditorScreen} from './EditorScreen';
@@ -85,13 +85,15 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
 
 export function PlayersEditor() {
   const list = roster.value; // subscribe so the card re-renders on edit
-  const s = setup.value; // humans + computers → which slots are in the match, and their type
   const [p, setP] = useState(0);
-  // Page only the slots actually IN the match (humans + computers), not all 16 roster entries.
-  const count = Math.max(1, Math.min(MAX_PLAYERS, list.length, playersOf(s)));
+  // Page through ALL roster slots, split into two pools: slots 0..MAX_HUMANS-1 are the HUMAN
+  // players, the rest are the BOTS (the same layout the match reads — see setupTanks). So you
+  // page Player 1..8, then Bot 1..8, and can pre-configure every slot regardless of match size.
+  const count = Math.max(1, Math.min(MAX_PLAYERS, list.length));
   const idx = Math.min(p, count - 1);
   const cfg = list[idx];
-  const isHuman = idx < s.humans; // first `humans` slots are human; the rest are CPU
+  const isHuman = idx < MAX_HUMANS; // first pool = human players; second pool = bots
+  const slotN = isHuman ? idx + 1 : idx - MAX_HUMANS + 1; // number within its own pool
   const e = strings.value.editors.players;
 
   const page = (d: number) => {
@@ -109,7 +111,7 @@ export function PlayersEditor() {
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
-          <BmpText font="beijing-16-out" text={fmt(e.playerName, {n: idx + 1})} />
+          <BmpText font="beijing-16-out" text={fmt(isHuman ? e.playerName : e.botName, {n: slotN})} />
           <span class={`player-kind ${isHuman ? 'is-human' : 'is-cpu'}`}>
             <BmpText font="beijing-16-out" text={isHuman ? e.human : e.computer} spacing={-1} />
           </span>

@@ -414,6 +414,7 @@ export interface Strings {
       lastAim: RowCopy;
       expWaves: RowCopy;
       camShake: RowCopy;
+      explodeLosers: RowCopy;
       framerate: RowCopy;
       fpsCap: RowCopy;
       demo: RowCopy;
@@ -457,9 +458,10 @@ export interface Strings {
       title: string;
       footer: string;
       done: string;
-      /** `{n}` is the 1-based player number. */
+      /** `{n}` is the 1-based number within the pool (human pool or bot pool). */
       playerName: string;
-      /** Slot-type badges — whether this player slot is a human or a CPU in the current match. */
+      botName: string;
+      /** Slot-type badges — whether this roster slot is in the human pool or the bot pool. */
       human: string;
       computer: string;
     };

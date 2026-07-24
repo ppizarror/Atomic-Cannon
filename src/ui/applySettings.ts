@@ -66,6 +66,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.showLastAim = S.showLastAim();
   GameConfig.explosionWaves = S.explosionWaves();
   GameConfig.cameraShake = S.cameraShake();
+  GameConfig.explodeLosers = S.explodeLosers();
   GameConfig.blastCircles = S.blastCircles();
   GameConfig.highContrast = S.highContrast();
   GameConfig.showAiStats = S.showAiStats();

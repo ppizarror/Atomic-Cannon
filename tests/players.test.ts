@@ -52,22 +52,28 @@ describe('Customize Players', () => {
     expect(new Set(t.map(x => x.getTeamId())).size).toBe(3); // three distinct colours → three teams
   });
 
-  it('CPU opponents keep their Customize Players roster name (nameable, like the original)', () => {
-    Roster.players = [
-      {name: 'Ada', model: 'Standard', color: '#ff0000'},
-      {name: 'Custom Foe A', model: 'Standard', color: '#00ff00'},
-      {name: 'Custom Foe B', model: 'Standard', color: '#0000ff'},
-    ];
+  it('CPU opponents draw from the BOT pool (roster slots 8+) and keep those names', () => {
+    // Roster layout: slots 0..7 are the human pool, slots 8..15 the bot pool. A match with
+    // 1 human + 2 CPUs draws the human from slot 0 and the two bots from slots 8 and 9 — so
+    // you name your bots in the Customize Players "Bot" section, and face exactly those.
+    const players = Array.from({length: 16}, (_, i) => ({
+      name: `Filler ${i}`,
+      model: 'Standard',
+      color: TEAM_COLORS[i],
+    }));
+    players[0] = {name: 'Ada', model: 'Standard', color: '#ff0000'};
+    players[8] = {name: 'Custom Foe A', model: 'Standard', color: '#00ff00'};
+    players[9] = {name: 'Custom Foe B', model: 'Standard', color: '#0000ff'};
+    Roster.players = players;
+
     const gc = new CGameController(makeCanvas());
     gc.setHumanCount(1); // one human, two CPUs
     gc.startGame(3);
     const t = (gc as unknown as Tanks).m_tanks;
 
-    expect(t[0].getName()).toBe('Ada'); // the human keeps their roster name
-    // A CPU is just a slot beyond the human count — it uses its roster name too, so you can
-    // name your bots in Customize Players (the old bot-pool override is gone).
-    expect(t[1].getName()).toBe('Custom Foe A');
-    expect(t[2].getName()).toBe('Custom Foe B');
+    expect(t[0].getName()).toBe('Ada'); // human ← slot 0
+    expect(t[1].getName()).toBe('Custom Foe A'); // bot 1 ← slot 8
+    expect(t[2].getName()).toBe('Custom Foe B'); // bot 2 ← slot 9
   });
 
   it('an empty roster falls back to distinct per-player defaults (free-for-all)', () => {

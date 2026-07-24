@@ -13,12 +13,16 @@ import {Roster} from '../src/core/CRoster';
 
 // Teams are grouped by tank colour; use two alternating colours so N players form the
 // classic even/odd two-team split the pooling / survivor tests rely on.
-function twoTeamRoster(n: number): void {
-  Roster.players = Array.from({length: n}, (_, i) => ({
-    name: `P${i}`,
-    model: '',
-    color: i % 2 === 0 ? '#0000ff' : '#ff0000',
-  }));
+// Build a roster that puts `n` players onto two alternating teams (0,1,0,1,…) BY PLAYER ORDER.
+// The match reads humans from roster slots 0.. and CPUs from the bot pool (slots 8..), so we colour
+// each player's actual slot — otherwise a 1-human/3-CPU match would read uncoloured filler slots.
+function twoTeamRoster(n: number, humans = 1): void {
+  const roster = Array.from({length: 16}, (_, i) => ({name: `Filler${i}`, model: '', color: '#333333'}));
+  for (let p = 0; p < n; p++) {
+    const slot = p < humans ? p : 8 + (p - humans); // mirrors setupTanks' human/bot split
+    roster[slot] = {name: `P${p}`, model: '', color: p % 2 === 0 ? '#0000ff' : '#ff0000'};
+  }
+  Roster.players = roster;
 }
 
 type Tanks = {m_tanks: CTank[]};
