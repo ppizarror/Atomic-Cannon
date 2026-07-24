@@ -10,7 +10,7 @@ import {CGameController, EGameState} from '../src/game/CGameController';
 import {GameConfig} from '../src/core/CGameConfig';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {NetGame, type NetGameHost} from '../src/net/netGame';
-import {applyCommand} from '../src/net/commands';
+import {applyCommand, type GameCommand} from '../src/net/commands';
 import type {RoomClient, RoomClientState} from '../src/net/roomClient';
 import type {ClientMessage} from '../src/net/protocol';
 
@@ -496,6 +496,82 @@ describe('network match boot', () => {
     // The buyer (tank 0) — not me (tank 1) — is charged; and no re-relay off my turn.
     expect(spectator.getNetSnapshot().tanks[0].credits).toBe(3000 - cost);
     expect(spectator.getNetSnapshot().tanks[1].credits).toBe(3000);
+  });
+
+  // T4 — jet flight steering must be relayed. Flight is followed by an aim+fire in the SAME turn
+  // (before any turn-end keyframe), so a spectator that only replayed the ignite would land the tank
+  // elsewhere and mis-simulate the relayed shot. The controller relays each thrust CHANGE + the cut.
+  function bootNetWithSink(localIndex: number, sink: (c: GameCommand) => void): CGameController {
+    const gc = new CGameController(makeCanvas());
+    gc.startNetworkGame({
+      seed: 7,
+      players: 2,
+      localIndex,
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      tanksPerTeam: 1,
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+      onCommand: sink,
+    });
+    return gc;
+  }
+  const forceFlying = (gc: CGameController): void => {
+    (gc as unknown as {m_gameState: EGameState}).m_gameState = EGameState.Flying;
+  };
+
+  it('relays thrust changes and the cut on the local turn, deduping identical repeats', () => {
+    const cmds: GameCommand[] = [];
+    const gc = bootNetWithSink(0, c => cmds.push(c));
+    gc.netSetActivePlayer(0); // my tank
+    forceFlying(gc);
+
+    gc.setJetInput(true, false, false);
+    gc.setJetInput(true, false, false); // identical → deduped, no second relay
+    gc.setJetInput(true, true, false); // changed → relays
+    gc.cutJet();
+
+    const jets = cmds.filter(c => c.t === 'jet');
+    expect(jets).toEqual([
+      {t: 'jet', up: true, left: false, right: false},
+      {t: 'jet', up: true, left: true, right: false},
+    ]);
+    expect(cmds.filter(c => c.t === 'cutJet')).toHaveLength(1);
+  });
+
+  it('does not relay jet input on a remote turn', () => {
+    const cmds: GameCommand[] = [];
+    const gc = bootNetWithSink(0, c => cmds.push(c));
+    gc.netSetActivePlayer(1); // the opponent's tank is active → not my input to relay
+    forceFlying(gc);
+
+    gc.setJetInput(true, false, false);
+    gc.cutJet();
+    expect(cmds.filter(c => c.t === 'jet' || c.t === 'cutJet')).toHaveLength(0);
+  });
+
+  it('a spectator applying a relayed jet command reproduces the thrust (tank rises)', () => {
+    // The actor ignites and thrusts up; the spectator, fed the relayed `jet`, climbs the same way.
+    // Without the relay the tank keeps its (empty) thrust and just idles/falls. Ignite the flying
+    // tank on the spectator, feed it the relayed up-thrust, and confirm it lifts off the surface.
+    const spec = netController(1); // I am tank 1; tank 0 (remote) is the one flying
+    spec.netSetActivePlayer(0);
+    const tank = (
+      spec as unknown as {m_tanks: {igniteJet(s: number): boolean; getPosition(): {y: number}}[]}
+    ).m_tanks[0];
+    tank.igniteJet(15); // give the flight fuel (the ignite the actor's `fire` performed)
+    forceFlying(spec);
+    const startY = tank.getPosition().y;
+
+    applyCommand(spec, {t: 'jet', up: true, left: false, right: false}); // the relayed thrust
+    for (let i = 0; i < 30; i++) spec.update(1 / 60);
+
+    // Screen-Y grows downward: an up-thrust lifts the tank ABOVE where it started.
+    expect(tank.getPosition().y).toBeLessThan(startY);
   });
 
   it('two clients earn credits deterministically from the same shot', () => {

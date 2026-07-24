@@ -1033,11 +1033,25 @@ export class CGameController implements ShotWorld {
   setJetInput(up: boolean, left: boolean, right: boolean): void {
     if (this.m_gameState !== EGameState.Flying) return;
     this.getCurrentTank().setJetInput(up, left, right);
+    // NET: relay the thrust so spectators reproduce the SAME flight. Flight is followed by an aim+fire
+    // in the SAME turn (before any turn-end keyframe), so a spectator that only saw the ignite lands
+    // the tank elsewhere and the relayed shot simulates from the wrong spot — every later shot then
+    // diverges. Relay only on the local turn, and only on a real change (key auto-repeat resends).
+    if (this.m_netMode && this.isLocalNetTurn()) {
+      const j = this.m_lastJetRelay;
+      if (!j || j.up !== up || j.left !== left || j.right !== right) {
+        this.m_lastJetRelay = {up, left, right};
+        this.m_onNetCommand?.({t: 'jet', up, left, right});
+      }
+    }
   }
 
   /** Cut the jet early (drop remaining fuel); flight ends once the tank lands. */
   cutJet(): void {
-    if (this.m_gameState === EGameState.Flying) this.getCurrentTank().cutJet();
+    if (this.m_gameState !== EGameState.Flying) return;
+    this.getCurrentTank().cutJet();
+    // NET: relay the cut so spectators drop the remaining fuel at the same moment (same landing).
+    if (this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'cutJet'});
   }
 
   // ========================================================================
@@ -3557,6 +3571,7 @@ export class CGameController implements ShotWorld {
       // A buried tank can't fly out (igniteJet refuses) → fall through to the no-flight path.
       if (tank.isHuman() && tank.igniteJet(weapon.getDamage())) {
         this.m_gameState = EGameState.Flying;
+        this.m_lastJetRelay = null; // fresh flight → the first thrust change always relays
       } else {
         this.m_gameState = EGameState.Battle;
         this.schedule(0.4, () => this.endTurn());
@@ -5213,6 +5228,9 @@ export class CGameController implements ShotWorld {
   // cosmetic — the deterministic outcome still comes from the final aim re-sent at fire.
   private m_netAimDirty = false;
   private m_lastAimSentTime = 0;
+  // Jet-flight relay (net): the last thrust state sent to peers this flight, so a repeated
+  // setJetInput (key auto-repeat) doesn't spam the wire — only real CHANGES relay. Reset per flight.
+  private m_lastJetRelay: {up: boolean; left: boolean; right: boolean} | null = null;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
   private m_netLandScale = NET_LAND_SCALE; // host-chosen net world width (viewport-widths)
   private m_netViewW = NET_VIEW_W; // shared net logical size = the HOST's view size

@@ -38,6 +38,11 @@ interface StoredPlayer {
 /** Max spectators who may watch one in-progress match (separate from the player cap). */
 const MAX_SPECTATORS = 8;
 
+/** Server-side AFK backstop: if the active player takes no action within this window, a Durable-Object
+ *  alarm force-advances the turn so a connected-but-idle player can't stall the room forever. Generous
+ *  — it's a stall guard, not the gameplay shot clock (which is client-side and much shorter). */
+const TURN_DEADLINE_MS = 120_000;
+
 interface RoomState {
   code: string;
   phase: 'lobby' | 'playing' | 'ended';
@@ -48,6 +53,9 @@ interface RoomState {
   seed: number;
   order: number[];
   turnIdx: number;
+  /** Wall-clock time (epoch ms) the current turn forfeits if the active player never acts; 0 when
+   *  not in a live turn. Backs the DO alarm — see {@link TURN_DEADLINE_MS} and `alarm`. */
+  turnDeadline: number;
   /** The host's logical resolution — the shared world size every client builds at. */
   viewW: number;
   viewH: number;
@@ -97,6 +105,7 @@ function freshState(code: string): RoomState {
     seed: 0,
     order: [],
     turnIdx: 0,
+    turnDeadline: 0,
     viewW: 1280,
     viewH: 720,
     config: null,
@@ -377,7 +386,12 @@ export class Room {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
     }
     if (s.phase === 'ended') this.send(ws, {t: 'gameOver'});
-    else this.send(ws, {t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
+    else {
+      // A (re)joiner mid-turn gets the REMAINING budget, not a fresh one — the server's alarm still
+      // owns the real forfeit time, so don't re-arm it here.
+      const remaining = s.turnDeadline ? Math.max(0, s.turnDeadline - Date.now()) : 0;
+      this.send(ws, {t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: remaining});
+    }
     // A contested match: warn the (re)joiner too, since their bootstrap snapshot came from a state
     // some client already flagged as divergent.
     if (s.contested) this.send(ws, {t: 'desyncFlag'});
@@ -461,6 +475,7 @@ export class Room {
     const maxSquad = Math.max(1, Math.floor(16 / s.order.length));
     s.tanksPerTeam = Math.min(clampInt(s.settings.tanksPerTeam, 1, 4), maxSquad);
     s.alternateTurns = !!s.settings.alternateTurns; // interleave teams vs contiguous squads
+    const deadline = await this.armTurn(s); // start the AFK backstop for the first turn
     await this.save(s);
 
     this.broadcast({
@@ -476,7 +491,7 @@ export class Room {
       viewH: s.viewH,
       config: s.config,
     });
-    this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
+    this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline});
   }
 
   /** Total tanks in play = one squad per player. Turns cycle over POSITIONS [0, total). */
@@ -539,15 +554,21 @@ export class Room {
         // have last battle's heightmap + dead-tank positions stamped over the fresh battle.
         s.snapshot = null;
         s.snapshotHash = 0;
+        const nbDeadline = await this.armTurn(s); // fresh battle → arm the first turn's backstop
         await this.save(s);
         // Clients show the battle-winner celebration, then advance on this message; the turn
         // hand-off is queued behind that intermission (see NetGame). Order is unchanged.
         this.broadcast({t: 'nextBattle', battle: s.currentBattle, seed: s.seed});
-        this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
+        this.broadcast({
+          t: 'turnBegin',
+          playerIdx: Room.tankAt(s, s.turnIdx),
+          deadline: nbDeadline,
+        });
         return;
       }
       // War over — stop here and show the final standings.
       s.phase = 'ended';
+      await this.disarmTurn(s); // no more turns → cancel the AFK backstop
       await this.save(s);
       this.broadcast({t: 'gameOver'});
       return;
@@ -556,13 +577,14 @@ export class Room {
     const prevIdx = s.turnIdx;
     s.turnIdx = this.nextLivingTurn(s);
     const roundWrapped = s.turnIdx <= prevIdx; // advanced past the last player → a round completed
+    const deadline = await this.armTurn(s); // reset the AFK backstop for the new turn
     await this.save(s);
     // handoff:true → this turn follows a shot, so clients run the once-per-turn effects (crate
     // roll + income). The match/battle's first turnBegin (onStart/nextBattle) omits it.
     this.broadcast({
       t: 'turnBegin',
       playerIdx: Room.tankAt(s, s.turnIdx),
-      deadline: 0,
+      deadline,
       handoff: true,
       roundWrapped,
     });
@@ -589,6 +611,52 @@ export class Room {
       if (playable(pos)) return pos;
     }
     return (s.turnIdx + 1) % n; // no one playable (shouldn't happen — <2-connected ends the game)
+  }
+
+  /** Arm the AFK backstop for the turn that's about to begin: record its wall-clock forfeit time on
+   *  the state and (re)schedule the DO alarm at that instant. Setting a new alarm replaces any pending
+   *  one, so a shot/hand-off that opens the next turn automatically cancels the old turn's deadline.
+   *  Returns the ms budget to advertise to clients in `turnBegin` (0 = no limit). */
+  private async armTurn(s: RoomState): Promise<number> {
+    s.turnDeadline = Date.now() + TURN_DEADLINE_MS;
+    await this.ctx.storage.setAlarm(s.turnDeadline);
+    return TURN_DEADLINE_MS;
+  }
+
+  /** Cancel the AFK backstop — the match is over, so no turn can forfeit. */
+  private async disarmTurn(s: RoomState): Promise<void> {
+    s.turnDeadline = 0;
+    await this.ctx.storage.deleteAlarm();
+  }
+
+  /**
+   * DO alarm: the active player's turn deadline elapsed. If they still haven't acted, FORFEIT the
+   * turn — advance to the next living player and open their turn. No shot was fired, so the shared
+   * deterministic sim state is unchanged; clients just move the turn pointer (with the usual
+   * once-per-turn hand-off effects). If a newer turn already pushed the deadline out (a shot landed
+   * just before the alarm), re-arm for the remaining time instead of forfeiting.
+   */
+  async alarm(): Promise<void> {
+    const s = await this.load();
+    if (s.phase !== 'playing' || !s.turnDeadline) return; // not in a live turn → nothing to forfeit
+    if (Date.now() < s.turnDeadline - 50) {
+      await this.ctx.storage.setAlarm(s.turnDeadline); // a later turn moved it out → re-arm, don't forfeit
+      return;
+    }
+    const prevIdx = s.turnIdx;
+    s.turnIdx = this.nextLivingTurn(s);
+    const roundWrapped = s.turnIdx <= prevIdx; // advanced past the last player → a round completed
+    const deadline = await this.armTurn(s);
+    await this.save(s);
+    // handoff:true → the forfeited turn still passes, so clients run per-turn income + the crate roll
+    // (deterministic on every client). roundWrapped awards per-round income when the order wraps.
+    this.broadcast({
+      t: 'turnBegin',
+      playerIdx: Room.tankAt(s, s.turnIdx),
+      deadline,
+      handoff: true,
+      roundWrapped,
+    });
   }
 
   private onChat(pid: number, text: string): void {
@@ -670,6 +738,7 @@ export class Room {
     if (s.phase === 'playing') {
       if (this.connectedCount(s) < 2) {
         s.phase = 'ended';
+        await this.disarmTurn(s); // match over → cancel the AFK backstop
         await this.save(s);
         this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
         this.broadcast({t: 'gameOver'});
@@ -677,9 +746,10 @@ export class Room {
       }
       if (wasActive) {
         s.turnIdx = this.nextLivingTurn(s);
+        const deadline = await this.armTurn(s); // the leaver held the turn → arm the successor's
         await this.save(s);
         this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
-        this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
+        this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline});
         return;
       }
     }

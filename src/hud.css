@@ -233,13 +233,7 @@ canvas {
 /* Weapon list greys as a block (it's one scrolling control, not a button grid). */
 .wlist.blocked {
   pointer-events: none;
-}
-
-.wlist.blocked::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(70, 74, 70, 0.5);
+  filter: grayscale(0.4) brightness(0.62);
 }
 
 /* Invisible drag layers just stop responding — their readouts stay visible. */
