@@ -96,6 +96,12 @@ const KIND_WIND: Record<RenderKind, number> = {
 // (r≥~20) get the full sequence. See `blast`.
 const SMALL_BLAST_R = 14;
 
+// Muzzle spark burst (the original's `muzzleSmoke` emitter): a FIXED count of sparks, each with a
+// random velocity spread of ±(muzzleSmoke·speed) on both axes — the field scales the SPREAD, not the
+// count. `MUZZLE_SPARK_SPEED` maps the field value (usually 2) to a punchy px/s spread.
+const MUZZLE_SPARKS = 30;
+const MUZZLE_SPARK_SPEED = 45;
+
 // Cap the hollow flare-burst ring count for NON-nuke blasts. The original uses ~r·0.5 particles;
 // this caps a wide conventional round (Cleaner r130 → 65) so the ring stays a readable shell rather
 // than an over-dense band. Nukes stay uncapped. See `emitFlareBurst`.
@@ -974,25 +980,33 @@ export class CParticleSystem {
   }
 
   /**
-   * Muzzle SMOKE — a grey puff at the barrel. The original has none here (its only smoke is the
-   * traveling in-flight trail); this is our interpretation, and the caller schedules it a beat
-   * AFTER `muzzleFlash` so it emerges as the flash dies rather than burying it.
+   * Muzzle SPARK burst — the original's `muzzleSmoke` emitter: a FIXED ~30-particle burst at the
+   * barrel, each spark thrown with a random velocity spread of ±(muzzleSmoke·speed) on BOTH axes
+   * (the field scales the SPREAD, not the count), in randomized WARM colours. Additive and
+   * short-lived, so it reads as a hot muzzle spray. (Was a grey smoke puff — an interpretation;
+   * this matches the original emitter.) The caller schedules it a beat AFTER `muzzleFlash`.
    */
-  muzzleSmoke(x: number, y: number, dx: number, dy: number, smoke: number, _color: string): void {
+  muzzleSmoke(x: number, y: number, _dx: number, _dy: number, smoke: number, color: string): void {
     if (smoke <= 0) return;
-    const sp = Math.hypot(dx, dy);
-    const dir = sp > 1e-3 ? {x: dx / sp, y: dy / sp} : {x: 1, y: 0};
-    for (let i = 0; i < smoke * 4; i++) {
-      const g = 150 + between(-25, 25);
+    const spread = smoke * MUZZLE_SPARK_SPEED; // ± velocity on each axis, scaled by the field
+    const tint = parseColor(color);
+    for (let i = 0; i < MUZZLE_SPARKS; i++) {
+      // Warm ember: a hot yellow-white core grading toward the weapon's colour, randomized per spark.
+      const t = between(0, 1);
+      const c = {
+        r: 255,
+        g: Math.round(230 + (tint.g - 230) * t),
+        b: Math.round(90 + (tint.b - 90) * t),
+      };
       this.add(
-        x + between(-4, 4),
-        y + between(-4, 4),
-        dir.x * between(0, 60) + between(-20, 20),
-        between(-30, 5),
-        {r: g, g, b: g},
-        between(0.5, 1.1),
-        between(3, 5),
-        'smoke',
+        x,
+        y,
+        between(-spread, spread),
+        between(-spread, spread),
+        c,
+        between(0.15, 0.4),
+        between(1, 2.6),
+        'flare',
       );
     }
   }

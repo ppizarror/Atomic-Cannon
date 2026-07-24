@@ -4057,6 +4057,8 @@ export class CGameController implements ShotWorld {
     wind: number;
     /** Host map width in viewport-widths (1..5). */
     mapSize: number;
+    /** War length — number of battles (Deathmatch); 1 for Rounds/Points. */
+    battles: number;
     /** The HOST's logical view size — the shared world resolution every client builds at. */
     viewW: number;
     viewH: number;
@@ -4068,6 +4070,8 @@ export class CGameController implements ShotWorld {
     this.m_netMode = true;
     this.m_netLocalIndex = opts.localIndex;
     this.m_terrainSeed = opts.seed >>> 0 || 1;
+    this.m_currentBattle = 1; // fresh war
+    this.setTotalBattles(opts.battles); // shared war length (server drives per-battle advance)
     this.m_netRoster = opts.roster;
     this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
     this.m_onNetCommand = opts.onCommand ?? null;
@@ -4178,10 +4182,17 @@ export class CGameController implements ShotWorld {
     return this.m_netMode && this.m_currentPlayerIndex === this.m_netLocalIndex;
   }
 
-  /** True while a turn's action is still resolving (shot in flight / settling). The net
-   *  bridge queues the server's next turn hand-off until this clears. */
+  /** True while a turn's action is still resolving (shot in flight / settling) OR while the
+   *  battle-winner celebration plays between Deathmatch battles. The net bridge queues the
+   *  server's next turn hand-off until this clears (so it can't interrupt a shot or an
+   *  intermission). */
   isNetSimBusy(): boolean {
-    return this.m_netShotResolving;
+    return this.m_netShotResolving || (this.m_netMode && this.m_gameState === EGameState.BattleEnd);
+  }
+
+  /** True while a net match is running (used to guard a deferred between-battle advance). */
+  isNetBattleActive(): boolean {
+    return this.m_netMode;
   }
 
   /** The acting client's read on whether this shot ended the battle (≤ 1 team left). */
@@ -4189,9 +4200,23 @@ export class CGameController implements ShotWorld {
     return this.m_netMode && this.livingTeamCount() <= 1;
   }
 
-  /** Server said the match is over → show the standings (winner from the synced state). */
+  /** Show the battle-winner celebration (standings if the war is over). Idempotent — a second
+   *  call while already celebrating is a no-op, so the local trigger and the server's gameOver
+   *  don't double up. */
   netFinishBattle(): void {
-    if (this.m_netMode) this.finishBattle();
+    if (this.m_netMode && this.m_gameState !== EGameState.BattleEnd) this.finishBattle();
+  }
+
+  /** Server-driven: a Deathmatch battle ended and the war continues. Regenerate the terrain
+   *  from the shared `seed` and respawn everyone (war stats + credits carry over), starting the
+   *  fresh battle. Called after the intermission (see NetGame). */
+  netNextBattle(seed: number): void {
+    if (!this.m_netMode) return;
+    this.m_terrainSeed = seed >>> 0 || 1;
+    // Reseed the gameplay RNG from the new terrain seed (same derivation as startGame) so every
+    // client's new battle — spawn jitter, wind, crates — is identical regardless of prior cursor.
+    this.m_rng.seed(((this.m_terrainSeed ?? Date.now()) ^ 0x9e3779b9) >>> 0);
+    this.nextBattle();
   }
 
   /**
@@ -4374,11 +4399,16 @@ export class CGameController implements ShotWorld {
   private static readonly MAX_WIND = 5;
   // Peak gust swing as a fraction of the sustained wind (Realistic mode). 0.3 → wind breathes ±30%.
   private static readonly GUST_FRAC = 0.3;
+  // The vertical wind is 1/3 the horizontal max (matching the original's maxY = maxX·0.3333).
+  private static readonly WIND_Y_RATIO = 1 / 3;
 
   /** Seed a fresh random wind at the start of a game (scaled by Settings → Wind). */
   private updateWind(): void {
     const max = CGameController.MAX_WIND * this.m_windScale;
-    this.m_wind = new Vec2(this.m_rng.plusMinus(max), this.m_rng.plusMinus(max) * 0.3);
+    this.m_wind = new Vec2(
+      this.m_rng.plusMinus(max),
+      this.m_rng.plusMinus(max * CGameController.WIND_Y_RATIO),
+    );
     this.m_windTimer = 0;
   }
 
@@ -4413,11 +4443,9 @@ export class CGameController implements ShotWorld {
    */
   private updateWindDrift(dt: number): void {
     const MAX = CGameController.MAX_WIND * this.m_windScale; // 0 when wind is Disabled
+    const maxY = MAX * CGameController.WIND_Y_RATIO;
     this.m_wind.x = clamp(this.m_wind.x + this.m_windAccel.x * dt, -MAX, MAX);
-    this.m_wind.y = Math.max(
-      -MAX * 0.3,
-      Math.min(MAX * 0.3, this.m_wind.y + this.m_windAccel.y * dt),
-    );
+    this.m_wind.y = clamp(this.m_wind.y + this.m_windAccel.y * dt, -maxY, maxY);
 
     this.m_windTimer -= dt;
     if (this.m_windTimer <= 0) {
