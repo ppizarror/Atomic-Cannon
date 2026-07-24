@@ -108,7 +108,8 @@ export interface Strings {
       done: string; // host's "apply/close" button
       hostNote: string; // "Set by the host" caption (joiner)
       editNote: string; // "these apply to everyone" caption (host)
-      players: string; // max players ("number of tanks")
+      players: string; // max players
+      tanks: string; // tanks per player (squad size)
       battles: string; // war length (Deathmatch)
       mapSize: string;
       wind: string;

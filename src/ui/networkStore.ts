@@ -19,7 +19,7 @@ const initialState: RoomClientState = {
   code: '',
   youId: null,
   players: [],
-  settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2},
+  settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
   config: null,
   isHost: false,
   lastError: null,

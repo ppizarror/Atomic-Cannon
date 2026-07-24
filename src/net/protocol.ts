@@ -32,6 +32,8 @@ export interface RoomSettings {
   readonly wind: number;
   /** Host-chosen map width in viewport-widths (1 = single screen … 5 = widest). */
   readonly mapSize: number;
+  /** Tanks each player commands — a squad (1..4). Every player fields the same count. */
+  readonly tanksPerTeam: number;
 }
 
 /**
@@ -145,6 +147,8 @@ export type ServerMessage =
       readonly mapSize: number;
       /** War length — number of battles (Deathmatch); 1 for Rounds/Points. */
       readonly battles: number;
+      /** Tanks each player commands (1..4) — the shared squad size. */
+      readonly tanksPerTeam: number;
       /** Which battle this boot is (1-based) — >1 when replayed to a reconnect mid-war. */
       readonly currentBattle: number;
       /** The host's logical resolution — the shared world size every client builds at. */

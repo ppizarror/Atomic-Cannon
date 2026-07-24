@@ -3039,7 +3039,7 @@ export class CGameController implements ShotWorld {
       this.m_shotTime > 0 &&
       tank.isHuman() &&
       !this.m_weaponTest &&
-      (!this.m_netMode || this.m_currentPlayerIndex === this.m_netLocalIndex);
+      (!this.m_netMode || this.isLocalNetTurn());
 
     // A deployed Sentry takes its own turn: aim at the nearest enemy and fire in a direct
     // line. It never moves and never uses a normal bot solve, so route it separately.
@@ -4080,6 +4080,8 @@ export class CGameController implements ShotWorld {
     mapSize: number;
     /** War length — number of battles (Deathmatch); 1 for Rounds/Points. */
     battles: number;
+    /** Tanks each player commands (1..4) — the shared squad size. */
+    tanksPerTeam: number;
     /** Which battle this boot is (1-based) — >1 when replayed to a reconnect mid-war. */
     currentBattle: number;
     /** The HOST's logical view size — the shared world resolution every client builds at. */
@@ -4157,7 +4159,10 @@ export class CGameController implements ShotWorld {
     this.m_economy.setFreeFire(false);
 
     this.setHumanCount(opts.players); // every team human → no local bots
-    this.setTanksPerTeam(1);
+    // Squad size: each player commands `tanksPerTeam` tanks. m_netTanksPerTeam maps the active
+    // TANK index (the server's turn cursor) back to its owning player for the local-turn check.
+    this.m_netTanksPerTeam = clamp(Math.round(opts.tanksPerTeam), 1, 4);
+    this.setTanksPerTeam(this.m_netTanksPerTeam);
     this.m_bootingNet = true; // keep the net config through startGame's reset
     this.startGame(opts.players);
     this.m_bootingNet = false;
@@ -4218,7 +4223,12 @@ export class CGameController implements ShotWorld {
 
   /** True while it is the local player's turn in a network match (drives input/HUD). */
   isLocalNetTurn(): boolean {
-    return this.m_netMode && this.m_currentPlayerIndex === this.m_netLocalIndex;
+    // The active TANK (m_currentPlayerIndex is a tank index) is mine when its owning player —
+    // contiguous squads: owner = floor(tankIdx / tanksPerTeam) — is my local player index.
+    return (
+      this.m_netMode &&
+      Math.floor(this.m_currentPlayerIndex / this.m_netTanksPerTeam) === this.m_netLocalIndex
+    );
   }
 
   /** True while a turn's action is still resolving (shot in flight / settling) OR while the
@@ -4984,6 +4994,7 @@ export class CGameController implements ShotWorld {
   private m_netLandScale = NET_LAND_SCALE; // host-chosen net world width (viewport-widths)
   private m_netViewW = NET_VIEW_W; // shared net logical size = the HOST's view size
   private m_netViewH = NET_VIEW_H;
+  private m_netTanksPerTeam = 1; // squad size in net → maps active tank index to its owner
   // netMode: a turn's action (shot/move/utility) is mid-resolution. The net bridge holds
   // the server's next `turnBegin` until this clears, so a late hand-off can't interrupt
   // an in-flight local simulation.

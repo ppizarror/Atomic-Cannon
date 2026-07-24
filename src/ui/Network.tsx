@@ -252,6 +252,13 @@ function MatchSettingsDialog({onClose}: {onClose: () => void}) {
           editable={host}
         />
         <SegField
+          label={mi.tanks}
+          value={s.settings.tanksPerTeam}
+          options={numOpts([1, 2, 3, 4])}
+          onPick={v => updateSettings({tanksPerTeam: v})}
+          editable={host}
+        />
+        <SegField
           label={mi.wind}
           value={s.settings.wind}
           options={windOpts}

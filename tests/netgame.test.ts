@@ -51,6 +51,7 @@ function netController(localIndex: number, seed = 12345): CGameController {
     wind: 1,
     mapSize: 2,
     battles: 2,
+    tanksPerTeam: 1,
     currentBattle: 1,
     viewW: 1280,
     viewH: 720,
@@ -77,6 +78,61 @@ describe('network match boot', () => {
     expect(gc.getNetSnapshot().tanks).toHaveLength(2);
   });
 
+  it('multi-tank teams: builds a squad per player and owns turns per-tank', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.startNetworkGame({
+      seed: 12345,
+      players: 2,
+      localIndex: 0, // I am player 0
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      tanksPerTeam: 2, // squads of 2 → 4 tanks total
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
+    expect(gc.getNetSnapshot().tanks).toHaveLength(4); // 2 players × 2 tanks
+
+    // Contiguous squads: player 0 owns tanks 0-1, player 1 owns tanks 2-3. The active tank is
+    // MINE iff its owner (floor(tankIdx / 2)) is my local player index (0).
+    gc.netSetActivePlayer(0);
+    expect(gc.isLocalNetTurn()).toBe(true); // my first tank
+    gc.netSetActivePlayer(1);
+    expect(gc.isLocalNetTurn()).toBe(true); // my second tank
+    gc.netSetActivePlayer(2);
+    expect(gc.isLocalNetTurn()).toBe(false); // opponent's tank
+    gc.netSetActivePlayer(3);
+    expect(gc.isLocalNetTurn()).toBe(false);
+  });
+
+  it('multi-tank teams stay identical across clients (same seed)', () => {
+    const mk = (localIndex: number) => {
+      const c = new CGameController(makeCanvas());
+      c.startNetworkGame({
+        seed: 909,
+        players: 2,
+        localIndex,
+        roster: ROSTER,
+        wind: 1,
+        mapSize: 2,
+        battles: 2,
+        tanksPerTeam: 3,
+        currentBattle: 1,
+        viewW: 1280,
+        viewH: 720,
+        config: CFG,
+      });
+      return c;
+    };
+    const a = mk(0);
+    const b = mk(1);
+    expect(a.getNetSnapshot().tanks).toHaveLength(6); // 2 × 3
+    expect(a.stateHash()).toBe(b.stateHash()); // identical squads/terrain on both clients
+  });
+
   it('host map size scales world width identically on every client', () => {
     const mk = (mapSize: number, localIndex: number) => {
       const c = new CGameController(makeCanvas());
@@ -88,6 +144,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize,
         battles: 2,
+        tanksPerTeam: 1,
         currentBattle: 1,
         viewW: 1280,
         viewH: 720,
@@ -120,6 +177,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1400,
       viewH: 900,
@@ -133,6 +191,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1400,
       viewH: 900,
@@ -158,6 +217,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize: 2,
         battles: 2,
+        tanksPerTeam: 1,
         currentBattle: 1,
         viewW,
         viewH: 720,
@@ -184,6 +244,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -204,6 +265,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize: 2,
         battles: 2,
+        tanksPerTeam: 1,
         currentBattle: 1,
         viewW: 1280,
         viewH: 720,
@@ -239,6 +301,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -254,6 +317,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -331,6 +395,7 @@ describe('network match boot', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -386,6 +451,7 @@ describe('network match boot', () => {
         wind: 1,
         mapSize: 2,
         battles: 2,
+        tanksPerTeam: 1,
         currentBattle: 1,
         viewW: 1280,
         viewH: 720,
@@ -486,7 +552,8 @@ describe('NetGame bridge', () => {
         {id: 1, name: 'Ada', color: '#f00', ready: true, connected: true, isHost: true},
         {id: 2, name: 'Bo', color: '#0f0', ready: true, connected: true, isHost: false},
       ],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      config: null,
       isHost: youId === 1,
       lastError: null,
     };
@@ -514,6 +581,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -535,6 +603,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -553,6 +622,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -574,6 +644,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -593,6 +664,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -616,6 +688,7 @@ describe('NetGame bridge', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -643,7 +716,8 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
         {id: 1, name: 'A', color: '#f00', ready: true, connected: true, isHost: true},
         {id: 2, name: 'B', color: '#0f0', ready: true, connected: true, isHost: false},
       ],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      config: null,
       isHost: youId === 1,
       lastError: null,
     };
@@ -659,6 +733,7 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,
@@ -724,7 +799,7 @@ describe('network battle-end', () => {
           {id: 1, name: 'A', color: '#f00', ready: true, connected: true, isHost: true},
           {id: 2, name: 'B', color: '#0f0', ready: true, connected: true, isHost: false},
         ],
-        settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+        settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
         isHost: true,
         lastError: null,
       }),
@@ -738,6 +813,7 @@ describe('network battle-end', () => {
       wind: 1,
       mapSize: 2,
       battles: 2,
+      tanksPerTeam: 1,
       currentBattle: 1,
       viewW: 1280,
       viewH: 720,

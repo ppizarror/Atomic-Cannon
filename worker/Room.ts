@@ -50,6 +50,8 @@ interface RoomState {
   /** War length (Deathmatch): number of battles. `currentBattle` is 1-based. */
   totalBattles: number;
   currentBattle: number;
+  /** Tanks per player, captured at Start — turns cycle over ALL tanks (order.length × this). */
+  tanksPerTeam: number;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
   /** State hash of `snapshot` (so a resync target carries its drift-check hash). */
@@ -68,6 +70,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   battles: 2,
   wind: 1,
   mapSize: 2,
+  tanksPerTeam: 1,
 };
 
 function freshState(code: string): RoomState {
@@ -86,6 +89,7 @@ function freshState(code: string): RoomState {
     config: null,
     totalBattles: 1,
     currentBattle: 1,
+    tanksPerTeam: 1,
     snapshot: null,
     snapshotHash: 0,
     appVersion: null,
@@ -326,6 +330,7 @@ export class Room {
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
       battles: s.totalBattles,
+      tanksPerTeam: s.tanksPerTeam,
       currentBattle: s.currentBattle,
       viewW: s.viewW,
       viewH: s.viewH,
@@ -366,6 +371,7 @@ export class Room {
       battles: clampInt(patch.battles ?? s.settings.battles, 1, 20),
       wind: clampInt(patch.wind ?? s.settings.wind, 0, 2),
       mapSize: clampInt(patch.mapSize ?? s.settings.mapSize, 1, 5),
+      tanksPerTeam: clampInt(patch.tanksPerTeam ?? s.settings.tanksPerTeam, 1, 4),
     };
     s.settings = next;
     await this.save(s);
@@ -408,6 +414,11 @@ export class Room {
     // War length: a Deathmatch runs `battles` battles; Rounds/Points is always a single battle.
     s.totalBattles = s.config.gameType === 1 ? clampInt(s.settings.battles, 1, 20) : 1;
     s.currentBattle = 1;
+    // Squad size: turns now cycle over ALL tanks (order.length × tanksPerTeam). Cap the total at
+    // the client's MAX_TANKS (16) so no client truncates its squads — otherwise the server's tank
+    // count would exceed the client's and the turn/snapshot indices would mismatch.
+    const maxSquad = Math.max(1, Math.floor(16 / s.order.length));
+    s.tanksPerTeam = Math.min(clampInt(s.settings.tanksPerTeam, 1, 4), maxSquad);
     await this.save(s);
 
     this.broadcast({
@@ -417,6 +428,7 @@ export class Room {
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
       battles: s.totalBattles,
+      tanksPerTeam: s.tanksPerTeam,
       currentBattle: s.currentBattle,
       viewW: s.viewW,
       viewH: s.viewH,
@@ -425,8 +437,19 @@ export class Room {
     this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
   }
 
+  /** Total tanks in play = one squad per player. Turns cycle over tank indices [0, total). */
+  private static totalTanks(s: RoomState): number {
+    return s.order.length * s.tanksPerTeam;
+  }
+
+  /** The player id that OWNS a given tank index (contiguous squads: player p owns tanks
+   *  [p·tanksPerTeam, …]). Turn validation checks the sender owns the active tank. */
+  private static ownerOf(s: RoomState, tankIdx: number): number | undefined {
+    return s.order[Math.floor(tankIdx / s.tanksPerTeam)];
+  }
+
   private onCmd(s: RoomState, pid: number, msg: Extract<ClientMessage, {t: 'cmd'}>): void {
-    if (s.phase !== 'playing' || s.order[s.turnIdx] !== pid) {
+    if (s.phase !== 'playing' || Room.ownerOf(s, s.turnIdx) !== pid) {
       const ws = this.socketFor(pid);
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
@@ -443,7 +466,7 @@ export class Room {
     pid: number,
     msg: Extract<ClientMessage, {t: 'shotResult'}>,
   ): Promise<void> {
-    if (s.phase !== 'playing' || s.order[s.turnIdx] !== pid) {
+    if (s.phase !== 'playing' || Room.ownerOf(s, s.turnIdx) !== pid) {
       const ws = this.socketFor(pid);
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
@@ -497,12 +520,13 @@ export class Room {
   /** Advance to the next turn, skipping players whose tank is DEAD (life ≤ 0) or whose socket
    *  is DISCONNECTED — a dropped player must never hold the turn, or the match stalls. */
   private nextLivingTurn(s: RoomState): number {
-    const n = s.order.length;
+    const n = Room.totalTanks(s); // cycle over TANKS (squads), not players
     if (n === 0) return 0;
-    const playable = (i: number) => {
-      const p = s.players[s.order[i]];
-      if (!p || !p.connected) return false; // dropped → skip
-      return s.snapshot ? (s.snapshot.tanks[i]?.life ?? 1) > 0 : true;
+    const playable = (tankIdx: number) => {
+      const owner = Room.ownerOf(s, tankIdx);
+      const p = owner === undefined ? undefined : s.players[owner];
+      if (!p || !p.connected) return false; // owner dropped → skip this tank
+      return s.snapshot ? (s.snapshot.tanks[tankIdx]?.life ?? 1) > 0 : true; // dead tank → skip
     };
     let idx = s.turnIdx;
     for (let step = 0; step < n; step++) {
@@ -549,7 +573,7 @@ export class Room {
     if (!p) return;
     if (!removeSlot && !p.connected) return; // already dropped (e.g. leave → ws.close double-fires)
     // Did the departing player hold the current turn? (Check before mutating the roster.)
-    const wasActive = s.phase === 'playing' && s.order[s.turnIdx] === pid;
+    const wasActive = s.phase === 'playing' && Room.ownerOf(s, s.turnIdx) === pid;
     if (removeSlot) delete s.players[pid];
     else p.connected = false;
 

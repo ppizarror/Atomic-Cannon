@@ -11,7 +11,29 @@ import {
   type RoomClientOptions,
 } from '../src/net/roomClient';
 import type {NetTransport, ConnStatus} from '../src/net/transport';
-import type {ClientMessage, ServerMessage, PlayerInfo} from '../src/net/protocol';
+import type {ClientMessage, ServerMessage, PlayerInfo, MatchConfig} from '../src/net/protocol';
+
+/** A complete default MatchConfig for messages that carry one. */
+const MATCH_CONFIG: MatchConfig = {
+  hitpoints: 1000,
+  tankSizeScale: 1,
+  explosionScale: 1,
+  powerScale: 1,
+  kickbackScale: 1,
+  buryTanks: false,
+  variance: true,
+  relativeTurrets: false,
+  utilityTurn: false,
+  radiationDamage: true,
+  crateChance: 20,
+  startCredits: 3000,
+  gameType: 1,
+  sellRate: 0.5,
+  creditDamage: 1,
+  creditKill: 500,
+  creditTurn: 0,
+  creditRound: 1000,
+};
 
 /** A hand-driven transport that records sends and lets tests push status/messages. */
 class FakeTransport implements NetTransport {
@@ -112,7 +134,8 @@ describe('RoomClient', () => {
       you: 1,
       code: 'ABCD23',
       players: [player(1)],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      config: null,
       reconnect: 'tok-1',
     });
     const s = last();
@@ -152,7 +175,7 @@ describe('RoomClient', () => {
       you: 1,
       code: 'ABCD23',
       players: [player(1)],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2},
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
       config: cfg,
       reconnect: 'tok-1',
     });
@@ -172,7 +195,8 @@ describe('RoomClient', () => {
       you: 2,
       code: 'ABCD23',
       players: [player(1), player(2)],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      config: null,
       reconnect: 'tok-2',
     });
 
@@ -200,7 +224,8 @@ describe('RoomClient', () => {
       you: 2,
       code: 'ABCD23',
       players: [player(1), player(2)],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2},
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      config: null,
       reconnect: 'tok-2',
     });
     expect(last().isHost).toBe(false);
@@ -266,7 +291,19 @@ describe('RoomClient', () => {
     const t = transports[0];
     t.setStatus('open');
 
-    t.recv({t: 'startGame', seed: 42, order: [1, 2]});
+    t.recv({
+      t: 'startGame',
+      seed: 42,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      tanksPerTeam: 1,
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: MATCH_CONFIG,
+    });
     t.recv({t: 'turnBegin', playerIdx: 0, deadline: 0});
     expect(client.getState().phase).toBe('playing');
     expect(seen.map(m => m.t)).toEqual(['startGame', 'turnBegin']);
