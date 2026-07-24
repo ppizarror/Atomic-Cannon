@@ -19,6 +19,7 @@ export class CPixiCompositor {
   private readonly m_app: Application;
   private m_scene!: Sprite;
   private m_sceneTexture!: Texture;
+  private m_sceneCanvas!: HTMLCanvasElement;
   private m_shockwave!: ShockwaveFilter;
   private m_waveAge: number = Infinity;
 
@@ -44,6 +45,7 @@ export class CPixiCompositor {
   ): Promise<void> {
     this.m_worldW = sceneCanvas.width;
     this.m_worldH = sceneCanvas.height;
+    this.m_sceneCanvas = sceneCanvas;
     this.m_resizeTo = resizeTo;
 
     await this.m_app.init({
@@ -90,6 +92,20 @@ export class CPixiCompositor {
    * renderer to the live element size (Pixi's own `resizeTo` throttles and can
    * miss a fast resize, e.g. toggling devtools) and then fits the scene sprite.
    */
+  /**
+   * The scene canvas was resized externally (e.g. a network match fixes a shared logical
+   * resolution). Rebuild the GPU texture at the new size and re-fit. World→screen mapping
+   * reads `m_worldW/H`, so update those too.
+   */
+  setSceneSize(w: number, h: number): void {
+    this.m_worldW = w;
+    this.m_worldH = h;
+    this.m_sceneTexture.destroy();
+    this.m_sceneTexture = Texture.from(this.m_sceneCanvas);
+    this.m_scene.texture = this.m_sceneTexture;
+    this.resize();
+  }
+
   resize(): void {
     const el = this.m_resizeTo;
     const w = el instanceof Window ? window.innerWidth : el.clientWidth;

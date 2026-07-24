@@ -348,6 +348,15 @@ export interface ActiveTaunt {
   alpha: number;
 }
 
+/**
+ * A network match simulates at a FIXED logical resolution + land scale so every client
+ * builds a byte-identical world regardless of its window size or local settings. The
+ * compositor scales this logical scene to each display.
+ */
+const NET_VIEW_W = 1280;
+const NET_VIEW_H = 720;
+const NET_LAND_SCALE = 2;
+
 /** Authoritative per-turn state shared between clients in a network match. */
 export interface NetSnapshot {
   tanks: {
@@ -375,6 +384,8 @@ export class CGameController implements ShotWorld {
   constructor(canvas: HTMLCanvasElement) {
     this.m_canvas = canvas;
     this.m_ctx = canvas.getContext('2d')!;
+    this.m_nativeCanvasW = canvas.width; // native (solo) scene size, restored after a net match
+    this.m_nativeCanvasH = canvas.height;
 
     // Large maps: the WORLD can be several viewports wide (Land Size); the scene
     // canvas is the VIEW. World width = viewWidth × landScale (1 = no scroll);
@@ -431,6 +442,8 @@ export class CGameController implements ShotWorld {
       this.m_terrainSeed = null;
       this.m_netRoster = null;
       this.m_onNetTurnEnd = null;
+      // Restore the native (window) scene size a prior net match may have overridden.
+      this.resizeSceneCanvas(this.m_nativeCanvasW, this.m_nativeCanvasH);
     }
 
     // Reset state
@@ -589,8 +602,9 @@ export class CGameController implements ShotWorld {
       const s = this.m_assets.getSprite('fx:smoke');
       if (s) this.m_land.setSmokeSprite(s.bitmap, s.width, s.height);
     });
-    // The rocket-exhaust colour STRIP (hot→cool) — the particle system samples its ramp so the
-    // trail puffs cool from bright/warm to blue-grey with age (the author's fire→smoke gradient).
+    // The rocket-exhaust colour TABLE — a 2-D lookup the author baked: X = age (bright/hot young →
+    // cool old), Y = height (top light → bottom dark). The particle system samples it per exhaust
+    // puff at (age, height) so the trail glows at the nozzle and greys by height in one step.
     this.m_assets.loadSprite('fx:plume', '/assets/gui/rocket plume.bmp');
     this.m_assets.loadImage('fx:flare', '/assets/flares/04.bmp');
     // The generic fallback fireball, keyed on its light blue-purple bg.
@@ -687,7 +701,13 @@ export class CGameController implements ShotWorld {
       }
     }
     // Choose only among enabled landscapes (Game Content); if all are disabled,
-    // degrade to the full set rather than blocking.
+    // degrade to the full set rather than blocking. In a network match ignore the local
+    // Game Content filter (per-client) and pick from the FULL pool via the seeded RNG, so
+    // every client shows the same backdrop/weather/textures.
+    if (this.m_netMode) {
+      const all = LAND_DATA.map((_, i) => i);
+      return all[this.m_rng.int(all.length)];
+    }
     const enabled = LAND_DATA.map((_, i) => i).filter(landEnabled);
     const pool = enabled.length ? enabled : LAND_DATA.map((_, i) => i);
     return pool[Math.floor(Math.random() * pool.length)];
@@ -707,15 +727,20 @@ export class CGameController implements ShotWorld {
    * bypass this and call {@link update} with an explicit dt.
    */
   advance(realDt: number): void {
-    this.m_simAccum += realDt * this.m_speedScale;
+    // Clamp the accumulator (never DROP steps mid-loop): a dropped step makes a hitching
+    // client run fewer steps for a shot than a smooth one → the sims diverge (a keyframe
+    // then has to resync, leaving a visible dirt patch). A frame hitch (e.g. a big blast)
+    // is fully caught up within MAX_ACCUM; only a multi-second stall (backgrounded tab)
+    // clamps — and that client resyncs from the next keyframe anyway.
+    this.m_simAccum = Math.min(
+      this.m_simAccum + realDt * this.m_speedScale,
+      CGameController.MAX_SIM_ACCUM,
+    );
     const step = CGameController.FIXED_DT;
-    let steps = 0;
-    while (this.m_simAccum >= step && steps < CGameController.MAX_SIM_STEPS) {
+    while (this.m_simAccum >= step) {
       this.update(step);
       this.m_simAccum -= step;
-      steps++;
     }
-    if (steps === CGameController.MAX_SIM_STEPS) this.m_simAccum = 0; // fell behind → drop the backlog
   }
 
   update(dt: number): void {
@@ -995,6 +1020,7 @@ export class CGameController implements ShotWorld {
 
   /** Land-Size scale (1..5); world width = viewWidth × scale. */
   private landScale(): number {
+    if (this.m_netMode) return NET_LAND_SCALE; // fixed across clients (world width must match)
     return clamp(Math.round(GameConfig.landSize), 1, 5);
   }
 
@@ -2360,13 +2386,14 @@ export class CGameController implements ShotWorld {
           dt,
           ascending,
         );
-        // In-flight glowing flare on the projectile (rockets: flareType/flareBmp) — only
-        // while the motor burns. Kept SMALL — a tight bright nose point, not a big bloom.
+        // In-flight thrust flare (rockets: flareType/flareBmp) — only while the motor burns. Emitted
+        // at the EXHAUST point (the rear tip `ex`), NOT the projectile centre, so the glow sits behind
+        // the rocket at its nozzle instead of overlapping the middle of the sprite.
         const iff = weapon.getInFlightFlare();
         if (ascending && iff)
           this.m_particles.inflightFlare(
-            sp.x,
-            sp.y,
+            ex.x,
+            ex.y,
             `fx:${iff}`,
             1.5 + weapon.getFlareSize() * 2.5,
           );
@@ -3767,6 +3794,10 @@ export class CGameController implements ShotWorld {
     this.m_netRoster = opts.roster;
     this.m_onNetTurnEnd = opts.onTurnEnd ?? null;
     this.m_onNetCommand = opts.onCommand ?? null;
+    this.m_landMode = -1; // shape is random-from-seed (deterministic), not a local override
+    // Fix the scene/world to a shared logical resolution BEFORE the world is built, so
+    // every client's heightmap has the same length regardless of their window size.
+    this.resizeSceneCanvas(NET_VIEW_W, NET_VIEW_H);
 
     // A network match is authoritative and IDENTICAL on every client, so it ignores all
     // local dev/URL switches a player may have set (?flatland, ?weapontest, ?weaponsel,
@@ -3788,6 +3819,21 @@ export class CGameController implements ShotWorld {
     this.m_bootingNet = true; // keep the net config through startGame's reset
     this.startGame(opts.players);
     this.m_bootingNet = false;
+  }
+
+  /** The presenter (compositor + FX overlay) registers here to refresh after the scene
+   *  canvas is resized (entering / leaving a network match). */
+  setViewResizeHook(fn: () => void): void {
+    this.m_onViewResize = fn;
+  }
+
+  /** Resize the scene canvas (the render target = world view) and notify the presenter.
+   *  No-op if already that size. */
+  private resizeSceneCanvas(w: number, h: number): void {
+    if (this.m_canvas.width === w && this.m_canvas.height === h) return;
+    this.m_canvas.width = w;
+    this.m_canvas.height = h;
+    this.m_onViewResize?.();
   }
 
   /** True while it is the local player's turn in a network match (drives input/HUD). */
@@ -4495,6 +4541,11 @@ export class CGameController implements ShotWorld {
   // the server's next `turnBegin` until this clears, so a late hand-off can't interrupt
   // an in-flight local simulation.
   private m_netShotResolving = false;
+  // Scene-canvas (view) size decoupling: a net match forces a fixed logical resolution;
+  // native size is restored for solo. The hook lets the presenter refresh (compositor + FX).
+  private m_nativeCanvasW = 0;
+  private m_nativeCanvasH = 0;
+  private m_onViewResize: (() => void) | null = null;
   // Draw-only projectiles a spectator flies from a relayed fire — pure visual (the
   // authoritative snapshot does the real damage/terrain); never carve or hit.
   private m_ghostShots: CShot[] = [];
@@ -4594,7 +4645,9 @@ export class CGameController implements ShotWorld {
   // lockstep determinism (with the seeded RNG). Tests still drive update(dt) directly.
   private m_simAccum = 0;
   private static readonly FIXED_DT = 1 / 60;
-  private static readonly MAX_SIM_STEPS = 5; // catch-up cap (avoids spiral-of-death)
+  // Max accumulated sim time (s). Bounds catch-up after a long stall without DROPPING
+  // steps (which would desync a networked match). ~0.5s covers any frame hitch.
+  private static readonly MAX_SIM_ACCUM = 0.5;
   private m_creditDamage = CREDIT_PER_DAMAGE; // credits earned per point of life removed
   private m_creditKill = CREDIT_PER_KILL; // credits earned per kill (Deathmatch)
   private m_creditTurn = CREDIT_PER_TURN; // credits earned by each survivor per turn

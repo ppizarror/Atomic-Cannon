@@ -40,6 +40,25 @@ describe('network match boot', () => {
     expect(gc.getNetSnapshot().tanks).toHaveLength(2);
   });
 
+  it('clients on DIFFERENT resolutions build the identical world (fixed net resolution)', () => {
+    const mk = (w: number, h: number) => {
+      const c = makeCanvas();
+      c.width = w;
+      c.height = h;
+      return c;
+    };
+    const a = new CGameController(mk(800, 480));
+    const b = new CGameController(mk(1920, 1080)); // very different window
+    a.startNetworkGame({seed: 55, players: 2, localIndex: 0, roster: ROSTER});
+    b.startNetworkGame({seed: 55, players: 2, localIndex: 1, roster: ROSTER});
+
+    const ha = a.getNetSnapshot().heights;
+    const hb = b.getNetSnapshot().heights;
+    expect(ha.length).toBe(hb.length); // same heightmap length regardless of window
+    expect(ha).toEqual(hb); // and identical terrain
+    expect(a.stateHash()).toBe(b.stateHash());
+  });
+
   it('boots to an identical deterministic stateHash across clients', () => {
     // Same seed → same terrain AND same seeded spawn positions → same hash.
     const a = netController(0);
@@ -133,11 +152,17 @@ describe('authoritative snapshot', () => {
     const spectator = netController(1);
     const pristine = spectator.getNetSnapshot().heights.slice();
 
-    // Carve a crater on the host's terrain, then sync it to the spectator.
+    // Carve a crater on the host's terrain AT the surface (robust to world size), then sync.
     const land = (
-      host as unknown as {m_land: {carveDiscCollapse(x: number, y: number, r: number): void}}
+      host as unknown as {
+        m_land: {
+          carveDiscCollapse(x: number, y: number, r: number): void;
+          getHeightAt(x: number): number;
+        };
+      }
     ).m_land;
-    land.carveDiscCollapse(200, 240, 40);
+    const cx = 200;
+    land.carveDiscCollapse(cx, land.getHeightAt(cx) + 10, 40);
 
     const snap = host.getNetSnapshot();
     expect(snap.heights).not.toEqual(pristine); // the host's terrain actually changed

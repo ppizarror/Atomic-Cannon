@@ -91,6 +91,9 @@ async function main(): Promise<void> {
     compositor.shockwave(x - gameController.getCameraX(), y, s); // warp the game scene (WebGL)
     triggerHudWave(s); // and ripple the DOM HUD in sync (SVG displacement)
   });
+  // A network match fixes the scene to a shared logical resolution; refresh the compositor
+  // (GPU texture + world→screen mapping) whenever the controller resizes the scene canvas.
+  gameController.setViewResizeHook(() => compositor.setSceneSize(scene.width, scene.height));
 
   // Audio: one shared AudioContext (SFX + libopenmpt .it music), unlocked on the
   // first user gesture per the browser autoplay policy. Wired before startGame so
@@ -450,7 +453,14 @@ async function main(): Promise<void> {
     // gate), clearing first so it's transparent everywhere except its own content.
     if (redraw) {
       fxCtx.clearRect(0, 0, fx.width, fx.height);
+      // The scene renders at its own logical size and is stretched to fill the GAME
+      // CONTAINER (window minus the HUD) by the compositor. Map world→container so
+      // badges/damage numbers line up with the presented scene — using the container
+      // size, NOT the full-window FX canvas (1:1 in solo, ≠1 in a fixed-res net match).
+      fxCtx.save();
+      fxCtx.scale(container.clientWidth / scene.width, container.clientHeight / scene.height);
       gameController.drawOverlay(fxCtx);
+      fxCtx.restore();
     }
     syncHud();
     // FPS readout (Show Framerate): average frames over a ~0.5s window so the number is
