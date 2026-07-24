@@ -632,25 +632,32 @@ export class CLand {
     }
     if (slump) this.startSlump(lo, hi); // detonation bowl only; the bore stays a straight-down cut
     this.m_pixelsDirty = true;
-    // A detonation crater blows the ground (and any fallout on it) away — drop the radiation here.
-    this.clearRadiationSpan(lo, hi);
+    // A detonation crater blows the ground (and any fallout on it) away — drop the radiation the
+    // blast actually REACHED (inside the disc), not the whole column band.
+    this.clearRadiationDisc(x, y, r);
     this.preBlast(lo, hi);
   }
 
   /**
-   * Terrain in the x-span `[lo, hi]` was just erased (a crater/cleaner/detonation), so the
-   * radiation that lived on it is gone too. Drops, together: the damage ZONES centred in the span
-   * (they stop hurting tanks AND stop venting heat smoke — the smoke is spawned per-frame off a
-   * live zone, so leaving the zone alive keeps it fuming forever), the rising heat wisps over the
-   * span, and the ground specks/glow. Beam/bore cuts keep their own surgical speck-only clearing —
-   * a thin ray must not delete a whole wide fallout field it merely grazes.
+   * Radiation the blast physically reached — within the DISC of radius `r` at `(x, y)` — is gone.
+   * Keyed on 2-D distance, NOT the column span: a circular crater must NOT wipe fallout that sits in
+   * the same x-range but OUTSIDE the sphere (deep in the soil below the blast, or beyond the arc near
+   * the span edges) — that soil was never touched. Drops, together, whatever falls inside the disc:
+   * the damage ZONES (they stop hurting tanks AND stop venting heat smoke — the smoke is spawned
+   * per-frame off a live zone, so leaving one alive keeps it fuming forever), the rising heat wisps,
+   * and the ground specks/glow. Beam/bore cuts keep their own surgical speck-only clearing.
    */
-  private clearRadiationSpan(lo: number, hi: number): void {
+  private clearRadiationDisc(x: number, y: number, r: number): void {
+    const r2 = r * r;
+    const outside = (px: number, py: number): boolean => {
+      const dx = px - x,
+        dy = py - y;
+      return dx * dx + dy * dy > r2;
+    };
     if (this.m_radParticles.length)
-      this.m_radParticles = this.m_radParticles.filter(z => z.x < lo || z.x > hi);
-    if (this.m_heat.length) this.m_heat = this.m_heat.filter(h => h.x < lo || h.x > hi);
-    if (this.m_radSpecks.length)
-      this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
+      this.m_radParticles = this.m_radParticles.filter(z => outside(z.x, z.y));
+    if (this.m_heat.length) this.m_heat = this.m_heat.filter(h => outside(h.x, h.y));
+    if (this.m_radSpecks.length) this.m_radSpecks = this.m_radSpecks.filter(s => outside(s.x, s.y));
   }
 
   /**

@@ -105,4 +105,35 @@ describe('CLand — erasing terrain clears its radiation', () => {
     expect(land.radiationAt(60)).toBe(false); // far to the left, no specks landed here
     expect(land.radiationAt(760)).toBe(false); // far to the right
   });
+
+  it('a bomb clears radiation only within its blast DISC — not the whole column band', () => {
+    const W = 600,
+      H = 400,
+      surf = 200;
+    const land = landWithPixels(W, H, surf);
+    const specks = (land as unknown as {m_radSpecks: {x: number; y: number}[]}).m_radSpecks;
+    const mk = (x: number, y: number) => ({
+      x, y, vx: 0, vy: 0, age: 0, life: 10, settled: true, size: 1, rise: 0, phase: 0, pw: 1, r: 255, g: 0, b: 0,
+    });
+    const R = 60,
+      cx = 300,
+      cy = surf; // blast disc: centre (300, 200), radius 60
+
+    // Two specks the blast REACHES (inside the disc) and two it does NOT — same x-band but outside
+    // the sphere: one deep in the soil below the blast, one out past the arc near the span edge.
+    specks.push(
+      mk(cx, cy), // centre — dist 0 → inside → cleared
+      mk(cx + 5, cy - 5), // ~7px from centre → inside → cleared
+      mk(cx, cy + 2 * R), // 120px straight down → soil the blast never reached → KEPT
+      mk(cx - R * 0.95, cy - R * 0.95), // ~81px away (in the x-band [240,360] but outside the disc) → KEPT
+    );
+
+    land.carveDiscCollapse(cx, cy, R, true, true, true);
+
+    const rem = (land as unknown as {m_radSpecks: {x: number; y: number}[]}).m_radSpecks;
+    expect(rem.some(s => s.y === cy + 2 * R)).toBe(true); // deep speck survives (soil not reached)
+    expect(rem.some(s => Math.abs(s.x - (cx - R * 0.95)) < 0.5)).toBe(true); // corner speck survives
+    expect(rem.some(s => s.x === cx && s.y === cy)).toBe(false); // centre cleared
+    expect(rem.some(s => s.x === cx + 5)).toBe(false); // near-centre cleared
+  });
 });
