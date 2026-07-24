@@ -6,6 +6,7 @@
  */
 import {signal} from '@preact/signals';
 import {RoomClient, type RoomClientState} from '../net/roomClient';
+import type {MatchConfig} from '../net/protocol';
 import {NetGame} from '../net/netGame';
 import {normalizeRoomCode, isValidRoomCode} from '../net/roomCode';
 import {createPersistedSignal} from './persistedSignal';
@@ -92,13 +93,25 @@ export function joinRoom(raw: string): void {
 }
 
 export const setReady = (ready: boolean): void => client?.setReady(ready);
-// Publish THIS host's display size + gameplay config as the shared match parameters.
+// Start with THIS host's display size + the LIVE lobby config (host edits in the lobby, so
+// prefer the published config over the host's raw Settings; fall back to Settings if unset).
 export const startMatch = (): void =>
-  client?.startMatch(game().getDisplayWidth(), game().getDisplayHeight(), game().getMatchConfig());
+  client?.startMatch(
+    game().getDisplayWidth(),
+    game().getDisplayHeight(),
+    netState.value.config ?? game().getMatchConfig(),
+  );
 
-/** Host-only: change a lobby match setting (wind / map size); broadcast to everyone. */
+/** Host-only: change a lobby room setting (wind / map size / max players); broadcast to all. */
 export const updateSettings = (patch: Partial<RoomClientState['settings']>): void =>
   client?.updateSettings(patch);
+
+/** Host-only: change a gameplay config field in the lobby. Merges onto the live published
+ *  config and re-publishes so every player sees it (and it's applied identically at Start). */
+export const updateMatchConfig = (patch: Partial<MatchConfig>): void => {
+  const base = netState.value.config ?? game().getMatchConfig();
+  client?.publishConfig({...base, ...patch});
+};
 
 /** Leave the room and reset the screen back to the entry state. */
 export function leaveRoom(): void {

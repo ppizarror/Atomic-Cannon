@@ -51,8 +51,12 @@ export const en: Strings = {
     matchInfo: {
       title: 'Match Settings',
       view: 'View match settings',
+      edit: 'Match settings',
       close: 'Close',
+      done: 'Done',
       hostNote: 'Chosen by the host — everyone plays these.',
+      editNote: 'You set these for everyone in the match.',
+      players: 'Max players',
       mapSize: 'Map size',
       wind: 'Wind',
       health: 'Tank health',

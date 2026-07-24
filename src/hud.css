@@ -1908,6 +1908,11 @@ canvas {
   display: flex;
   gap: 4px;
   flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.net-seg-btn {
+  min-width: 34px;
 }
 .net-seg-btn {
   flex: 1 1 auto;
@@ -1945,18 +1950,25 @@ canvas {
   gap: 10px;
   align-items: stretch;
   padding: 20px 22px;
+  min-height: 0; /* let the rows region shrink + scroll instead of overflowing the frame */
 }
 .net-info-title {
   text-align: center;
+  flex: 0 0 auto;
 }
 .net-info-note {
   text-align: center;
   opacity: 0.7;
+  flex: 0 0 auto;
 }
 .net-info-rows {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* Many editable rows → scroll inside the dialog rather than pushing it past its max height. */
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 .net-info-row {
   display: flex;

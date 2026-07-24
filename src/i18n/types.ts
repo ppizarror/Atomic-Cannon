@@ -102,9 +102,13 @@ export interface Strings {
     /** The read-only "match settings" dialog shown in the lobby (host's config, for everyone). */
     matchInfo: {
       title: string;
-      view: string; // lobby button that opens the dialog
+      view: string; // lobby button that opens the dialog (joiner)
+      edit: string; // lobby button that opens the dialog (host)
       close: string;
-      hostNote: string; // "Set by the host" caption
+      done: string; // host's "apply/close" button
+      hostNote: string; // "Set by the host" caption (joiner)
+      editNote: string; // "these apply to everyone" caption (host)
+      players: string; // max players ("number of tanks")
       mapSize: string;
       wind: string;
       health: string;

@@ -19,6 +19,7 @@ import {
   setReady,
   startMatch,
   updateSettings,
+  updateMatchConfig,
   leaveRoom,
   resetNet,
 } from './networkStore';
@@ -146,115 +147,204 @@ function CodeDisplay({code}: {code: string}) {
   );
 }
 
+// Format a physics scalar as a multiplier, e.g. 1 → "1x", 1.35 → "1.35x". Uses ASCII "x"
+// (the bitmap font has no "×" glyph) and trims float noise to at most 2 decimals.
+function mult(n: number): string {
+  return `${Math.round(n * 100) / 100}x`;
+}
+
 /**
- * Host-only match settings shown in the lobby: wind strength and map size. Both broadcast
- * to every client and are captured at Start so the world is identical (and deterministic)
- * on all machines. Non-hosts see the same values read-only via the roster/summary.
+ * One settings row: a label and a set of choices. For the HOST it renders a segmented picker
+ * (click to change → broadcast); for everyone else it renders just the selected value, so the
+ * exact same dialog doubles as the host's editor and the joiners' read-only view.
  */
-function MatchSettings() {
-  const n = strings.value.net;
-  const s = netState.value;
-  if (!s.isHost) return null;
-  const windLabels = [n.windOpts.calm, n.windOpts.normal, n.windOpts.strong];
-
+function SegField<T extends number | boolean>({
+  label,
+  value,
+  options,
+  onPick,
+  editable,
+}: {
+  label: string;
+  value: T;
+  options: {label: string; val: T}[];
+  onPick: (v: T) => void;
+  editable: boolean;
+}) {
+  const selected = options.find(o => o.val === value);
   return (
-    <div class="net-settings">
-      <div class="net-set-title">
-        <BmpText font="beijing-16-out" text={n.matchSettings} spacing={-1} />
-      </div>
-
-      <div class="net-set-row">
-        <span class="net-set-label">
-          <BmpText font="beijing-16-out" text={n.windLabel} spacing={-1} />
-        </span>
+    <div class="net-set-row">
+      <span class="net-set-label">
+        <BmpText font="beijing-16-out" text={label} spacing={-1} />
+      </span>
+      {editable ? (
         <div class="net-seg">
-          {windLabels.map((label, i) => (
+          {options.map((o, i) => (
             <button
               key={i}
-              class={`net-seg-btn ${s.settings.wind === i ? 'net-seg-on' : ''}`}
-              onClick={() => updateSettings({wind: i})}
+              class={`net-seg-btn ${o.val === value ? 'net-seg-on' : ''}`}
+              onClick={() => onPick(o.val)}
             >
-              <BmpText font="beijing-16-out" text={label} spacing={-1} />
+              <BmpText font="beijing-16-out" text={o.label} spacing={-1} />
             </button>
           ))}
         </div>
-      </div>
-
-      <div class="net-set-row">
-        <span class="net-set-label">
-          <BmpText font="beijing-16-out" text={n.mapSizeLabel} spacing={-1} />
+      ) : (
+        <span class="net-info-v">
+          <BmpText font="beijing-16-out" text={selected?.label ?? String(value)} spacing={-1} />
         </span>
-        <div class="net-seg">
-          {[1, 2, 3, 4, 5].map(size => (
-            <button
-              key={size}
-              class={`net-seg-btn ${s.settings.mapSize === size ? 'net-seg-on' : ''}`}
-              onClick={() => updateSettings({mapSize: size})}
-            >
-              <BmpText font="beijing-16-out" text={String(size)} spacing={-1} />
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
+// Numeric choice presets → segmented options, labelled by `fmt` (defaults to the raw number).
+function numOpts(
+  vals: number[],
+  fmt: (v: number) => string = String,
+): {label: string; val: number}[] {
+  return vals.map(v => ({label: fmt(v), val: v}));
+}
+
 /**
- * Read-only "Match Settings" dialog — the host's gameplay config plus the lobby wind/map size,
- * shown to EVERY player so joiners know exactly what they'll play before Start. The host
- * publishes its config to the lobby (see networkStore); this just renders it.
+ * The lobby "Match Settings" dialog — the host EDITS every match parameter here and it
+ * broadcasts live to the whole room; joiners see the exact same dialog read-only. All of it is
+ * applied identically on every client at Start (the deterministic MatchConfig pipeline), so
+ * there's no way for two players to end up on different physics/rules.
  */
-function MatchInfoModal({onClose}: {onClose: () => void}) {
+function MatchSettingsDialog({onClose}: {onClose: () => void}) {
   const n = strings.value.net;
   const mi = n.matchInfo;
-  const common = strings.value.common;
+  const c = strings.value.common;
   const s = netState.value;
+  const host = s.isHost;
   const cfg = s.config;
-  const onOff = (b: boolean): string => (b ? common.on : common.off);
-  const windName = [n.windOpts.calm, n.windOpts.normal, n.windOpts.strong];
-
-  const rows: [string, string][] = [
-    [mi.mapSize, String(s.settings.mapSize)],
-    [mi.wind, windName[s.settings.wind] ?? String(s.settings.wind)],
+  const onOff: {label: string; val: boolean}[] = [
+    {label: c.on, val: true},
+    {label: c.off, val: false},
   ];
-  if (cfg) {
-    rows.push(
-      [mi.gameType, cfg.gameType === 0 ? mi.rounds : mi.deathmatch],
-      [mi.health, String(cfg.hitpoints)],
-      [mi.credits, String(cfg.startCredits)],
-      [mi.tankSize, `${cfg.tankSizeScale}×`],
-      [mi.explosion, `${cfg.explosionScale}×`],
-      [mi.recoil, `${cfg.kickbackScale}×`],
-      [mi.crates, `${cfg.crateChance}%`],
-      [mi.bury, onOff(cfg.buryTanks)],
-      [mi.relTurrets, onOff(cfg.relativeTurrets)],
-      [mi.utilTurn, onOff(cfg.utilityTurn)],
-    );
-  }
+  const windOpts = [
+    {label: n.windOpts.calm, val: 0},
+    {label: n.windOpts.normal, val: 1},
+    {label: n.windOpts.strong, val: 2},
+  ];
+  const gameOpts = [
+    {label: mi.rounds, val: 0},
+    {label: mi.deathmatch, val: 1},
+  ];
 
   return (
-    <Modal onClose={onClose} width="min(460px, 92vw)" class="net-info-card">
+    <Modal onClose={onClose} width="min(500px, 94vw)" maxHeight="88vh" class="net-info-card">
       <div class="net-info-title">
         <BmpText font="bazouk-28" text={mi.title} />
       </div>
       <div class="net-info-note">
-        <BmpText font="beijing-16-out" text={mi.hostNote} spacing={-1} />
+        <BmpText font="beijing-16-out" text={host ? mi.editNote : mi.hostNote} spacing={-1} />
       </div>
+
       <div class="net-info-rows">
-        {rows.map(([label, val]) => (
-          <div class="net-info-row" key={label}>
-            <span class="net-info-k">
-              <BmpText font="beijing-16-out" text={label} spacing={-1} />
-            </span>
-            <span class="net-info-v">
-              <BmpText font="beijing-16-out" text={val} spacing={-1} />
-            </span>
-          </div>
-        ))}
+        {/* Room-level (RoomSettings) — max players + wind + map size. */}
+        <SegField
+          label={mi.players}
+          value={s.settings.maxPlayers}
+          options={numOpts([2, 3, 4, 5, 6, 8])}
+          onPick={v => updateSettings({maxPlayers: v})}
+          editable={host}
+        />
+        <SegField
+          label={mi.wind}
+          value={s.settings.wind}
+          options={windOpts}
+          onPick={v => updateSettings({wind: v})}
+          editable={host}
+        />
+        <SegField
+          label={mi.mapSize}
+          value={s.settings.mapSize}
+          options={numOpts([1, 2, 3, 4, 5])}
+          onPick={v => updateSettings({mapSize: v})}
+          editable={host}
+        />
+
+        {/* Gameplay (MatchConfig) — needs a published config to edit/show. */}
+        {cfg && (
+          <>
+            <SegField
+              label={mi.gameType}
+              value={cfg.gameType}
+              options={gameOpts}
+              onPick={v => updateMatchConfig({gameType: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.health}
+              value={cfg.hitpoints}
+              options={numOpts([500, 1000, 1500, 2000, 3000])}
+              onPick={v => updateMatchConfig({hitpoints: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.credits}
+              value={cfg.startCredits}
+              options={numOpts([0, 1000, 3000, 5000, 10000])}
+              onPick={v => updateMatchConfig({startCredits: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.explosion}
+              value={cfg.explosionScale}
+              options={numOpts([0.5, 1, 2, 4], mult)}
+              onPick={v => updateMatchConfig({explosionScale: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.tankSize}
+              value={cfg.tankSizeScale}
+              options={numOpts([0.5, 1, 1.5, 2], mult)}
+              onPick={v => updateMatchConfig({tankSizeScale: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.recoil}
+              value={cfg.kickbackScale}
+              options={numOpts([0, 1, 2], mult)}
+              onPick={v => updateMatchConfig({kickbackScale: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.crates}
+              value={cfg.crateChance}
+              options={numOpts([0, 10, 20, 50], v => `${v}%`)}
+              onPick={v => updateMatchConfig({crateChance: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.bury}
+              value={cfg.buryTanks}
+              options={onOff}
+              onPick={v => updateMatchConfig({buryTanks: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.relTurrets}
+              value={cfg.relativeTurrets}
+              options={onOff}
+              onPick={v => updateMatchConfig({relativeTurrets: v})}
+              editable={host}
+            />
+            <SegField
+              label={mi.utilTurn}
+              value={cfg.utilityTurn}
+              options={onOff}
+              onPick={v => updateMatchConfig({utilityTurn: v})}
+              editable={host}
+            />
+          </>
+        )}
       </div>
+
       <button class="settings-row srow-done menu-btn" onClick={onClose}>
-        <BmpText font="bazouk-28" text={mi.close} />
+        <BmpText font="bazouk-28" text={host ? mi.done : mi.close} />
       </button>
     </Modal>
   );
@@ -301,12 +391,14 @@ function Lobby() {
         ))}
       </div>
 
-      <MatchSettings />
-
       <button class="net-info-btn" onClick={() => setShowInfo(true)}>
-        <BmpText font="beijing-16-out" text={n.matchInfo.view} spacing={-1} />
+        <BmpText
+          font="beijing-16-out"
+          text={s.isHost ? n.matchInfo.edit : n.matchInfo.view}
+          spacing={-1}
+        />
       </button>
-      {showInfo && <MatchInfoModal onClose={() => setShowInfo(false)} />}
+      {showInfo && <MatchSettingsDialog onClose={() => setShowInfo(false)} />}
 
       <button class="settings-row srow-done menu-btn" onClick={() => setReady(!you?.ready)}>
         <BmpText font="bazouk-28" text={you?.ready ? n.notReady : n.ready} />
