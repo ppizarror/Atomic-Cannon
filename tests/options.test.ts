@@ -346,6 +346,21 @@ describe('Formerly-no-op Settings options', () => {
     expect(Math.abs(kill(false))).toBeLessThan(3); // no Death weapon → no mound
   });
 
+  it('a supply crate rolls ONCE per round, not once per turn', () => {
+    const gc = humanGame(2); // 2 players → 2 turns per round
+    const prev = GameConfig.crateChance;
+    GameConfig.crateChance = 100; // always drops WHEN it actually rolls
+    const p = gc as unknown as {m_crates: unknown[]; endTurn(): void};
+
+    expect(p.m_crates.length).toBe(0);
+    p.endTurn(); // player 0 → 1: mid-round hand-off (turn order NOT wrapped yet)
+    expect(p.m_crates.length).toBe(0); // no crate mid-round — the bug dropped one EVERY turn
+    p.endTurn(); // player 1 → 0: the round wraps
+    expect(p.m_crates.length).toBe(1); // exactly one crate for the completed round
+
+    GameConfig.crateChance = prev; // restore (shared singleton)
+  });
+
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {
     const gc = humanGame();
     GameConfig.buyTime = 0; // Anytime

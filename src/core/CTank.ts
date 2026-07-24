@@ -1271,7 +1271,10 @@ export class CTank {
   }
 
   addLife(n: number): void {
-    this.m_health.nLife = clamp(this.m_health.nLife + n, 0, 1000);
+    // Heal caps at the tank's MAX life, not a hard 1000 — HitPoints is a setting (100–5000), so a
+    // Repair/Medkit refills toward THIS match's max (a 5000-HP tank isn't stuck at 1000, a 100-HP
+    // tank can't overheal to 10×). The `hit` path floors at 0; this floors there too via clamp.
+    this.m_health.nLife = clamp(this.m_health.nLife + n, 0, this.m_maxLife);
   }
 
   // Armor and Hazmat are SET stats (a level), NOT additive pools like shield/life — the
