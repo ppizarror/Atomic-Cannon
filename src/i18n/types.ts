@@ -123,6 +123,8 @@ export interface Strings {
     };
     /** fmt: {n} connected of {min} required. */
     needPlayers: string;
+    /** Fallback display name when a player/chat sender's real name isn't known — `{n}` is their id. */
+    playerNum: string;
     /** Connection status pills. */
     status: {connecting: string; open: string; reconnecting: string; closed: string};
     errorTitle: string;

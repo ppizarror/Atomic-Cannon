@@ -11,6 +11,7 @@ import type {CGameController, NetSnapshot} from '../game/CGameController';
 import type {RoomClient} from './roomClient';
 import type {ServerMessage, MatchConfig} from './protocol';
 import {applyCommand} from './commands';
+import {strings, fmt} from '../i18n';
 
 /** What NetGame needs from its embedder (kept free of Preact/store details). */
 export interface NetGameHost {
@@ -174,7 +175,7 @@ export class NetGame {
     const byId = new Map(st.players.map(p => [p.id, p]));
     // Same order on every client → same names, same team colours, same tank indices.
     const roster = order.map((id, i) => ({
-      name: byId.get(id)?.name ?? `Player ${id}`,
+      name: byId.get(id)?.name ?? fmt(strings.value.net.playerNum, {n: id}),
       color: TEAM_HEX[i % TEAM_HEX.length],
     }));
     // A local index of -1 means we're NOT in the turn order — i.e. a mid-match spectator. Keep it

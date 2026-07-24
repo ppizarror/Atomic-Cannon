@@ -71,6 +71,8 @@ export const en: Strings = {
       deathmatch: 'Deathmatch',
     },
     needPlayers: 'Waiting for players ({n}/{min})',
+    /** Fallback display name for a player/chat sender whose real name isn't known — `{n}` is their id. */
+    playerNum: 'Player {n}',
     status: {
       connecting: 'Connecting…',
       open: 'Connected',

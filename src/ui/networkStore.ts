@@ -12,6 +12,7 @@ import {normalizeRoomCode, isValidRoomCode} from '../net/roomCode';
 import {createPersistedSignal} from './persistedSignal';
 import {roster} from './playersStore';
 import {game, screen, paused, goToMenu} from './store';
+import {strings, fmt} from '../i18n';
 
 const initialState: RoomClientState = {
   phase: 'idle',
@@ -62,7 +63,7 @@ function pushChat(fromId: number, text: string): void {
   const from = s.players.find(p => p.id === fromId);
   const msg: ChatMsg = {
     seq: ++chatSeq,
-    name: from?.name ?? `Player ${fromId}`,
+    name: from?.name ?? fmt(strings.value.net.playerNum, {n: fromId}),
     text,
     mine: fromId === s.youId,
   };
