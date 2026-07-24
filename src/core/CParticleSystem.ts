@@ -180,9 +180,13 @@ const FUME_GRAV = -0.05;
 // its perpendicular DRIFT (which side of the tube it settles on) and its gui/rocket plume.bmp ROW
 // (its colour). So the outer edge reads the light UPPER rows and the inner edge the dark LOWER rows
 // — a coherent graded TUBE that emerges statistically (grounded: row = the emission-angle fraction).
-const EXHAUST_PUFFS = 9; // small puffs per sub-step (dense — the trail is many overlapping puffs)
+const EXHAUST_PUFFS = 5; // small puffs per sub-step (dense — the trail is many overlapping puffs)
 const EXHAUST_PERP = 16; // perpendicular drift speed (px/s) → puffs SPREAD apart as they age (tube widens toward the tail)
 const EXHAUST_HALF = 1; // initial perpendicular half-offset (px) → puffs START close together at the nozzle
+
+// Cull margin (px) — a puff whose CENTRE is this far outside the view is skipped in draw
+// (big enough to cover a fully-swelled puff's radius so nothing pops at the edge).
+const CULL_MARGIN = 140;
 
 export class CParticleSystem {
   private m_particles: Particle[] = [];
@@ -190,6 +194,20 @@ export class CParticleSystem {
   private m_explosions: Explosion[] = [];
   private m_craterVents: CraterVent[] = []; // fresh craters venting white fumes over time
   private m_groundAt: ((x: number) => number) | null = null; // surface height under x (for wind + vents)
+  // Viewport (world-X of the view's left edge + view size), set each frame by the controller.
+  // Enables off-screen culling and the half-resolution smoke layer; ≤0 width = disabled (tests).
+  private m_viewCamX = 0;
+  private m_viewW = 0;
+  private m_viewH = 0;
+  private m_smokeBuf: HTMLCanvasElement | null = null; // half-res offscreen for the smoke layer
+
+  /** Per-frame view rectangle (world-X of the left edge + on-screen size). Drives off-screen culling
+   *  and the half-res smoke buffer. Pass width 0 to disable both (headless tests draw everything). */
+  setViewport(camX: number, viewW: number, viewH: number): void {
+    this.m_viewCamX = camX;
+    this.m_viewW = viewW;
+    this.m_viewH = viewH;
+  }
 
   /** Give the particle system the terrain surface fn — enables the wind altitude profile and stops
    *  the crater vents from spraying fumes into empty sky where there's no soil. */
@@ -1108,74 +1126,105 @@ export class CParticleSystem {
   // -------------------------------------------------------------------- draw
 
   /** Render all particles. Additive kinds are batched to set the blend once. */
-  draw(ctx: CanvasRenderingContext2D): void {
-    const ps = this.m_particles;
-    const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null; // gui/smoke.bmp
-    const flareSpr = this.m_assets?.getSprite('fx:flare') ?? null; // flares/04.bmp
-
-    // Pass 1: normal-blend — sparks/debris (crisp dots) and smoke (grey puffs).
-    for (const p of ps) {
-      const t = p.age / p.life;
-      if (t >= 1) continue;
-
-      if (p.kind === 'disc') {
-        const a = 1 - t;
-        ctx.fillStyle = `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${a})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, Math.max(0.6, p.size * (0.5 + a * 0.5)), 0, TWO_PI);
-        ctx.fill();
-      } else if (p.kind === 'smoke') {
-        // Grey puff: starts SMALL and SWELLS strongly over its life (the fumes
-        // grow as they drift back), alpha peaks early then fades out.
-        const alpha = Math.sin(Math.min(1, t) * Math.PI) * p.op; // per-particle peak opacity
-        if (alpha <= 0.01) continue;
-        const d = p.size * (0.9 + t * p.grow) * 2; // small at birth → grows over life (per-particle rate)
-        // Grey smoke (r<200) = ROCKET EXHAUST → a soft round DISC (cotton ball). Its GREY tone comes
-        // from HEIGHT (high above ground = light, low = dark) so the trail is a coherent vertical
-        // gradient, not per-puff "confetti"; fresh puffs at the nozzle keep a warm GLOW that fades
-        // with age. White smoke (r≥200) = CRATER FUMES → the fuzzy textured cloud (a different look).
-        if (p.r < 200) {
-          // Colour comes from the gui/rocket plume.bmp TABLE: X = AGE (young→bright/hot left, old→cool
-          // right) gives the nozzle glow + cooling; Y = the puff's ROW, stored in `g` (0..255) at
-          // emission = its emission-angle fraction in the backward cone, which ALSO set its
-          // perpendicular drift — so the outer edge reads the light upper rows and the inner edge the
-          // dark lower rows, a graded tube that emerges statistically (grounded: row = angle fraction).
-          const img = this.plumeImg();
-          let cr = 210,
-            cg = 216,
-            cb = 226;
-          if (img) {
-            const cx = Math.min(img.width - 1, (Math.min(1, t) * img.width) | 0);
-            const cy = Math.min(img.height - 1, ((p.g / 255) * img.height) | 0);
-            const i = (cy * img.width + cx) * 4;
-            cr = img.data[i];
-            cg = img.data[i + 1];
-            cb = img.data[i + 2];
-          }
-          // Exhaust puffs BILLOW to a large size over most of their life, then die by shrinking AND
-          // fading transparent in the last stretch: the diameter grows to ~3.4× by t=0.72 then
-          // contracts to nothing, and the alpha holds then fades out — so the tube fattens as it
-          // matures and the tail puffs balloon, then shrink+dissolve (the transition in the reference).
-          const gs = t < 0.72 ? 0.5 + 2.9 * (t / 0.72) : 3.4 * (1 - (t - 0.72) / 0.28);
-          const de = p.size * gs * 2;
-          const ea = Math.min(1, t / 0.1) * (t > 0.72 ? (1 - t) / 0.28 : 1) * p.op;
-          const puff = this.tintedPuff(cr, cg, cb);
-          if (puff) {
-            ctx.globalAlpha = ea;
-            ctx.drawImage(puff, p.x - de / 2, p.y - de / 2, de, de);
-            ctx.globalAlpha = 1;
-          } else {
-            this.blitGlow(ctx, p.x, p.y, de / 2, cr, cg, cb, ea);
-          }
-        } else if (smokeSpr) {
-          ctx.globalAlpha = alpha;
-          ctx.drawImage(this.whiteSmoke() ?? smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
-          ctx.globalAlpha = 1;
-        } else {
-          this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, alpha);
-        }
+  private drawSmokeLayer(ctx: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
+    if (this.m_viewW > 0 && this.m_viewH > 0 && typeof document !== 'undefined') {
+      const bw = Math.max(1, Math.ceil(this.m_viewW / 2));
+      const bh = Math.max(1, Math.ceil(this.m_viewH / 2));
+      if (!this.m_smokeBuf) this.m_smokeBuf = document.createElement('canvas');
+      if (this.m_smokeBuf.width !== bw || this.m_smokeBuf.height !== bh) {
+        this.m_smokeBuf.width = bw;
+        this.m_smokeBuf.height = bh;
+      }
+      const bctx = this.m_smokeBuf.getContext('2d');
+      if (bctx) {
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        bctx.clearRect(0, 0, bw, bh);
+        bctx.setTransform(0.5, 0, 0, 0.5, -this.m_viewCamX * 0.5, 0); // world → half-res VIEW space
+        this.drawSmoke(bctx, cullMin, cullMax);
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Blit at world x = camX (→ the view's left edge in the camera-translated ctx), upscaled 2×.
+        ctx.drawImage(this.m_smokeBuf, this.m_viewCamX, 0, this.m_viewW, this.m_viewH);
+        return;
       }
     }
+    this.drawSmoke(ctx, cullMin, cullMax);
+  }
+
+  /** Draw every 'smoke' puff to `g` (the main ctx or the half-res buffer). Grey (r<200) = rocket
+   *  exhaust (gui/rocket plume.bmp colour table); white (r≥200) = crater fumes (soft white sprite). */
+  private drawSmoke(g: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
+    const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null;
+    for (const p of this.m_particles) {
+      if (p.kind !== 'smoke') continue;
+      if (p.x < cullMin || p.x > cullMax) continue;
+      const t = p.age / p.life;
+      if (t >= 1) continue;
+      const alpha = Math.sin(Math.min(1, t) * Math.PI) * p.op; // per-particle peak opacity
+      if (alpha <= 0.01) continue;
+      const d = p.size * (0.9 + t * p.grow) * 2; // small at birth → grows over life
+      if (p.r < 200) {
+        // Grey = ROCKET EXHAUST: colour from the gui/rocket plume.bmp TABLE (X=age, Y=row via `g`).
+        const img = this.plumeImg();
+        let cr = 210,
+          cg = 216,
+          cb = 226;
+        if (img) {
+          const cx = Math.min(img.width - 1, (Math.min(1, t) * img.width) | 0);
+          const cy = Math.min(img.height - 1, ((p.g / 255) * img.height) | 0);
+          const i = (cy * img.width + cx) * 4;
+          cr = img.data[i];
+          cg = img.data[i + 1];
+          cb = img.data[i + 2];
+        }
+        // Billow to ~3.4× by t=0.72 then shrink+dissolve.
+        const gs = t < 0.72 ? 0.5 + 2.9 * (t / 0.72) : 3.4 * (1 - (t - 0.72) / 0.28);
+        const de = p.size * gs * 2;
+        const ea = Math.min(1, t / 0.1) * (t > 0.72 ? (1 - t) / 0.28 : 1) * p.op;
+        const puff = this.tintedPuff(cr, cg, cb);
+        if (puff) {
+          g.globalAlpha = ea;
+          g.drawImage(puff, p.x - de / 2, p.y - de / 2, de, de);
+          g.globalAlpha = 1;
+        } else {
+          this.blitGlow(g, p.x, p.y, de / 2, cr, cg, cb, ea);
+        }
+      } else if (smokeSpr) {
+        // White = CRATER FUMES: the soft white sprite.
+        g.globalAlpha = alpha;
+        g.drawImage(this.whiteSmoke() ?? smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
+        g.globalAlpha = 1;
+      } else {
+        this.blitGlow(g, p.x, p.y, d / 2, p.r, p.g, p.b, alpha);
+      }
+    }
+  }
+
+  draw(ctx: CanvasRenderingContext2D): void {
+    const ps = this.m_particles;
+    const flareSpr = this.m_assets?.getSprite('fx:flare') ?? null; // flares/04.bmp
+
+    // Cull range (world X): skip particles whose centre is outside the view. Disabled (viewW≤0) in
+    // headless tests → everything draws.
+    const cull = this.m_viewW > 0;
+    const cullMin = cull ? this.m_viewCamX - CULL_MARGIN : -Infinity;
+    const cullMax = cull ? this.m_viewCamX + this.m_viewW + CULL_MARGIN : Infinity;
+
+    // Pass 1a: crisp sparks/debris (normal blend, full-res).
+    for (const p of ps) {
+      if (p.kind !== 'disc') continue;
+      if (p.x < cullMin || p.x > cullMax) continue;
+      const t = p.age / p.life;
+      if (t >= 1) continue;
+      const a = 1 - t;
+      ctx.fillStyle = `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${a})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.6, p.size * (0.5 + a * 0.5)), 0, TWO_PI);
+      ctx.fill();
+    }
+
+    // Pass 1b: smoke — rendered to a HALF-RES offscreen then upscaled (smoke is soft, so the ½-res
+    // is invisible but the alpha fill drops ~4×). Direct full-res when no viewport is set (tests).
+    this.drawSmokeLayer(ctx, cullMin, cullMax);
 
     // Pass 2: additive — explosion fireball, trail plumes, glows, flashes.
     const prev = ctx.globalCompositeOperation;
@@ -1206,6 +1255,7 @@ export class CParticleSystem {
     // own sprite (rocket plume / in-flight flare) or the default flares/04 star.
     for (const p of ps) {
       if (p.kind !== 'plume') continue;
+      if (p.x < cullMin || p.x > cullMax) continue;
       const t = p.age / p.life;
       if (t >= 1) continue;
       const a = (1 - t) * 0.9;
@@ -1222,6 +1272,7 @@ export class CParticleSystem {
 
     for (const p of ps) {
       if (p.kind !== 'flare' && p.kind !== 'flash') continue;
+      if (p.x < cullMin || p.x > cullMax) continue;
       const t = p.age / p.life;
       if (t >= 1) continue;
 
