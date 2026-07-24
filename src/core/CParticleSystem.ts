@@ -102,9 +102,10 @@ const SMALL_BLAST_R = 14;
 const MUZZLE_SPARKS = 30;
 const MUZZLE_SPARK_SPEED = 45;
 
-// Cap the hollow flare-burst ring count for NON-nuke blasts. The original uses ~r·0.5 particles;
-// this caps a wide conventional round (Cleaner r130 → 65) so the ring stays a readable shell rather
-// than an over-dense band. Nukes stay uncapped. See `emitFlareBurst`.
+// Cap the hollow flare-burst ring count for a plain BURST-style blast (the original's ~r·0.5
+// particles); this caps a wide conventional round (Cleaner r130 → 65) so the ring stays a readable
+// shell rather than an over-dense band. A DENSE style (~r·2) uses 2× this cap; nukes stay uncapped.
+// See `emitFlareBurst`, which selects the density from the weapon's explosion style (expType).
 const FLARE_BURST_MAX = 54;
 
 const rnd = () => Math.random();
@@ -647,7 +648,7 @@ export class CParticleSystem {
     // the per-weapon look emerges from the sprite alone: a dim sprite (Cleaner flares/02, peak ~55)
     // reads as translucent grey-blue smoke bubbles with a clear centre; a bright one (nuke flares/00,
     // peak ~229; bomb flares/07 orange) reads as a hot fireball ring. No white boost, no ×N stacking.
-    if (!small) this.emitFlareBurst(x, y, r, flareSpr, big);
+    if (!small) this.emitFlareBurst(x, y, r, flareSpr, expType, big);
 
     // A hot white-out flash is a NUKE thing ONLY — never a conventional or Cleaner blast.
     if (big) this.spawnFlash(x, y, r * 2.4, {r: 255, g: 255, b: 255}, 0.3);
@@ -703,14 +704,39 @@ export class CParticleSystem {
   }
 
   /**
-   * The flare BURST as a HOLLOW annulus (the original's ring burst). `count ≈ r·0.5` particles are
-   * born on a ring of radius `r·[0.5..0.8]` — never the centre — each starting at `r·[0.167..0.333]`
-   * px and shrinking to nothing while drifting slowly outward, so the shell EXPANDS and the centre
-   * stays clear. Plus ONE big central puff of the same sprite: for a dim sprite it adds ~nothing (the
-   * centre reads through); for a bright one it gives the hot core. All additive at true intensity.
+   * The flare BURST as a HOLLOW annulus (the original's ring burst), its DENSITY set by the weapon's
+   * explosion STYLE (expType) — the original scatters `mag·0.5` flares for a plain BURST and `mag·2`
+   * (4× denser) for a DENSE one, while a SINGLE style emits no ring at all (just the central puff):
+   *   • SINGLE — central puff only, no ring (beams, rain, most bombs — the 51-weapon common case).
+   *   • BURST  — ring of ~r·0.5 flares + puff (Bomb, Cleaner, Grave Digger).
+   *   • DENSE  — ring of ~r·2 flares (4× BURST) + puff (Cluster, Digger, Plasma) → a packed shell.
+   *   • NUKE / nuclear — the widest ring (~r·0.9) + puff; the full-screen white-out is fired by the
+   *     caller. `big` (nuke-tier OR the `nuclear` flag) always takes this branch regardless of style.
+   * Ring particles are born on radius `r·[0.5..0.8]` — never the centre — each starting at
+   * `r·[0.167..0.333]` px and shrinking to nothing while drifting slowly outward, so the shell
+   * EXPANDS and the centre stays clear. The central puff of the same sprite adds ~nothing for a dim
+   * sprite (the centre reads through) and a hot core for a bright one. All additive at true intensity.
    */
-  private emitFlareBurst(x: number, y: number, r: number, sprite: string, big: boolean): void {
-    const count = big ? Math.round(r * 0.9) : Math.min(FLARE_BURST_MAX, Math.max(3, Math.round(r * 0.5))); // prettier-ignore
+  private emitFlareBurst(
+    x: number,
+    y: number,
+    r: number,
+    sprite: string,
+    expType: ExpType,
+    big: boolean,
+  ): void {
+    // PLAIN (style 0) emits no burst at all — but those are small kinetic rounds that never reach
+    // here (the `small` gate handles them); guard anyway so a big-radius PLAIN weapon stays quiet.
+    if (!big && expType === EXP.PLAIN) return;
+    // Ring density by style. DENSE is 4× BURST (mag·2 vs mag·0.5) with a matching higher cap so the
+    // packed shell can actually read; SINGLE emits no ring (count 0 → central puff only).
+    let count: number;
+    if (big) count = Math.round(r * 0.9);
+    else if (expType === EXP.DENSE)
+      count = Math.min(FLARE_BURST_MAX * 2, Math.max(6, Math.round(r * 2))); // prettier-ignore
+    else if (expType === EXP.BURST)
+      count = Math.min(FLARE_BURST_MAX, Math.max(3, Math.round(r * 0.5))); // prettier-ignore
+    else count = 0; // SINGLE
     for (let i = 0; i < count; i++) {
       const ang = rnd() * TWO_PI;
       const off = between(r * 0.5, r * 0.8); // born on the ring, so the centre is empty

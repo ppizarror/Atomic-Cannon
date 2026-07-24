@@ -4,6 +4,7 @@
 import {describe, it, expect} from 'vitest';
 
 import {CParticleSystem} from '../src/core/CParticleSystem';
+import {EXP} from '../src/core/weapons/ExpType';
 import {ScreenShake} from '../src/core/rendering/ScreenShake';
 import {Vec2} from '../src/math/Vec2';
 
@@ -156,6 +157,28 @@ describe('Particle system', () => {
     a.blast(400, 300, 40, '#ffff00', false);
     b.blast(400, 300, 40, '#ffff00', true);
     expect(b.count()).toBeGreaterThan(a.count()); // nuclear blast emits more
+  });
+
+  // T2 — the flare-burst RING density follows the weapon's explosion STYLE (expType), not a single
+  // nuke-vs-not switch: SINGLE = central puff only (no ring), BURST = ~r·0.5 ring, DENSE = ~r·2 ring
+  // (4× BURST). At r=40 (non-nuke, non-small) the flare burst is the ONLY thing pushed to
+  // m_explosions, so its length = ring particles + 1 central puff.
+  it('flare-burst ring density scales with explosion style (SINGLE < BURST < DENSE)', () => {
+    const ringCount = (exp: (typeof EXP)[keyof typeof EXP]): number => {
+      const ps = new CParticleSystem();
+      ps.setBounds(800, 600);
+      ps.blast(400, 300, 40, '#ff8c22', false, undefined, exp);
+      return (ps as unknown as {m_explosions: unknown[]}).m_explosions.length;
+    };
+    const single = ringCount(EXP.SINGLE);
+    const burst = ringCount(EXP.BURST);
+    const dense = ringCount(EXP.DENSE);
+
+    expect(single).toBe(1); // central puff only — no ring
+    expect(burst).toBeGreaterThan(single); // BURST adds a ~r·0.5 ring
+    expect(dense).toBeGreaterThan(burst); // DENSE is denser still
+    // DENSE ring (~r·2) is ~4× the BURST ring (~r·0.5); check the ring-only counts (drop the puff).
+    expect(dense - 1).toBeGreaterThan((burst - 1) * 3);
   });
 
   it('tankDeath() emits the fixed profile and clears', () => {
@@ -537,7 +560,7 @@ describe('Particle system', () => {
     const ps = new CParticleSystem();
     ps.setBounds(800, 600);
     ps.setAssets({getSprite: () => ({bitmap: {} as CanvasImageSource, width: 8, height: 8})});
-    ps.blast(400, 300, 40, '#ff8800', false);
+    ps.blast(400, 300, 40, '#ff8800', false, undefined, EXP.BURST); // a burst style emits sprite flares
     ps.update(0.1);
     const ctx = mockCtx();
     ps.draw(ctx);

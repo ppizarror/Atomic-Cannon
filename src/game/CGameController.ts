@@ -1273,6 +1273,7 @@ export class CGameController implements ShotWorld {
     if (this.m_gameState === EGameState.BattleEnd) {
       this.drawFireworks(ctx);
       this.drawWinnerFlag(ctx);
+      this.drawStandingsLabels(ctx); // per-tank standings label (points / life%) over each survivor
     }
 
     this.drawPlacedEntities(ctx);
@@ -2426,6 +2427,34 @@ export class CGameController implements ShotWorld {
     drawTri(pos.x, pos.y - 26 - bob, 1);
   }
 
+  /**
+   * Between-battles standings labels: a floating label over EVERY surviving tank on the standings
+   * screen (the original floats a per-tank label above each living tank there). Mode-aware, matching
+   * the original's two forms — Points mode shows "Name: N points", Deathmatch shows "Name: X% life".
+   * Sentries are excluded (they're off the scoreboard). Drawn in the outlined bitmap font so it reads
+   * over any terrain; the winner's taunt bubble (a DOM element) floats higher, so the two don't collide.
+   */
+  private drawStandingsLabels(ctx: CanvasRenderingContext2D): void {
+    for (const tank of this.m_tanks) {
+      if (!tank.isAlive() || tank.isSentry()) continue;
+      const pos = tank.getPosition();
+      this.drawBmpCentered(ctx, 'beijing-16-out', this.standingLabelFor(tank), pos.x, pos.y - 30);
+    }
+  }
+
+  /** The mode-aware standings label text for one tank, matching the original's two forms: Points
+   *  mode floats `Name: N points` (its net damage), Deathmatch floats `Name: X% life`. Separated
+   *  from the draw so the wording/mode logic is testable. */
+  private standingLabelFor(tank: CTank): string {
+    const g = strings.value.game;
+    const name = tank.getName() || g.noName;
+    if (this.m_gameType === EGameType.Rounds) {
+      return fmt(g.standingPoints, {name, n: Math.round(tank.getDamageDealt())});
+    }
+    const pct = Math.round(clamp01(tank.getHealth().nLife / tank.getMaxLife()) * 100);
+    return fmt(g.statusLife, {name, pct});
+  }
+
   // ========================================================================
   // BATTLE FLOW
   // ========================================================================
@@ -2923,7 +2952,14 @@ export class CGameController implements ShotWorld {
     const pos = tank.getPosition();
     const surf = this.m_land.getHeightAt(Math.floor(pos.x));
     const drop = new CShot();
-    drop.initFromVelocity(new Vec2(pos.x, surf), 0, 0, weapon.getDamage(), weapon.getRadius(), tank);
+    drop.initFromVelocity(
+      new Vec2(pos.x, surf),
+      0,
+      0,
+      weapon.getDamage(),
+      weapon.getRadius(),
+      tank,
+    );
     drop.setWeaponIndex(idx);
     weaponDetonate(drop, weapon, this); // full effect at the corpse: blast + earth deposit + FX
   }
