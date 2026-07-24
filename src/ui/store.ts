@@ -351,7 +351,8 @@ export const turnTimer = signal<{frac: number; color: string} | null>(null);
 export const battleStatus = signal<{
   lines: {text: string; color: string; dead: boolean; active: boolean}[];
   battle: string;
-}>({lines: [], battle: ''});
+  notice: string; // transient hint below the battle line ("Can't move underground."), '' = none
+}>({lines: [], battle: '', notice: ''});
 
 // Fraction of view width the top-left status text is pushed right to clear the
 // minimap (0 = no minimap → default left inset).
@@ -485,10 +486,11 @@ export function syncHud(): void {
     active: s.active,
   }));
   const battle = c.getStatusLine(); // "Round N of M" (Rounds) or "Battle N of M - Shot X"
-  const sig = lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle;
+  const notice = c.getStatusNotice(); // "Can't move underground." while the acting tank is buried
+  const sig = lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle + '#' + notice;
   if (sig !== lastBattleSig) {
     lastBattleSig = sig;
-    battleStatus.value = {lines, battle};
+    battleStatus.value = {lines, battle, notice};
   }
   // Shift the status text clear of the minimap (large maps only).
   const slf = c.getMinimapRightFrac();

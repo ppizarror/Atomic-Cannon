@@ -2025,6 +2025,65 @@ canvas {
   background: rgba(0, 0, 0, 0.55);
 }
 
+/* In-match chat — bottom-left overlay. The container is click-through (so it never blocks the
+   battlefield); the log and input opt back into pointer events. */
+.net-chat {
+  position: fixed;
+  left: 10px;
+  bottom: 10px;
+  z-index: var(--z-flight);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(340px, 80vw);
+  pointer-events: none;
+}
+.net-chat-log {
+  max-height: 26vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--green-line);
+  pointer-events: auto;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.net-chat-line {
+  color: rgba(222, 240, 226, 0.92);
+  word-break: break-word;
+}
+.net-chat-name {
+  color: var(--green-focus);
+  font-weight: bold;
+}
+/* Own messages: amber name, matching the "you" accent used elsewhere in the net UI. */
+.net-chat-line.mine .net-chat-name {
+  color: #e6c23b;
+}
+.net-chat-form {
+  pointer-events: auto;
+}
+.net-chat-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--green-line);
+  color: #eaf5ec;
+  font-size: 12px;
+  outline: none;
+}
+.net-chat-input:focus {
+  border-color: var(--green-focus);
+  background: rgba(0, 0, 0, 0.72);
+}
+.net-chat-input::placeholder {
+  color: rgba(200, 220, 205, 0.5);
+}
+
 /* Landscapes: fewer, larger thumbnail rows. */
 .editor-lands {
   width: min(560px, 82vw);

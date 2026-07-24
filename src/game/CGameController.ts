@@ -165,6 +165,10 @@ const sentryMachineGunIndex = (): number => {
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
 
+// Min seconds between live-aim relays to spectators in a net match (~16/s) — smooth turret
+// tracking without flooding the socket on a fast angle/power drag.
+const NET_AIM_INTERVAL = 0.06;
+
 // A bot restocks a shield only when its current shield is below this (the original's autobuy
 // shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading).
 const BOT_SHIELD_NEED = 500;
@@ -795,6 +799,7 @@ export class CGameController implements ShotWorld {
     switch (this.m_gameState) {
       case EGameState.Battle:
         this.updateBattle(dt);
+        this.relayLiveAim(); // net: stream the local player's turret movement to spectators
         break;
 
       case EGameState.Flying:
@@ -4616,6 +4621,7 @@ export class CGameController implements ShotWorld {
     if (tank.isHuman()) {
       tank.setTurretAngle(this.m_angle);
     }
+    if (this.m_netMode && this.isLocalNetTurn()) this.m_netAimDirty = true;
   }
 
   setPower(power: number): void {
@@ -4624,6 +4630,18 @@ export class CGameController implements ShotWorld {
     this.m_power = power;
     // Persist the power on the acting tank so it survives the turn cycle.
     this.getCurrentTank().setPower(power);
+    if (this.m_netMode && this.isLocalNetTurn()) this.m_netAimDirty = true;
+  }
+
+  /** Stream the local player's live aim to spectators, throttled per NET_AIM_INTERVAL so a drag
+   *  can't flood the socket. Cosmetic only — fire() re-sends the FINAL aim before the shot, so the
+   *  deterministic outcome never depends on these. Called each frame while a battle turn is live. */
+  private relayLiveAim(): void {
+    if (!this.m_netMode || !this.isLocalNetTurn() || !this.m_netAimDirty) return;
+    if (this.m_time - this.m_lastAimSentTime < NET_AIM_INTERVAL) return;
+    this.m_netAimDirty = false;
+    this.m_lastAimSentTime = this.m_time;
+    this.m_onNetCommand?.({t: 'aim', angle: this.m_angle, power: this.m_power});
   }
 
   /**
@@ -5073,6 +5091,11 @@ export class CGameController implements ShotWorld {
   private m_netRoster: {name: string; color: string}[] | null = null;
   private m_onNetTurnEnd: (() => void) | null = null;
   private m_onNetCommand: ((cmd: GameCommand) => void) | null = null;
+  // Live aim relay (net): while the local player adjusts angle/power, stream throttled `aim`
+  // commands so spectators watch the turret track in real time (not just snap at fire). Purely
+  // cosmetic — the deterministic outcome still comes from the final aim re-sent at fire.
+  private m_netAimDirty = false;
+  private m_lastAimSentTime = 0;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
   private m_netLandScale = NET_LAND_SCALE; // host-chosen net world width (viewport-widths)
   private m_netViewW = NET_VIEW_W; // shared net logical size = the HOST's view size
@@ -5225,6 +5248,14 @@ export class CGameController implements ShotWorld {
       total: this.m_totalBattles,
       shot: this.m_shotsFired,
     });
+  }
+
+  /** Transient status hint under the battle line: "Can't move underground." while the acting tank is
+   *  buried (Bury Tanks) — matching the original's top-left message. '' when there's nothing to say. */
+  getStatusNotice(): string {
+    const tank = this.getCurrentTank();
+    if (tank?.isAlive() && tank.isBuried()) return strings.value.game.cantMoveUnderground;
+    return '';
   }
 
   getBattleNum(): number {

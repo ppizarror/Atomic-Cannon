@@ -132,6 +132,8 @@ export interface Strings {
     playerDropped: string;
     playersDropped: string;
     endMatch: string;
+    /** Placeholder in the in-match chat input. */
+    chatPlaceholder: string;
   };
 
   // ── About card ────────────────────────────────────────────────────────────
@@ -554,6 +556,8 @@ export interface Strings {
     statusBattle: string;
     /** Rounds/Points status line — Round `{round}` of `{total}`. */
     statusRound: string;
+    /** Top-left status hint shown while the acting tank is buried (Bury Tanks). */
+    cantMoveUnderground: string;
   };
 
   /** Default human-player names — the roster prefill pool (cycled past the list). A

@@ -38,6 +38,7 @@ import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
 import {Network} from './Network';
 import {NetStatusBanner} from './NetStatusBanner';
+import {NetChat} from './NetChat';
 import {WarStandings} from './WarStandings';
 
 /**
@@ -260,6 +261,7 @@ export function App() {
     <>
       <CurrentScreen />
       <NetStatusBanner />
+      <NetChat />
       <TauntLayer />
       <PauseMenu />
       <HelpOverlay />

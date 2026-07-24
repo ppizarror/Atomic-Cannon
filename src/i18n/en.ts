@@ -83,6 +83,7 @@ export const en: Strings = {
     playerDropped: '{name} lost connection — waiting to reconnect…',
     playersDropped: '{n} players disconnected — waiting…',
     endMatch: 'End match',
+    chatPlaceholder: 'Press Enter to chat…',
   },
 
   about: {
@@ -698,6 +699,7 @@ export const en: Strings = {
     statusLife: '{name}: {pct}% life',
     statusBattle: 'Battle {battle} of {total} - Shot {shot}',
     statusRound: 'Round {round} of {total}',
+    cantMoveUnderground: "Can't move underground.",
   },
 
   // Default human-player names — the roster prefill pool. Bare first names, a

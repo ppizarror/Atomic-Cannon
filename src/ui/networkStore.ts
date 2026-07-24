@@ -36,6 +36,37 @@ const initialState: RoomClientState = {
 /** The reactive lobby snapshot the Network screen renders from. */
 export const netState = signal<RoomClientState>(initialState);
 
+/** One line in the in-match chat log. */
+export interface ChatMsg {
+  seq: number;
+  name: string; // sender's display name (resolved from the roster)
+  text: string;
+  mine: boolean; // sent by the local player (styled as own message)
+}
+
+/** In-match chat transcript (most recent last), rendered by NetChat during a battle. */
+export const chatLog = signal<ChatMsg[]>([]);
+let chatSeq = 0;
+const MAX_CHAT = 60; // cap the transcript so a long match can't grow it unbounded
+
+function pushChat(fromId: number, text: string): void {
+  const s = netState.value;
+  const from = s.players.find(p => p.id === fromId);
+  const msg: ChatMsg = {
+    seq: ++chatSeq,
+    name: from?.name ?? `Player ${fromId}`,
+    text,
+    mine: fromId === s.youId,
+  };
+  chatLog.value = [...chatLog.value, msg].slice(-MAX_CHAT);
+}
+
+/** Send a chat line to everyone in the room (the server echoes it back, so no optimistic add). */
+export function sendChat(text: string): void {
+  const clean = text.trim().slice(0, 200);
+  if (clean) client?.chat(clean);
+}
+
 // The name you appear as online — defaults to your first configured player.
 const nameStore = createPersistedSignal<string>('atomic.net.name', {
   revive: raw => String(raw),
@@ -51,6 +82,7 @@ let configPublished = false; // host publishes its lobby config once per room
 function makeClient(): RoomClient {
   client?.close();
   configPublished = false;
+  chatLog.value = []; // fresh transcript per room
   const c = new RoomClient({
     identity: {name: playerName.value.trim() || 'Player', color: roster.value[0]?.color},
     appVersion: __APP_VERSION__,
@@ -63,7 +95,11 @@ function makeClient(): RoomClient {
         c.publishConfig(game().getMatchConfig());
       }
     },
-    onGameMessage: msg => netGame?.handle(msg),
+    onGameMessage: msg => {
+      // Chat is a UI concern, not a game-sim message — capture it here; NetGame ignores it.
+      if (msg.t === 'chat') return pushChat(msg.from, msg.text);
+      netGame?.handle(msg);
+    },
   });
   client = c;
   // The bridge boots the match from `startGame` and enters the battle screen.

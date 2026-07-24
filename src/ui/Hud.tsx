@@ -471,6 +471,11 @@ function BattleStatus() {
       <div class="bstat-line">
         <BmpText font="beijing-16-out" text={s.battle} height={18} spacing={-1} />
       </div>
+      {s.notice && (
+        <div class="bstat-line">
+          <BmpText font="beijing-16-out" text={s.notice} height={18} spacing={-1} />
+        </div>
+      )}
     </div>
   );
 }

@@ -303,6 +303,72 @@ describe('network match boot', () => {
     expect(a.stateHash()).toBe(b.stateHash()); // tanks + terrain + RNG all agree
   });
 
+  it('live aim: streams throttled aim commands to spectators while the local player adjusts', () => {
+    const FIXED = 1 / 60;
+    const cmds: {t: string}[] = [];
+    const gc = new CGameController(makeCanvas());
+    gc.startNetworkGame({
+      seed: 999,
+      players: 2,
+      localIndex: 0,
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      tanksPerTeam: 1,
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+      onCommand: c => cmds.push(c),
+    });
+    gc.netSetActivePlayer(0); // my turn → my aim is streamed
+    const aims = () => cmds.filter(c => c.t === 'aim').length;
+
+    // Warm the sim clock past the throttle window, then adjust aim: one relay goes out.
+    for (let i = 0; i < 5; i++) gc.update(FIXED);
+    gc.setAngle(40);
+    gc.update(FIXED);
+    const afterFirst = aims();
+    expect(afterFirst).toBeGreaterThanOrEqual(1);
+
+    // A second change on the very next frame is inside the throttle interval → suppressed.
+    gc.setAngle(41);
+    gc.update(FIXED);
+    expect(aims()).toBe(afterFirst);
+
+    // Let the interval pass, change again → a further relay is allowed.
+    for (let i = 0; i < 6; i++) gc.update(FIXED);
+    gc.setAngle(42);
+    gc.update(FIXED);
+    expect(aims()).toBeGreaterThan(afterFirst);
+  });
+
+  it('live aim: a spectator (not their turn) streams nothing', () => {
+    const cmds: {t: string}[] = [];
+    const gc = new CGameController(makeCanvas());
+    gc.startNetworkGame({
+      seed: 999,
+      players: 2,
+      localIndex: 0,
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      battles: 2,
+      tanksPerTeam: 1,
+      currentBattle: 1,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+      onCommand: c => cmds.push(c),
+    });
+    gc.netSetActivePlayer(1); // the OPPONENT's turn — not mine
+    for (let i = 0; i < 8; i++) gc.update(1 / 60);
+    gc.setAngle(33);
+    gc.update(1 / 60);
+    expect(cmds.filter(c => c.t === 'aim')).toHaveLength(0); // I don't relay on someone else's turn
+  });
+
   it('ignores local dev switches (flatland/weapontest) so clients stay identical', () => {
     // One client has ?flatland + ?weapontest set; the match must ignore both.
     const dirty = new CGameController(makeCanvas());
