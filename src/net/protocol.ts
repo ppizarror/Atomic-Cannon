@@ -35,6 +35,27 @@ export interface RoomSettings {
 }
 
 /**
+ * The host's gameplay settings, captured at Start and applied identically on every client so
+ * the deterministic simulation agrees. ANY of these that a client read from its own local
+ * Settings instead would diverge the world (physics scalars change trajectories/blast/damage;
+ * gameType changes the damage model; buryTanks/relativeTurrets change positions/aim). The host
+ * is the single source of truth — clients never read their own copy of these during a net match.
+ */
+export interface MatchConfig {
+  readonly hitpoints: number; // tank starting/max life
+  readonly tankSizeScale: number; // hull + collision geometry
+  readonly explosionScale: number; // blast/carve radius
+  readonly powerScale: number; // shot launch speed
+  readonly kickbackScale: number; // post-fire tank recoil displacement
+  readonly buryTanks: boolean; // a tank can be trapped underground (rest-Y)
+  readonly relativeTurrets: boolean; // human aim is relative to the tank's terrain tilt
+  readonly utilityTurn: boolean; // using a utility ends the turn
+  readonly crateChance: number; // supply-crate drop chance (gates the seeded RNG)
+  readonly startCredits: number; // starting purse per tank
+  readonly gameType: number; // 0 = Rounds/Points, 1 = Deathmatch (damage model)
+}
+
+/**
  * Authoritative post-turn state the acting client broadcasts once its shot resolves;
  * everyone applies it so tanks + terrain + wind stay in sync. Structurally matches the
  * controller's NetSnapshot (identity mapping, no per-field translation).
@@ -67,7 +88,13 @@ export type ClientMessage =
       readonly reconnect?: string;
     }
   | {readonly t: 'ready'; readonly ready: boolean}
-  | {readonly t: 'start'; readonly viewW: number; readonly viewH: number} // host only; its resolution
+  | {
+      // host only: its resolution + the gameplay config every client must adopt
+      readonly t: 'start';
+      readonly viewW: number;
+      readonly viewH: number;
+      readonly config: MatchConfig;
+    }
   | {readonly t: 'settings'; readonly settings: Partial<RoomSettings>} // host only
   | {readonly t: 'cmd'; readonly seq: number; readonly cmd: GameCommand}
   | {
@@ -106,6 +133,8 @@ export type ServerMessage =
       /** The host's logical resolution — the shared world size every client builds at. */
       readonly viewW: number;
       readonly viewH: number;
+      /** The host's gameplay settings, applied identically on every client (determinism). */
+      readonly config: MatchConfig;
     }
   | {readonly t: 'turnBegin'; readonly playerIdx: number; readonly deadline: number}
   /** The match ended; each client shows the standings (winner computed from synced state). */

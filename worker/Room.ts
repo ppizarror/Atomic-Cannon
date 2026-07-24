@@ -12,6 +12,7 @@ import {
   type ServerMessage,
   type PlayerInfo,
   type RoomSettings,
+  type MatchConfig,
   type ShotResult,
   parseClientMessage,
   PROTOCOL_VERSION,
@@ -44,6 +45,8 @@ interface RoomState {
   /** The host's logical resolution — the shared world size every client builds at. */
   viewW: number;
   viewH: number;
+  /** The host's gameplay config, captured at Start and replayed on reconnect. */
+  config: MatchConfig | null;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
   /** State hash of `snapshot` (so a resync target carries its drift-check hash). */
@@ -77,9 +80,30 @@ function freshState(code: string): RoomState {
     turnIdx: 0,
     viewW: 1280,
     viewH: 720,
+    config: null,
     snapshot: null,
     snapshotHash: 0,
     appVersion: null,
+  };
+}
+
+/** Clamp the host's gameplay config into sane ranges (a bad/hostile host can't hand peers
+ *  values that break their sim). Applied on Start, then broadcast + replayed identically. */
+function sanitizeConfig(c: MatchConfig): MatchConfig {
+  const num = (v: unknown, lo: number, hi: number, dflt: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt;
+  return {
+    hitpoints: num(c?.hitpoints, 1, 100000, 1000),
+    tankSizeScale: num(c?.tankSizeScale, 0.25, 4, 1),
+    explosionScale: num(c?.explosionScale, 0.25, 8, 1),
+    powerScale: num(c?.powerScale, 0.25, 4, 1),
+    kickbackScale: num(c?.kickbackScale, 0, 8, 1),
+    buryTanks: !!c?.buryTanks,
+    relativeTurrets: !!c?.relativeTurrets,
+    utilityTurn: !!c?.utilityTurn,
+    crateChance: num(c?.crateChance, 0, 100, 20),
+    startCredits: num(c?.startCredits, 0, 1000000, 3000),
+    gameType: num(c?.gameType, 0, 1, 1) === 0 ? 0 : 1,
   };
 }
 
@@ -194,7 +218,7 @@ export class Room {
       case 'settings':
         return this.onSettings(s, att.playerId!, msg.settings);
       case 'start':
-        return this.onStart(s, att.playerId!, msg.viewW, msg.viewH);
+        return this.onStart(s, att.playerId!, msg.viewW, msg.viewH, msg.config);
       case 'cmd':
         return this.onCmd(s, att.playerId!, msg);
       case 'shotResult':
@@ -289,6 +313,7 @@ export class Room {
       mapSize: s.settings.mapSize,
       viewW: s.viewW,
       viewH: s.viewH,
+      config: s.config ?? sanitizeConfig({} as MatchConfig),
     });
     if (s.snapshot) {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
@@ -330,7 +355,13 @@ export class Room {
     this.broadcast({t: 'settings', settings: next});
   }
 
-  private async onStart(s: RoomState, pid: number, viewW: number, viewH: number): Promise<void> {
+  private async onStart(
+    s: RoomState,
+    pid: number,
+    viewW: number,
+    viewH: number,
+    config: MatchConfig,
+  ): Promise<void> {
     const host = this.socketFor(pid);
     if (s.hostId !== pid) {
       if (host) this.send(host, {t: 'error', code: 'not_host', message: 'only the host can start'});
@@ -346,6 +377,8 @@ export class Room {
     // The host's resolution becomes the shared world size (clamped to a sane range).
     s.viewW = clampInt(viewW, 320, 4096);
     s.viewH = clampInt(viewH, 240, 4096);
+    // The host's gameplay config becomes the shared config (sanitized), applied on every client.
+    s.config = sanitizeConfig(config);
     await this.save(s);
 
     this.broadcast({
@@ -356,6 +389,7 @@ export class Room {
       mapSize: s.settings.mapSize,
       viewW: s.viewW,
       viewH: s.viewH,
+      config: s.config,
     });
     this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
   }

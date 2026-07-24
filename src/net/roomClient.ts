@@ -13,6 +13,7 @@ import {
   type ServerMessage,
   type PlayerInfo,
   type RoomSettings,
+  type MatchConfig,
   type ErrorCode,
   PROTOCOL_VERSION,
 } from './protocol';
@@ -185,8 +186,8 @@ export class RoomClient {
   setReady(ready: boolean): void {
     this.send({t: 'ready', ready});
   }
-  startMatch(viewW: number, viewH: number): void {
-    this.send({t: 'start', viewW, viewH});
+  startMatch(viewW: number, viewH: number, config: MatchConfig): void {
+    this.send({t: 'start', viewW, viewH, config});
   }
   updateSettings(settings: Partial<RoomSettings>): void {
     this.send({t: 'settings', settings});

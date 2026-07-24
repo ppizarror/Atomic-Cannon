@@ -9,6 +9,7 @@ import {makeCanvas} from './_dom';
 import {CTank} from '../src/core/CTank';
 import type {CLand} from '../src/core/CLand';
 import {CGameController} from '../src/game/CGameController';
+import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {Vec2} from '../src/math/Vec2';
 
 // Minimal land stand-ins (only what CTank.update touches).
@@ -135,5 +136,54 @@ describe('Tank ground-drive', () => {
     }
     expect(fired).toBe(RUNS); // a firing bot fires
     expect(firedMoved).toBe(0); // a firing bot does NOT move
+  });
+
+  it('human Move: FIRE arms click-to-place; the tank moves only when a spot is clicked', () => {
+    type GC = {
+      startGame(n: number): void;
+      setStartCredits(n: number): void;
+      setHumanCount(n: number): void;
+      buyWeapon(i: number): boolean;
+      selectWeapon(i: number): void;
+      fire(): void;
+      isMovePlacing(): boolean;
+      placeMove(wx: number): void;
+      canAct(): boolean;
+      beginAim(wx: number, wy: number): boolean;
+      m_tanks: CTank[];
+      m_currentPlayerIndex: number;
+    };
+    const gc = new CGameController(makeCanvas(900, 600)) as unknown as GC;
+    gc.setStartCredits(100_000);
+    gc.setHumanCount(1);
+    gc.startGame(2);
+    gc.m_currentPlayerIndex = 0;
+    const human = gc.m_tanks[0];
+    const moveIdx = WEAPON_DATABASE.findIndex(w => w.id === 'move.mid');
+    expect(gc.buyWeapon(moveIdx)).toBe(true); // stock a Move utility
+    gc.selectWeapon(moveIdx);
+
+    const x0 = human.getPosition().x;
+    gc.fire(); // arms placement — must NOT drive yet
+    expect(gc.isMovePlacing()).toBe(true);
+    expect(human.isMoving()).toBe(false); // FIRE alone doesn't move the tank
+
+    // Selecting another weapon disarms a pending placement (no accidental move).
+    gc.selectWeapon(WEAPON_DATABASE.findIndex(w => w.id === 'shell'));
+    expect(gc.isMovePlacing()).toBe(false);
+    expect(human.isMoving()).toBe(false); // still hasn't moved
+
+    // Re-arm and place: a click within the budget drives the tank there.
+    gc.selectWeapon(moveIdx);
+    gc.fire();
+    expect(gc.isMovePlacing()).toBe(true);
+    gc.placeMove(x0 + 40); // click a spot 40px right, within the move budget
+    expect(gc.isMovePlacing()).toBe(false); // placement consumed
+    expect(human.isMoving()).toBe(true); // now driving toward the clicked destination
+
+    // While the drive is under way, ALL player input is locked (same as jet flight): the HUD/aim
+    // gate closes and aim clicks are ignored, so FIRE does nothing until the tank settles.
+    expect(gc.canAct()).toBe(false);
+    expect(gc.beginAim(x0 + 100, 400)).toBe(false);
   });
 });

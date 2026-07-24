@@ -7,6 +7,7 @@
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
+import {GameConfig} from '../src/core/CGameConfig';
 import {NetGame, type NetGameHost} from '../src/net/netGame';
 import type {RoomClient, RoomClientState} from '../src/net/roomClient';
 import type {ClientMessage} from '../src/net/protocol';
@@ -15,6 +16,21 @@ const ROSTER = [
   {name: 'Ada', color: '#f00'},
   {name: 'Bo', color: '#0f0'},
 ];
+
+// The host's shared gameplay config (defaults). A net match adopts this on every client.
+const CFG = {
+  hitpoints: 1000,
+  tankSizeScale: 1,
+  explosionScale: 1,
+  powerScale: 1,
+  kickbackScale: 1,
+  buryTanks: false,
+  relativeTurrets: false,
+  utilityTurn: false,
+  crateChance: 20,
+  startCredits: 3000,
+  gameType: 1,
+};
 
 function netController(localIndex: number, seed = 12345): CGameController {
   const gc = new CGameController(makeCanvas());
@@ -27,6 +43,7 @@ function netController(localIndex: number, seed = 12345): CGameController {
     mapSize: 2,
     viewW: 1280,
     viewH: 720,
+    config: CFG,
   });
   return gc;
 }
@@ -61,6 +78,7 @@ describe('network match boot', () => {
         mapSize,
         viewW: 1280,
         viewH: 720,
+        config: CFG,
       });
       return c.getNetSnapshot().heights.length;
     };
@@ -90,6 +108,7 @@ describe('network match boot', () => {
       mapSize: 2,
       viewW: 1400,
       viewH: 900,
+      config: CFG,
     });
     b.startNetworkGame({
       seed: 55,
@@ -100,6 +119,7 @@ describe('network match boot', () => {
       mapSize: 2,
       viewW: 1400,
       viewH: 900,
+      config: CFG,
     });
 
     const ha = a.getNetSnapshot().heights;
@@ -122,6 +142,7 @@ describe('network match boot', () => {
         mapSize: 2,
         viewW,
         viewH: 720,
+        config: CFG,
       });
       return c.getNetSnapshot().heights.length;
     };
@@ -145,6 +166,7 @@ describe('network match boot', () => {
       mapSize: 2,
       viewW: 1280,
       viewH: 720,
+      config: CFG,
     });
     expect(c.stateHash()).not.toBe(a.stateHash());
   });
@@ -162,6 +184,7 @@ describe('network match boot', () => {
         mapSize: 2,
         viewW: 1280,
         viewH: 720,
+        config: CFG,
       });
       gc.netSetActivePlayer(0); // tank 0 is local + active → it fires
       gc.setAngle(45);
@@ -194,6 +217,7 @@ describe('network match boot', () => {
       mapSize: 2,
       viewW: 1280,
       viewH: 720,
+      config: CFG,
     });
 
     const clean = new CGameController(makeCanvas());
@@ -206,10 +230,59 @@ describe('network match boot', () => {
       mapSize: 2,
       viewW: 1280,
       viewH: 720,
+      config: CFG,
     });
 
     // Same seed → identical (non-flat) terrain despite the dirty client's switches.
     expect(dirty.getNetSnapshot().heights).toEqual(clean.getNetSnapshot().heights);
+  });
+
+  it('forces the HOST match config over each client’s local Settings', () => {
+    // A client whose local Settings differ wildly from the host's…
+    GameConfig.explosionScale = 3;
+    GameConfig.hitpoints = 250;
+    GameConfig.buryTanks = true;
+    GameConfig.relativeTurrets = true;
+    GameConfig.randomizeTurns = true; // must be forced OFF in net (server owns turn order)
+    netController(0); // …adopts the host CFG (explosionScale 1, hitpoints 1000, bury/relative off)
+    expect(GameConfig.explosionScale).toBe(1);
+    expect(GameConfig.hitpoints).toBe(1000);
+    expect(GameConfig.buryTanks).toBe(false);
+    expect(GameConfig.relativeTurrets).toBe(false);
+    expect(GameConfig.randomizeTurns).toBe(false);
+  });
+
+  it('two clients with different local settings still simulate a shot to the same hash', () => {
+    const FIXED = 1 / 60;
+    // Each client boots with a DIFFERENT local explosionScale; startNetworkGame must overwrite
+    // it with the shared CFG so the carve/damage — and thus the stateHash — match.
+    const shot = (localExplosion: number): CGameController => {
+      GameConfig.explosionScale = localExplosion; // divergent local — should be ignored in net
+      const gc = new CGameController(makeCanvas());
+      gc.startNetworkGame({
+        seed: 4242,
+        players: 2,
+        localIndex: 0,
+        roster: ROSTER,
+        wind: 1,
+        mapSize: 2,
+        viewW: 1280,
+        viewH: 720,
+        config: CFG,
+      });
+      gc.netSetActivePlayer(0);
+      gc.setAngle(45);
+      gc.setPower(650);
+      gc.fire();
+      return gc;
+    };
+    const a = shot(3); // client A had explosionScale 3
+    const b = shot(0.5); // client B had explosionScale 0.5
+    for (let i = 0; i < 1200; i++) {
+      a.update(FIXED);
+      b.update(FIXED);
+    }
+    expect(a.stateHash()).toBe(b.stateHash()); // identical despite divergent pre-start settings
   });
 });
 
@@ -313,7 +386,16 @@ describe('NetGame bridge', () => {
 
   it('boots the match from startGame and enters battle', () => {
     const {gc, ng, started} = harness(2); // I am player id 2 → local index 1
-    ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     expect(started()).toBe(true);
     expect(gc.getNetSnapshot().tanks).toHaveLength(2);
     // order [1,2], youId 2 → local index 1
@@ -323,14 +405,32 @@ describe('NetGame bridge', () => {
 
   it('turnBegin advances the active player', () => {
     const {gc, ng} = harness(1);
-    ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     ng.handle({t: 'turnBegin', playerIdx: 1, deadline: 0});
     expect(gc.isLocalNetTurn()).toBe(false); // I'm index 0; it's index 1's turn
   });
 
   it('reports the local turn outcome as a shotResult (acting player only)', () => {
     const {gc, ng, sent} = harness(1); // I am player 1 → local index 0
-    ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     gc.netSetActivePlayer(0); // my turn
     (gc as unknown as {m_onNetTurnEnd: () => void}).m_onNetTurnEnd();
     const shot = sent.find(m => m.t === 'shotResult');
@@ -340,7 +440,16 @@ describe('NetGame bridge', () => {
 
   it('does NOT report on a spectator’s turn-end', () => {
     const {gc, ng, sent} = harness(1); // local index 0
-    ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     gc.netSetActivePlayer(1); // opponent's turn — I'm a spectator now
     (gc as unknown as {m_onNetTurnEnd: () => void}).m_onNetTurnEnd();
     expect(sent.find(m => m.t === 'shotResult')).toBeUndefined();
@@ -348,7 +457,16 @@ describe('NetGame bridge', () => {
 
   it('firing on the local turn relays selectWeapon + aim + fire', () => {
     const {gc, ng, sent} = harness(1); // local index 0
-    ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     gc.netSetActivePlayer(0);
     gc.setAngle(50);
     gc.setPower(400);
@@ -360,7 +478,16 @@ describe('NetGame bridge', () => {
 
   it('a relayed opponent shot is SIMULATED on spectators (real shot, not a stream)', () => {
     const {gc, ng} = harness(1);
-    ng.handle({t: 'startGame', seed: 999, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 999,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     ng.handle({t: 'turnBegin', playerIdx: 1, deadline: 0}); // opponent's turn
     ng.handle({t: 'cmd', from: 2, seq: 1, cmd: {t: 'aim', angle: 33, power: 500}});
     expect(gc.getAngle()).toBe(33); // their turret tracks
@@ -392,7 +519,16 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       send: (m: ClientMessage) => sent.push(m),
     } as unknown as RoomClient;
     const ng = new NetGame(client, {controller: gc, onMatchStart: () => {}});
-    ng.handle({t: 'startGame', seed: 5, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 5,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     return {gc, ng, sent};
   }
 
@@ -460,7 +596,16 @@ describe('network battle-end', () => {
       send: (m: ClientMessage) => sent.push(m),
     } as unknown as RoomClient;
     const ng = new NetGame(client, {controller: gc, onMatchStart: () => {}});
-    ng.handle({t: 'startGame', seed: 5, order: [1, 2]});
+    ng.handle({
+      t: 'startGame',
+      seed: 5,
+      order: [1, 2],
+      wind: 1,
+      mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
+      config: CFG,
+    });
     gc.netSetActivePlayer(0); // my turn
 
     // Wipe the opponent, then resolve the turn.

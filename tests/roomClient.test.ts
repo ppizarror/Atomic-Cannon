@@ -188,12 +188,25 @@ describe('RoomClient', () => {
     t.sent.length = 0; // drop the hello
 
     client.setReady(true);
-    client.startMatch(1280, 720);
+    const cfg = {
+      hitpoints: 1000,
+      tankSizeScale: 1,
+      explosionScale: 1,
+      powerScale: 1,
+      kickbackScale: 1,
+      buryTanks: false,
+      relativeTurrets: false,
+      utilityTurn: false,
+      crateChance: 20,
+      startCredits: 3000,
+      gameType: 1,
+    };
+    client.startMatch(1280, 720, cfg);
     client.updateSettings({battles: 5});
     client.chat('hi');
     expect(t.sent).toEqual([
       {t: 'ready', ready: true},
-      {t: 'start', viewW: 1280, viewH: 720},
+      {t: 'start', viewW: 1280, viewH: 720, config: cfg},
       {t: 'settings', settings: {battles: 5}},
       {t: 'chat', text: 'hi'},
     ]);

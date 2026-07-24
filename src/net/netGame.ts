@@ -9,7 +9,7 @@
  */
 import type {CGameController, NetSnapshot} from '../game/CGameController';
 import type {RoomClient} from './roomClient';
-import type {ServerMessage} from './protocol';
+import type {ServerMessage, MatchConfig} from './protocol';
 import {applyCommand} from './commands';
 
 /** What NetGame needs from its embedder (kept free of Preact/store details). */
@@ -49,7 +49,15 @@ export class NetGame {
   handle(msg: ServerMessage): void {
     switch (msg.t) {
       case 'startGame':
-        return this.onStart(msg.seed, msg.order, msg.wind, msg.mapSize, msg.viewW, msg.viewH);
+        return this.onStart(
+          msg.seed,
+          msg.order,
+          msg.wind,
+          msg.mapSize,
+          msg.viewW,
+          msg.viewH,
+          msg.config,
+        );
       case 'turnBegin':
         return this.onTurnBegin(msg.playerIdx);
       case 'stateUpdate':
@@ -110,6 +118,7 @@ export class NetGame {
     mapSize: number,
     viewW: number,
     viewH: number,
+    config: MatchConfig,
   ): void {
     this.m_pendingKeyframe = null;
     this.m_pendingTurn = null;
@@ -131,6 +140,7 @@ export class NetGame {
       mapSize,
       viewW,
       viewH,
+      config,
       onTurnEnd: () => this.onTurnSettled(),
       onCommand: cmd => this.client.send({t: 'cmd', seq: ++this.m_seq, cmd}),
     });
