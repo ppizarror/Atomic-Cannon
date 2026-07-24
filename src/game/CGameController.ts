@@ -312,7 +312,7 @@ interface FwRocket {
   targetY: number;
 }
 
-// Supply crates (Gameplay → Crates). On a per-turn chance a parachute crate drops from
+// Supply crates (Gameplay → Crates). On a per-ROUND chance a parachute crate drops from
 // the top of the map, descends at a constant speed with a ±5° pendulum wobble, lands on
 // the terrain, and is collected by any tank that comes within reach — granting credits,
 // health, or a weapon. Descent speed, wobble, and the contents split match the original.
@@ -2216,7 +2216,7 @@ export class CGameController implements ShotWorld {
   // SUPPLY CRATES (Gameplay → Crates)
   // ========================================================================
 
-  /** On a turn hand-off, roll the Crates chance and — if the field isn't full (max
+  /** Once per ROUND (turn order wrapped), roll the Crates chance and — if the field isn't full (max
    *  2 × live tanks) — drop one parachute crate from the top at a random column. */
   private maybeSpawnCrate(): void {
     if (GameConfig.crateChance <= 0) return;
@@ -3280,9 +3280,6 @@ export class CGameController implements ShotWorld {
     // Only after an actual shot, never a timed-out forfeit.
     if (this.m_firedThisTurn) this.tryTaunt('postFire', actor, TAUNT_CHANCE_POSTFIRE);
 
-    // On the turn hand-off, roll the chance to drop a new supply crate.
-    this.maybeSpawnCrate();
-
     // Hand off, then pay the between-turn credits. A completed round (turn order
     // wrapped) pays Credit Round to every survivor first, then Credit Turn every
     // hand-off. Credits are pooled per team inside the award.
@@ -3290,6 +3287,9 @@ export class CGameController implements ShotWorld {
     if (wrapped) {
       this.m_currentRound++;
       this.awardSurvivorCredit(this.m_creditRound);
+      // Roll the Crates chance ONCE per ROUND (the setting is "chance each round"). It used to roll
+      // on every turn hand-off, so an N-player round got N rolls → multiple crates per round.
+      this.maybeSpawnCrate();
     }
     this.awardSurvivorCredit(this.m_creditTurn);
 
@@ -4400,14 +4400,16 @@ export class CGameController implements ShotWorld {
    *  every client is at the same settled sim state + shares the seeded RNG cursor and rates. */
   netTurnHandoff(): void {
     if (!this.m_netMode) return;
-    this.maybeSpawnCrate(); // seeded → identical crate (or none) on every client
     this.awardSurvivorCredit(this.m_creditTurn); // per-turn income (synced rate)
   }
 
-  /** Server-signalled: a full round just completed → pay per-round survivor income. Deterministic
-   *  (same survivors + synced rate on every client), applied on the turnBegin that wraps. */
+  /** Server-signalled: a full round just completed → pay per-round survivor income + roll the Crates
+   *  chance ONCE per round (not per turn). Deterministic (same survivors + synced rate + shared
+   *  seeded RNG cursor on every client), applied on the turnBegin that wraps. */
   netAwardRoundCredit(): void {
-    if (this.m_netMode) this.awardSurvivorCredit(this.m_creditRound);
+    if (!this.m_netMode) return;
+    this.awardSurvivorCredit(this.m_creditRound);
+    this.maybeSpawnCrate(); // seeded → identical crate (or none) on every client, once per round
   }
 
   /** Show the battle-winner celebration (standings if the war is over). Idempotent — a second
