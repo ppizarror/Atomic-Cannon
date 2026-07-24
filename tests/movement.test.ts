@@ -1,7 +1,7 @@
 /**
- * Deterministic tests for the tank ground-drive (bot repositioning): it crawls to
- * a destination on flat ground, stops at a wall it can't climb, and clamps at the
- * map edge.
+ * Deterministic tests for the tank ground-drive (bot repositioning): it crawls to a
+ * destination on flat ground, climbs ANY terrain (the original has no steepness gate),
+ * and clamps at the map edge.
  */
 import {describe, it, expect, vi} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -54,13 +54,15 @@ describe('Tank ground-drive', () => {
     expect(Math.abs(t.getPosition().x - 350) < 2).toBe(true); // reaches a leftward destination
   });
 
-  it("a wall it can't climb stops the drive short", () => {
-    const land = wall();
+  it('climbs a steep wall and reaches the destination (drives on ANY terrain)', () => {
+    const land = wall(); // a 200px step up at x>300
     const t = new CTank('X', 0);
     t.init(200, land);
     t.startDrive(600); // target is past the wall at x>300
     driveToRest(t, land);
-    expect(t.getPosition().x < 320 && !t.isMoving()).toBe(true); // stops before an unclimbable wall
+    // The original crawls over any terrain — no steepness gate stops it before the wall.
+    expect(Math.abs(t.getPosition().x - 600) < 2).toBe(true); // climbs the wall, reaches the target
+    expect(t.isMoving()).toBe(false); // settles
   });
 
   it('clamps at the battlefield edge', () => {

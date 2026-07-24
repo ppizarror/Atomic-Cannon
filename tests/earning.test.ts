@@ -17,7 +17,11 @@ import {Roster} from '../src/core/CRoster';
 // The match reads humans from roster slots 0.. and CPUs from the bot pool (slots 8..), so we colour
 // each player's actual slot — otherwise a 1-human/3-CPU match would read uncoloured filler slots.
 function twoTeamRoster(n: number, humans = 1): void {
-  const roster = Array.from({length: 16}, (_, i) => ({name: `Filler${i}`, model: '', color: '#333333'}));
+  const roster = Array.from({length: 16}, (_, i) => ({
+    name: `Filler${i}`,
+    model: '',
+    color: '#333333',
+  }));
   for (let p = 0; p < n; p++) {
     const slot = p < humans ? p : 8 + (p - humans); // mirrors setupTanks' human/bot split
     roster[slot] = {name: `P${p}`, model: '', color: p % 2 === 0 ? '#0000ff' : '#ff0000'};

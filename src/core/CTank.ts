@@ -316,6 +316,11 @@ export class CTank {
     // Where the tank rests when sitting on the current terrain surface.
     const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
 
+    // BURIED: only possible with Bury Tanks on — the tank sits below the surface (dirt piled over
+    // it). A buried tank can't drive OR fly until it's dug out; recomputed each frame so it clears
+    // the instant the ground is lowered back to (or below) it.
+    this.m_bBuried = GameConfig.buryTanks && this.m_vPos.y > fRestY + 0.5;
+
     // Jet flight (extType 17): while fuel remains the player thrusts against
     // gravity. UP = -1.2g vertical (net -0.2g, a gentle rise), L/R = ∓0.1g
     // horizontal; fuel drains on real dt.
@@ -463,13 +468,19 @@ export class CTank {
    * advances it while grounded; `isMoving()` stays true until it settles.
    */
   startDrive(targetX: number): void {
-    if (!this.m_bIsAlive) return;
+    if (!this.m_bIsAlive || this.m_bBuried) return; // a buried tank can't drive until it's dug out
     this.m_driveTargetX = targetX;
     this.m_bIsMoving = true;
   }
 
   isDriving(): boolean {
     return this.m_driveTargetX !== null;
+  }
+
+  /** True while the tank is trapped below the surface (Bury Tanks on + dirt piled over it) — it
+   *  can neither drive nor fly until the ground is lowered back to it. */
+  isBuried(): boolean {
+    return this.m_bBuried;
   }
 
   /** One step of a ground drive: crawl toward the target, hugging the surface. */
@@ -482,7 +493,7 @@ export class CTank {
     }
 
     const stepPx = Math.min(Math.abs(target - this.m_vPos.x), TANK_DRIVE_SPEED * dt);
-    let newX = this.m_vPos.x + dir * stepPx;
+    const newX = this.m_vPos.x + dir * stepPx;
 
     // Stop at the battlefield edge.
     if (newX < tankRadius() || newX > pLand.width - tankRadius()) {
@@ -490,21 +501,12 @@ export class CTank {
       return;
     }
 
-    // Follow the surface, but stop at terrain too steep to cross: a wall it can't
-    // climb, or a cliff it won't drive off. (Screen-Y: smaller = higher ground,
-    // so `rise > 0` is climbing.) Descents are allowed more freely than climbs so
-    // a tank on a hilltop can still drive down either side.
-    const curH = pLand.getHeightAt(Math.floor(this.m_vPos.x));
-    const newH = pLand.getHeightAt(Math.floor(newX));
-    const rise = curH - newH;
-    const span = Math.max(1, stepPx);
-    if (rise > TANK_DRIVE_MAX_CLIMB * span || -rise > TANK_DRIVE_MAX_DROP * span) {
-      this.endDrive(pLand);
-      return;
-    }
-
+    // The original drives the tank over ANY terrain — up walls, down cliffs, however spiky —
+    // simply hugging the ground to the destination. There is NO steepness gate: a per-column
+    // slope check halted the crawl on ordinary bumpy terrain (natural columns differ by several
+    // px, more than a sub-pixel step allows), so the tank barely moved. Just follow the surface.
     this.m_vPos.x = newX;
-    this.m_vPos.y = newH - tankHeight();
+    this.m_vPos.y = pLand.getHeightAt(Math.floor(newX)) - tankHeight();
     this.m_bIsMoving = true;
     if (Math.abs(newX - target) < 0.5) this.endDrive(pLand);
   }
@@ -517,9 +519,12 @@ export class CTank {
 
   // ── Jet flight (extType 17) ──────────────────────────────────────────────
 
-  /** Light the jet with `fuelSeconds` of fuel (the weapon's damage field). */
-  igniteJet(fuelSeconds: number): void {
+  /** Light the jet with `fuelSeconds` of fuel (the weapon's damage field). Refused (returns false)
+   *  when the tank is buried — it can't fly out until it's dug free. Returns true when it lit. */
+  igniteJet(fuelSeconds: number): boolean {
+    if (this.m_bBuried) return false;
     this.m_fJetFuel = Math.max(0, fuelSeconds);
+    return true;
   }
 
   /** Cut the engine — drops remaining fuel (turn-end / early-out). */
@@ -1359,6 +1364,7 @@ export class CTank {
   public m_bIsMoving: boolean = false;
   private m_bFalling: boolean = false;
   private m_driveTargetX: number | null = null; // ground-drive destination, or null
+  private m_bBuried: boolean = false; // trapped below the surface (Bury Tanks) → can't drive/fly
   public m_bExploded: boolean = false;
 }
 
@@ -1387,9 +1393,7 @@ const turretLen = () => TSZ_TLEN * GameConfig.tankSizeScale;
 const turretHgt = () => TSZ_THGT * GameConfig.tankSizeScale;
 const tankWidth = () => TSZ_W * GameConfig.tankSizeScale;
 const TANK_GRAVITY = 400; // Fall acceleration when unsupported (px/s^2)
-const TANK_DRIVE_SPEED = 70; // Ground-drive crawl speed (px/s)
-const TANK_DRIVE_MAX_CLIMB = 2.0; // Max terrain RISE per px driven before a wall stops it
-const TANK_DRIVE_MAX_DROP = 8.0; // Max terrain DROP per px driven before a cliff stops it
+const TANK_DRIVE_SPEED = 70; // Ground-drive crawl speed (px/s) — climbs ANY terrain, no steepness gate
 
 // Jet thrust as multiples of gravity.
 // UP = -1.2g (net -0.2g up while held); L/R = ∓0.1g. Ceiling at the map top.

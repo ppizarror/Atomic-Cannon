@@ -207,6 +207,68 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.buryTanks = false; // restore
   });
 
+  it('a Move drives the tank all the way to its target over spiky terrain (no steepness gate)', () => {
+    // Every random terrain must let the tank crawl the full distance — the original drives on ANY
+    // terrain; a per-column slope gate used to halt it on ordinary bumps after a few frames.
+    for (const seed of [1, 123, 999, 55, 314]) {
+      const land = new CLand(2000, 500);
+      land.generateRandomTerrain(seed);
+      const tank = new CTank('T', 0);
+      (tank as unknown as {init(x: number, l: CLand): void}).init(800, land);
+      for (let i = 0; i < 60; i++) tank.update(land, 1 / 60);
+      const x0 = tank.getPosition().x;
+      tank.startDrive(x0 + 150);
+      for (let f = 0; f < 3000 && tank.isMoving(); f++) tank.update(land, 1 / 60);
+      expect(Math.abs(tank.getPosition().x - (x0 + 150))).toBeLessThan(2); // reached the target
+    }
+  });
+
+  it('a BURIED tank cannot drive or fly (only being buried blocks it)', () => {
+    const W = 800, H = 400, SURF = 250;
+    const land = new CLand(W, H) as unknown as {
+      generateFlat(): void;
+      m_arrHeights: Int16Array;
+      m_pixels: Uint32Array;
+      m_material: Uint8Array;
+    };
+    land.generateFlat();
+    land.m_pixels = new Uint32Array(W * H);
+    land.m_material = new Uint8Array(W * H);
+    for (let x = 0; x < W; x++) {
+      land.m_arrHeights[x] = SURF;
+      for (let y = SURF; y < H; y++) land.m_pixels[y * W + x] = 0xff3c5a1e >>> 0;
+    }
+    const L = land as unknown as CLand;
+    const tank = new CTank('T', 0);
+    (tank as unknown as {init(x: number, l: CLand): void}).init(400, L);
+    for (let i = 0; i < 60; i++) tank.update(L, 1 / 60);
+
+    // Bury it: Bury Tanks ON + pile 40px of dirt over its column.
+    GameConfig.buryTanks = true;
+    for (let c = 360; c < 440; c++) (land.m_arrHeights as Int16Array)[c] = SURF - 40;
+    tank.update(L, 1 / 60); // recompute the buried flag against the new (higher) surface
+    expect(tank.isBuried()).toBe(true);
+
+    // Drive is refused while buried.
+    const x0 = tank.getPosition().x;
+    tank.startDrive(x0 + 100);
+    expect(tank.isMoving()).toBe(false);
+    for (let i = 0; i < 60; i++) tank.update(L, 1 / 60);
+    expect(Math.abs(tank.getPosition().x - x0)).toBeLessThan(1); // never moved
+
+    // Jet ignition is refused while buried.
+    expect(tank.igniteJet(5)).toBe(false);
+    expect(tank.isThrustingUp()).toBe(false);
+
+    // Dig it out (lower the ground back) → it can drive again.
+    for (let c = 360; c < 440; c++) (land.m_arrHeights as Int16Array)[c] = SURF;
+    tank.update(L, 1 / 60);
+    expect(tank.isBuried()).toBe(false);
+    tank.startDrive(x0 + 100);
+    expect(tank.isMoving()).toBe(true); // free now
+    GameConfig.buryTanks = false; // restore
+  });
+
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {
     const gc = humanGame();
     GameConfig.buyTime = 0; // Anytime

@@ -11,6 +11,7 @@ import {makeCanvas} from './_dom';
 
 import {CGameController, EGameState, EGameType} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
+import {GameConfig} from '../src/core/CGameConfig';
 
 type GCInternals = {
   m_tanks: CTank[];
@@ -90,6 +91,39 @@ describe('Rounds / Points mode', () => {
     expect(leader?.name).toBe(t0.getName()); // most points, despite fewer kills
     expect(leader?.points).toBe(500);
     expect(s.title).toContain(t0.getName());
+  });
+
+  it('Explode Losers (ON) detonates the non-winning team once the battle ends', () => {
+    GameConfig.explodeLosers = true;
+    const gc = roundsGame(1);
+    const p = priv(gc);
+    const [t0, t1] = p.m_tanks;
+    t0.addHit(500); // t0's team leads on points → t1 is the loser
+
+    let guard = 0;
+    while (p.m_gameState === EGameState.Battle && guard++ < 200) p.endTurn();
+    expect(p.m_gameState).toBe(EGameState.BattleEnd);
+    expect(t1.isAlive()).toBe(true); // Rounds is non-lethal, so it survives INTO the end screen…
+
+    // …then the scheduled wipeout cascade fires as the end screen animates.
+    for (let i = 0; i < 12; i++) gc.update(0.1);
+    expect(t1.isAlive()).toBe(false); // loser detonated
+    expect(t0.isAlive()).toBe(true); // winner spared
+  });
+
+  it('Explode Losers (OFF) leaves every tank standing at the end screen', () => {
+    GameConfig.explodeLosers = false;
+    const gc = roundsGame(1);
+    const p = priv(gc);
+    const [t0, t1] = p.m_tanks;
+    t0.addHit(500);
+
+    let guard = 0;
+    while (p.m_gameState === EGameState.Battle && guard++ < 200) p.endTurn();
+    for (let i = 0; i < 12; i++) gc.update(0.1);
+    expect(t0.isAlive()).toBe(true);
+    expect(t1.isAlive()).toBe(true); // no wipeout when the setting is off
+    GameConfig.explodeLosers = true; // restore the default for the rest of the file
   });
 
   it('every team level on points is a Draw', () => {

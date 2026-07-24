@@ -8,9 +8,10 @@ import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
 import {CTank, TEAM_COLORS} from '../src/core/CTank';
-import {Roster} from '../src/core/CRoster';
+import {Roster, ROSTER_HUMAN_SLOTS} from '../src/core/CRoster';
 import {roster, setColor, setName, MAX_PLAYERS} from '../src/ui/playersStore';
 import {samplePalette} from '../src/ui/palette';
+import {strings} from '../src/i18n';
 
 type Tanks = {m_tanks: CTank[]};
 
@@ -20,6 +21,14 @@ describe('Customize Players', () => {
     expect(roster.value[0].name).toBe('Player'); // player 1 is named "Player"
     expect(roster.value[0].color).toBe(TEAM_COLORS[0]); // player 1 defaults to the first palette colour
     expect(roster.value[1].color).toBe(TEAM_COLORS[1]); // player 2 defaults to a distinct colour
+  });
+
+  it('bot-pool slots (8+) default to the "…Bot" name pool, human slots to the human pool', () => {
+    // The roster splits into a human pool (0..7) and a bot pool (8..15). Bot slots seed their
+    // default names from botNames (AlphaBot, …), matching how the original names CPU opponents.
+    expect(roster.value[1].name).toBe(strings.value.playerNames[0]); // human slot ← human pool
+    expect(roster.value[ROSTER_HUMAN_SLOTS].name).toBe(strings.value.botNames[0]); // 1st bot ← 'AlphaBot'
+    expect(roster.value[ROSTER_HUMAN_SLOTS + 1].name).toBe(strings.value.botNames[1]); // 2nd bot
   });
 
   it('edits update (and would persist) the roster', () => {

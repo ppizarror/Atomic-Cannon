@@ -1848,7 +1848,9 @@ export class CGameController implements ShotWorld {
     if (!this.m_movePlacing) return;
     this.m_movePlacing = false;
     const tank = this.getCurrentTank();
-    if (this.m_paused || !tank.isAlive() || tank.isMoving() || !tank.isHuman()) return;
+    // A buried tank can't drive — refuse the placement without consuming the Move or ending the turn.
+    if (this.m_paused || !tank.isAlive() || tank.isMoving() || !tank.isHuman() || tank.isBuried())
+      return;
     const weapon = getWeapon(this.m_currentWeaponIndex);
     if (weapon.getExtType() !== EXT.MOVE) return;
 
@@ -3455,8 +3457,8 @@ export class CGameController implements ShotWorld {
     // player still fires afterwards. Bots don't fly, so for them it just consumes
     // the turn.
     if (ext === EXT.JET) {
-      if (tank.isHuman()) {
-        tank.igniteJet(weapon.getDamage());
+      // A buried tank can't fly out (igniteJet refuses) → fall through to the no-flight path.
+      if (tank.isHuman() && tank.igniteJet(weapon.getDamage())) {
         this.m_gameState = EGameState.Flying;
       } else {
         this.m_gameState = EGameState.Battle;
