@@ -53,6 +53,7 @@ const CATALOG = {
   'gp.variance': {default: 1},
   'gp.utilTurn': {default: 0},
   'gp.randTurns': {default: 0},
+  'gp.altTurns': {default: 0}, // interleave teams (A1,B1,A2,B2) instead of contiguous (A1,A2,B1,B2)
   'gp.crates': {default: 20},
   'gp.updateScale': {default: 10},
   'gp.rcFires': {default: 1},

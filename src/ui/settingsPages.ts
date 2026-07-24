@@ -129,6 +129,7 @@ function gameplayRows(): Widget[] {
     toggle(s.variance, 'gp.variance'),
     toggle(s.utilTurn, 'gp.utilTurn'),
     toggle(s.randTurns, 'gp.randTurns'),
+    toggle(s.altTurns, 'gp.altTurns'),
     stepper(s.crates, 'gp.crates', 0, 100, 5, pct),
     {
       label: s.more.label,

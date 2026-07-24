@@ -14,6 +14,7 @@ import {BmpText} from './BmpText';
 import {Button} from './Button';
 import {openSettingsPage, uiClick, uiTyping} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
+import {setup, playersOf} from './setupStore';
 import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
 import {usePointerDrag} from './usePointerDrag';
 import {EditorScreen} from './EditorScreen';
@@ -84,10 +85,13 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
 
 export function PlayersEditor() {
   const list = roster.value; // subscribe so the card re-renders on edit
+  const s = setup.value; // humans + computers → which slots are in the match, and their type
   const [p, setP] = useState(0);
-  const count = Math.min(MAX_PLAYERS, list.length);
+  // Page only the slots actually IN the match (humans + computers), not all 16 roster entries.
+  const count = Math.max(1, Math.min(MAX_PLAYERS, list.length, playersOf(s)));
   const idx = Math.min(p, count - 1);
   const cfg = list[idx];
+  const isHuman = idx < s.humans; // first `humans` slots are human; the rest are CPU
   const e = strings.value.editors.players;
 
   const page = (d: number) => {
@@ -106,6 +110,9 @@ export function PlayersEditor() {
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
           <BmpText font="beijing-16-out" text={fmt(e.playerName, {n: idx + 1})} />
+          <span class={`player-kind ${isHuman ? 'is-human' : 'is-cpu'}`}>
+            <BmpText font="beijing-16-out" text={isHuman ? e.human : e.computer} spacing={-1} />
+          </span>
           <input
             class="player-name"
             type="text"

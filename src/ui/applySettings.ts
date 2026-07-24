@@ -78,6 +78,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.buryTanks = S.buryTanks();
   GameConfig.utilityTurn = S.utilityTurn();
   GameConfig.randomizeTurns = S.randomizeTurns();
+  GameConfig.alternateTurns = S.alternateTurns();
   GameConfig.buyTime = S.buyTime();
   GameConfig.changeWind = S.changeWind();
   GameConfig.windModel = S.windModel();

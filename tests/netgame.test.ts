@@ -108,6 +108,21 @@ describe('network match boot', () => {
     expect(gc.isLocalNetTurn()).toBe(false);
   });
 
+  it('alternate turns interleaves the team turn order', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(2);
+    gc.setTanksPerTeam(2); // 2 teams × 2 tanks → [A1, A2, B1, B2]
+
+    GameConfig.alternateTurns = false;
+    gc.startGame(2);
+    expect(gc.getTurnOrder()).toEqual([0, 1, 2, 3]); // contiguous: A1, A2, B1, B2
+
+    GameConfig.alternateTurns = true;
+    gc.startGame(2);
+    expect(gc.getTurnOrder()).toEqual([0, 2, 1, 3]); // interleaved: A1, B1, A2, B2
+    GameConfig.alternateTurns = false; // restore global
+  });
+
   it('multi-tank teams stay identical across clients (same seed)', () => {
     const mk = (localIndex: number) => {
       const c = new CGameController(makeCanvas());
@@ -552,7 +567,15 @@ describe('NetGame bridge', () => {
         {id: 1, name: 'Ada', color: '#f00', ready: true, connected: true, isHost: true},
         {id: 2, name: 'Bo', color: '#0f0', ready: true, connected: true, isHost: false},
       ],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      settings: {
+        maxPlayers: 6,
+        minPlayers: 2,
+        battles: 2,
+        wind: 1,
+        mapSize: 2,
+        tanksPerTeam: 1,
+        alternateTurns: false,
+      },
       config: null,
       isHost: youId === 1,
       lastError: null,
@@ -716,7 +739,15 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
         {id: 1, name: 'A', color: '#f00', ready: true, connected: true, isHost: true},
         {id: 2, name: 'B', color: '#0f0', ready: true, connected: true, isHost: false},
       ],
-      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+      settings: {
+        maxPlayers: 6,
+        minPlayers: 2,
+        battles: 2,
+        wind: 1,
+        mapSize: 2,
+        tanksPerTeam: 1,
+        alternateTurns: false,
+      },
       config: null,
       isHost: youId === 1,
       lastError: null,
@@ -799,7 +830,15 @@ describe('network battle-end', () => {
           {id: 1, name: 'A', color: '#f00', ready: true, connected: true, isHost: true},
           {id: 2, name: 'B', color: '#0f0', ready: true, connected: true, isHost: false},
         ],
-        settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2, tanksPerTeam: 1},
+        settings: {
+          maxPlayers: 6,
+          minPlayers: 2,
+          battles: 2,
+          wind: 1,
+          mapSize: 2,
+          tanksPerTeam: 1,
+          alternateTurns: false,
+        },
         isHost: true,
         lastError: null,
       }),

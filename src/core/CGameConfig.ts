@@ -66,6 +66,7 @@ export const GameConfig = {
   buryTanks: false, // Tank → Bury Tanks (a tank can be trapped underground)
   utilityTurn: false, // Gameplay → Utility Turn (using a utility ends the turn)
   randomizeTurns: false, // Gameplay → Randomize Turns (shuffle turn order each battle)
+  alternateTurns: false, // Gameplay → Alternate Turns (interleave teams: A1,B1,A2,B2 vs A1,A2,B1,B2)
   buyTime: 0, // Economy → Buy Time (0 Anytime · 1 After-round · 2 At-start · 3 Automatic)
   changeWind: 0, // Gameplay → Change Wind (0 Per-game · 1 After-round · 2 After-shot · 3 Anytime)
   windModel: 0, // Gameplay → Wind Model (0 Linear/uniform · 1 Realistic boundary-layer profile). See core/wind.ts

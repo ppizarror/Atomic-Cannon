@@ -1521,6 +1521,12 @@ canvas {
   pointer-events: none;
   filter: var(--shadow-text);
 }
+/* The caption is a single-line bitmap-font canvas (can't wrap). Scale it DOWN to fit narrow
+   screens instead of cropping — a long tooltip shrinks rather than getting cut off at the edges. */
+.settings-subtitle canvas {
+  max-width: 96vw;
+  height: auto;
+}
 
 /* ---- Settings option pages (two-column widget rows) ---- */
 
@@ -2067,6 +2073,21 @@ canvas {
 }
 .player-page {
   min-width: 34px;
+}
+/* Human/Computer badge in the player card header — colour-codes the slot's type in the match. */
+.player-kind {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--green-line);
+  border-radius: 3px;
+}
+.player-kind.is-human {
+  background: rgba(80, 200, 120, 0.18);
+  border-color: var(--green-focus);
+}
+.player-kind.is-cpu {
+  background: rgba(220, 180, 90, 0.16);
+  border-color: rgba(220, 180, 90, 0.55);
 }
 .player-name {
   /* dark field + green accent + focus come from the shared .taunt-input, .player-name rule */

@@ -63,6 +63,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   wind: 1,
   mapSize: 2,
   tanksPerTeam: 1,
+  alternateTurns: false,
 };
 
 /** ws(s):// URL for a room code on a given http(s) origin. */

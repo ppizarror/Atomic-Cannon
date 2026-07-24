@@ -110,6 +110,7 @@ export interface Strings {
       editNote: string; // "these apply to everyone" caption (host)
       players: string; // max players
       tanks: string; // tanks per player (squad size)
+      alternate: string; // interleave team turns
       battles: string; // war length (Deathmatch)
       mapSize: string;
       wind: string;
@@ -382,6 +383,7 @@ export interface Strings {
       variance: RowCopy;
       utilTurn: RowCopy;
       randTurns: RowCopy;
+      altTurns: RowCopy;
       crates: RowCopy;
       updateScale: RowCopy;
       rcFires: RowCopy;
@@ -457,6 +459,9 @@ export interface Strings {
       done: string;
       /** `{n}` is the 1-based player number. */
       playerName: string;
+      /** Slot-type badges — whether this player slot is a human or a CPU in the current match. */
+      human: string;
+      computer: string;
     };
     taunts: {
       title: string;

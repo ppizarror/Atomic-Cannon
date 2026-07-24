@@ -52,6 +52,8 @@ interface RoomState {
   currentBattle: number;
   /** Tanks per player, captured at Start — turns cycle over ALL tanks (order.length × this). */
   tanksPerTeam: number;
+  /** Interleave team turns (captured at Start): turn POSITION → tank index via Room.tankAt. */
+  alternateTurns: boolean;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
   /** State hash of `snapshot` (so a resync target carries its drift-check hash). */
@@ -71,6 +73,7 @@ const DEFAULT_SETTINGS: RoomSettings = {
   wind: 1,
   mapSize: 2,
   tanksPerTeam: 1,
+  alternateTurns: false,
 };
 
 function freshState(code: string): RoomState {
@@ -90,6 +93,7 @@ function freshState(code: string): RoomState {
     totalBattles: 1,
     currentBattle: 1,
     tanksPerTeam: 1,
+    alternateTurns: false,
     snapshot: null,
     snapshotHash: 0,
     appVersion: null,
@@ -340,7 +344,7 @@ export class Room {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
     }
     if (s.phase === 'ended') this.send(ws, {t: 'gameOver'});
-    else this.send(ws, {t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+    else this.send(ws, {t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
   }
 
   private welcomeFor(s: RoomState, p: StoredPlayer): ServerMessage {
@@ -372,6 +376,7 @@ export class Room {
       wind: clampInt(patch.wind ?? s.settings.wind, 0, 2),
       mapSize: clampInt(patch.mapSize ?? s.settings.mapSize, 1, 5),
       tanksPerTeam: clampInt(patch.tanksPerTeam ?? s.settings.tanksPerTeam, 1, 4),
+      alternateTurns: patch.alternateTurns ?? s.settings.alternateTurns,
     };
     s.settings = next;
     await this.save(s);
@@ -419,6 +424,7 @@ export class Room {
     // count would exceed the client's and the turn/snapshot indices would mismatch.
     const maxSquad = Math.max(1, Math.floor(16 / s.order.length));
     s.tanksPerTeam = Math.min(clampInt(s.settings.tanksPerTeam, 1, 4), maxSquad);
+    s.alternateTurns = !!s.settings.alternateTurns; // interleave teams vs contiguous squads
     await this.save(s);
 
     this.broadcast({
@@ -434,18 +440,27 @@ export class Room {
       viewH: s.viewH,
       config: s.config,
     });
-    this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+    this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
   }
 
-  /** Total tanks in play = one squad per player. Turns cycle over tank indices [0, total). */
+  /** Total tanks in play = one squad per player. Turns cycle over POSITIONS [0, total). */
   private static totalTanks(s: RoomState): number {
     return s.order.length * s.tanksPerTeam;
   }
 
-  /** The player id that OWNS a given tank index (contiguous squads: player p owns tanks
-   *  [p·tanksPerTeam, …]). Turn validation checks the sender owns the active tank. */
-  private static ownerOf(s: RoomState, tankIdx: number): number | undefined {
-    return s.order[Math.floor(tankIdx / s.tanksPerTeam)];
+  /** The TANK INDEX active at turn-order position `pos`. Contiguous by default (identity: pos IS
+   *  the tank index — player p owns [p·tanksPerTeam,…]). Alternate Turns interleaves by player so
+   *  positions cycle A1,B1,A2,B2. Tank indices (snapshot/turnBegin) are always the real index. */
+  private static tankAt(s: RoomState, pos: number): number {
+    if (!s.alternateTurns) return pos;
+    const players = s.order.length;
+    return (pos % players) * s.tanksPerTeam + Math.floor(pos / players);
+  }
+
+  /** The player id that OWNS the tank at turn-order position `pos`. Turn validation checks the
+   *  sender owns the active tank. */
+  private static ownerOf(s: RoomState, pos: number): number | undefined {
+    return s.order[Math.floor(Room.tankAt(s, pos) / s.tanksPerTeam)];
   }
 
   private onCmd(s: RoomState, pid: number, msg: Extract<ClientMessage, {t: 'cmd'}>): void {
@@ -492,7 +507,7 @@ export class Room {
         // Clients show the battle-winner celebration, then advance on this message; the turn
         // hand-off is queued behind that intermission (see NetGame). Order is unchanged.
         this.broadcast({t: 'nextBattle', battle: s.currentBattle, seed: s.seed});
-        this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+        this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
         return;
       }
       // War over — stop here and show the final standings.
@@ -510,7 +525,7 @@ export class Room {
     // roll + income). The match/battle's first turnBegin (onStart/nextBattle) omits it.
     this.broadcast({
       t: 'turnBegin',
-      playerIdx: s.turnIdx,
+      playerIdx: Room.tankAt(s, s.turnIdx),
       deadline: 0,
       handoff: true,
       roundWrapped,
@@ -520,18 +535,19 @@ export class Room {
   /** Advance to the next turn, skipping players whose tank is DEAD (life ≤ 0) or whose socket
    *  is DISCONNECTED — a dropped player must never hold the turn, or the match stalls. */
   private nextLivingTurn(s: RoomState): number {
-    const n = Room.totalTanks(s); // cycle over TANKS (squads), not players
+    const n = Room.totalTanks(s); // cycle over turn POSITIONS (one per tank)
     if (n === 0) return 0;
-    const playable = (tankIdx: number) => {
-      const owner = Room.ownerOf(s, tankIdx);
+    const playable = (pos: number) => {
+      const owner = Room.ownerOf(s, pos);
       const p = owner === undefined ? undefined : s.players[owner];
-      if (!p || !p.connected) return false; // owner dropped → skip this tank
+      if (!p || !p.connected) return false; // owner dropped → skip
+      const tankIdx = Room.tankAt(s, pos);
       return s.snapshot ? (s.snapshot.tanks[tankIdx]?.life ?? 1) > 0 : true; // dead tank → skip
     };
-    let idx = s.turnIdx;
+    let pos = s.turnIdx;
     for (let step = 0; step < n; step++) {
-      idx = (idx + 1) % n;
-      if (playable(idx)) return idx;
+      pos = (pos + 1) % n;
+      if (playable(pos)) return pos;
     }
     return (s.turnIdx + 1) % n; // no one playable (shouldn't happen — <2-connected ends the game)
   }
@@ -599,7 +615,7 @@ export class Room {
         s.turnIdx = this.nextLivingTurn(s);
         await this.save(s);
         this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
-        this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+        this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: 0});
         return;
       }
     }

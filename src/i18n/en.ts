@@ -58,6 +58,7 @@ export const en: Strings = {
       editNote: 'You set these for everyone in the match.',
       players: 'Max players',
       tanks: 'Tanks each',
+      alternate: 'Alternate turns',
       battles: 'Battles',
       mapSize: 'Map size',
       wind: 'Wind',
@@ -363,7 +364,11 @@ export const en: Strings = {
     humans: {label: 'Humans', tip: 'Number of human players'},
     computers: {label: 'Computers', tip: 'Number of computer AI players'},
     tanks: {label: 'Tanks', tip: "Number of tanks per player's team"},
-    gameType: {label: 'Game Type', tip: 'What type of battle', options: ['Rounds', 'Deathmatch']},
+    gameType: {
+      label: 'Game Type',
+      tip: 'Deathmatch = destroy teams, scored by kills. Rounds = damage points over set rounds.',
+      options: ['Rounds', 'Deathmatch'],
+    },
     battles: {label: 'Battles', tip: 'How many battles per Deathmatch'},
     rounds: {label: 'Rounds', tip: 'How many rounds in a Point game'},
     landSize: {
@@ -515,6 +520,10 @@ export const en: Strings = {
       variance: {label: 'Variance', tip: 'All weapons have a different random variance when shot'},
       utilTurn: {label: 'Utility Turn', tip: 'If a utility item use counts as turn'},
       randTurns: {label: 'Randomize Turns', tip: 'Randomly assings the turn order each battle'},
+      altTurns: {
+        label: 'Alternate Turns',
+        tip: 'Teams take turns one tank at a time (A1, B1, A2, B2)',
+      },
       crates: {label: 'Crates', tip: 'Chance to drop a crate each round'},
       updateScale: {
         label: 'Update Scale',
@@ -616,6 +625,8 @@ export const en: Strings = {
       footer: 'Players sharing a colour are a team',
       done: 'Done',
       playerName: 'Player {n} Name:',
+      human: 'Human',
+      computer: 'Computer',
     },
     taunts: {
       title: 'Customize Taunts',

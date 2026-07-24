@@ -508,10 +508,7 @@ export class CGameController implements ShotWorld {
     const perTeam = Math.max(1, this.m_tanksPerTeam);
     const MAX_TANKS = 16;
 
-    const botNames = strings.value.botNames;
     const playerNames = strings.value.playerNames;
-    let botSeq = 0; // cycles the bot pool so CPU opponents get distinct bot names
-
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
     for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
       // In a network match the roster comes from the lobby (same on every client, in
@@ -547,10 +544,14 @@ export class CGameController implements ShotWorld {
       // Humans (and network players) keep their roster/lobby name from the human pool;
       // local CPU opponents are named from the separate bot pool instead. The Wargame
       // Detail preset overrides every CPU to "Whopper" (the WarGames reference).
+      // Every slot — human OR computer — keeps its Customize Players roster name, so CPU
+      // opponents are nameable (faithful to the original: names come from the roster, and a
+      // slot is a bot purely because it falls beyond the human count). The Wargame Detail
+      // preset still overrides every CPU to "Whopper" (the WarGames reference).
       let baseName: string;
       if (netCfg || human) baseName = cfg.name;
       else if (isWargame()) baseName = strings.value.game.whopper;
-      else baseName = botNames[botSeq++ % botNames.length];
+      else baseName = cfg.name;
       for (let k = 0; k < perTeam && spawns.length < MAX_TANKS; k++) {
         const name =
           perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
@@ -2979,18 +2980,46 @@ export class CGameController implements ShotWorld {
       }
     }
 
+    // Walk the turn ORDER by position (contiguous by default; Alternate Turns interleaves teams),
+    // skipping dead tanks. A round completes when the position crosses the end of the order.
     let wrapped = false,
       attempts = 0;
+    let pos = this.turnPosOf(this.m_currentPlayerIndex);
     do {
-      if (this.m_currentPlayerIndex + 1 >= nPlayers) wrapped = true; // crossed the end → round complete
-      this.m_currentPlayerIndex = (this.m_currentPlayerIndex + 1) % nPlayers;
+      if (pos + 1 >= nPlayers) wrapped = true; // crossed the end → round complete
+      pos = (pos + 1) % nPlayers;
+      this.m_currentPlayerIndex = this.turnTankAt(pos);
       attempts++;
       if (attempts > nPlayers * 2) {
         console.warn('All players dead or stuck');
         break;
       }
-    } while (!this.getCurrentTank().isAlive());
+    } while (!this.m_tanks[this.m_currentPlayerIndex]?.isAlive());
     return wrapped;
+  }
+
+  /** The tank indices in TURN ORDER (position → tank index). Contiguous by default (`[0,1,2,3]`);
+   *  interleaved under Alternate Turns (`[0,2,1,3]` = A1,B1,A2,B2). */
+  getTurnOrder(): number[] {
+    return this.m_tanks.map((_, pos) => this.turnTankAt(pos));
+  }
+
+  /** The tank index whose turn it is at turn-order POSITION `pos`. Default = identity (contiguous
+   *  squads: A1,A2,B1,B2). Alternate Turns interleaves by player-slot so squads take turns one
+   *  tank at a time (A1,B1,A2,B2). Assumes uniform squad size (m_tanksPerTeam). */
+  private turnTankAt(pos: number): number {
+    if (!GameConfig.alternateTurns) return pos;
+    const per = Math.max(1, this.m_tanksPerTeam);
+    const players = Math.max(1, Math.floor(this.m_tanks.length / per));
+    return (pos % players) * per + Math.floor(pos / players);
+  }
+
+  /** Inverse of turnTankAt: the turn-order position of a tank index. */
+  private turnPosOf(tankIdx: number): number {
+    if (!GameConfig.alternateTurns) return tankIdx;
+    const per = Math.max(1, this.m_tanksPerTeam);
+    const players = Math.max(1, Math.floor(this.m_tanks.length / per));
+    return (tankIdx % per) * players + Math.floor(tankIdx / per);
   }
 
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
@@ -4606,9 +4635,7 @@ export class CGameController implements ShotWorld {
     // the acting player's real inventory (e.g. a Shell-only bot shows only Shell), not the whole
     // arsenal. The unlimited staple always qualifies; free-fire puts every weapon in stock; the active
     // player's chosen weapon is by definition in their stock, so it always appears.
-    return WEAPON_DATABASE.filter(
-      w => enabled(w.index) && this.economyFor(tank).hasStock(w.index),
-    );
+    return WEAPON_DATABASE.filter(w => enabled(w.index) && this.economyFor(tank).hasStock(w.index));
   }
 
   getCurrentWeaponIndex(): number {

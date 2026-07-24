@@ -258,6 +258,16 @@ function MatchSettingsDialog({onClose}: {onClose: () => void}) {
           onPick={v => updateSettings({tanksPerTeam: v})}
           editable={host}
         />
+        {/* Interleave team turns — only meaningful with squads of 2+. */}
+        {s.settings.tanksPerTeam > 1 && (
+          <SegField
+            label={mi.alternate}
+            value={s.settings.alternateTurns}
+            options={onOff}
+            onPick={v => updateSettings({alternateTurns: v})}
+            editable={host}
+          />
+        )}
         <SegField
           label={mi.wind}
           value={s.settings.wind}

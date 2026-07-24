@@ -11,7 +11,6 @@ import {CTank, TEAM_COLORS} from '../src/core/CTank';
 import {Roster} from '../src/core/CRoster';
 import {roster, setColor, setName, MAX_PLAYERS} from '../src/ui/playersStore';
 import {samplePalette} from '../src/ui/palette';
-import {strings} from '../src/i18n';
 
 type Tanks = {m_tanks: CTank[]};
 
@@ -53,7 +52,7 @@ describe('Customize Players', () => {
     expect(new Set(t.map(x => x.getTeamId())).size).toBe(3); // three distinct colours → three teams
   });
 
-  it('CPU opponents are named from the bot pool, not their roster slot', () => {
+  it('CPU opponents keep their Customize Players roster name (nameable, like the original)', () => {
     Roster.players = [
       {name: 'Ada', model: 'Standard', color: '#ff0000'},
       {name: 'Custom Foe A', model: 'Standard', color: '#00ff00'},
@@ -63,13 +62,12 @@ describe('Customize Players', () => {
     gc.setHumanCount(1); // one human, two CPUs
     gc.startGame(3);
     const t = (gc as unknown as Tanks).m_tanks;
-    const bots = strings.value.botNames;
 
     expect(t[0].getName()).toBe('Ada'); // the human keeps their roster name
-    // CPU tanks are named from the bot pool, overriding the roster's human-pool name.
-    expect(bots.includes(t[1].getName())).toBe(true);
-    expect(bots.includes(t[2].getName())).toBe(true);
-    expect(t[1].getName()).not.toBe('Custom Foe A');
+    // A CPU is just a slot beyond the human count — it uses its roster name too, so you can
+    // name your bots in Customize Players (the old bot-pool override is gone).
+    expect(t[1].getName()).toBe('Custom Foe A');
+    expect(t[2].getName()).toBe('Custom Foe B');
   });
 
   it('an empty roster falls back to distinct per-player defaults (free-for-all)', () => {

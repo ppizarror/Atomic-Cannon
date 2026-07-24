@@ -34,6 +34,8 @@ export interface RoomSettings {
   readonly mapSize: number;
   /** Tanks each player commands — a squad (1..4). Every player fields the same count. */
   readonly tanksPerTeam: number;
+  /** Interleave team turns (A1,B1,A2,B2) instead of contiguous squads (A1,A2,B1,B2). */
+  readonly alternateTurns: boolean;
 }
 
 /**
