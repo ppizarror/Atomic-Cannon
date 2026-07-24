@@ -265,6 +265,14 @@ function audioRows(): Widget[] {
       get: () => (a?.isStereo() ? 1 : 0),
       set: (v: number) => a?.setStereo(!!v),
     },
+    {
+      // Non-legacy menu navigation blips (hover / forward / back) — opt-in, OFF by default.
+      label: s.menuSounds.label,
+      tip: s.menuSounds.tip,
+      kind: 'toggle',
+      get: () => (a?.isMenuSfxEnabled() ? 1 : 0),
+      set: (v: number) => a?.setMenuSfxEnabled(!!v),
+    },
   ];
 }
 

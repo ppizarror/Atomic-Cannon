@@ -29,9 +29,6 @@ export const SFX = {
   PANEL_OPEN: 'Panel1.wav', // a screen / dialog panel opens
   PANEL_CLOSE: 'Panel3.wav', // …and closes
   START_GAME: 'Mechanismus4.wav', // the Start Game "chunk" as a battle launches
-  // Front-end menu polish. The original preloaded these alongside click/Start Game as
-  // its "menu" sound set but never wired their play calls (dead in the shipped build);
-  // we give them the menu homes their grouping and character imply.
   MENU_HOVER: 'Pacdot2.wav', // blip as the highlighted menu item changes
   MENU_FORWARD: 'Mechanismus1.wav', // navigating INTO a menu screen (Play / Settings / …)
   MENU_BACK: 'Mechanismus2.wav', // …and Back to the main menu
@@ -47,6 +44,9 @@ interface AudioSettings {
   sfxOn: boolean;
   musicOn: boolean;
   stereoOn: boolean;
+  /** Menu navigation blips (hover / forward / back). NOT part of the original game,
+   *  so this is opt-in and defaults OFF. */
+  menuSfxOn: boolean;
 }
 
 // Music policy.
@@ -80,6 +80,8 @@ export class CAudio {
   private readonly m_music: CMusicPlayer;
   private m_unlocked = false;
   private m_suspended = false; // suspended by a game pause (distinct from the autoplay lock)
+  // Menu navigation blips (hover / forward / back) — a non-legacy nicety, OFF by default.
+  private m_menuSfxOn = false;
 
   constructor() {
     const Ctor =
@@ -256,18 +258,21 @@ export class CAudio {
   }
 
   /** Blip as the highlighted main-menu item changes (throttled, so a fast sweep
-   *  across items doesn't machine-gun). */
+   *  across items doesn't machine-gun). Gated by the Menu Sounds toggle (OFF by default). */
   menuHover(): void {
+    if (!this.m_menuSfxOn) return;
     this.m_sfx.play(SFX.MENU_HOVER);
   }
 
   /** Mechanical whirr when navigating INTO a menu screen from the main menu. */
   menuForward(): void {
+    if (!this.m_menuSfxOn) return;
     this.m_sfx.play(SFX.MENU_FORWARD);
   }
 
   /** …and its counterpart when stepping Back to the main menu. */
   menuBack(): void {
+    if (!this.m_menuSfxOn) return;
     this.m_sfx.play(SFX.MENU_BACK);
   }
 
@@ -336,6 +341,16 @@ export class CAudio {
     return this.m_sfx.isStereo();
   }
 
+  /** Audio → Menu Sounds: the non-legacy menu navigation blips (hover / forward / back). */
+  setMenuSfxEnabled(on: boolean): void {
+    this.m_menuSfxOn = on;
+    if (on) this.preloadMenu(); // warm the buffers so the first blip isn't a silent miss
+    this.saveSettings();
+  }
+  isMenuSfxEnabled(): boolean {
+    return this.m_menuSfxOn;
+  }
+
   getSfxVolume(): number {
     return this.m_sfx.getVolume();
   }
@@ -362,6 +377,7 @@ export class CAudio {
     if (typeof s.sfxOn === 'boolean') this.m_sfx.setEnabled(s.sfxOn);
     if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
     if (typeof s.stereoOn === 'boolean') this.m_sfx.setStereo(s.stereoOn);
+    if (typeof s.menuSfxOn === 'boolean') this.m_menuSfxOn = s.menuSfxOn;
   }
 
   private saveSettings(): void {
@@ -371,6 +387,7 @@ export class CAudio {
       sfxOn: this.m_sfx.isEnabled(),
       musicOn: this.m_music.isEnabled(),
       stereoOn: this.m_sfx.isStereo(),
+      menuSfxOn: this.m_menuSfxOn,
     } satisfies AudioSettings);
   }
 }

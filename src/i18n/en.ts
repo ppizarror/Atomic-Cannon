@@ -553,6 +553,7 @@ export const en: Strings = {
       soundVol: {label: 'Sound Volume', tip: 'Sound effects volume'},
       musicVol: {label: 'Music Volume', tip: 'Music soundtrack volume'},
       stereo: {label: 'Stereo', tip: 'Enable stereo sound'},
+      menuSounds: {label: 'Menu Sounds', tip: 'Extra menu navigation blips (not in the original)'},
     },
     content: {
       header: 'Enable specific weapons and landscapes',
