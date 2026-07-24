@@ -107,6 +107,25 @@ describe('Particle system', () => {
     expect(ps.count()).toBe(0); // blast particles (incl. vent fumes) all expire
   });
 
+  it('clear() wipes all live effects (so a new battle starts with no leftover smoke)', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(800, 600);
+    ps.blast(400, 300, 40, '#ff8c22', false); // debris + a crater vent
+    ps.tankDeath(410, 310); // more particles
+    ps.beam(0, 0, 100, 100, '#00ff00'); // a beam flash
+    expect(ps.count()).toBeGreaterThan(0);
+    const priv = ps as unknown as {m_craterVents: unknown[]; m_explosions: unknown[]};
+    expect(priv.m_craterVents.length).toBeGreaterThan(0);
+
+    ps.clear();
+
+    expect(ps.count()).toBe(0); // particles gone
+    expect(priv.m_craterVents.length).toBe(0); // vents gone → no smoke re-emits next frame
+    expect(priv.m_explosions.length).toBe(0); // fireballs gone
+    ps.update(1 / 60); // and stays empty — a cleared vent can't spawn new fumes
+    expect(ps.count()).toBe(0);
+  });
+
   it('nuclear blast is bigger than a conventional one of the same radius', () => {
     const a = new CParticleSystem();
     a.setBounds(800, 600);

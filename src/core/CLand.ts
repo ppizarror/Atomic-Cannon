@@ -224,6 +224,8 @@ export class CLand {
    */
   generateFlat(): void {
     if (!this.m_arrHeights) return;
+    this.m_falls.length = 0;
+    this.m_particles.length = 0;
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
     this.m_heat.length = 0;
@@ -241,6 +243,7 @@ export class CLand {
     this.m_needsBake = true; // fresh heights → repaint the pixel buffer
     const W = this.m_nWidth;
     this.m_falls.length = 0; // drop any falling overburden blocks
+    this.m_particles.length = 0; // + any dirt debris still in flight
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
     this.m_heat.length = 0;

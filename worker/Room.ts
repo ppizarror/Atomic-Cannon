@@ -41,6 +41,9 @@ interface RoomState {
   seed: number;
   order: number[];
   turnIdx: number;
+  /** The host's logical resolution — the shared world size every client builds at. */
+  viewW: number;
+  viewH: number;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
   /** State hash of `snapshot` (so a resync target carries its drift-check hash). */
@@ -72,6 +75,8 @@ function freshState(code: string): RoomState {
     seed: 0,
     order: [],
     turnIdx: 0,
+    viewW: 1280,
+    viewH: 720,
     snapshot: null,
     snapshotHash: 0,
     appVersion: null,
@@ -189,7 +194,7 @@ export class Room {
       case 'settings':
         return this.onSettings(s, att.playerId!, msg.settings);
       case 'start':
-        return this.onStart(s, att.playerId!);
+        return this.onStart(s, att.playerId!, msg.viewW, msg.viewH);
       case 'cmd':
         return this.onCmd(s, att.playerId!, msg);
       case 'shotResult':
@@ -282,6 +287,8 @@ export class Room {
       order: s.order,
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
+      viewW: s.viewW,
+      viewH: s.viewH,
     });
     if (s.snapshot) {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
@@ -323,7 +330,7 @@ export class Room {
     this.broadcast({t: 'settings', settings: next});
   }
 
-  private async onStart(s: RoomState, pid: number): Promise<void> {
+  private async onStart(s: RoomState, pid: number, viewW: number, viewH: number): Promise<void> {
     const host = this.socketFor(pid);
     if (s.hostId !== pid) {
       if (host) this.send(host, {t: 'error', code: 'not_host', message: 'only the host can start'});
@@ -336,6 +343,9 @@ export class Room {
     s.seed = newSeed();
     s.order = connected.map(p => p.id);
     s.turnIdx = 0;
+    // The host's resolution becomes the shared world size (clamped to a sane range).
+    s.viewW = clampInt(viewW, 320, 4096);
+    s.viewH = clampInt(viewH, 240, 4096);
     await this.save(s);
 
     this.broadcast({
@@ -344,6 +354,8 @@ export class Room {
       order: s.order,
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
+      viewW: s.viewW,
+      viewH: s.viewH,
     });
     this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
   }

@@ -18,7 +18,16 @@ const ROSTER = [
 
 function netController(localIndex: number, seed = 12345): CGameController {
   const gc = new CGameController(makeCanvas());
-  gc.startNetworkGame({seed, players: 2, localIndex, roster: ROSTER, wind: 1, mapSize: 2});
+  gc.startNetworkGame({
+    seed,
+    players: 2,
+    localIndex,
+    roster: ROSTER,
+    wind: 1,
+    mapSize: 2,
+    viewW: 1280,
+    viewH: 720,
+  });
   return gc;
 }
 
@@ -43,7 +52,16 @@ describe('network match boot', () => {
   it('host map size scales world width identically on every client', () => {
     const mk = (mapSize: number, localIndex: number) => {
       const c = new CGameController(makeCanvas());
-      c.startNetworkGame({seed: 99, players: 2, localIndex, roster: ROSTER, wind: 1, mapSize});
+      c.startNetworkGame({
+        seed: 99,
+        players: 2,
+        localIndex,
+        roster: ROSTER,
+        wind: 1,
+        mapSize,
+        viewW: 1280,
+        viewH: 720,
+      });
       return c.getNetSnapshot().heights.length;
     };
     // Same host map size → identical heightmap length on both clients…
@@ -53,7 +71,7 @@ describe('network match boot', () => {
     expect(mk(1, 0)).toBeLessThan(mk(2, 0));
   });
 
-  it('clients on DIFFERENT resolutions build the identical world (fixed net resolution)', () => {
+  it('clients on DIFFERENT windows build the identical world from the HOST resolution', () => {
     const mk = (w: number, h: number) => {
       const c = makeCanvas();
       c.width = w;
@@ -62,14 +80,52 @@ describe('network match boot', () => {
     };
     const a = new CGameController(mk(800, 480));
     const b = new CGameController(mk(1920, 1080)); // very different window
-    a.startNetworkGame({seed: 55, players: 2, localIndex: 0, roster: ROSTER, wind: 1, mapSize: 2});
-    b.startNetworkGame({seed: 55, players: 2, localIndex: 1, roster: ROSTER, wind: 1, mapSize: 2});
+    // Both are handed the HOST's resolution (1400×900), regardless of their own window.
+    a.startNetworkGame({
+      seed: 55,
+      players: 2,
+      localIndex: 0,
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      viewW: 1400,
+      viewH: 900,
+    });
+    b.startNetworkGame({
+      seed: 55,
+      players: 2,
+      localIndex: 1,
+      roster: ROSTER,
+      wind: 1,
+      mapSize: 2,
+      viewW: 1400,
+      viewH: 900,
+    });
 
     const ha = a.getNetSnapshot().heights;
     const hb = b.getNetSnapshot().heights;
     expect(ha.length).toBe(hb.length); // same heightmap length regardless of window
+    expect(ha.length).toBe(1400 * 2); // = host viewW × mapSize (both clients build the host world)
     expect(ha).toEqual(hb); // and identical terrain
     expect(a.stateHash()).toBe(b.stateHash());
+  });
+
+  it('the host resolution drives the shared world width', () => {
+    const worldLen = (viewW: number) => {
+      const c = new CGameController(makeCanvas());
+      c.startNetworkGame({
+        seed: 7,
+        players: 2,
+        localIndex: 0,
+        roster: ROSTER,
+        wind: 1,
+        mapSize: 2,
+        viewW,
+        viewH: 720,
+      });
+      return c.getNetSnapshot().heights.length;
+    };
+    expect(worldLen(1600)).toBeGreaterThan(worldLen(1000)); // bigger host window → wider world
   });
 
   it('boots to an identical deterministic stateHash across clients', () => {
@@ -87,6 +143,8 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
     });
     expect(c.stateHash()).not.toBe(a.stateHash());
   });
@@ -95,7 +153,16 @@ describe('network match boot', () => {
     const FIXED = 1 / 60;
     const shotClient = (seed: number): CGameController => {
       const gc = new CGameController(makeCanvas());
-      gc.startNetworkGame({seed, players: 2, localIndex: 0, roster: ROSTER, wind: 1, mapSize: 2});
+      gc.startNetworkGame({
+        seed,
+        players: 2,
+        localIndex: 0,
+        roster: ROSTER,
+        wind: 1,
+        mapSize: 2,
+        viewW: 1280,
+        viewH: 720,
+      });
       gc.netSetActivePlayer(0); // tank 0 is local + active → it fires
       gc.setAngle(45);
       gc.setPower(650);
@@ -125,6 +192,8 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
     });
 
     const clean = new CGameController(makeCanvas());
@@ -135,6 +204,8 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      viewW: 1280,
+      viewH: 720,
     });
 
     // Same seed → identical (non-flat) terrain despite the dirty client's switches.

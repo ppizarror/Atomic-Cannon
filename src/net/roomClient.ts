@@ -185,8 +185,8 @@ export class RoomClient {
   setReady(ready: boolean): void {
     this.send({t: 'ready', ready});
   }
-  startMatch(): void {
-    this.send({t: 'start'});
+  startMatch(viewW: number, viewH: number): void {
+    this.send({t: 'start', viewW, viewH});
   }
   updateSettings(settings: Partial<RoomSettings>): void {
     this.send({t: 'settings', settings});

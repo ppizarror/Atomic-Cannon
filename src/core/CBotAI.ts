@@ -16,8 +16,40 @@ import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_DRAG_K, launchSpeed} from './CShot';
 import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind} from './wind';
 import {weaponEnabled} from './CGameContent';
-import {WEAPON_DATABASE} from './CWeapon';
+import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
 import {clamp, deg2rad} from '../math/num';
+
+// extType codes the bot decision reads directly (the original stores extType as the weapon's
+// "type" float, so these ARE the type constants). Utility/non-offensive types the random
+// offensive pick never draws — Move, Tracer, Shield, Heal, Armor, Death, Hazmat, Mine, Jet
+// (mirrors the original's buy-candidate filter). The self-buff types are a subset of these.
+const BOT_EXT = {
+  ROLLER: 2,
+  BEAM: 5,
+  BEAM_ALT: 6,
+  SHIELD: 7,
+  ESCAPE: 8,
+  REBOUND: 9,
+  HEAL: 10,
+  ARMOR: 11,
+  DEATH: 12,
+  HAZMAT: 14,
+} as const;
+const BOT_UTILITY_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
+
+/** Is this extType one the bot applies to ITSELF (shield/heal/armor/hazmat) rather than firing? */
+export function isBotSelfBuff(ext: number): boolean {
+  return ext === 7 || ext === 10 || ext === 11 || ext === 14;
+}
+
+/** A bot's live defensive stats, in the port's units (shield/life 0..1000, armor/hazmat 0..100%). */
+export interface BotStats {
+  shield: number;
+  armor: number;
+  hazmat: number;
+  life: number;
+  maxLife: number;
+}
 
 // Difficulty is a single 0..10 skill level (0 = "Dummy": never aims; 10 =
 // "Einstein": perfect aim). 5 is a reasonable mid default.

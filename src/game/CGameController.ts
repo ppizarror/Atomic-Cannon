@@ -349,9 +349,11 @@ export interface ActiveTaunt {
 }
 
 /**
- * A network match simulates at a FIXED logical resolution + land scale so every client
- * builds a byte-identical world regardless of its window size or local settings. The
- * compositor scales this logical scene to each display.
+ * The world simulates at a FIXED logical resolution and the compositor stretches that scene
+ * to each display. NET_VIEW_H is the shared DESIGN HEIGHT for BOTH solo and net, so tank +
+ * terrain sizes stay consistent on every window (a big monitor doesn't shrink them). Solo
+ * derives its logical WIDTH from the display aspect; a net match forces NET_VIEW_W so every
+ * client builds a byte-identical world regardless of window size or local settings.
  */
 const NET_VIEW_W = 1280;
 const NET_VIEW_H = 720;
@@ -445,12 +447,14 @@ export class CGameController implements ShotWorld {
       this.m_onNetTurnEnd = null;
     }
 
-    // Fix the LOGICAL world/view size for this match. A net match uses a shared constant
-    // so every client's heightmap has the same length; solo captures the live canvas size
-    // at match start (native "OG" detail). draw() scales this to the native canvas — a later
-    // window resize only re-scales the render, it never rebuilds the world.
-    this.m_viewW = this.m_netMode ? NET_VIEW_W : this.m_displayW;
-    this.m_viewH = this.m_netMode ? NET_VIEW_H : this.m_displayH;
+    // Fix the LOGICAL world/view size for this match. Everything (heightmap length, tank
+    // sizes, physics) lives in these coordinates; the compositor presents the logical scene
+    // to the live display. Solo captures THIS display's size at start, so the world renders
+    // 1:1 (crisp) — a later window resize only stretches the present, it never rebuilds. A
+    // net match uses the HOST's size (m_netViewW/H) so every client builds the same-length
+    // heightmap; the host renders it 1:1, other players stretch it to their own window.
+    this.m_viewW = this.m_netMode ? this.m_netViewW : this.m_displayW;
+    this.m_viewH = this.m_netMode ? this.m_netViewH : this.m_displayH;
 
     // Reset state
     this.m_simAccum = 0; // fresh fixed-timestep accumulator
@@ -2920,6 +2924,10 @@ export class CGameController implements ShotWorld {
   /** Generate the battle terrain: a DEV flat test surface (`?flatland=1`), a forced
    *  landscape shape (Settings → Land Type), or the usual random landscape. */
   private generateTerrain(): void {
+    // Fresh terrain → wipe last battle's lingering effects so smoke/fumes/debris don't carry over
+    // onto the new map (the particle system persists across battles; the CLand regen clears its own
+    // transient debris/fallout/heat below).
+    this.m_particles.clear();
     // A shared seed (network match) makes every client generate byte-identical
     // terrain; Date.now() keeps solo play freshly random.
     const seed = this.m_terrainSeed ?? Date.now();
@@ -3799,6 +3807,9 @@ export class CGameController implements ShotWorld {
     wind: number;
     /** Host map width in viewport-widths (1..5). */
     mapSize: number;
+    /** The HOST's logical view size — the shared world resolution every client builds at. */
+    viewW: number;
+    viewH: number;
     onTurnEnd?: () => void;
     onCommand?: (cmd: GameCommand) => void;
   }): void {
@@ -3810,8 +3821,10 @@ export class CGameController implements ShotWorld {
     this.m_onNetCommand = opts.onCommand ?? null;
     this.m_landMode = -1; // shape is random-from-seed (deterministic), not a local override
     this.m_netLandScale = clamp(Math.round(opts.mapSize), 1, 5); // shared world width
-    // The shared logical view size (NET_VIEW_W/H) is applied in startGame → every client
-    // builds the same-length heightmap; draw() scales it to each client's native canvas.
+    // The HOST's view size is the shared logical resolution; startGame applies it so every
+    // client builds the same-length heightmap. The host renders it 1:1; others stretch it.
+    this.m_netViewW = clamp(Math.round(opts.viewW), 320, 4096);
+    this.m_netViewH = clamp(Math.round(opts.viewH), 240, 4096);
 
     // A network match is authoritative and IDENTICAL on every client, so it ignores all
     // local dev/URL switches a player may have set (?flatland, ?weapontest, ?weaponsel,
@@ -3841,11 +3854,11 @@ export class CGameController implements ShotWorld {
     this.m_bootingNet = false;
   }
 
-  /** The fixed LOGICAL view/world size (px). The sim, camera, terrain and physics all
-   *  work in these coordinates; `draw()` scales them to the live native canvas. Solo =
-   *  the boot window size ("OG" native detail); network = a shared constant so every
-   *  client's heightmap has the same length. Fixed after startGame (a window resize only
-   *  changes the render scale, never the world). */
+  /** The fixed LOGICAL view/world size (px). The sim, camera, terrain and physics all work
+   *  in these coordinates; the compositor stretches the logical scene to the live display.
+   *  Height is a shared design constant (consistent element sizes); solo width follows the
+   *  display aspect, net width is a shared constant. Fixed after startGame (a window resize
+   *  only re-fits the GPU present, never rebuilds the world). */
   getViewWidth(): number {
     return this.m_viewW;
   }
@@ -3854,11 +3867,19 @@ export class CGameController implements ShotWorld {
   }
 
   /** The live NATIVE display size (container px). main keeps this current on every resize; a
-   *  solo match captures it at start as its logical world size (so the world fills the window
-   *  crisply). Does NOT resize a match already in progress — only the next startGame reads it. */
+   *  solo match reads its ASPECT at start to derive its logical world width (height is the
+   *  fixed design constant). Does NOT resize a match in progress — only the next startGame. */
   setDisplaySize(w: number, h: number): void {
     this.m_displayW = Math.max(1, Math.round(w));
     this.m_displayH = Math.max(1, Math.round(h));
+  }
+
+  /** The live native display size — what a host publishes as the shared world resolution. */
+  getDisplayWidth(): number {
+    return this.m_displayW;
+  }
+  getDisplayHeight(): number {
+    return this.m_displayH;
   }
 
   /** True while it is the local player's turn in a network match (drives input/HUD). */
@@ -4561,6 +4582,8 @@ export class CGameController implements ShotWorld {
   private m_onNetCommand: ((cmd: GameCommand) => void) | null = null;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
   private m_netLandScale = NET_LAND_SCALE; // host-chosen net world width (viewport-widths)
+  private m_netViewW = NET_VIEW_W; // shared net logical size = the HOST's view size
+  private m_netViewH = NET_VIEW_H;
   // netMode: a turn's action (shot/move/utility) is mid-resolution. The net bridge holds
   // the server's next `turnBegin` until this clears, so a late hand-off can't interrupt
   // an in-flight local simulation.

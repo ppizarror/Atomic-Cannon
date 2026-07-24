@@ -67,7 +67,7 @@ export type ClientMessage =
       readonly reconnect?: string;
     }
   | {readonly t: 'ready'; readonly ready: boolean}
-  | {readonly t: 'start'} // host only
+  | {readonly t: 'start'; readonly viewW: number; readonly viewH: number} // host only; its resolution
   | {readonly t: 'settings'; readonly settings: Partial<RoomSettings>} // host only
   | {readonly t: 'cmd'; readonly seq: number; readonly cmd: GameCommand}
   | {
@@ -103,6 +103,9 @@ export type ServerMessage =
       /** Match settings captured at start (so a reconnect rebuilds an identical world). */
       readonly wind: number;
       readonly mapSize: number;
+      /** The host's logical resolution — the shared world size every client builds at. */
+      readonly viewW: number;
+      readonly viewH: number;
     }
   | {readonly t: 'turnBegin'; readonly playerIdx: number; readonly deadline: number}
   /** The match ended; each client shows the standings (winner computed from synced state). */

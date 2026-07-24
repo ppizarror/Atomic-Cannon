@@ -439,6 +439,15 @@ export class CParticleSystem {
     this.m_maxY = height + 200;
   }
 
+  /** Wipe every live effect — called when a new battle/match generates fresh terrain, so smoke,
+   *  fumes, debris and fireballs from the previous battle don't linger over the new map. */
+  clear(): void {
+    this.m_particles.length = 0;
+    this.m_beams.length = 0;
+    this.m_explosions.length = 0;
+    this.m_craterVents.length = 0;
+  }
+
   // ---------------------------------------------------------------- emitters
 
   private add(

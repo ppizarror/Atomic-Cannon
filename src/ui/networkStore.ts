@@ -83,7 +83,9 @@ export function joinRoom(raw: string): void {
 }
 
 export const setReady = (ready: boolean): void => client?.setReady(ready);
-export const startMatch = (): void => client?.startMatch();
+// Publish THIS host's display size as the shared world resolution for the match.
+export const startMatch = (): void =>
+  client?.startMatch(game().getDisplayWidth(), game().getDisplayHeight());
 
 /** Host-only: change a lobby match setting (wind / map size); broadcast to everyone. */
 export const updateSettings = (patch: Partial<RoomClientState['settings']>): void =>

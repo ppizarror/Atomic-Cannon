@@ -188,12 +188,12 @@ describe('RoomClient', () => {
     t.sent.length = 0; // drop the hello
 
     client.setReady(true);
-    client.startMatch();
+    client.startMatch(1280, 720);
     client.updateSettings({battles: 5});
     client.chat('hi');
     expect(t.sent).toEqual([
       {t: 'ready', ready: true},
-      {t: 'start'},
+      {t: 'start', viewW: 1280, viewH: 720},
       {t: 'settings', settings: {battles: 5}},
       {t: 'chat', text: 'hi'},
     ]);

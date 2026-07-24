@@ -49,7 +49,7 @@ export class NetGame {
   handle(msg: ServerMessage): void {
     switch (msg.t) {
       case 'startGame':
-        return this.onStart(msg.seed, msg.order, msg.wind, msg.mapSize);
+        return this.onStart(msg.seed, msg.order, msg.wind, msg.mapSize, msg.viewW, msg.viewH);
       case 'turnBegin':
         return this.onTurnBegin(msg.playerIdx);
       case 'stateUpdate':
@@ -103,7 +103,14 @@ export class NetGame {
     }
   }
 
-  private onStart(seed: number, order: readonly number[], wind: number, mapSize: number): void {
+  private onStart(
+    seed: number,
+    order: readonly number[],
+    wind: number,
+    mapSize: number,
+    viewW: number,
+    viewH: number,
+  ): void {
     this.m_pendingKeyframe = null;
     this.m_pendingTurn = null;
     const st = this.client.getState();
@@ -122,6 +129,8 @@ export class NetGame {
       roster,
       wind,
       mapSize,
+      viewW,
+      viewH,
       onTurnEnd: () => this.onTurnSettled(),
       onCommand: cmd => this.client.send({t: 'cmd', seq: ++this.m_seq, cmd}),
     });
