@@ -395,6 +395,8 @@ export interface Strings {
       soundVol: RowCopy;
       musicVol: RowCopy;
       stereo: RowCopy;
+      /** Non-legacy menu navigation blips (hover / forward / back). Opt-in, OFF by default. */
+      menuSounds: RowCopy;
     };
     content: {
       header: string;

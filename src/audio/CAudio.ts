@@ -252,6 +252,12 @@ export class CAudio {
     this.m_sfx.play(SFX.PANEL_CLOSE);
   }
 
+  /** Weapons Depot buy / sell confirmation. The original reused Panel1.wav for both
+   *  the successful buy and sell, not the generic click. */
+  depotTransaction(): void {
+    this.m_sfx.play(SFX.PANEL_OPEN);
+  }
+
   /** The Start Game "chunk" as a battle launches. */
   startGameSound(): void {
     this.m_sfx.play(SFX.START_GAME);

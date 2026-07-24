@@ -228,25 +228,26 @@ export function quitToMenu(): void {
   uiClick();
 }
 
-/** Depot actions — mutate the controller's economy, then re-sync + click. */
+/** Depot actions — mutate the controller's economy, then re-sync + play the buy/sell
+ *  confirmation (Panel1.wav, as the original did — only on a successful transaction). */
 export function depotBuy(i: number): void {
   if (controller?.buyWeapon(i)) {
     refreshEconomy();
-    uiClick();
+    uiDepotTransaction();
   }
 }
 
 export function depotSell(i: number): void {
   if (controller?.sellWeapon(i)) {
     refreshEconomy();
-    uiClick();
+    uiDepotTransaction();
   }
 }
 
 export function depotAutoBuy(): void {
   controller?.autoBuyWeapons();
   refreshEconomy();
-  uiClick();
+  uiDepotTransaction();
 }
 
 // Framerate counter (More Graphics Options → Show Framerate): the toggle + the live smoothed
@@ -388,6 +389,10 @@ export function uiOpen(): void {
 /** …and closing (Panel3.wav). */
 export function uiClose(): void {
   controller?.getAudio()?.uiClose();
+}
+/** Depot buy / sell confirmation (Panel1.wav — the original's buy/sell sound). */
+export function uiDepotTransaction(): void {
+  controller?.getAudio()?.depotTransaction();
 }
 /** A keystroke while typing a name (typing.wav). */
 export function uiTyping(): void {
