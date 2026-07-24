@@ -505,7 +505,7 @@ const bmpCache = new Map<string, Promise<string | null>>();
 
 // Colour-key predicates. The zeon dialog art keys grey (64,64,64) as its outside
 // (so the rounded corners cut out), while its arrows key pure green (0,255,0).
-export type BmpKey = 'magenta' | 'green' | 'grey' | 'greyblack' | 'black';
+export type BmpKey = 'magenta' | 'green' | 'grey' | 'greyblack' | 'black' | 'blackmagenta';
 const isGrey = (p: Uint8ClampedArray, i: number) =>
   Math.abs(p[i] - 64) < 26 && Math.abs(p[i + 1] - 64) < 26 && Math.abs(p[i + 2] - 64) < 26;
 const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
@@ -518,6 +518,11 @@ const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
   // pure black background only (the Battle Heroes medal badges sit on 0,0,0) — a tight
   // threshold so the medals' own dark edges survive.
   black: (p, i) => p[i] < 24 && p[i + 1] < 24 && p[i + 2] < 24,
+  // black background + magenta registration pixels both keyed — the angle-dial pointer
+  // (guiAnglePointerBig.bmp) is a red needle on black with a few magenta mount pixels.
+  blackmagenta: (p, i) =>
+    (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40) ||
+    (p[i] > 200 && p[i + 1] < 70 && p[i + 2] > 200),
 };
 
 /** Shared core: load an /assets image, knock out every pixel the `hit` predicate
@@ -565,10 +570,10 @@ export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
 const iconCache = new Map<string, Promise<string | null>>();
 
-/** Load a weapon icon at the given native pixel size (12 | 16 | 32). Only magenta
+/** Load a weapon icon at the given native pixel size (16 | 32). Only magenta
  *  keys out — the grey (128,128,128) tile is the icon's intended background. Icon
  *  files are lowercase; Vite serves public assets case-sensitively. */
-export function loadWeaponIcon(name: string, size: 12 | 16 | 32 = 32): Promise<string | null> {
+export function loadWeaponIcon(name: string, size: 16 | 32 = 32): Promise<string | null> {
   return loadColorKeyedBmp(
     iconCache,
     `${size}/${name}`,

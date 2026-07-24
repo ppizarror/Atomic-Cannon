@@ -357,9 +357,15 @@ canvas {
   outline-offset: -1px;
 }
 
+/* Weapon list / editor icon. The source art is native 16x16, so we DON'T scale it to
+   18px (1.125x is a non-integer zoom that smears the pixels even with `pixelated`).
+   Instead we render it 1:1 at 16x16 and add a 1px #757575 (117,117,117) frame; with
+   `content-box` the border sits OUTSIDE the icon, keeping the old 18x18 footprint. */
 .wicon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  box-sizing: content-box;
+  border: 1px solid #757575;
   display: block;
   image-rendering: pixelated;
   flex: 0 0 auto;
@@ -472,6 +478,13 @@ canvas {
   stroke-width: 2;
   stroke-linecap: round;
   filter: drop-shadow(0 0 1px rgba(255, 40, 40, 0.7));
+}
+
+/* The guiAnglePointerBig sprite pointer — keep the retro pixels crisp and lift it off
+   the dark dial face with a faint shadow (the source art has no outline of its own). */
+.needle-sprite {
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.85));
 }
 
 /* side LCD boxes (weapon details / player stats) — black panels with a double
@@ -1676,13 +1689,6 @@ canvas {
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-.editor-icon {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  display: block;
-  image-rendering: pixelated;
 }
 .editor-state {
   flex: 0 0 auto;

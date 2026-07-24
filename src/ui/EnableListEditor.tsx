@@ -148,7 +148,7 @@ export function WeaponsEditor() {
           toggle: () => (toggleWeapon(i), uiClick()),
           body: (
             <>
-              <WeaponIcon name={w.icon} size={16} cls="editor-icon" />
+              <WeaponIcon name={w.icon} size={16} cls="wicon" />
               <BmpText
                 font="beijing-16-out"
                 text={`${weaponName(w)} (${weaponTypeName(w.type)})`}

@@ -870,7 +870,7 @@ export class CLand {
     // Visual: a cloud of glowing specks. They fall, settle on the surface as a thin glowing
     // carpet tinted by irRGB, and fade over irTime — no deposit, they just coat the ground.
     // Count scales with the blast RADIUS (the original's fallout count ∝ radius; the exact
-    // multiplier is x87-lost). Tuned high enough that the 5-px crosses fill the thick crater-void
+    // multiplier isn't known). Tuned high enough that the 5-px crosses fill the thick crater-void
     // POOL densely — the on-surface tint should read as a solid irradiated carpet (the reference
     // shows a deep red band, not a thin surface line), so the density carries the whole effect
     // (radiation writes NO terrain pixels — there is no baked recolour to fall back on).
@@ -1727,9 +1727,9 @@ export class CLand {
         // the mountain's darkened interior behind the live terrain (not the sky). Off → craters are voids.
         if (GameConfig.craterFill && this.m_backdropCanvas && this.m_terrainCanvas) {
           ctx.save();
-          ctx.filter = 'blur(3px)'; // #2 soften → the backdrop recedes (depth of field)
+          ctx.filter = 'blur(3px)'; // soften → the backdrop recedes (depth of field)
           ctx.drawImage(this.m_backdropCanvas, 0, 0);
-          // #4 rim shadow: a soft black echo of the live terrain, dropped a few px INTO the carved
+          // rim shadow: a soft black echo of the live terrain, dropped a few px INTO the carved
           // void, so the crater edge casts an ambient-occlusion shadow onto the backdrop below it.
           ctx.filter = 'blur(3px) brightness(0)';
           ctx.globalAlpha = 0.5;

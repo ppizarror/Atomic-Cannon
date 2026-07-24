@@ -44,6 +44,7 @@ import {
   windAccX,
   windAccY,
   canMoveNow,
+  loadUiBmp,
 } from './store';
 import {
   weaponPower,
@@ -56,6 +57,7 @@ import {strings} from '../i18n';
 import {clamp, wrapIndex} from '../math/num';
 import {WeaponIcon} from './WeaponIcon';
 import {usePointerDrag} from './usePointerDrag';
+import {useAsyncImage} from './useAsyncImage';
 
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
@@ -222,8 +224,20 @@ function TurnTimerBar() {
   );
 }
 
+// The angle-dial pointer sprite (guiAnglePointerBig.bmp): a red needle on black with
+// magenta mount pixels, both keyed out. It points UP in the bitmap (tip at top, base at
+// the bottom), so we pivot at its base — the dial centre (50,50) — and rotate it to the
+// aim. Local length/width in the 100×100 viewBox; width tracks the 5:28 source ratio so
+// it never distorts. The old stroked line stays as the fallback until the sprite loads.
+const NDL_LEN = 32; // pointer length, ~matches the old needle reach
+const NDL_W = (5 / 28) * NDL_LEN; // preserve the sprite's 5×28 aspect
+
 function Needle() {
   const a = angle.value;
+  // Sprite drawn pointing UP represents aim = 90 (screen-up); rotate by (90 − a) so
+  // a=0→right, a=90→up, a=270→down — matching the ◀/▶ aim and the old line.
+  const rot = `rotate(${90 - a} 50 50)`;
+  const src = useAsyncImage(() => loadUiBmp('gui/guiAnglePointerBig.bmp', 'blackmagenta'), []);
   return (
     <svg
       class="ov dial-overlay"
@@ -231,7 +245,20 @@ function Needle() {
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
     >
-      <line class="needle" x1="50" y1="50" x2="80" y2="50" transform={`rotate(${-a} 50 50)`} />
+      {src ? (
+        <image
+          class="needle-sprite"
+          href={src}
+          x={50 - NDL_W / 2}
+          y={50 - NDL_LEN}
+          width={NDL_W}
+          height={NDL_LEN}
+          transform={rot}
+          preserveAspectRatio="none"
+        />
+      ) : (
+        <line class="needle" x1="50" y1="50" x2="50" y2="18" transform={rot} />
+      )}
     </svg>
   );
 }
