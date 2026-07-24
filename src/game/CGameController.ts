@@ -4094,16 +4094,25 @@ export class CGameController implements ShotWorld {
     const clamped = clamp(destX, 20, this.m_land.width - 20);
     tank.startDrive(clamped);
     this.m_gameState = EGameState.Battle;
-    this.waitForRest(tank, 0);
+    this.waitForRest(tank, tank.getPosition().x, 0);
   }
 
-  /** Poll until a moving tank has settled (or a safety timeout), then end the turn. */
-  private waitForRest(tank: CTank, elapsed: number): void {
-    if (!tank.isMoving() || elapsed > 5) {
+  /** Poll until the moving tank has actually STOPPED, then end the turn. A long drive must NOT be cut
+   *  short: the old fixed 5s cap ended the turn mid-move, handing the NEXT tank its turn (and a shot)
+   *  while this one was still driving. So we wait as long as it's making progress; only a genuine hang
+   *  — still flagged `moving` yet frozen in place for a sustained spell — bails out. */
+  private waitForRest(tank: CTank, lastX: number, stuckPolls: number): void {
+    if (!tank.isMoving()) {
       this.endTurn();
       return;
     }
-    this.schedule(0.15, () => this.waitForRest(tank, elapsed + 0.15));
+    const x = tank.getPosition().x;
+    const stuck = Math.abs(x - lastX) > 0.25 ? 0 : stuckPolls + 1;
+    if (stuck >= 20) {
+      this.endTurn(); // ~3s (20 × 0.15s of sim time) with no progress while still "moving" → stuck
+      return;
+    }
+    this.schedule(0.15, () => this.waitForRest(tank, x, stuck));
   }
 
   /** Pick a target + weapon, solve the firing arc, degrade by difficulty, and fire. */

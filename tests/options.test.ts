@@ -346,6 +346,37 @@ describe('Formerly-no-op Settings options', () => {
     expect(Math.abs(kill(false))).toBeLessThan(3); // no Death weapon → no mound
   });
 
+  it('a Move turn ends only when the tank STOPS — a long move is not cut short mid-drive', () => {
+    GameConfig.landSize = 5; // wide world so a long move fits
+    const gc = humanGame(2);
+    GameConfig.landSize = 3; // restore (world already built at 5)
+    const p = gc as unknown as {
+      m_tanks: CTank[];
+      m_currentPlayerIndex: number;
+      m_land: CLand;
+      startTankMove(t: CTank, destX: number): void;
+    };
+    const mover = p.m_tanks[0];
+    p.m_currentPlayerIndex = 0;
+    const startX = mover.getPosition().x;
+    const w = p.m_land.width;
+    // A LONG move (~700px ≈ 10s at 70 px/s), toward the roomier side — well past the OLD 5s cap.
+    const dest = startX < w / 2 ? Math.min(w - 30, startX + 700) : Math.max(30, startX - 700);
+    expect(Math.abs(dest - startX)).toBeGreaterThan(450); // genuinely long
+    p.startTankMove(mover, dest);
+    expect(mover.isMoving()).toBe(true);
+
+    // Advance ~6.5s of sim — the OLD 5s cap would have ended the turn here, mid-drive, letting the
+    // next tank fire while this one was still moving.
+    for (let i = 0; i < Math.round(6.5 * 60); i++) gc.update(1 / 60);
+    expect(mover.isMoving()).toBe(true); // STILL driving — the long move wasn't cut short
+    expect(p.m_currentPlayerIndex).toBe(0); // still the mover's turn (no hand-off mid-move)
+
+    // Let it reach the target → it stops, and only THEN the turn hands off.
+    for (let i = 0; i < 600 && mover.isMoving(); i++) gc.update(1 / 60);
+    expect(mover.isMoving()).toBe(false);
+  });
+
   it('a supply crate rolls ONCE per round, not once per turn', () => {
     const gc = humanGame(2); // 2 players → 2 turns per round
     const prev = GameConfig.crateChance;
