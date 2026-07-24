@@ -10,7 +10,7 @@
 
 import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
-import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
+import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
 import {Roster} from '../core/CRoster';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
 import {windProfile, isRealisticWind} from '../core/wind';
@@ -53,6 +53,7 @@ import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
 import {plusMinus} from '../math/random';
 import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
+import type {MatchConfig} from '../net/protocol';
 import {
   EXT,
   isBeamExt,
@@ -484,6 +485,7 @@ export class CGameController implements ShotWorld {
     if (worldW !== this.m_worldWidth) {
       this.m_worldWidth = worldW;
       GameConfig.worldScale = worldW / this.m_viewW;
+      this.m_land.dispose(); // free the old world buffers first → no transient double-footprint
       this.m_land = new CLand(worldW, this.m_viewH);
       this.m_particles.setBounds(worldW, this.m_viewH);
     }
@@ -515,7 +517,17 @@ export class CGameController implements ShotWorld {
       // turn order) so names/colours — and thus team identity — match across clients.
       const netCfg = this.m_netRoster?.[p];
       const cfg = netCfg
-        ? {name: netCfg.name, model: '', color: netCfg.color}
+        ? // Pick the hull sprite deterministically from the shared seed + slot so every client
+          // shows the same tank (the local default is Math.random → each client differs). Purely
+          // cosmetic — collision comes from tankSizeScale, not the model — so it isn't hashed.
+          {
+            name: netCfg.name,
+            model:
+              PLAYER_TANKS[
+                (((this.m_terrainSeed ?? 0) ^ (p * 0x9e3779b9)) >>> 0) % PLAYER_TANKS.length
+              ],
+            color: netCfg.color,
+          }
         : (roster[p] ?? {
             name:
               p === 0
@@ -571,8 +583,9 @@ export class CGameController implements ShotWorld {
     this.m_economy.reset(this.m_startCredits * perTeam); // squad-scaled purse (see per-tank seed above)
     this.m_botEconomy.clear(); // fresh bot inventories for the new match (re-created on first bot turn)
     for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
-    // Randomize Turns (Gameplay): shuffle the turn queue once per battle.
-    if (GameConfig.randomizeTurns) this.shuffleTurnOrder();
+    // Randomize Turns (Gameplay): shuffle the turn queue once per battle. Never in a net
+    // match — the server owns the order, and shuffle uses Math.random() (would desync).
+    if (GameConfig.randomizeTurns && !this.m_netMode) this.shuffleTurnOrder();
 
     // Preload hull sprites for the tanks in play (fire-and-forget; the renderer
     // falls back to vector hulls until they are ready).
@@ -908,6 +921,7 @@ export class CGameController implements ShotWorld {
   setPaused(paused: boolean): void {
     if (paused === this.m_paused) return;
     this.m_paused = paused;
+    if (paused) this.m_movePlacing = false; // pausing disarms a pending Move placement
     this.markDirty(); // draw the pause frame once; redraw on resume
     if (paused) void this.m_audio?.suspend();
     else void this.m_audio?.resume();
@@ -993,8 +1007,8 @@ export class CGameController implements ShotWorld {
 
   /** Begin aiming from the current tank (world coords). No-op unless it's a human's turn. */
   beginAim(wx: number, wy: number): boolean {
-    if (this.m_paused || this.m_gameState !== EGameState.Battle || !this.isPlayerTurn())
-      return false;
+    if (!this.canAct()) return false; // paused / not your turn / mid-move / jet flight → no aiming
+    if (this.m_movePlacing) return false; // a click is a move-destination, not an aim drag
     this.m_aim.active = true;
     this.dragAim(wx, wy);
     return true;
@@ -1740,6 +1754,7 @@ export class CGameController implements ShotWorld {
     if (this.m_gameState !== EGameState.Battle) return;
     const tank = this.getCurrentTank();
     if (!tank.isAlive() || !tank.isHuman()) return;
+    if (tank.isMoving()) return; // the drive has started (spot clicked) → hide the band + hint
     const weapon = getWeapon(this.m_currentWeaponIndex);
     if (weapon.getExtType() !== EXT.MOVE) return;
     const budget = this.moveRange(weapon);
@@ -1747,8 +1762,12 @@ export class CGameController implements ShotWorld {
     const x0 = Math.max(0, Math.floor(tx - budget)),
       x1 = Math.min(this.m_worldWidth - 1, Math.ceil(tx + budget));
     if (x1 <= x0) return;
+
+    // Once FIRE arms placement, the band brightens and gains an outline (and a hint below) — the cue
+    // to click a spot inside it; before that it's a faint preview of where the tank may go.
+    const placing = this.m_movePlacing;
     ctx.save();
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = placing ? 0.42 : 0.2;
     ctx.fillStyle = '#00ff00';
     ctx.beginPath();
     ctx.moveTo(x0, this.m_land.getHeightAt(x0));
@@ -1756,7 +1775,81 @@ export class CGameController implements ShotWorld {
     for (let x = x1; x >= x0; x--) ctx.lineTo(x, this.m_land.getHeightAt(x) - 26); // up 26px = the band
     ctx.closePath();
     ctx.fill();
+    if (placing) {
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = '#b6ffb6';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
     ctx.restore();
+
+    if (placing) this.drawMoveHint(ctx, x0, x1, tx);
+  }
+
+  /** The "click to move here" hint that follows the pointer while placing a Move. Drawn as a small
+   *  captioned chip above the terrain at the cursor column (clamped to the band). */
+  private drawMoveHint(ctx: CanvasRenderingContext2D, x0: number, x1: number, tankX: number): void {
+    const cx = this.m_mouse.x >= 0 ? clamp(this.m_mouse.x, x0, x1) : tankX;
+    const surfY = this.m_land.getHeightAt(Math.round(cx));
+    const label = strings.value.game.moveHint;
+    ctx.save();
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(label).width + 14;
+    const boxY = surfY - 44;
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#0a2a0a';
+    ctx.strokeStyle = '#b6ffb6';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(cx - w / 2, boxY - 9, w, 18);
+    ctx.fill();
+    ctx.stroke();
+    // A downward marker line from the chip to the destination surface.
+    ctx.beginPath();
+    ctx.moveTo(cx, boxY + 9);
+    ctx.lineTo(cx, surfY - 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#e8ffe8';
+    ctx.fillText(label, cx, boxY);
+    ctx.restore();
+  }
+
+  /** Is the human currently placing a Move (FIRE armed, awaiting a click on the band)? */
+  isMovePlacing(): boolean {
+    return this.m_movePlacing;
+  }
+
+  /** Commit a placed Move: drive the current tank to the clicked world-X (clamped to the move
+   *  budget), consuming the round and ending the turn — the click-to-place counterpart of firing. */
+  placeMove(worldX: number): void {
+    if (!this.m_movePlacing) return;
+    this.m_movePlacing = false;
+    const tank = this.getCurrentTank();
+    if (this.m_paused || !tank.isAlive() || tank.isMoving() || !tank.isHuman()) return;
+    const weapon = getWeapon(this.m_currentWeaponIndex);
+    if (weapon.getExtType() !== EXT.MOVE) return;
+
+    // Consume the move round (a Move is a finite utility; Shell/free-fire make consume a no-op),
+    // then drive to the clamped destination. No ensureStocked — the human selected Move in stock.
+    if (!GameConfig.demo) this.economyFor(tank).consume(this.m_currentWeaponIndex);
+    const budget = this.moveRange(weapon);
+    const tx = tank.getPosition().x;
+    const destX = clamp(worldX, tx - budget, tx + budget);
+    this.m_turnTimerRunning = false;
+    this.m_manualScroll = false;
+    this.m_firedThisTurn = false; // a move isn't a shot → no post-fire gloat
+    this.startTankMove(tank, destX);
+  }
+
+  /** Cancel an armed Move placement (weapon change, turn change, pause) — the band goes back to preview. */
+  private cancelMovePlacing(): void {
+    if (this.m_movePlacing) {
+      this.m_movePlacing = false;
+      this.markDirty();
+    }
   }
 
   /** World point the current (angle, power) aims at — where the target cross sits. */
@@ -1775,6 +1868,9 @@ export class CGameController implements ShotWorld {
    */
   private drawAimTarget(ctx: CanvasRenderingContext2D): void {
     if (this.m_gameState !== EGameState.Battle || !this.isPlayerTurn()) return;
+    // A Move utility isn't aimed by angle/power — its destination is a click on the green band, so
+    // suppress the aim reticle/arrows entirely (the move area + its hint are the only cue).
+    if (getWeapon(this.m_currentWeaponIndex).getExtType() === EXT.MOVE) return;
 
     // The "target turret" reticle sprite, centred on the aim point.
     // Falls back to a drawn white/grey "+" until the sprite has loaded.
@@ -2882,6 +2978,7 @@ export class CGameController implements ShotWorld {
 
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
+    this.m_movePlacing = false; // a fresh turn is never mid-placement
     const tank = this.getCurrentTank();
     // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it
     // up on the human's turn-begin from whatever credits are on hand (a no-op when broke).
@@ -2989,8 +3086,9 @@ export class CGameController implements ShotWorld {
       t.setWeaponIndex(this.m_currentWeaponIndex);
       t.setCanBuy(true); // Buy Time: depot re-opens at each battle's start
     });
-    // Randomize Turns: re-shuffle the turn queue for the new battle.
-    if (GameConfig.randomizeTurns) this.shuffleTurnOrder();
+    // Randomize Turns: re-shuffle the turn queue for the new battle (never in net — the
+    // server arbitrates order; local Math.random() shuffle would desync).
+    if (GameConfig.randomizeTurns && !this.m_netMode) this.shuffleTurnOrder();
     this.m_currentPlayerIndex = 0;
     this.m_winnerName = '';
     this.m_gameState = EGameState.Battle;
@@ -3198,6 +3296,22 @@ export class CGameController implements ShotWorld {
     const tank = this.getCurrentTank();
     if (!tank.isAlive()) return;
     if (tank.isMoving()) return; // can't act while a move is under way
+
+    // Move utility (human): FIRE doesn't move immediately — it ARMS click-to-place (the band
+    // brightens; the next click on it drives the tank there, via placeMove). It never consumes or
+    // ends the turn here. Bots drive directly (botMove); the AI-driven Demo tank keeps the old
+    // aim-point move below.
+    if (
+      tank.isHuman() &&
+      !GameConfig.demo &&
+      getWeapon(this.m_currentWeaponIndex).getExtType() === EXT.MOVE
+    ) {
+      if (!this.m_movePlacing) {
+        this.m_movePlacing = true;
+        this.markDirty();
+      }
+      return;
+    }
 
     this.m_turnTimerRunning = false; // committed to a shot — stop the clock
     this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
@@ -3931,6 +4045,8 @@ export class CGameController implements ShotWorld {
     /** The HOST's logical view size — the shared world resolution every client builds at. */
     viewW: number;
     viewH: number;
+    /** The HOST's gameplay config — applied identically on every client (determinism). */
+    config: MatchConfig;
     onTurnEnd?: () => void;
     onCommand?: (cmd: GameCommand) => void;
   }): void {
@@ -3963,6 +4079,26 @@ export class CGameController implements ShotWorld {
     this.m_windScale = clamp(Math.round(opts.wind), 0, 2);
     GameConfig.changeWind = 0; // Per-game: wind set once from the seed, constant all match
     GameConfig.windModel = 0; // Linear (uniform) — no time-based gusts
+    // Adopt the HOST's gameplay config so every client runs the SAME simulation. Any of these
+    // read from a client's OWN Settings instead would diverge the world: the scalars change
+    // trajectories/blast/damage/recoil, gameType changes the damage model, buryTanks/relative-
+    // Turrets change resting position / firing angle. The host is the single source of truth.
+    const c = opts.config;
+    GameConfig.hitpoints = c.hitpoints;
+    GameConfig.tankSizeScale = c.tankSizeScale;
+    GameConfig.explosionScale = c.explosionScale;
+    GameConfig.powerScale = c.powerScale;
+    GameConfig.kickbackScale = c.kickbackScale;
+    GameConfig.buryTanks = c.buryTanks;
+    GameConfig.relativeTurrets = c.relativeTurrets;
+    GameConfig.utilityTurn = c.utilityTurn;
+    GameConfig.crateChance = c.crateChance;
+    // Randomize Turns is FORCED OFF in net: the server owns the turn order, and the local
+    // shuffle uses Math.random() AND reorders the tank array — which would break the
+    // index-based turn hand-off and snapshot mapping. (Also guarded at the call sites.)
+    GameConfig.randomizeTurns = false;
+    this.m_startCredits = c.startCredits;
+    this.m_gameType = c.gameType === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch;
     // Free-fire in network: every weapon is available and firing consumes nothing. This
     // lets every client simulate any weapon a peer fires without syncing per-tank
     // inventories (networked economy is a later enhancement).
@@ -3985,6 +4121,24 @@ export class CGameController implements ShotWorld {
   }
   getViewHeight(): number {
     return this.m_viewH;
+  }
+
+  /** Snapshot THIS host's gameplay settings as the shared MatchConfig (sent at Start so every
+   *  client adopts them — see startNetworkGame). Reads live GameConfig + match fields. */
+  getMatchConfig(): MatchConfig {
+    return {
+      hitpoints: GameConfig.hitpoints,
+      tankSizeScale: GameConfig.tankSizeScale,
+      explosionScale: GameConfig.explosionScale,
+      powerScale: GameConfig.powerScale,
+      kickbackScale: GameConfig.kickbackScale,
+      buryTanks: GameConfig.buryTanks,
+      relativeTurrets: GameConfig.relativeTurrets,
+      utilityTurn: GameConfig.utilityTurn,
+      crateChance: GameConfig.crateChance,
+      startCredits: this.m_startCredits,
+      gameType: this.m_gameType,
+    };
   }
 
   /** The live NATIVE display size (container px). main keeps this current on every resize; a
@@ -4296,6 +4450,7 @@ export class CGameController implements ShotWorld {
 
   selectWeapon(index: number): void {
     if (this.m_paused) return;
+    this.cancelMovePlacing(); // changing weapon disarms any pending Move placement
     this.markDirty();
     if (index >= 0 && index < WEAPON_DATABASE.length) {
       this.m_currentWeaponIndex = index;
@@ -4663,6 +4818,19 @@ export class CGameController implements ShotWorld {
     return this.getCurrentTank()?.isHuman() === true && this.m_gameState === EGameState.Battle;
   }
 
+  /**
+   * The SINGLE gate the input layer + HUD key off (`blocked` / `canFire` signals, `beginAim`):
+   * can the human act — aim, fire, use the HUD — RIGHT NOW? False while paused, in Demo, on a
+   * remote net turn, outside the Battle phase (jet flight / shot flying / explosion all leave it),
+   * or while the current tank is auto-driving a Move (isMoving/isFalling). So a Move — exactly like
+   * a jet flight — locks out ALL player input until it settles and the turn hands on.
+   */
+  canAct(): boolean {
+    if (this.m_paused || !this.isPlayerTurn()) return false;
+    const tank = this.getCurrentTank();
+    return !tank.isMoving() && !tank.isFalling();
+  }
+
   // ========================================================================
   // MEMBER VARIABLES
   // ========================================================================
@@ -4789,6 +4957,9 @@ export class CGameController implements ShotWorld {
   private m_renderGate = new RenderGate();
   // Live drag-aim state: the world-space target the player is dragging toward.
   private m_aim: {active: boolean; tx: number; ty: number} = {active: false, tx: 0, ty: 0};
+  // Move utility: FIRE arms "click-to-place" mode — the move band brightens, the cursor turns to a
+  // hand, and the next click in the band drives the tank there (placeMove). Reset on weapon/turn change.
+  private m_movePlacing = false;
   // Last known mouse position in world coords (for hover-detail on tank badges).
   private m_mouse: {x: number; y: number} = {x: -1, y: -1};
 

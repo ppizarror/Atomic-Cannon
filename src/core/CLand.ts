@@ -236,6 +236,32 @@ export class CLand {
     this.computeDirtyRegion();
   }
 
+  /**
+   * Release the world-sized buffers. A Land-Size change spawns a fresh `new CLand`; without this
+   * the OLD land's several full-world RGBA copies (terrain buffer + terrain/backdrop/debug canvas
+   * backing stores) linger until the next GC WHILE the new land bakes its own — a transient that
+   * roughly DOUBLES the terrain footprint (hundreds of MB at Massive size on a big display).
+   * Zeroing a canvas's width/height frees its backing store immediately, and nulling the typed-array
+   * views lets the old ImageData buffers be reclaimed before the replacement allocates.
+   */
+  dispose(): void {
+    this.m_falls.length = 0;
+    this.m_particles.length = 0;
+    this.m_particlePool.length = 0;
+    this.m_radSpecks.length = 0;
+    this.m_speckPool.length = 0;
+    this.m_radParticles.length = 0;
+    this.m_heat.length = 0;
+    for (const c of [this.m_terrainCanvas, this.m_backdropCanvas, this.m_debugCanvas]) {
+      if (c) c.width = c.height = 0; // free the backing store now, not at the next GC
+    }
+    this.m_terrainCanvas = this.m_backdropCanvas = this.m_debugCanvas = null;
+    this.m_terrainImage = this.m_debugImage = null;
+    this.m_pixels = null;
+    this.m_material = null;
+    this.m_dirtTile = null;
+  }
+
   // The 6 shape modes. Screen-Y: smaller = higher on screen, so
   // Ymin is the highest peaks can reach, Ymax the lowest valleys.
   private generateProfile(mode: number): void {
@@ -1517,6 +1543,13 @@ export class CLand {
     const W = this.m_nWidth,
       H = this.m_nHeight;
     const heights = this.m_arrHeights!;
+    // Drop the previous snapshot NOW (nothing below reads it — the strata are repainted from
+    // `heights`) so its full-world buffer is reclaimable before `getImageData` allocates the new
+    // one, instead of both being live at once. A re-bake keeps the terrain the same size, so this
+    // is the routine per-generation path, not just a resize.
+    this.m_terrainImage = null;
+    this.m_pixels = null;
+    this.m_material = null;
     g.clearRect(0, 0, W, H);
     if (this.m_patterns.length !== this.m_layers.length) {
       this.m_patterns = this.m_layers.map(l => g.createPattern(l.image, 'repeat'));

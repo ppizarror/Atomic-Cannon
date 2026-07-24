@@ -932,11 +932,6 @@ canvas {
 /* Selected-weapon stats popup (the "Stats" button). */
 .dep-stats {
   position: absolute;
-  /* Centre with inset + margin:auto, NOT translate(-50%, -50%). A fractional translate
-     composites this box as a GPU layer and resamples it with bilinear filtering, which
-     blurs the thin bitmap-font rows (the thick title hides it). Layout centering places
-     the glyph canvases without that filter, so they stay crisp — same reason the main
-     menu centres its nav with flexbox instead of a transform. */
   inset: 0;
   margin: auto;
   width: fit-content;

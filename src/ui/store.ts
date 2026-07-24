@@ -450,12 +450,13 @@ export function syncHud(): void {
   windAccX.value = Math.round(wa.x * 100) / 100;
   windAccY.value = Math.round(wa.y * 100) / 100;
   canMoveNow.value = c.getCurrentTankCanMove();
-  canFire.value = c.isPlayerTurn();
+  canFire.value = c.canAct();
   canBuyNow.value = c.canOpenDepot();
   flying.value = c.isFlying();
   jetFuel.value = c.getJetFuel();
-  // Held when paused or when it isn't the human's live turn (see `blocked`).
-  blocked.value = c.isPaused() || !c.isPlayerTurn();
+  // The single input gate: held when paused, not the human's live turn, OR while the tank is
+  // auto-driving a Move / in jet flight (canAct). Disables the whole HUD + aim until it settles.
+  blocked.value = !c.canAct();
   winner.value = c.getWinnerName();
   // Between-battles standings: compute once on entering BattleEnd, clear on leaving.
   const atBattleEnd = c.getState() === EGameState.BattleEnd;

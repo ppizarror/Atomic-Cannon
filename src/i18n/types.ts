@@ -509,6 +509,8 @@ export interface Strings {
     sentry: string;
     /** Wargame Detail preset: every CPU is renamed to this (the WarGames "WOPR"). */
     whopper: string;
+    /** Hint chip shown over the move band while placing a Move (click-to-move). */
+    moveHint: string;
     /** Placeholder rendered on a tank badge with no name. */
     noName: string;
     /** On-canvas tank badge stats. */

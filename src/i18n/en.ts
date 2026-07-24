@@ -647,6 +647,7 @@ export const en: Strings = {
     bubble: '{name}: {line}',
     sentry: 'Sentry',
     whopper: 'Whopper',
+    moveHint: 'Click to move here',
     noName: '-',
     tankTeam: 'Team {n}',
     tankLife: 'Life {n}',

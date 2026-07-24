@@ -4,6 +4,7 @@
 import {describe, it, expect} from 'vitest';
 
 import {CLand} from '../src/core/CLand';
+import {makeCanvas} from './_dom';
 
 type Priv = {m_particles: unknown[]};
 const debrisLeft = (land: CLand): number => (land as unknown as Priv).m_particles.length;
@@ -81,5 +82,36 @@ describe('CLand terrain', () => {
     }
     expect(raised).toBeGreaterThanOrEqual(10); // settled debris raises the surface
     expect(dug).toBe(0); // settled debris removes nothing
+  });
+
+  it('dispose() releases the world buffers so a re-sized land never holds two sets at once', () => {
+    const land = new CLand(1200, 400);
+    land.generateFlat();
+    land.addShowerParticles(600, 260, 400, 40); // debris in flight
+    type World = {
+      m_terrainCanvas: HTMLCanvasElement | null;
+      m_backdropCanvas: HTMLCanvasElement | null;
+      m_debugCanvas: HTMLCanvasElement | null;
+      m_pixels: unknown;
+      m_material: unknown;
+      m_particles: unknown[];
+    };
+    const p = land as unknown as World;
+    // Headless tests never call draw(), so stand in the baked world-sized buffers by hand.
+    p.m_terrainCanvas = makeCanvas(1200, 400);
+    p.m_backdropCanvas = makeCanvas(1200, 400);
+    p.m_pixels = new Uint32Array(1200 * 400);
+    p.m_material = new Uint8Array(1200 * 400);
+    expect(p.m_particles.length).toBeGreaterThan(0);
+
+    land.dispose();
+
+    // Backing stores zeroed + references dropped → the old footprint is reclaimable at once.
+    expect(p.m_terrainCanvas).toBeNull();
+    expect(p.m_backdropCanvas).toBeNull();
+    expect(p.m_debugCanvas).toBeNull();
+    expect(p.m_pixels).toBeNull();
+    expect(p.m_material).toBeNull();
+    expect(p.m_particles.length).toBe(0); // in-flight debris dropped too
   });
 });

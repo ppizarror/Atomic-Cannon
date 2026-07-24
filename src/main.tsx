@@ -351,6 +351,12 @@ async function main(): Promise<void> {
       return;
     }
     const [wx, wy] = toWorld(e);
+    // Placing a Move: a click on the world commits the destination (drives the tank there) rather
+    // than starting an aim drag.
+    if (gameController.isMovePlacing()) {
+      gameController.placeMove(wx);
+      return;
+    }
     if (gameController.beginAim(wx, wy)) aiming = true;
   });
   // Move/up on the window in the CAPTURE phase so they fire even though the Pixi
@@ -363,8 +369,14 @@ async function main(): Promise<void> {
         gameController.panFromMinimap(sx); // continuous pan while held
         return;
       }
-      // Only the extents box (the draggable handle) shows the open-hand cursor.
-      if (!aiming) container.style.cursor = gameController.hitMinimapBox(sx, sy) ? 'grab' : '';
+      // Cursor: a pointer/hand while placing a Move (click to move here), the open-hand over the
+      // minimap's draggable handle, else default.
+      if (!aiming)
+        container.style.cursor = gameController.isMovePlacing()
+          ? 'pointer'
+          : gameController.hitMinimapBox(sx, sy)
+            ? 'grab'
+            : '';
       const [wx, wy] = toWorld(e);
       gameController.setMouse(wx, wy); // hover-detail on tank badges
       if (aiming) gameController.dragAim(wx, wy);
