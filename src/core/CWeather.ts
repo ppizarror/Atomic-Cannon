@@ -257,6 +257,11 @@ export class CWeather {
   }
 
   private drawLayer(ctx: CanvasRenderingContext2D, layer: Layer): void {
+    // Precipitation (snow / rain / hail) blits ADDITIVELY — the flecks GLOW against a dark storm sky
+    // and wash out against a bright one, the way the original reads. Dust alone is alpha-blended:
+    // its opaque tan grains are pigment, not light, so 'lighter' would make them vanish over sand.
+    const additive = layer.type !== 'dust';
+    if (additive) ctx.globalCompositeOperation = 'lighter';
     switch (layer.type) {
       case 'snow':
         this.drawSnow(ctx, layer);
@@ -271,6 +276,7 @@ export class CWeather {
         this.drawDust(ctx, layer);
         break;
     }
+    if (additive) ctx.globalCompositeOperation = 'source-over'; // restore for the next layer / caller
   }
 
   // All precipitation renders as small crisp dots — flecks, not soft blobs.

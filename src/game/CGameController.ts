@@ -4143,7 +4143,8 @@ export class CGameController implements ShotWorld {
     const level = this.m_difficulty;
     const botPos = botTank.getPosition();
 
-    // Pick a target — weakest/nearest at high difficulty, random at low.
+    // Pick a target — weakest/nearest at high difficulty IN DEATHMATCH, random otherwise (a
+    // Points/Rounds bot targets randomly, matching the original's game-mode gate on the split).
     const ti = pickTarget(
       enemies.map(e => {
         const p = e.getPosition();
@@ -4155,6 +4156,7 @@ export class CGameController implements ShotWorld {
       }),
       botPos.x,
       level,
+      this.m_gameType === EGameType.Deathmatch,
     );
     const target = enemies[Math.max(0, ti)];
     const tp = target.getPosition();

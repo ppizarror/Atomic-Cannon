@@ -155,6 +155,51 @@ describe('Weather system', () => {
     expect(threw).toBe(false); // draw does not throw
   });
 
+  it('precip (snow/rain/hail) blits ADDITIVE; dust stays alpha; blend restored after (T6)', () => {
+    // A recording ctx that logs the composite op in force at each paint (fill/stroke).
+    const recordingCtx = () => {
+      const ops: string[] = [];
+      let comp = 'source-over';
+      const paint = () => ops.push(comp);
+      const ctx = {
+        globalAlpha: 1,
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        lineCap: 'butt',
+        get globalCompositeOperation() {
+          return comp;
+        },
+        set globalCompositeOperation(v: string) {
+          comp = v;
+        },
+        beginPath: () => {},
+        arc: () => {},
+        moveTo: () => {},
+        lineTo: () => {},
+        fill: paint,
+        stroke: paint,
+        drawImage: () => {},
+      };
+      return {ctx: ctx as unknown as CanvasRenderingContext2D, ops, final: () => comp};
+    };
+
+    const check = (type: string, expected: string) => {
+      const wx = make();
+      wx.configure([{type, intensity: 100}]);
+      wx.update(1 / 60, new Vec2(1, 0));
+      const {ctx, ops, final} = recordingCtx();
+      wx.draw(ctx);
+      expect(ops.length).toBeGreaterThan(0); // the band actually painted
+      expect(ops.every(o => o === expected)).toBe(true); // every paint under the expected blend
+      expect(final()).toBe('source-over'); // blend restored for the next layer / caller
+    };
+    check('snow', 'lighter');
+    check('rain', 'lighter');
+    check('hail', 'lighter');
+    check('dust', 'source-over'); // pigment, not light — stays alpha-blended
+  });
+
   it('no-op guards: dt<=0 and no-weather update are safe', () => {
     const wx = make();
     expect(wx.isActive()).toBe(false); // inactive by default

@@ -196,20 +196,23 @@ export function bestAim(
 }
 
 /**
- * Choose whom to shoot. Only high-skill bots (level > 7) target deliberately: a
- * 40% / 40% / 20% split between the weakest enemy, the nearest enemy, and a random
- * one. Every other level picks a uniformly random enemy.
+ * Choose whom to shoot. Deliberate targeting fires only for a high-skill bot (level > 7) IN
+ * DEATHMATCH: a 40% / 40% / 20% split between the weakest enemy, the nearest enemy, and a random
+ * one. Outside Deathmatch (Rounds/Points), OR at any lower level, the pick is a uniformly random
+ * enemy — the original gates the split on both the skill level AND the game mode being Deathmatch,
+ * so a Points bot doesn't preferentially hammer the weakest tank.
  */
 export function pickTarget(
   enemies: {x: number; y: number; healthFrac: number}[],
   botX: number,
   level: number,
+  deathmatch: boolean,
   rnd: () => number = Math.random,
 ): number {
   if (enemies.length === 0) return -1;
   if (enemies.length === 1) return 0;
 
-  if (level > 7) {
+  if (level > 7 && deathmatch) {
     const r = rnd();
     if (r < 0.4) {
       // weakest (lowest health)

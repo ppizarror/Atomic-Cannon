@@ -77,14 +77,20 @@ describe('Bot AI', () => {
     expect(angleError(0, () => 0.2)).toBeLessThan(0); // scatter sign can be negative
   });
 
-  it('target selection is deliberate only above level 7', () => {
+  it('target selection is deliberate only above level 7 in Deathmatch', () => {
     const enemies = [
       {x: 300, y: GY, healthFrac: 0.9}, // strong, near
       {x: 800, y: GY, healthFrac: 0.15}, // weak, far
     ];
-    expect(pickTarget(enemies, 200, 10, () => 0.2)).toBe(1); // L>7, roll<0.4 → weakest
-    expect(pickTarget(enemies, 200, 10, () => 0.5)).toBe(0); // L>7, 0.4≤roll<0.8 → nearest
-    expect(pickTarget(enemies, 200, 5, () => 0.6)).toBe(1); // L≤7 always uses the random branch; floor(0.6*2)=1
+    // Deathmatch (deathmatch=true): high-level bots split weakest/nearest/random.
+    expect(pickTarget(enemies, 200, 10, true, () => 0.2)).toBe(1); // L>7, roll<0.4 → weakest
+    expect(pickTarget(enemies, 200, 10, true, () => 0.5)).toBe(0); // L>7, 0.4≤roll<0.8 → nearest
+    expect(pickTarget(enemies, 200, 5, true, () => 0.6)).toBe(1); // L≤7 always random; floor(0.6*2)=1
+
+    // Outside Deathmatch (Rounds/Points) the split is OFF even at max level → uniformly random.
+    // roll 0.2 would have been "weakest" (idx 1) under the split; random branch → floor(0.2·2)=0.
+    expect(pickTarget(enemies, 200, 10, false, () => 0.2)).toBe(0); // random, not weakest
+    expect(pickTarget(enemies, 200, 10, false, () => 0.99)).toBe(1); // random → floor(0.99·2)=1
   });
 
   it('weapon selection returns a valid ballistic weapon index', () => {
