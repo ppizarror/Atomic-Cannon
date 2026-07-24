@@ -1429,9 +1429,8 @@ export class CLand {
     // Guaranteed-bare (non-grass) earth texture used to repaint de-grassed crater
     // columns. Fall back to the deepest stratum (always sub-surface, never the cap).
     this.m_bareImage = bareImage ?? this.m_layers[this.m_layers.length - 1]?.image ?? null;
-    this.m_patterns = [];
     this.m_terrainDirty = true;
-    this.m_needsBake = true; // new textures → repaint the pixel buffer
+    this.m_needsBake = true; // new textures → repaint the pixel buffer (rebuilds strata patterns)
     this.m_dirtTile = null; // rebuild the dirt sampler from the new bare texture
   }
 
@@ -1539,7 +1538,6 @@ export class CLand {
    * only place strata are painted — nothing re-derives them from the surface afterwards.
    */
   private bakeTerrain(): void {
-    const g = this.ensureTerrainCtx();
     const W = this.m_nWidth,
       H = this.m_nHeight;
     const heights = this.m_arrHeights!;
@@ -1550,12 +1548,17 @@ export class CLand {
     this.m_terrainImage = null;
     this.m_pixels = null;
     this.m_material = null;
-    g.clearRect(0, 0, W, H);
-    if (this.m_patterns.length !== this.m_layers.length) {
-      this.m_patterns = this.m_layers.map(l => g.createPattern(l.image, 'repeat'));
-    }
+    // Paint the strata into a TRANSIENT world-sized scratch, snapshot it, then free it. The
+    // persistent display canvas is only VIEW-sized (`m_terrainCanvas`, the on-screen tile), so the
+    // full-world RGBA never lives on past the bake — the largest steady-state buffer at big Land
+    // Sizes. Patterns bind to this scratch ctx, so they're rebuilt here each bake (bake is rare).
+    const scratch = document.createElement('canvas');
+    scratch.width = W;
+    scratch.height = H;
+    const g = scratch.getContext('2d', {willReadFrequently: true})!;
+    const patterns = this.m_layers.map(l => g.createPattern(l.image, 'repeat'));
     const EXT = 2;
-    const deepest = this.m_patterns[this.m_layers.length - 1];
+    const deepest = patterns[this.m_layers.length - 1];
     if (deepest) {
       g.beginPath();
       g.moveTo(-EXT, heights[0]);
@@ -1568,7 +1571,7 @@ export class CLand {
       g.fill();
     }
     for (let i = this.m_layers.length - 2; i >= 0; i--) {
-      const pat = this.m_patterns[i];
+      const pat = patterns[i];
       if (!pat) continue;
       const d = this.m_layers[i].depth;
       g.beginPath();
@@ -1587,6 +1590,7 @@ export class CLand {
     // lowered by a crater, are left floating as a thin line tracing the OLD surface.
     // Snapshot → the persistent pixel buffer.
     this.m_terrainImage = g.getImageData(0, 0, W, H);
+    scratch.width = scratch.height = 0; // free the world-sized scratch backing store immediately
     this.m_pixels = new Uint32Array(this.m_terrainImage.data.buffer);
     this.m_material = new Uint8Array(W * H); // fresh strata = all native land (tag 0)
     // Enforce a CRISP surface: canvas antialiases the SLOPED strata fill edge into faint
@@ -1612,39 +1616,47 @@ export class CLand {
    * not the sky. A plain darken reads as the SAME texture (hard to tell destroyed from solid), so we
    * push it back via atmospheric perspective: DESATURATE (toward luminance) + COOL tint (recede blue) +
    * DARKEN. A blur + rim shadow are added at draw time. Captured once per bake, static as terrain dies.
+   *
+   * Built at HALF resolution (¼ the memory of a full world copy) and upscaled at draw — the backdrop is
+   * blurred and only ever glimpsed through crater holes, so the half-res sampling is invisible.
    */
   private buildBackdrop(): void {
     const px = this.m_pixels;
     if (!px || typeof document === 'undefined') return;
     const W = this.m_nWidth,
       H = this.m_nHeight;
+    const hw = Math.max(1, Math.ceil(W / 2)),
+      hh = Math.max(1, Math.ceil(H / 2));
     if (!this.m_backdropCanvas) this.m_backdropCanvas = document.createElement('canvas');
-    this.m_backdropCanvas.width = W;
-    this.m_backdropCanvas.height = H;
+    this.m_backdropCanvas.width = hw;
+    this.m_backdropCanvas.height = hh;
     const bctx = this.m_backdropCanvas.getContext('2d');
     if (!bctx) return;
-    const img = bctx.createImageData(W, H);
+    const img = bctx.createImageData(hw, hh);
     const out = new Uint32Array(img.data.buffer);
     const DESAT = 0.6, // 0 = keep colour, 1 = full grayscale
       DARK = 0.5, // overall value drop
       TR = 0.78, // cool tint: cut warm channels, lift blue → the layer reads "distant/in shadow"
       TG = 0.9,
       TB = 1.22;
-    for (let i = 0; i < px.length; i++) {
-      const p = px[i];
-      if ((p & 0xff000000) === 0) {
-        out[i] = 0; // sky stays transparent
-        continue;
+    for (let hy = 0; hy < hh; hy++) {
+      const sy = Math.min(hy * 2, H - 1);
+      for (let hx = 0; hx < hw; hx++) {
+        const p = px[sy * W + Math.min(hx * 2, W - 1)]; // nearest-neighbour downsample of the live pixels
+        if ((p & 0xff000000) === 0) {
+          out[hy * hw + hx] = 0; // sky stays transparent
+          continue;
+        }
+        let r = p & 0xff,
+          g = (p >> 8) & 0xff,
+          b = (p >> 16) & 0xff;
+        const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+        r = (r + (lum - r) * DESAT) * DARK * TR;
+        g = (g + (lum - g) * DESAT) * DARK * TG;
+        b = (b + (lum - b) * DESAT) * DARK * TB;
+        out[hy * hw + hx] =
+          (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>> 0;
       }
-      let r = p & 0xff,
-        g = (p >> 8) & 0xff,
-        b = (p >> 16) & 0xff;
-      const lum = 0.3 * r + 0.59 * g + 0.11 * b;
-      r = (r + (lum - r) * DESAT) * DARK * TR;
-      g = (g + (lum - g) * DESAT) * DARK * TG;
-      b = (b + (lum - b) * DESAT) * DARK * TB;
-      out[i] =
-        (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>> 0;
     }
     bctx.putImageData(img, 0, 0);
   }
@@ -1697,18 +1709,55 @@ export class CLand {
     ctx.drawImage(this.m_debugCanvas, 0, 0);
   }
 
-  private ensureTerrainCtx(): CanvasRenderingContext2D {
+  /**
+   * The visible world span (left edge + width), set by the controller each frame. The terrain is
+   * mirrored to a canvas only this wide (the on-screen tile) instead of a full worldWidth-wide one,
+   * so at large Land Sizes only the slice actually on screen is materialised. A 0 width (tests, or
+   * before the first set) tiles the whole world — preserving the original behaviour.
+   */
+  setViewport(camX: number, viewW: number): void {
+    this.m_viewCamX = Math.max(0, Math.floor(camX));
+    this.m_viewSpanW = Math.max(0, Math.floor(viewW));
+  }
+
+  /** Tile width: the view span (clamped to the world) or, when no viewport is set, the whole world. */
+  private tileSpanW(): number {
+    return this.m_viewSpanW > 0 ? Math.min(this.m_viewSpanW, this.m_nWidth) : this.m_nWidth;
+  }
+
+  /** World-X of the tile's left edge, clamped so the tile never runs past the world's right edge. */
+  private tileSpanX(): number {
+    if (this.m_viewSpanW <= 0) return 0;
+    return Math.min(this.m_viewCamX, Math.max(0, this.m_nWidth - this.tileSpanW()));
+  }
+
+  /** The persistent on-screen terrain tile (view-sized). Resized in place when the span changes. */
+  private ensureTerrainTile(): HTMLCanvasElement {
+    const w = this.tileSpanW();
     if (!this.m_terrainCanvas) this.m_terrainCanvas = document.createElement('canvas');
-    if (
-      this.m_terrainCanvas.width !== this.m_nWidth ||
-      this.m_terrainCanvas.height !== this.m_nHeight
-    ) {
-      this.m_terrainCanvas.width = this.m_nWidth;
+    if (this.m_terrainCanvas.width !== w || this.m_terrainCanvas.height !== this.m_nHeight) {
+      this.m_terrainCanvas.width = w;
       this.m_terrainCanvas.height = this.m_nHeight;
-      this.m_patterns = [];
+      this.m_tileCamX = -1; // size changed → force a re-upload
       this.m_terrainDirty = true;
     }
-    return this.m_terrainCanvas.getContext('2d', {willReadFrequently: true})!;
+    return this.m_terrainCanvas;
+  }
+
+  /**
+   * Copy the currently-visible column span of the world pixel buffer into the view-sized tile.
+   * Re-uploaded only when the pixels changed (`m_pixelsDirty`) or the camera moved to a new span —
+   * so a still frame uploads nothing. `putImageData(img, -x, 0, x, 0, w, h)` lands world columns
+   * [x, x+w) at tile columns [0, w).
+   */
+  private uploadTile(tile: HTMLCanvasElement, spanX: number): void {
+    if (!this.m_terrainImage) return;
+    if (!this.m_pixelsDirty && this.m_tileCamX === spanX) return;
+    const tctx = tile.getContext('2d');
+    if (!tctx) return;
+    tctx.putImageData(this.m_terrainImage, -spanX, 0, spanX, 0, tile.width, this.m_nHeight);
+    this.m_pixelsDirty = false;
+    this.m_tileCamX = spanX;
   }
 
   /**
@@ -1752,24 +1801,25 @@ export class CLand {
       if (CLand.debugMaterials) {
         this.drawMaterialDebug(ctx); // ?skiptexture: land grey / dirt green / sky cyan
       } else {
-        if (this.m_pixelsDirty && this.m_terrainImage) {
-          this.ensureTerrainCtx().putImageData(this.m_terrainImage, 0, 0);
-          this.m_pixelsDirty = false;
-        }
+        // Mirror only the on-screen span into the view-sized tile, then blit it at its world-X
+        // (the ctx is already camera-translated, so the tile lands under the viewport).
+        const spanX = this.tileSpanX();
+        const tile = this.ensureTerrainTile();
+        this.uploadTile(tile, spanX);
         // Filled Craters: draw the atmospheric PRISTINE terrain first, so carved-away regions reveal
         // the mountain's darkened interior behind the live terrain (not the sky). Off → craters are voids.
-        if (GameConfig.craterFill && this.m_backdropCanvas && this.m_terrainCanvas) {
+        if (GameConfig.craterFill && this.m_backdropCanvas) {
           ctx.save();
           ctx.filter = 'blur(3px)'; // soften → the backdrop recedes (depth of field)
-          ctx.drawImage(this.m_backdropCanvas, 0, 0);
+          ctx.drawImage(this.m_backdropCanvas, 0, 0, W, H); // upscale the half-res backdrop to world size
           // rim shadow: a soft black echo of the live terrain, dropped a few px INTO the carved
           // void, so the crater edge casts an ambient-occlusion shadow onto the backdrop below it.
           ctx.filter = 'blur(3px) brightness(0)';
           ctx.globalAlpha = 0.5;
-          ctx.drawImage(this.m_terrainCanvas, 0, 7);
+          ctx.drawImage(tile, spanX, 7);
           ctx.restore();
         }
-        if (this.m_terrainCanvas) ctx.drawImage(this.m_terrainCanvas, 0, 0);
+        ctx.drawImage(tile, spanX, 0);
       }
     } else {
       // Gradient fallback until the land tiles finish loading.
@@ -1912,11 +1962,14 @@ export class CLand {
 
   // Layered textures + cached destructible-terrain bitmap.
   private m_layers: {image: CanvasImageSource; depth: number}[] = [];
-  private m_patterns: (CanvasPattern | null)[] = [];
   private m_bareImage: CanvasImageSource | null = null; // non-grass earth for de-grassed craters
-  private m_terrainCanvas: HTMLCanvasElement | null = null;
+  private m_terrainCanvas: HTMLCanvasElement | null = null; // VIEW-sized on-screen tile (not the whole world)
   private m_backdropCanvas: HTMLCanvasElement | null = null; // darkened pristine terrain (Filled Craters)
   private m_terrainDirty: boolean = true;
+  // Visible world span the tile mirrors (set each frame by the controller; 0 span → whole world).
+  private m_viewCamX = 0;
+  private m_viewSpanW = 0;
+  private m_tileCamX = -1; // camX of the tile's last upload (−1 → force the next upload)
 
   // ---- Unified terrain PIXEL BUFFER -------------------------------------------
   // The terrain is ONE persistent per-pixel colour bitmap (matching the original engine):

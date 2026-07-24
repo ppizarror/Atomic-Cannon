@@ -1195,7 +1195,8 @@ export class CGameController implements ShotWorld {
     ctx.save();
     ctx.translate(-this.m_camX, 0);
 
-    // Draw terrain
+    // Draw terrain (mirror only the on-screen span → the terrain tile stays view-sized, not world-sized)
+    this.m_land.setViewport(this.m_camX, this.m_viewW);
     this.m_land.draw(ctx);
 
     // Draw tanks

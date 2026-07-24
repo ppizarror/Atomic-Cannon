@@ -114,4 +114,30 @@ describe('CLand terrain', () => {
     expect(p.m_material).toBeNull();
     expect(p.m_particles.length).toBe(0); // in-flight debris dropped too
   });
+
+  it('the view tile spans only the visible width and clamps to the world edges', () => {
+    const land = new CLand(4000, 400);
+    type Tile = {
+      setViewport(camX: number, viewW: number): void;
+      tileSpanW(): number;
+      tileSpanX(): number;
+    };
+    const t = land as unknown as Tile;
+
+    t.setViewport(1000, 800); // mid-scroll: tile is view-wide, offset == camX
+    expect(t.tileSpanW()).toBe(800);
+    expect(t.tileSpanX()).toBe(1000);
+
+    t.setViewport(3800, 800); // past the right edge → clamp so tile stays inside the world
+    expect(t.tileSpanX()).toBe(3200); // 4000 − 800
+
+    t.setViewport(0, 0); // no viewport set (tests / unset) → tile the WHOLE world
+    expect(t.tileSpanW()).toBe(4000);
+    expect(t.tileSpanX()).toBe(0);
+
+    const small = new CLand(600, 400) as unknown as Tile;
+    small.setViewport(0, 800); // world narrower than the view → tile caps at the world width
+    expect(small.tileSpanW()).toBe(600);
+    expect(small.tileSpanX()).toBe(0);
+  });
 });
