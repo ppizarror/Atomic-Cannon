@@ -1924,6 +1924,56 @@ canvas {
   border-color: var(--green-focus);
   background: rgba(80, 200, 120, 0.18);
 }
+
+/* "View match settings" lobby button — a quiet, full-width link-style row. */
+.net-info-btn {
+  width: 100%;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--green-line);
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+.net-info-btn:hover {
+  border-color: var(--green-focus);
+}
+
+/* Read-only match-settings dialog (host config, shown to everyone). */
+.net-info-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  padding: 20px 22px;
+}
+.net-info-title {
+  text-align: center;
+}
+.net-info-note {
+  text-align: center;
+  opacity: 0.7;
+}
+.net-info-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.net-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--green-line);
+}
+.net-info-k {
+  opacity: 0.85;
+}
+.net-info-v {
+  color: var(--green-focus);
+  flex: 0 0 auto;
+}
 .net-status {
   opacity: 0.8;
 }

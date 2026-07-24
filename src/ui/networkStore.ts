@@ -19,6 +19,7 @@ const initialState: RoomClientState = {
   youId: null,
   players: [],
   settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2},
+  config: null,
   isHost: false,
   lastError: null,
 };
@@ -36,14 +37,22 @@ export const setPlayerName = (name: string): void => nameStore.set(name);
 
 let client: RoomClient | null = null;
 let netGame: NetGame | null = null;
+let configPublished = false; // host publishes its lobby config once per room
 
 function makeClient(): RoomClient {
   client?.close();
+  configPublished = false;
   const c = new RoomClient({
     identity: {name: playerName.value.trim() || 'Player', color: roster.value[0]?.color},
     appVersion: __APP_VERSION__,
     onState: s => {
       netState.value = s;
+      // As soon as we're the host in the lobby, publish our gameplay config so every joiner
+      // sees the match settings before Start. Send once (the config doesn't change in-lobby yet).
+      if (s.isHost && s.phase === 'lobby' && !configPublished) {
+        configPublished = true;
+        c.publishConfig(game().getMatchConfig());
+      }
     },
     onGameMessage: msg => netGame?.handle(msg),
   });

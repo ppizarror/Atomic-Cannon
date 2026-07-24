@@ -122,6 +122,39 @@ describe('RoomClient', () => {
     expect(s.players).toHaveLength(1);
   });
 
+  it('welcome + config message populate the lobby match config for display', async () => {
+    const {client, transports, last} = harness();
+    await client.create();
+    const t = transports[0];
+    t.setStatus('open');
+    const cfg = {
+      hitpoints: 500,
+      tankSizeScale: 1,
+      explosionScale: 2,
+      powerScale: 1,
+      kickbackScale: 1,
+      buryTanks: true,
+      relativeTurrets: false,
+      utilityTurn: false,
+      crateChance: 0,
+      startCredits: 5000,
+      gameType: 0,
+    };
+    t.recv({
+      t: 'welcome',
+      you: 1,
+      code: 'ABCD23',
+      players: [player(1)],
+      settings: {maxPlayers: 6, minPlayers: 2, battles: 2, wind: 1, mapSize: 2},
+      config: cfg,
+      reconnect: 'tok-1',
+    });
+    expect(last().config).toEqual(cfg); // joiner sees the host's config on welcome
+    const cfg2 = {...cfg, hitpoints: 999};
+    t.recv({t: 'config', config: cfg2});
+    expect(last().config).toEqual(cfg2); // and live updates when the host re-publishes
+  });
+
   it('reconnect re-sends hello WITH the stored token', async () => {
     const {client, transports} = harness();
     await client.create();

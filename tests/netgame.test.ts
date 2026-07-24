@@ -8,6 +8,7 @@ import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {GameConfig} from '../src/core/CGameConfig';
+import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {NetGame, type NetGameHost} from '../src/net/netGame';
 import type {RoomClient, RoomClientState} from '../src/net/roomClient';
 import type {ClientMessage} from '../src/net/protocol';
@@ -250,6 +251,20 @@ describe('network match boot', () => {
     expect(GameConfig.buryTanks).toBe(false);
     expect(GameConfig.relativeTurrets).toBe(false);
     expect(GameConfig.randomizeTurns).toBe(false);
+  });
+
+  it('runs a real economy (free-fire off) bound to the LOCAL player', () => {
+    const gc = netController(1); // I am tank 1 — the depot spends MY purse
+    const costly = WEAPON_DATABASE.findIndex(w => w.cost > 0);
+    expect(costly).toBeGreaterThanOrEqual(0);
+    expect(gc.isUnlimitedWeapon(costly)).toBe(false); // free-fire is OFF in net → weapons cost
+    expect(gc.getCredits()).toBe(3000); // the local player's starting purse (CFG.startCredits)
+
+    // Buying spends the local player's credits and stocks the round.
+    const cost = WEAPON_DATABASE[costly].cost;
+    expect(gc.buyWeapon(costly)).toBe(true);
+    expect(gc.getCredits()).toBe(3000 - cost);
+    expect(gc.getOwnedCounts()[costly]).toBe(1);
   });
 
   it('two clients with different local settings still simulate a shot to the same hash', () => {

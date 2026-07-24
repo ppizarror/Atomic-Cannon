@@ -217,6 +217,8 @@ export class Room {
         return this.onReady(s, att.playerId!, msg.ready);
       case 'settings':
         return this.onSettings(s, att.playerId!, msg.settings);
+      case 'config':
+        return this.onConfig(s, att.playerId!, msg.config);
       case 'start':
         return this.onStart(s, att.playerId!, msg.viewW, msg.viewH, msg.config);
       case 'cmd':
@@ -329,6 +331,7 @@ export class Room {
       code: s.code,
       players: Room.publicPlayers(s),
       settings: s.settings,
+      config: s.config,
       reconnect: p.token,
     };
   }
@@ -353,6 +356,15 @@ export class Room {
     s.settings = next;
     await this.save(s);
     this.broadcast({t: 'settings', settings: next});
+  }
+
+  /** Host publishes its gameplay config to the lobby (sanitized) so joiners can see the match
+   *  settings before Start. Stored + broadcast; the same config is re-sent at Start. */
+  private async onConfig(s: RoomState, pid: number, config: MatchConfig): Promise<void> {
+    if (s.hostId !== pid) return;
+    s.config = sanitizeConfig(config);
+    await this.save(s);
+    this.broadcast({t: 'config', config: s.config});
   }
 
   private async onStart(

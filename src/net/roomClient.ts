@@ -34,6 +34,8 @@ export interface RoomClientState {
   youId: number | null;
   players: readonly PlayerInfo[];
   settings: RoomSettings;
+  /** The host's gameplay config (null until the host publishes it), shown in the lobby. */
+  config: MatchConfig | null;
   isHost: boolean;
   lastError: {code: ErrorCode; message: string} | null;
 }
@@ -78,6 +80,7 @@ export class RoomClient {
     youId: null,
     players: [],
     settings: {...DEFAULT_SETTINGS},
+    config: null,
     isHost: false,
     lastError: null,
   };
@@ -148,6 +151,7 @@ export class RoomClient {
           youId: msg.you,
           players: msg.players,
           settings: msg.settings,
+          config: msg.config,
           isHost: hostOf(msg.players) === msg.you,
         });
         return;
@@ -159,6 +163,9 @@ export class RoomClient {
         return;
       case 'settings':
         this.patch({settings: msg.settings});
+        return;
+      case 'config':
+        this.patch({config: msg.config});
         return;
       case 'error':
         this.patch({phase: 'error', lastError: {code: msg.code, message: msg.message}});
@@ -191,6 +198,10 @@ export class RoomClient {
   }
   updateSettings(settings: Partial<RoomSettings>): void {
     this.send({t: 'settings', settings});
+  }
+  /** Host: publish this machine's gameplay config so the lobby can display it to everyone. */
+  publishConfig(config: MatchConfig): void {
+    this.send({t: 'config', config});
   }
   chat(text: string): void {
     this.send({t: 'chat', text});

@@ -99,6 +99,27 @@ export interface Strings {
     windLabel: string;
     mapSizeLabel: string;
     windOpts: {calm: string; normal: string; strong: string};
+    /** The read-only "match settings" dialog shown in the lobby (host's config, for everyone). */
+    matchInfo: {
+      title: string;
+      view: string; // lobby button that opens the dialog
+      close: string;
+      hostNote: string; // "Set by the host" caption
+      mapSize: string;
+      wind: string;
+      health: string;
+      tankSize: string;
+      explosion: string;
+      recoil: string;
+      bury: string;
+      relTurrets: string;
+      utilTurn: string;
+      crates: string;
+      credits: string;
+      gameType: string;
+      rounds: string;
+      deathmatch: string;
+    };
     /** fmt: {n} connected of {min} required. */
     needPlayers: string;
     /** Connection status pills. */

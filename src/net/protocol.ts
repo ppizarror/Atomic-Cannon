@@ -88,6 +88,7 @@ export type ClientMessage =
       readonly reconnect?: string;
     }
   | {readonly t: 'ready'; readonly ready: boolean}
+  | {readonly t: 'config'; readonly config: MatchConfig} // host only: publish gameplay config to lobby
   | {
       // host only: its resolution + the gameplay config every client must adopt
       readonly t: 'start';
@@ -118,10 +119,13 @@ export type ServerMessage =
       readonly code: string;
       readonly players: readonly PlayerInfo[];
       readonly settings: RoomSettings;
+      /** The host's gameplay config, shown in the lobby so joiners see it before Start. */
+      readonly config: MatchConfig | null;
       readonly reconnect: string; // token to resume this slot if dropped
     }
   | {readonly t: 'roster'; readonly players: readonly PlayerInfo[]}
   | {readonly t: 'settings'; readonly settings: RoomSettings}
+  | {readonly t: 'config'; readonly config: MatchConfig} // host's lobby gameplay config, for display
   | {readonly t: 'chat'; readonly from: number; readonly text: string}
   | {
       readonly t: 'startGame';

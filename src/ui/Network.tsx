@@ -7,6 +7,7 @@
 import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
+import {Modal} from './Modal';
 import {goToMenu, uiMenuBack} from './store';
 import {formatRoomCode, formatCodeInput} from '../net/roomCode';
 import {
@@ -199,12 +200,73 @@ function MatchSettings() {
   );
 }
 
+/**
+ * Read-only "Match Settings" dialog — the host's gameplay config plus the lobby wind/map size,
+ * shown to EVERY player so joiners know exactly what they'll play before Start. The host
+ * publishes its config to the lobby (see networkStore); this just renders it.
+ */
+function MatchInfoModal({onClose}: {onClose: () => void}) {
+  const n = strings.value.net;
+  const mi = n.matchInfo;
+  const common = strings.value.common;
+  const s = netState.value;
+  const cfg = s.config;
+  const onOff = (b: boolean): string => (b ? common.on : common.off);
+  const windName = [n.windOpts.calm, n.windOpts.normal, n.windOpts.strong];
+
+  const rows: [string, string][] = [
+    [mi.mapSize, String(s.settings.mapSize)],
+    [mi.wind, windName[s.settings.wind] ?? String(s.settings.wind)],
+  ];
+  if (cfg) {
+    rows.push(
+      [mi.gameType, cfg.gameType === 0 ? mi.rounds : mi.deathmatch],
+      [mi.health, String(cfg.hitpoints)],
+      [mi.credits, String(cfg.startCredits)],
+      [mi.tankSize, `${cfg.tankSizeScale}×`],
+      [mi.explosion, `${cfg.explosionScale}×`],
+      [mi.recoil, `${cfg.kickbackScale}×`],
+      [mi.crates, `${cfg.crateChance}%`],
+      [mi.bury, onOff(cfg.buryTanks)],
+      [mi.relTurrets, onOff(cfg.relativeTurrets)],
+      [mi.utilTurn, onOff(cfg.utilityTurn)],
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} width="min(460px, 92vw)" class="net-info-card">
+      <div class="net-info-title">
+        <BmpText font="bazouk-28" text={mi.title} />
+      </div>
+      <div class="net-info-note">
+        <BmpText font="beijing-16-out" text={mi.hostNote} spacing={-1} />
+      </div>
+      <div class="net-info-rows">
+        {rows.map(([label, val]) => (
+          <div class="net-info-row" key={label}>
+            <span class="net-info-k">
+              <BmpText font="beijing-16-out" text={label} spacing={-1} />
+            </span>
+            <span class="net-info-v">
+              <BmpText font="beijing-16-out" text={val} spacing={-1} />
+            </span>
+          </div>
+        ))}
+      </div>
+      <button class="settings-row srow-done menu-btn" onClick={onClose}>
+        <BmpText font="bazouk-28" text={mi.close} />
+      </button>
+    </Modal>
+  );
+}
+
 function Lobby() {
   const n = strings.value.net;
   const s = netState.value;
   const you = s.players.find(p => p.id === s.youId);
   const connected = s.players.filter(p => p.connected).length;
   const canStart = s.isHost && connected >= s.settings.minPlayers;
+  const [showInfo, setShowInfo] = useState(false);
 
   return (
     <div class="net-panel">
@@ -240,6 +302,11 @@ function Lobby() {
       </div>
 
       <MatchSettings />
+
+      <button class="net-info-btn" onClick={() => setShowInfo(true)}>
+        <BmpText font="beijing-16-out" text={n.matchInfo.view} spacing={-1} />
+      </button>
+      {showInfo && <MatchInfoModal onClose={() => setShowInfo(false)} />}
 
       <button class="settings-row srow-done menu-btn" onClick={() => setReady(!you?.ready)}>
         <BmpText font="bazouk-28" text={you?.ready ? n.notReady : n.ready} />

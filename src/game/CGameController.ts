@@ -576,10 +576,15 @@ export class CGameController implements ShotWorld {
       this.m_tanks.push(pTank);
     }
 
-    // Credits are per-tank; the human's depot spends against the human tank's balance.
-    // Bind to the human tank BY REFERENCE (not index 0 — Randomize Turns may shuffle the
-    // array). Reset the shared inventory (owned rounds) for the fresh match.
-    this.m_economy.bindCredits(this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0]);
+    // Credits are per-tank; the depot spends against ONE bound tank's balance. Solo binds to
+    // the human tank BY REFERENCE (not index 0 — Randomize Turns may shuffle the array). In a
+    // net match EVERY tank is human, so bind to the LOCAL player's tank — this client's depot
+    // buys/consumes only its own inventory (peers never touch it; each client owns one economy,
+    // and credits sync via the per-turn snapshot). Reset the inventory for the fresh match.
+    const ownTank = this.m_netMode
+      ? (this.m_tanks[this.m_netLocalIndex] ?? this.m_tanks[0])
+      : (this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0]);
+    this.m_economy.bindCredits(ownTank);
     this.m_economy.reset(this.m_startCredits * perTeam); // squad-scaled purse (see per-tank seed above)
     this.m_botEconomy.clear(); // fresh bot inventories for the new match (re-created on first bot turn)
     for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
@@ -2943,6 +2948,9 @@ export class CGameController implements ShotWorld {
    *  the acting human tank's per-turn/round Buy-Time flag. */
   canOpenDepot(): boolean {
     if (GameConfig.buyTime === 3) return false; // Automatic → no manual depot
+    // Net: only on YOUR turn (the bound economy is the local player's). getCurrentTank() is
+    // the local tank when it's the local turn, so the checks below then apply to your own tank.
+    if (this.m_netMode && !this.isLocalNetTurn()) return false;
     const tank = this.getCurrentTank();
     return tank.isHuman() && tank.canBuy();
   }
@@ -2982,7 +2990,11 @@ export class CGameController implements ShotWorld {
     const tank = this.getCurrentTank();
     // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it
     // up on the human's turn-begin from whatever credits are on hand (a no-op when broke).
-    if (GameConfig.buyTime === 3 && tank.isHuman()) this.m_economy.autoBuy();
+    // In net, only the LOCAL player auto-buys its OWN economy (m_economy is bound to the local
+    // tank) — a spectator must not auto-buy on the active player's turn.
+    if (GameConfig.buyTime === 3 && tank.isHuman() && (!this.m_netMode || this.isLocalNetTurn())) {
+      this.m_economy.autoBuy();
+    }
     // Restore THIS player's own weapon so the previous player's (or a bot's)
     // choice never carries over.
     this.m_currentWeaponIndex = tank.getWeaponIndex();
@@ -3320,6 +3332,18 @@ export class CGameController implements ShotWorld {
     // Network: this turn's action is now resolving — hold the next hand-off until it
     // settles (both the acting client and every simulating spectator set this).
     if (this.m_netMode) this.m_netShotResolving = true;
+
+    // Ammo: never fire a weapon that's out of stock — if the selected one was emptied or sold
+    // off, fall back to the unlimited staple. In a NET match only the ACTING client charges
+    // ammo (from ITS own inventory): spectators just simulate the exact weapon the actor
+    // relays below, so they must NOT gate on their (empty) copy of the actor's stock. Charging
+    // is done BEFORE the relay so peers are told the FINAL weapon (post-staple-fallback).
+    const chargeAmmo =
+      !GameConfig.demo &&
+      (tank.isHuman() || tank.isBot()) &&
+      (!this.m_netMode || this.isLocalNetTurn());
+    if (chargeAmmo) this.ensureStocked(tank);
+
     // Relay this shot so every peer SIMULATES it deterministically — the weapon, the final
     // aim, then the fire. All clients compute the same outcome (seeded RNG + fixed timestep);
     // the authoritative snapshot at turn end is only a drift keyframe.
@@ -3328,15 +3352,6 @@ export class CGameController implements ShotWorld {
       this.m_onNetCommand?.({t: 'aim', angle: this.m_angle, power: this.m_power});
       this.m_onNetCommand?.({t: 'fire'});
     }
-
-    // Ammo: never fire a weapon that's out of stock — if the selected one was emptied or sold
-    // off, fall back to the unlimited staple first, then consume one round from whatever is
-    // actually firing (the Shell never depletes). Done before the ext branch so projectiles,
-    // utilities, Move and Jet all consume alike. Bots now carry their OWN inventory and consume
-    // from it (economyFor); free-fire (weapon-test) makes consume a no-op; self-playing Demo fires
-    // freely (the AI drives the HUMAN tank through arbitrary weapons, so it doesn't touch stock).
-    const chargeAmmo = !GameConfig.demo && (tank.isHuman() || tank.isBot());
-    if (chargeAmmo) this.ensureStocked(tank);
 
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
@@ -4099,10 +4114,11 @@ export class CGameController implements ShotWorld {
     GameConfig.randomizeTurns = false;
     this.m_startCredits = c.startCredits;
     this.m_gameType = c.gameType === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch;
-    // Free-fire in network: every weapon is available and firing consumes nothing. This
-    // lets every client simulate any weapon a peer fires without syncing per-tank
-    // inventories (networked economy is a later enhancement).
-    this.m_economy.setFreeFire(true);
+    // Real economy in network: clear any leftover free-fire (dev weapon-test) so each player
+    // spends its own credits + inventory. The acting client charges ammo from its own economy
+    // (see fire()); spectators only simulate the relayed weapon, so no inventory sync is needed —
+    // credits ride the per-turn snapshot. setFreeFire is NOT cleared by reset(), hence explicit.
+    this.m_economy.setFreeFire(false);
 
     this.setHumanCount(opts.players); // every team human → no local bots
     this.setTanksPerTeam(1);
