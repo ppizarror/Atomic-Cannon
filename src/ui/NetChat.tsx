@@ -16,11 +16,12 @@ export function NetChat() {
   const inputRef = useRef<HTMLInputElement>(null);
   const log = chatLog.value;
 
-  // Keep the newest line in view as messages arrive.
+  // Keep the newest line in view as messages arrive. Key on the newest seq, NOT log.length — once
+  // the transcript hits its cap the length stops changing, so length alone would freeze the scroll.
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [log.length]);
+  }, [log[log.length - 1]?.seq]);
 
   // Only during an active networked battle.
   if (screen.value !== 'battle' || netState.value.phase !== 'playing') return null;

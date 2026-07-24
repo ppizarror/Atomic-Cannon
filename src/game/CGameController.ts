@@ -488,6 +488,11 @@ export class CGameController implements ShotWorld {
     this.m_fireworks = [];
     this.m_rockets = [];
     this.m_showFireworks = false;
+    // Drop any deferred actions queued by the PREVIOUS match — e.g. a still-running Explode-Losers
+    // cascade or a queued bot turn. m_time is monotonic (never reset), so a leftover closure whose
+    // `at` is already in the past would otherwise all fire at once on this match's first update().
+    this.m_timers = [];
+    this.m_netAimDirty = false;
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
     // land + bounds if the size changed since the last match.
@@ -3314,7 +3319,11 @@ export class CGameController implements ShotWorld {
   /** Explode Losers (Graphics): blow up every still-standing tank not on the winning team as the
    *  battle ends — the original's end-of-round wipeout. Cosmetic only (no kills/credit): it forces
    *  the wreck state + spawns one explosion per tank, staggered so it reads as a cascade rather
-   *  than a single flash. Deterministic (no RNG), so it stays in lockstep across net clients. */
+   *  than a single flash. NOTE this is a LOCAL gfx toggle (not in MatchConfig), and t.explode()
+   *  writes hashed state (life/alive) — so two net clients with the setting set differently WOULD
+   *  diverge. It's safe only because the cascade runs at terminal BattleEnd (Rounds is a single
+   *  battle; net Deathmatch schedules nothing here since losers are already dead), after which no
+   *  lockstep stateHash is ever compared. Don't hash state after finishBattle without revisiting. */
   private explodeLosingTeams(leader: {members: CTank[]} | null): void {
     if (!GameConfig.explodeLosers || !leader) return;
     const winTeam = leader.members[0].getTeamId();

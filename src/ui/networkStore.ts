@@ -36,6 +36,11 @@ const initialState: RoomClientState = {
 /** The reactive lobby snapshot the Network screen renders from. */
 export const netState = signal<RoomClientState>(initialState);
 
+/** Set once a lockstep divergence is detected this match (a peer's keyframe disagreed with our own
+ *  deterministic result — a cheat or a genuine desync). We keep our own trusted state; the UI shows
+ *  a warning banner. Sticky for the match (cleared on a fresh room). */
+export const netDesync = signal(false);
+
 /** One line in the in-match chat log. */
 export interface ChatMsg {
   seq: number;
@@ -83,6 +88,7 @@ function makeClient(): RoomClient {
   client?.close();
   configPublished = false;
   chatLog.value = []; // fresh transcript per room
+  netDesync.value = false; // clear any prior match's divergence flag
   const c = new RoomClient({
     identity: {name: playerName.value.trim() || 'Player', color: roster.value[0]?.color},
     appVersion: __APP_VERSION__,
@@ -109,6 +115,13 @@ function makeClient(): RoomClient {
       screen.value = 'battle';
       game().setPaused(false);
       paused.value = false;
+    },
+    // True lockstep: we detected a peer's keyframe disagree with our own result. Keep our state,
+    // flag it for the player, and report it so the server can log the divergent match.
+    onDivergence: ({localHash, keyframeHash}) => {
+      netDesync.value = true;
+      console.warn(`[net] lockstep divergence — local ${localHash} vs keyframe ${keyframeHash}`);
+      c.reportDesync(localHash, keyframeHash);
     },
   });
   return c;

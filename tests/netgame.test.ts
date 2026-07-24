@@ -822,7 +822,12 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       getState: () => state,
       send: (m: ClientMessage) => sent.push(m),
     } as unknown as RoomClient;
-    const ng = new NetGame(client, {controller: gc, onMatchStart: () => {}});
+    const divergences: {localHash: number; keyframeHash: number}[] = [];
+    const ng = new NetGame(client, {
+      controller: gc,
+      onMatchStart: () => {},
+      onDivergence: info => divergences.push(info),
+    });
     ng.handle({
       t: 'startGame',
       seed: 5,
@@ -836,23 +841,39 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       viewH: 720,
       config: CFG,
     });
-    return {gc, ng, sent};
+    return {gc, ng, sent, divergences};
   }
 
-  it('applies a keyframe only when the hash disagrees (drift), never when in sync', () => {
-    const {gc, ng} = bridge(1);
-    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // idle
+  it('true lockstep: a peer keyframe never overwrites our own simulated state; a mismatch is flagged', () => {
+    const {gc, ng, divergences} = bridge(1);
+    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // we're now simulating in lockstep
     const inSync = gc.stateHash();
 
-    // A keyframe that WOULD kill tank 1, but whose hash claims we're in sync → ignored.
+    // A keyframe that WOULD kill tank 1.
     const snap = gc.getNetSnapshot();
     snap.tanks[1].life = 0;
+
+    // Hash agrees → nothing to do (not applied, no flag).
     ng.handle({t: 'stateUpdate', from: 1, seq: 1, result: snap, hash: inSync});
     expect(gc.getNetSnapshot().tanks[1].life).toBeGreaterThan(0);
+    expect(divergences).toHaveLength(0);
 
-    // Same keyframe, but the hash disagrees → resync (apply it).
+    // Hash disagrees → we KEEP our own (trusted) state and FLAG it. A lying actor can't impose state.
     ng.handle({t: 'stateUpdate', from: 1, seq: 2, result: snap, hash: 999999});
-    expect(gc.getNetSnapshot().tanks[1].life).toBe(0);
+    expect(gc.getNetSnapshot().tanks[1].life).toBeGreaterThan(0); // NOT overwritten (was applied pre-Option-A)
+    expect(divergences).toHaveLength(1);
+    expect(divergences[0].keyframeHash).toBe(999999);
+  });
+
+  it('bootstrap: a snapshot before the first turnBegin (reconnect catch-up) IS adopted', () => {
+    const {gc, ng, divergences} = bridge(1);
+    // No turnBegin yet → we have no independent simulation, so this snapshot is the reconnect
+    // bootstrap (resumeMatch sends startGame→stateUpdate→turnBegin) and must be adopted.
+    const snap = gc.getNetSnapshot();
+    snap.tanks[1].life = 0;
+    ng.handle({t: 'stateUpdate', from: 0, seq: 0, result: snap, hash: 12345});
+    expect(gc.getNetSnapshot().tanks[1].life).toBe(0); // adopted to catch up
+    expect(divergences).toHaveLength(0); // bootstrap never flags
   });
 
   it('queues a turn hand-off that arrives mid-shot until the sim settles', () => {

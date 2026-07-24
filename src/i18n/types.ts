@@ -134,6 +134,8 @@ export interface Strings {
     endMatch: string;
     /** Placeholder in the in-match chat input. */
     chatPlaceholder: string;
+    /** In-battle banner when a lockstep divergence (cheat/desync) is detected. */
+    desyncWarning: string;
   };
 
   // ── About card ────────────────────────────────────────────────────────────

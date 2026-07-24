@@ -121,6 +121,9 @@ export type ClientMessage =
       readonly over?: boolean;
     }
   | {readonly t: 'chat'; readonly text: string}
+  // A spectator's own deterministic result disagreed with the acting client's keyframe — a cheat or
+  // a genuine desync. Reported for server-side flagging/logging; the reporter keeps its own state.
+  | {readonly t: 'desync'; readonly localHash: number; readonly keyframeHash: number}
   | {readonly t: 'leave'};
 
 // ── Room → client ──────────────────────────────────────────────────────────

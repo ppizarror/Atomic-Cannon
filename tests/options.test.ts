@@ -242,12 +242,20 @@ describe('Formerly-no-op Settings options', () => {
     const tank = new CTank('T', 0);
     (tank as unknown as {init(x: number, l: CLand): void}).init(400, L);
     for (let i = 0; i < 60; i++) tank.update(L, 1 / 60);
-
-    // Bury it: Bury Tanks ON + pile 40px of dirt over its column.
     GameConfig.buryTanks = true;
+
+    // A LIGHT dusting of ejecta (8px, the hull still sticks well out) is NOT "underground" — the
+    // reported bug was that any speck of ejecta tripped the condition (old 0.5px / 10px thresholds).
+    for (let c = 360; c < 440; c++) (land.m_arrHeights as Int16Array)[c] = SURF - 8;
+    tank.update(L, 1 / 60);
+    expect(tank.isBuried()).toBe(false); // a few px of ejecta ≠ underground
+    expect(tank.canMove(L)).toBe(true);
+
+    // Bury it FULLY: pile 40px of dirt (> the 24px hull) so the surface rises above the tank's top.
     for (let c = 360; c < 440; c++) (land.m_arrHeights as Int16Array)[c] = SURF - 40;
     tank.update(L, 1 / 60); // recompute the buried flag against the new (higher) surface
     expect(tank.isBuried()).toBe(true);
+    expect(tank.canMove(L)).toBe(false);
 
     // Drive is refused while buried.
     const x0 = tank.getPosition().x;

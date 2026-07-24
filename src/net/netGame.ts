@@ -17,6 +17,10 @@ export interface NetGameHost {
   controller: CGameController;
   /** Switch the UI into the battle once the match boots. */
   onMatchStart(): void;
+  /** A per-turn keyframe disagreed with our OWN deterministic result after we simulated the turn —
+   *  i.e. a cheating client or a genuine desync. We keep our own (trusted) state and never adopt the
+   *  reported snapshot; the embedder surfaces this (banner + report to the server for flagging). */
+  onDivergence?(info: {localHash: number; keyframeHash: number}): void;
 }
 
 /** Distinct team colours assigned by turn order (same on every client). */
@@ -46,6 +50,11 @@ export class NetGame {
   private m_pendingTurn: number | null = null;
   private m_pendingHandoff = false; // the queued turn's hand-off flag (crate roll + per-turn income)
   private m_pendingRoundWrapped = false; // the queued turn's round-wrap flag (per-round income)
+  // True once we've begun playing turns in lockstep (first turnBegin). While FALSE we have no
+  // independent simulation to trust (fresh boot / reconnect), so a keyframe is a BOOTSTRAP we adopt;
+  // once TRUE our own deterministic sim is authoritative for us and a keyframe is never adopted —
+  // only used to DETECT divergence. This is the anti-cheat: a lying actor can't impose fake state.
+  private m_hasSimulated = false;
 
   constructor(
     private readonly client: RoomClient,
@@ -105,6 +114,9 @@ export class NetGame {
 
   private applyTurn(playerIdx: number, handoff: boolean, roundWrapped: boolean): void {
     this.m_pendingKeyframe = null; // stale — belongs to the turn that just ended
+    // We're now playing turns in lockstep: from here on our own sim is authoritative for us and a
+    // keyframe is detect-only. (A reconnect bootstraps via the keyframe BEFORE this first turnBegin.)
+    this.m_hasSimulated = true;
     const gc = this.host.controller;
     // Once-per-turn hand-off effects, driven by the server so they fire EXACTLY once (the local
     // endTurn can repeat). Deterministic: every client runs them from the same settled sim state
@@ -115,23 +127,29 @@ export class NetGame {
   }
 
   /**
-   * The authoritative snapshot is a DRIFT KEYFRAME, not the per-shot source of truth
-   * (every client simulated the shot). Mid-shot it's stashed for a post-settle check;
-   * when idle it's applied ONLY if our own hash disagrees — so an in-sync client keeps
-   * its own simulation (cheat-resistant) and a drifted/reconnecting one is corrected.
+   * A server snapshot. Mid-shot it's stashed for a post-settle reconcile. Otherwise:
+   *  • BOOTSTRAP (we haven't simulated yet — fresh boot / reconnect): adopt it to catch up.
+   *  • KEYFRAME (we've been playing): we simulated this turn ourselves, so we TRUST OUR OWN state
+   *    and never adopt the actor's self-reported snapshot — a mismatch is a cheat/desync we flag.
    */
   private onStateUpdate(result: NetSnapshot, hash: number): void {
     if (this.host.controller.isNetSimBusy()) {
       this.m_pendingKeyframe = {result, hash};
       return;
     }
-    this.applyKeyframeIfDrifted(result, hash);
+    this.reconcileKeyframe(result, hash);
   }
 
-  private applyKeyframeIfDrifted(result: NetSnapshot, hash: number): void {
-    if (this.host.controller.stateHash() !== hash) {
-      this.host.controller.applyNetSnapshot(result); // desync / catch-up → resync
+  private reconcileKeyframe(result: NetSnapshot, hash: number): void {
+    const gc = this.host.controller;
+    if (!this.m_hasSimulated) {
+      gc.applyNetSnapshot(result); // bootstrap: no independent sim yet → adopt the authoritative state
+      return;
     }
+    // True lockstep: our deterministic sim is the truth for us. Never overwrite it with the acting
+    // client's snapshot (the old cheat vector). A hash mismatch → cheat or genuine desync: flag it.
+    const localHash = gc.stateHash();
+    if (localHash !== hash) this.host.onDivergence?.({localHash, keyframeHash: hash});
   }
 
   private onStart(
@@ -148,6 +166,10 @@ export class NetGame {
   ): void {
     this.m_pendingKeyframe = null;
     this.m_pendingTurn = null;
+    // Fresh boot (or reconnect re-boot): until the first turnBegin we have no sim to trust, so the
+    // next keyframe is a bootstrap to adopt. resumeMatch sends startGame→stateUpdate→turnBegin, so
+    // the reconnect snapshot lands here while this is still false and is correctly adopted.
+    this.m_hasSimulated = false;
     const st = this.client.getState();
     const byId = new Map(st.players.map(p => [p.id, p]));
     // Same order on every client → same names, same team colours, same tank indices.
@@ -192,7 +214,7 @@ export class NetGame {
         over: gc.isNetBattleOver(),
       });
     } else if (this.m_pendingKeyframe) {
-      this.applyKeyframeIfDrifted(this.m_pendingKeyframe.result, this.m_pendingKeyframe.hash);
+      this.reconcileKeyframe(this.m_pendingKeyframe.result, this.m_pendingKeyframe.hash);
       this.m_pendingKeyframe = null;
     }
     // Battle over → show the battle-winner celebration on EVERY client (deterministic: the same

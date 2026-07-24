@@ -247,6 +247,8 @@ export class Room {
         return this.onShotResult(s, att.playerId!, msg);
       case 'chat':
         return this.onChat(att.playerId!, msg.text);
+      case 'desync':
+        return this.onDesync(s, att.playerId!, msg.localHash, msg.keyframeHash);
       case 'leave':
         return this.onLeave(ws, s, att.playerId!);
     }
@@ -558,6 +560,17 @@ export class Room {
   private onChat(pid: number, text: string): void {
     const clean = text.slice(0, 200);
     if (clean) this.broadcast({t: 'chat', from: pid, text: clean});
+  }
+
+  /** A client's deterministic result disagreed with the acting client's keyframe. In true lockstep
+   *  the reporter keeps its own (trusted) state, so we don't overwrite anything server-side — we log
+   *  the divergence so a cheating/desyncing match is visible to the operator. (No auto-resolution:
+   *  in a 2-player game there's no majority to arbitrate; this is detection, not correction.) */
+  private onDesync(s: RoomState, pid: number, localHash: number, keyframeHash: number): void {
+    console.warn(
+      `[desync] room=${s.code} reporter=${pid} turnActor=${Room.ownerOf(s, s.turnIdx)} ` +
+        `localHash=${localHash} keyframeHash=${keyframeHash}`,
+    );
   }
 
   private async onLeave(ws: WebSocket, s: RoomState, pid: number): Promise<void> {

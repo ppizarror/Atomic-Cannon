@@ -313,12 +313,15 @@ export class CTank {
     if (!pLand) return;
 
     // Where the tank rests when sitting on the current terrain surface.
-    const fRestY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
+    const surf = pLand.getHeightAt(Math.floor(this.m_vPos.x));
+    const fRestY = surf - tankHeight();
 
-    // BURIED: only possible with Bury Tanks on — the tank sits below the surface (dirt piled over
-    // it). A buried tank can't drive OR fly until it's dug out; recomputed each frame so it clears
-    // the instant the ground is lowered back to (or below) it.
-    this.m_bBuried = GameConfig.buryTanks && this.m_vPos.y > fRestY + 0.5;
+    // BURIED / underground: only with Bury Tanks on, and only when the surface has risen ABOVE the
+    // tank's TOP — i.e. the whole hull is under the dirt. A few px of blast EJECTA lapping the hull
+    // does NOT count (the tank can still crawl out — the drive hugs any terrain); the old 0.5px
+    // hair-trigger flagged any dusting as "underground". Recomputed each frame so it clears the
+    // instant the ground is lowered back to (or below) the tank.
+    this.m_bBuried = GameConfig.buryTanks && this.m_vPos.y > surf;
 
     // Jet flight (extType 17): while fuel remains the player thrusts against
     // gravity. UP = -1.2g vertical (net -0.2g, a gentle rise), L/R = ∓0.1g
@@ -417,14 +420,10 @@ export class CTank {
       return false;
     }
 
-    // Get terrain height at new position
-    const nTerrainHeight = pLand.getHeightAt(nX);
-
-    // Calculate tank bottom Y
-    const nTankBottom = Math.floor(this.m_vPos.y + tankHeight());
-
-    // Can't move if would be too far underground
-    return nTankBottom <= nTerrainHeight + 10;
+    // Can't move only when the ground surface has risen ABOVE the tank's TOP — fully underground.
+    // Incidental blast ejecta lapping the hull (a few px) is NOT "underground": the tank can still
+    // crawl out (the drive hugs any terrain). This matches update()'s buried flag / isBuried().
+    return Math.floor(this.m_vPos.y) <= pLand.getHeightAt(nX);
   }
 
   /**

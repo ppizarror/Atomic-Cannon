@@ -84,6 +84,7 @@ export const en: Strings = {
     playersDropped: '{n} players disconnected — waiting…',
     endMatch: 'End match',
     chatPlaceholder: 'Press Enter to chat…',
+    desyncWarning: 'Game state out of sync with another player',
   },
 
   about: {

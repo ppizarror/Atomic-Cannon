@@ -5,7 +5,7 @@
  * looking frozen. Clears itself the moment everyone is back.
  */
 import {screen} from './store';
-import {netState, leaveMatch} from './networkStore';
+import {netState, netDesync, leaveMatch} from './networkStore';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 
@@ -26,6 +26,10 @@ export function NetStatusBanner() {
     if (dropped.length === 1) text = fmt(n.playerDropped, {name: dropped[0].name});
     else if (dropped.length > 1) text = fmt(n.playersDropped, {n: dropped.length});
   }
+
+  // A lockstep divergence (cheat/desync) outranks nothing but persists once tripped — show it if no
+  // connection banner is up. We keep our own trusted state, so this is a warning, not a stall.
+  if (!text && netDesync.value) text = n.desyncWarning;
 
   if (!text) return null;
   return (

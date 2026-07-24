@@ -17,6 +17,7 @@ type GCInternals = {
   m_tanks: CTank[];
   m_gameState: EGameState;
   m_currentRound: number;
+  m_timers: unknown[];
   endTurn(): void;
   endBattleIfDecided(): void;
 };
@@ -109,6 +110,20 @@ describe('Rounds / Points mode', () => {
     for (let i = 0; i < 12; i++) gc.update(0.1);
     expect(t1.isAlive()).toBe(false); // loser detonated
     expect(t0.isAlive()).toBe(true); // winner spared
+  });
+
+  it('starting a new match clears the pending loser-cascade (no leak into the next game)', () => {
+    GameConfig.explodeLosers = true;
+    const gc = roundsGame(1);
+    const p = priv(gc);
+    p.m_tanks[0].addHit(500); // give a clear winner so losers get scheduled
+
+    let guard = 0;
+    while (p.m_gameState === EGameState.Battle && guard++ < 200) p.endTurn();
+    expect(p.m_timers.length).toBeGreaterThan(0); // the cascade is queued at battle end
+
+    gc.startGame(2); // begin a fresh match before the cascade drains
+    expect(p.m_timers.length).toBe(0); // stale timers dropped → no phantom explosions next match
   });
 
   it('Explode Losers (OFF) leaves every tank standing at the end screen', () => {

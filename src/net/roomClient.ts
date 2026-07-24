@@ -208,6 +208,10 @@ export class RoomClient {
   chat(text: string): void {
     this.send({t: 'chat', text});
   }
+  /** Report a lockstep divergence (our result != the acting client's keyframe) for server flagging. */
+  reportDesync(localHash: number, keyframeHash: number): void {
+    this.send({t: 'desync', localHash, keyframeHash});
+  }
   /** Send a gameplay message (turn command / shot result) once playing. */
   send(msg: ClientMessage): void {
     this.m_transport?.send(msg);
