@@ -42,9 +42,10 @@ import {
   aimProbability,
   angleError,
   bestAim,
+  chooseBotWeapon,
+  isBotSelfBuff,
   pickMoveWeapon,
   pickTarget,
-  pickWeapon,
 } from '../core/CBotAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
@@ -161,6 +162,10 @@ const sentryMachineGunIndex = (): number => {
 };
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
+
+// A bot restocks a shield only when its current shield is below this (the original's autobuy
+// shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading).
+const BOT_SHIELD_NEED = 500;
 
 // Succession bursts louder than this `sucSec` (reference units) re-bark their report +
 // muzzle flash on each salvo; faster bursts (cannon/shotgun ≈ 0.1) fire near-instantly
@@ -564,6 +569,7 @@ export class CGameController implements ShotWorld {
     // array). Reset the shared inventory (owned rounds) for the fresh match.
     this.m_economy.bindCredits(this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0]);
     this.m_economy.reset(this.m_startCredits * perTeam); // squad-scaled purse (see per-tank seed above)
+    this.m_botEconomy.clear(); // fresh bot inventories for the new match (re-created on first bot turn)
     for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
     // Randomize Turns (Gameplay): shuffle the turn queue once per battle.
     if (GameConfig.randomizeTurns) this.shuffleTurnOrder();
@@ -1218,6 +1224,9 @@ export class CGameController implements ShotWorld {
     // Trail / explosion particles. These use additive ('lighter') blending, so they
     // stay in the world scene (over the opaque backdrop) — moving them to the
     // transparent fx overlay would turn their black-bg sprites into black boxes.
+    // Hand the view rect (world-X of the left edge + on-screen size) so the particle system can
+    // off-screen-cull and render its smoke to a half-res buffer (perf under heavy strikes).
+    this.m_particles.setViewport(this.m_camX, this.m_viewW, this.m_viewH);
     this.m_particles.draw(ctx);
 
     // Active projectiles ON TOP of their own trail — so the missile sprite is
@@ -2588,8 +2597,10 @@ export class CGameController implements ShotWorld {
     if (owner) sentry.setColor(owner.getColor()); // team identity + tint
     sentry.setHuman(false);
     sentry.init(x, this.m_land); // snap onto the terrain at the impact column (_y unused)
-    // Health is weapon-defined; the Minigun variant is the tougher "more health" one.
-    sentry.setMaxLife(minigun ? GameConfig.hitpoints * 2 : GameConfig.hitpoints);
+    // Health is a FIXED per-weapon value — the deploy weapon's own magnitude (Turret 200, Minigun
+    // 500) — NOT the match Hit-Points setting and NOT a ×2 for the minigun (the deploy overwrites
+    // both the 1000 constructor default and the match-HP write with the weapon value).
+    sentry.setMaxLife(w.getDamage());
     if (minigun) this.m_sentryMinigun.add(sentry); // → fires "Machine Gun" on its turn
     this.m_tanks.push(sentry);
     // Preload the Sentry hull/turret/wreck sprites — the startGame preload ran before this
@@ -2715,10 +2726,14 @@ export class CGameController implements ShotWorld {
   private handleTankDestroyed(tank: CTank): void {
     const pos = tank.getPosition();
 
-    // Standings: the victim earns a death; its killer (last damager, if an enemy) a kill.
+    // Standings: the victim earns a death; its killer (last damager) earns a kill for an ENEMY,
+    // but LOSES one for a friendly-fire or self kill (matching the credit penalty in awardKillCredit).
     tank.addDeath();
     const killer = tank.getLastDamager();
-    if (killer && killer !== tank && killer.getTeamId() !== tank.getTeamId()) killer.addKill();
+    if (killer) {
+      if (killer !== tank && killer.getTeamId() !== tank.getTeamId()) killer.addKill();
+      else killer.loseKill(); // teammate or self → kill-count penalty
+    }
 
     this.awardKillCredit(tank);
 
@@ -3200,19 +3215,19 @@ export class CGameController implements ShotWorld {
       this.m_onNetCommand?.({t: 'fire'});
     }
 
-    // Ammo (human only): never fire a weapon that's out of stock — if the selected one
-    // was emptied or sold off, fall back to the unlimited staple first, then consume one
-    // round from whatever is actually firing (the Shell never depletes). Done before the
-    // ext branch so projectiles, utilities, Move and Jet all consume alike. Bots carry no
-    // inventory; free-fire (weapon-test) makes consume a no-op via the economy; self-playing
-    // Demo fires freely (the AI drives arbitrary weapons, so it doesn't touch real stock).
-    const chargeAmmo = tank.isHuman() && !GameConfig.demo;
+    // Ammo: never fire a weapon that's out of stock — if the selected one was emptied or sold
+    // off, fall back to the unlimited staple first, then consume one round from whatever is
+    // actually firing (the Shell never depletes). Done before the ext branch so projectiles,
+    // utilities, Move and Jet all consume alike. Bots now carry their OWN inventory and consume
+    // from it (economyFor); free-fire (weapon-test) makes consume a no-op; self-playing Demo fires
+    // freely (the AI drives the HUMAN tank through arbitrary weapons, so it doesn't touch stock).
+    const chargeAmmo = !GameConfig.demo && (tank.isHuman() || tank.isBot());
     if (chargeAmmo) this.ensureStocked(tank);
 
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
 
-    if (chargeAmmo) this.m_economy.consume(this.m_currentWeaponIndex);
+    if (chargeAmmo) this.economyFor(tank).consume(this.m_currentWeaponIndex);
 
     // soundFire, panned to the firing tank.
     this.m_audio?.fire(weapon.getFireSound(), tank.getPosition().x);
@@ -3250,8 +3265,9 @@ export class CGameController implements ShotWorld {
       this.m_gameState = EGameState.Battle;
       // Utility Turn (Gameplay, default OFF): when OFF a utility is "free" — the human keeps
       // control and can still aim/fire this turn. When ON, using it ends the turn like a shot.
-      // Bots always end their turn (they take one action), so the flag is human-only.
-      if (GameConfig.utilityTurn || tank.isBot()) {
+      // Bots (and the AI-driven Demo tank) always end their turn (one action), so the flag is
+      // human-only in normal play.
+      if (GameConfig.utilityTurn || tank.isBot() || GameConfig.demo) {
         this.schedule(0.4, () => this.endTurn());
       } else {
         this.m_firedThisTurn = false; // a free utility isn't a shot → no post-fire gloat gating
@@ -3586,8 +3602,80 @@ export class CGameController implements ShotWorld {
    *  persist it on `tank` — so a turn never opens on, nor a shot fires from, an empty weapon.
    *  The caller decides WHEN to check (human turn-start vs a chargeable-ammo shot). */
   private ensureStocked(tank: CTank): void {
-    if (this.m_economy.hasStock(this.m_currentWeaponIndex)) return;
+    if (this.economyFor(tank).hasStock(this.m_currentWeaponIndex)) return;
     this.setCurrentWeapon(tank, getDefaultWeaponIndex());
+  }
+
+  /** The inventory a tank fires from: the shared human depot, or the tank's own bot loadout
+   *  (lazily created, bound to the bot's credits, stocked with only the Shell staple to start). */
+  private economyFor(tank: CTank): CEconomy {
+    if (tank.isHuman()) return this.m_economy;
+    let e = this.m_botEconomy.get(tank);
+    if (!e) {
+      e = new CEconomy();
+      e.bindCredits(tank); // spend against the bot tank's own credits
+      this.m_botEconomy.set(tank, e);
+    }
+    return e;
+  }
+
+  /** Does `econ` own any weapon of this extType? */
+  private botOwnsExt(econ: CEconomy, ext: number): boolean {
+    return WEAPON_DATABASE.some(w => (w.extType ?? 0) === ext && econ.getOwned(w.index) > 0);
+  }
+
+  /** Buy one random enabled weapon of `ext`, only if credits cover `afford ×` its cost (the
+   *  original guards support buys with a 2–2.5× affordability margin). Returns whether it bought. */
+  private botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boolean {
+    const cands = WEAPON_DATABASE.filter(
+      w =>
+        (w.extType ?? 0) === ext &&
+        w.cost > 0 &&
+        weaponEnabled(w.index) &&
+        econ.getCredits() >= w.cost * afford,
+    );
+    if (!cands.length) return false;
+    return econ.buy(cands[Math.floor(Math.random() * cands.length)].index);
+  }
+
+  /**
+   * The AI restock: a difficulty-gated DEFENSIVE front-load — shield/heal (L>5),
+   * armor (L>6), Death's-head (L>7), mine (L>4), move (L>3), each bought once only when the bot
+   * doesn't own it and the matching need-stat is low — then an offensive drain that stocks a varied
+   * assortment (conserving toward cheap filler at high level). Called at turn start when the bot's
+   * finite stock has run low, so higher-difficulty bots actually turtle up and vary their arsenal.
+   */
+  private aiRestock(tank: CTank, econ: CEconomy): void {
+    const L = this.m_difficulty;
+    const h = tank.getHealth();
+    const maxLife = tank.getMaxLife();
+    if (L > 5 && !this.botOwnsExt(econ, 7) && h.nShield < BOT_SHIELD_NEED)
+      this.botBuyOneOfExt(econ, 7, 2);
+    if (L > 5 && !this.botOwnsExt(econ, 10) && h.nLife < maxLife * 0.7)
+      this.botBuyOneOfExt(econ, 10, 2);
+    if (L > 6 && !this.botOwnsExt(econ, 11) && h.nArmor === 0) this.botBuyOneOfExt(econ, 11, 2.5);
+    if (L > 7 && !this.botOwnsExt(econ, 12)) this.botBuyOneOfExt(econ, 12, 2.5);
+    if (L > 4 && !this.botOwnsExt(econ, 16)) this.botBuyOneOfExt(econ, 16, 2.5);
+    if (L > 3 && !this.botOwnsExt(econ, 3)) this.botBuyOneOfExt(econ, 3, 2.5);
+    econ.autoBuy({conserve: L > 6}); // offensive drain — offensive-type filter + high-level conserve
+  }
+
+  /** Owned weapon indices for a tank's inventory (the Shell staple always included). */
+  private ownedWeaponIndices(econ: CEconomy): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) if (econ.getOwned(i) > 0) out.push(i);
+    return out;
+  }
+
+  /** Finite rounds a tank has in stock (excludes the unlimited Shell) — the restock trigger. */
+  private botFiniteStock(econ: CEconomy): number {
+    let n = 0;
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      if (econ.isUnlimited(i)) continue;
+      const c = econ.getOwned(i);
+      if (Number.isFinite(c)) n += c;
+    }
+    return n;
   }
 
   private executeSentryTurn(): void {
@@ -3634,6 +3722,13 @@ export class CGameController implements ShotWorld {
     if (this.m_tanks.every(t => !t.isAlive() || t.getTeamId() === botTank.getTeamId())) {
       this.endTurn();
       return;
+    }
+
+    // Restock the bot's loadout when its finite stock has run low — a difficulty-scaled buy of
+    // defensive support + a varied offensive assortment (real bots only, not the Demo-driven human).
+    if (botTank.isBot()) {
+      const econ = this.economyFor(botTank);
+      if (this.botFiniteStock(econ) < 4) this.aiRestock(botTank, econ);
     }
 
     // A bot's turn is ONE action: MOVE or FIRE (mutually exclusive) — spending
@@ -3712,24 +3807,18 @@ export class CGameController implements ShotWorld {
       level,
     );
     const target = enemies[Math.max(0, ti)];
+    const tp = target.getPosition();
 
-    // Pick a weapon — stronger rounds favoured at high difficulty.
-    const weaponIndex = pickWeapon(level);
-    this.setCurrentWeapon(botTank, weaponIndex); // store on the bot, not shared
-
-    // Whether the bot computes a FRESH solution this turn. Low-skill bots often
-    // don't (they fire with their stale aim); a first-round ranging shot is
-    // forced for any half-decent bot. Either way a difficulty-scaled angle
-    // scatter is added below.
+    // Whether the bot computes a FRESH firing solution this turn. Low-skill bots often don't
+    // (they fire with their stale aim); a first-round ranging shot is forced for any half-decent
+    // bot. `solutionFound` = the solved arc actually reaches the target (so the no-arc fallback
+    // in the weapon choice is skipped).
     const willAim =
       Math.random() < aimProbability(level) || (this.getBattleNum() === 1 && level > 3);
-
-    let angleDeg: number;
-    let power: number;
+    let ballisticAngle: number;
+    let ballisticPower: number;
+    let solutionFound = false;
     if (willAim) {
-      // Solve the firing arc against the target (real ballistics: gravity +
-      // wind + any terrain in the way).
-      const tp = target.getPosition();
       const field = {
         heightAt: (x: number) => this.m_land.getHeightAt(x),
         width: this.m_land.width,
@@ -3741,24 +3830,56 @@ export class CGameController implements ShotWorld {
         this.m_wind,
         field,
       );
-      angleDeg = aim.angleDeg;
-      power = aim.power;
+      ballisticAngle = aim.angleDeg;
+      ballisticPower = aim.power;
+      solutionFound = aim.dist <= target.getHitRadius() + 6; // the arc lands on the target
     } else {
-      // Reuse the bot's stale aim from a previous turn (never recomputed).
-      angleDeg = botTank.getAimAngle();
-      power = botTank.getPower();
+      ballisticAngle = botTank.getAimAngle();
+      ballisticPower = botTank.getPower();
     }
 
-    // Difficulty scatter — angle only, shrinking to 0 at the top level.
-    angleDeg += angleError(level);
+    // Choose a weapon or defensive utility from the bot's OWN inventory: a random offensive round,
+    // a strongest-weapon upgrade at high skill, a no-arc fallback (Escape/Cleaner/Rebound/Beam)
+    // when the solve missed, then a self-buff (shield/heal/armor/hazmat) when a stat is low.
+    const h = botTank.getHealth();
+    const weaponIndex = chooseBotWeapon(
+      this.ownedWeaponIndices(this.economyFor(botTank)),
+      level,
+      solutionFound,
+      {
+        shield: h.nShield,
+        armor: h.nArmor,
+        hazmat: h.nHazmat,
+        life: h.nLife,
+        maxLife: botTank.getMaxLife(),
+      },
+    );
+    this.setCurrentWeapon(botTank, weaponIndex);
+    const ext = getWeapon(weaponIndex).getExtType(); // nominal token (for isBeamExt)
+    const extNum = WEAPON_DATABASE[weaponIndex].extType ?? 0; // raw code (for isBotSelfBuff)
+
+    let angleDeg: number;
+    let power: number;
+    if (isBotSelfBuff(extNum)) {
+      // Shield/heal/armor/hazmat apply to the bot itself — no target aim; keep its current aim.
+      angleDeg = botTank.getAimAngle();
+      power = botTank.getPower();
+    } else if (isBeamExt(ext)) {
+      // Beams are hitscan: point straight at the target (no ballistic solve), fire at full power.
+      angleDeg = this.aimDegToward(botTank.getTurretPivot(), tp);
+      power = SENTRY_FIRE_POWER;
+    } else {
+      // Ballistic: the solved (or stale) arc + the difficulty angle scatter (angle only).
+      angleDeg = ballisticAngle + angleError(level);
+      power = ballisticPower;
+    }
 
     // Fold into the HUD's 0..359 range; persist on the bot so its aim carries over.
     angleDeg = wrapIndex(Math.round(angleDeg), 360);
     this.commitAim(botTank, angleDeg, Math.round(power));
-    // The HUD (Preact) shows the bot's angle/power via getAngle()/getPower().
 
-    // Execute fire after a brief "thinking" delay. The turn ends automatically
-    // once the shot resolves (updateShotInFlight → endTurn).
+    // Execute fire after a brief "thinking" delay. The turn ends automatically once the shot
+    // resolves (or immediately, for a self-buff utility).
     this.schedule(0.8, () => this.fire());
   }
 
@@ -4606,6 +4727,10 @@ export class CGameController implements ShotWorld {
   private m_particles: CParticleSystem;
   private m_weather: CWeather;
   private m_economy: CEconomy;
+  // Per-bot weapon inventories (the human's is m_economy). Bots buy a difficulty-scaled loadout
+  // at turn start and consume rounds as they fire, like the original AI. Lazily created, bound to
+  // each bot tank's own credits; cleared per match.
+  private readonly m_botEconomy = new Map<CTank, CEconomy>();
   private m_mapName = 'Battlefield';
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;

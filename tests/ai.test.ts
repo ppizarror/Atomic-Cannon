@@ -11,6 +11,8 @@ import {
   angleError,
   pickTarget,
   pickWeapon,
+  chooseBotWeapon,
+  isBotSelfBuff,
   ballisticWeaponIndices,
   moveWeaponIndices,
   pickMoveWeapon,
@@ -103,5 +105,74 @@ describe('Bot AI', () => {
       moves.every(i => WEAPON_DATABASE[i].extType === 3 && WEAPON_DATABASE[i].type === 'Utility'),
     ).toBe(true); // Move utilities are extType-3 Utility weapons
     expect(moves).toContain(pickMoveWeapon(() => 0.5)); // pickMoveWeapon returns one of them
+  });
+});
+
+describe('Bot weapon/utility choice (chooseBotWeapon)', () => {
+  const id = (s: string) => WEAPON_DATABASE.findIndex(w => w.id === s);
+  const SHELL = id('shell'); // the unlimited staple
+  const BOMB = id('cluster.bomb'); // ext 0 offensive
+  const DEATH = id('six.under'); // ext 12 (never the offensive pick)
+  const BEAM = id('magma.beam'); // ext 5 (fallback / direct aim)
+  const ESCAPE = id('escaper'); // ext 8 (fallback, higher priority than beam)
+  const SHIELD = id('light.shield'); // ext 7, value 500
+  const HEAL = id('repairs'); // ext 10, value 250
+  const FULL = {shield: 1000, armor: 100, hazmat: 100, life: 1000, maxLife: 1000}; // no self-buff needed
+  const seq = (xs: number[]) => {
+    let i = 0;
+    return () => xs[Math.min(i++, xs.length - 1)];
+  };
+
+  it('random offensive pick never returns the Shell or a Death weapon', () => {
+    const owned = [SHELL, BOMB, DEATH];
+    for (let r = 0; r < 20; r++) {
+      const sel = chooseBotWeapon(owned, 3, true, FULL, seq([r / 20]));
+      expect(sel).toBe(BOMB); // the only non-Shell, non-Death offensive round
+    }
+  });
+
+  it('heals when hurt (life below maxLife − healValue·0.7)', () => {
+    const owned = [SHELL, BOMB, HEAL]; // heal value 250 → threshold 1000−175 = 825
+    const hurt = {...FULL, life: 400};
+    expect(chooseBotWeapon(owned, 3, true, hurt, seq([0]))).toBe(HEAL); // 400 < 825 → heal
+    const healthy = {...FULL, life: 900};
+    expect(chooseBotWeapon(owned, 3, true, healthy, seq([0]))).toBe(BOMB); // 900 ≥ 825 → attack
+  });
+
+  it('self-buff is last-match-wins: Heal beats Shield when both are needed', () => {
+    const owned = [SHELL, BOMB, SHIELD, HEAL];
+    const low = {...FULL, shield: 0, life: 400}; // shield 0<500 AND life 400<825 → both fire
+    expect(chooseBotWeapon(owned, 3, true, low, seq([0]))).toBe(HEAL); // Heal is checked last → wins
+  });
+
+  it('shields up when its shield is low and it is not hurt', () => {
+    const owned = [SHELL, BOMB, SHIELD]; // shield value 500 → buff if shield < 1000−500 = 500
+    expect(chooseBotWeapon(owned, 3, true, {...FULL, shield: 100}, seq([0]))).toBe(SHIELD);
+    expect(chooseBotWeapon(owned, 3, true, {...FULL, shield: 600}, seq([0]))).toBe(BOMB); // 600 ≥ 500
+  });
+
+  it('falls back to a no-arc weapon (Escape before Beam) when the solve missed at level > 4', () => {
+    const owned = [SHELL, BOMB, BEAM, ESCAPE];
+    expect(chooseBotWeapon(owned, 6, false, FULL, seq([0]))).toBe(ESCAPE); // no arc → Escape wins the ladder
+    // With an arc solution the bot keeps its ballistic pick.
+    expect(chooseBotWeapon(owned, 6, true, FULL, seq([0]))).toBe(BOMB);
+    // A low-skill bot (≤4) never uses the fallback.
+    expect(chooseBotWeapon([SHELL, BOMB, BEAM], 4, false, FULL, seq([0]))).toBe(BOMB);
+  });
+
+  it('grabs its strongest weapon at level > 8 (70% roll)', () => {
+    const RUNWAY = id('runway.bomb'); // dmg 35
+    const DIGGER = id('grave.digger'); // dmg 50 (stronger)
+    const owned = [SHELL, RUNWAY, DIGGER];
+    // rnd#1 = offensive pick (→ index 0 = RUNWAY), rnd#2 = 0.5 < 0.7 → upgrade to the strongest.
+    expect(chooseBotWeapon(owned, 9, true, FULL, seq([0, 0.5]))).toBe(DIGGER);
+    // rnd#2 = 0.9 ≥ 0.7 → no upgrade, keep the random pick.
+    expect(chooseBotWeapon(owned, 9, true, FULL, seq([0, 0.9]))).toBe(RUNWAY);
+  });
+
+  it('only Shell owned → fires the Shell', () => {
+    expect(chooseBotWeapon([SHELL], 5, true, FULL, seq([0]))).toBe(SHELL);
+    expect(isBotSelfBuff(7)).toBe(true); // shield is a self-buff
+    expect(isBotSelfBuff(0)).toBe(false); // ballistic is not
   });
 });

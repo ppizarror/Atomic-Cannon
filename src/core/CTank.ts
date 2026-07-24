@@ -224,6 +224,10 @@ export class CTank {
   addKill(): void {
     this.m_kills++;
   }
+  /** Kill-count penalty for a friendly-fire / self kill (never below 0). */
+  loseKill(): void {
+    this.m_kills = Math.max(0, this.m_kills - 1);
+  }
   addDeath(): void {
     this.m_deaths++;
   }

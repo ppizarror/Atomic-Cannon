@@ -218,6 +218,41 @@ describe('Weapon behaviour', () => {
     expect(world.spawned).toHaveLength(0); // Cluster stops recursing past cluRecurse
   });
 
+  it('Cluster power is a FLAT 0.5× the firing power at every recursion depth (not compounding)', () => {
+    const w = getWeapon(WEAPON_DATABASE.findIndex(x => x.id === 'sabot')); // cluRecurse 8, cluNum 1
+    const world = new MockWorld(flatLand());
+    const g0 = new CShot();
+    g0.initFromVelocity(new Vec2(400, 300), 0, 0, w.getDamage(), w.getRadius(), null);
+    g0.setWeaponIndex(w.getIndex());
+    g0.setPower(200); // the firing power
+    spawnCluster(g0, w, world, new Vec2(400, 300));
+    const g1 = world.spawned[0];
+    expect(g1.getPower()).toBeCloseTo(100); // 0.5 × 200
+
+    // A gen-1 submunition re-clusters: its child must ALSO be 0.5×200 = 100, NOT the old
+    // 0.5×100 = 50 (which compounded to 0.5ⁿ and made deep drillers barely move).
+    world.spawned = [];
+    spawnCluster(g1, w, world, new Vec2(400, 300));
+    expect(world.spawned[0].getGeneration()).toBe(2);
+    expect(world.spawned[0].getPower()).toBeCloseTo(100); // flat, not 50
+  });
+
+  it('Rebound anti-grav LATCHES on first burial and stays on above the surface', () => {
+    const land = flatLand(300);
+    const w = getWeapon(WEAPON_DATABASE.findIndex(x => x.extType === 9)); // Rebounder/Seeker
+    const world = new MockWorld(land);
+    const shot = new CShot();
+    shot.initFromVelocity(new Vec2(400, 310), 0, 50, w.getDamage(), w.getRadius(), null); // just buried
+    shot.setWeaponIndex(w.getIndex());
+
+    weaponFlyStep(shot, w, world, 1 / 60);
+    expect(shot.isAntiGrav()).toBe(true); // latched on while below the surface
+
+    shot.setPosition(400, 250); // now well ABOVE the surface (300)
+    weaponFlyStep(shot, w, world, 1 / 60);
+    expect(shot.isAntiGrav()).toBe(true); // stays latched (old code re-toggled it OFF here)
+  });
+
   it('Dirt deposits earth (raises, removes nothing)', () => {
     const land = flatLand(300);
     const w = getWeapon(idxOf('Dirty Boy')); // earth 50

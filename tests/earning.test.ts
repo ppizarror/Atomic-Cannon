@@ -185,6 +185,29 @@ describe('Earning economy', () => {
     expect(human.getCredits()).toBe(0); // no kill credit outside Deathmatch
   });
 
+  it('Kills stat: +1 for an enemy kill, −1 for a friendly/self kill (never below 0)', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.startGame(2);
+    const tanks = (gc as unknown as Tanks).m_tanks;
+    const human = tanks[0],
+      bot = tanks[1]; // teams 0 and 1
+    const priv = gc as unknown as {handleTankDestroyed(t: CTank): void};
+
+    bot.setLastDamager(human); // enemy kill
+    priv.handleTankDestroyed(bot);
+    expect(human.getKills()).toBe(1); // enemy kill → +1
+
+    const mate = new CTank('Mate', human.getTeamId());
+    mate.setLastDamager(human); // friendly-fire kill
+    priv.handleTankDestroyed(mate);
+    expect(human.getKills()).toBe(0); // team kill → −1 (1 → 0), matching the credit penalty
+
+    const mate2 = new CTank('Mate2', human.getTeamId());
+    mate2.setLastDamager(human);
+    priv.handleTankDestroyed(mate2);
+    expect(human.getKills()).toBe(0); // clamped — never goes negative
+  });
+
   it('a lethal blast credits both damage and the kill bounty', () => {
     const gc = new CGameController(makeCanvas());
     gc.setStartCredits(0);

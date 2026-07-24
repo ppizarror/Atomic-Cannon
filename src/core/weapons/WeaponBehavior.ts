@@ -181,9 +181,11 @@ export function weaponFlyStep(
       return rollerStep(shot, world, surfaceY, hit);
 
     case EXT.REBOUND:
-      // Anti-grav on ground contact: gravity inverts while submerged → it bounces.
+      // Anti-grav LATCHES on the first dip below the surface and never clears — so once buried it
+      // keeps accelerating upward and jets back up and out (rather than re-toggling every frame,
+      // which just oscillated it around the surface line).
       if (hit) return 'detonate';
-      shot.setAntiGrav(belowSurface);
+      if (belowSurface) shot.setAntiGrav(true);
       return 'continue';
 
     case EXT.MINE:
@@ -487,6 +489,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
  * Cluster: on detonation spawn cluNum submunitions at the impact point, fanning
  * cluStart→cluEnd degrees, each at 0.5x power, re-clustering until the generation
  * reaches cluRecurse. Angle convention: vel = (cos a°, sin a°) (90°=down).
+ *
+ * Power is a flat 0.5× the ORIGINAL firing power at every recursion depth (via the shot's
+ * carried base power), NOT 0.5× the parent submunition — otherwise deep drillers (Sabot, Six
+ * Under, Grave Digger, Toxic Grave) would telescope to a quarter/eighth power and barely move.
  */
 export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, pos: Vec2): void {
   const cluNum = weapon.getClusterCount();
@@ -496,7 +502,8 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
 
   const [startDeg, endDeg] = weapon.getClusterSpread();
   const step = (endDeg - startDeg) / cluNum;
-  const childPower = Math.max(1, parent.getPower() * CLUSTER_POWER);
+  const basePower = parent.getBasePower(); // the firing power, unchanged down the chain
+  const childPower = Math.max(1, basePower * CLUSTER_POWER);
   const speed = launchSpeed(childPower);
 
   for (let k = 0; k < cluNum; k++) {
@@ -510,6 +517,7 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
     child.setWeaponIndex(weapon.getIndex());
     child.setGeneration(gen + 1);
     child.setPower(childPower);
+    child.setBasePower(basePower); // carry the ORIGINAL firing power, so re-clusters stay flat 0.5×
     world.spawnShot(child);
   }
 }

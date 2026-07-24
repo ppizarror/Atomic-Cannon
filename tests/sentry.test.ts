@@ -57,14 +57,15 @@ describe('Sentry turrets', () => {
     expect(sentry.getName()).toBe(a.getName());
     expect(sentry.getTeamId()).toBe(a.getTeamId()); // fights for its owner's team
     expect(sentry.isAlive()).toBe(true);
-    expect(sentry.getMaxLife()).toBe(1000); // Turret = base Hitpoints
+    expect(sentry.getMaxLife()).toBe(200); // Turret HP = its deploy weapon's fixed value (not match HP)
   });
 
   it('Minigun variant has more health than the Turret variant', () => {
     const {gc, a} = twoPlayerGame();
     gc.deploySentry(a.getPosition().x + 30, 0, a, SENTRY_MINIGUN);
     const sentry = priv(gc).m_tanks.at(-1)!;
-    expect(sentry.getMaxLife()).toBe(2000); // 2× the base Hitpoints ("more health")
+    // A fixed per-weapon value (500), not the match Hit-Points nor a ×2 — but still tougher than the Turret's 200.
+    expect(sentry.getMaxLife()).toBe(500);
   });
 
   it('on its turn a sentry aims at the nearest enemy and picks the right weapon', () => {

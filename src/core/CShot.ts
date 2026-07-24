@@ -226,6 +226,18 @@ export class CShot {
     this.m_power = p;
   }
 
+  /** The FIRING shot's power, carried unchanged through cluster generations. Cluster submunitions
+   *  launch at a flat 0.5× the original firing power at EVERY recursion depth (not 0.5× the parent
+   *  submunition, which would compound), so a deep driller's chain stays evenly spaced. Falls back
+   *  to this shot's own power (the firing shot itself), so gen-0 needs no explicit set. */
+  getBasePower(): number {
+    return this.m_basePower || this.m_power;
+  }
+
+  setBasePower(p: number): void {
+    this.m_basePower = p;
+  }
+
   kill(): void {
     this.m_bIsDead = true;
   }
@@ -374,6 +386,7 @@ export class CShot {
   private m_damage: number;
   private m_radius: number;
   private m_power: number;
+  private m_basePower = 0; // firing-shot power, propagated through cluster generations (0 → use m_power)
   private m_bTrailActive: boolean;
   private m_trailPoints: TrailPoint[];
   private m_maxTrailAge: number;
