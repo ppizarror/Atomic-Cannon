@@ -1368,6 +1368,21 @@ export class CLand {
     return this.m_radParticles.filter(r => r.timeRemaining > 0);
   }
 
+  /**
+   * Is column `x` covered by visible fallout — i.e. does a SETTLED radiation speck sit within
+   * `margin` px of it? Drives "Radiation Damage: On": a tank on glowing ground takes DOT, so the
+   * damage tracks what the player actually sees (the speck carpet spreads well past the blast
+   * circle — especially airbursts drifting down a slope), instead of an invisible fixed radius.
+   */
+  radiationAt(x: number, margin = 12): boolean {
+    const specks = this.m_radSpecks;
+    for (let i = 0; i < specks.length; i++) {
+      const s = specks[i];
+      if (s.settled && Math.abs(s.x - x) <= margin) return true;
+    }
+    return false;
+  }
+
   // ========================================================================
   // COLLISION & QUERIES
   // =====================================================================

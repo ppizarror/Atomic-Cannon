@@ -56,6 +56,7 @@ const CATALOG = {
   'gp.crates': {default: 20},
   'gp.updateScale': {default: 10},
   'gp.rcFires': {default: 1},
+  'gp.radiationDamage': {default: 1}, // fallout hurts tanks on it (on) vs cosmetic-only (off, legacy)
 
   // ── Graphics ──
   'gfx.tracking': {default: 1},

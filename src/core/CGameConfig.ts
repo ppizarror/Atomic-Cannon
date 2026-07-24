@@ -32,6 +32,13 @@ export const GameConfig = {
   tankSizeScale: 1, // Tank → Player Size (hull + collision geometry)
   hitpoints: 1000, // Tank → Hitpoints (tank starting life)
 
+  // Gameplay → Radiation Damage. ON (default, port interpretation): a tank standing on the visible
+  // fallout carpet takes damage-over-time — "green ground = danger", so the damage matches what the
+  // player sees. OFF (legacy/faithful): fallout is purely cosmetic and deals NO tank damage, exactly
+  // like the original binary (a radioactive weapon's INITIAL blast is armor-piercing either way).
+  // A gameplay rule → shared over the network via MatchConfig so every client simulates the same.
+  radiationDamage: true,
+
   // ── render toggles ──
   drawSmoke: true, // Graphics → Draw Smoke (lingering ground plumes)
   colorizeTeam: true, // Tank → Colorize Team (hull tint)

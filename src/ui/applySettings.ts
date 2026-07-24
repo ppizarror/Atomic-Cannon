@@ -19,6 +19,14 @@ import {roster} from './playersStore';
 import {showFramerate, showFrameCount, maxFps} from './store';
 
 export function applyGameSettings(c: CGameController): void {
+  // A LIVE network match runs the host's shared MatchConfig (applied once in startNetworkGame).
+  // A local Settings change mid-match must NOT re-derive the simulation config from THIS client's
+  // own options — different physics scalars / game speed / wind would silently break lockstep.
+  // Skip while a net match is active; the next solo game (m_netMode off) applies settings again.
+  if (c.isNetBattleActive()) {
+    c.markDirty();
+    return;
+  }
   // Controller-owned: most read at the next startGame, a few live.
   c.setStartCredits(S.creditStart());
   c.setSellRate(S.sellRate());
@@ -30,6 +38,7 @@ export function applyGameSettings(c: CGameController): void {
   c.setTotalRounds(S.rounds());
   c.setGameType(S.gameType());
   c.setVariance(S.variance());
+  GameConfig.radiationDamage = S.radiationDamage(); // fallout DOT vs cosmetic-only (shared in net via MatchConfig)
   c.setGameSpeed(S.gameSpeed());
   c.setWindScale(S.windScale());
   c.setLandMode(S.landMode());

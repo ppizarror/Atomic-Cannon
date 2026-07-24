@@ -130,8 +130,22 @@ function gameplayRows(): Widget[] {
     toggle(s.utilTurn, 'gp.utilTurn'),
     toggle(s.randTurns, 'gp.randTurns'),
     stepper(s.crates, 'gp.crates', 0, 100, 5, pct),
+    {
+      label: s.more.label,
+      tip: s.more.tip,
+      kind: 'nav',
+      get: () => 0,
+      onClick: () => openSettingsPage('gameplay2'),
+    },
+  ];
+}
+
+function gameplay2Rows(): Widget[] {
+  const s = strings.value.settings.gameplay;
+  return [
     stepper(s.updateScale, 'gp.updateScale', 1, 30, 1),
     toggle(s.rcFires, 'gp.rcFires'),
+    toggle(s.radiation, 'gp.radiationDamage'),
   ];
 }
 
@@ -306,6 +320,8 @@ export function getSettingsPage(id: string): PageSpec | null {
       return {id, header: s.tank.header, rows: tankRows()};
     case 'gameplay':
       return {id, header: s.gameplay.header, rows: gameplayRows()};
+    case 'gameplay2':
+      return {id, header: s.gameplay.header, rows: gameplay2Rows()};
     case 'graphics':
       return {id, header: s.graphics.header, rows: graphicsRows()};
     case 'graphics2':

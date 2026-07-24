@@ -89,4 +89,20 @@ describe('CLand — erasing terrain clears its radiation', () => {
     stepUntil(land, () => p.m_heat.length > 0);
     expect(p.m_heat.length).toBeGreaterThan(0);
   });
+
+  it('radiationAt reports the visible fallout footprint (drives "Radiation Damage: On")', () => {
+    const W = 800,
+      H = 300,
+      surf = 150;
+    const land = landWithPixels(W, H, surf);
+
+    land.blastIradiate(400, surf, 60, 12, 6, [255, 46, 20]);
+    // Let the specks fly and settle onto the surface.
+    for (let i = 0; i < 180; i++) land.update(1 / 60);
+
+    // On the fallout carpet (the blast centre) → irradiated; far outside it → clean ground.
+    expect(land.radiationAt(400)).toBe(true);
+    expect(land.radiationAt(60)).toBe(false); // far to the left, no specks landed here
+    expect(land.radiationAt(760)).toBe(false); // far to the right
+  });
 });

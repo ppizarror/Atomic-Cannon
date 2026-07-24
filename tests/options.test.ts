@@ -73,6 +73,19 @@ describe('Formerly-no-op Settings options', () => {
     applyGameSettings(gc); // push the restored defaults back into GameConfig
   });
 
+  it('Radiation Damage defaults ON and reaches GameConfig (OFF = legacy cosmetic)', () => {
+    const gc = new CGameController(makeCanvas());
+    applyGameSettings(gc);
+    expect(GameConfig.radiationDamage).toBe(true); // catalog default 1 → ON (port interpretation)
+
+    setVal('gp.radiationDamage', 0); // legacy: fallout is cosmetic, no DOT
+    applyGameSettings(gc);
+    expect(GameConfig.radiationDamage).toBe(false);
+
+    setVal('gp.radiationDamage', 1); // restore (shared settings mock)
+    applyGameSettings(gc);
+  });
+
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {
     const gc = humanGame();
     GameConfig.buyTime = 0; // Anytime
