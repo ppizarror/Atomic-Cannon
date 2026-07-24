@@ -44,16 +44,11 @@ import {UNLIMITED} from '../core/CEconomy';
 
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
-// The game's bitmap fonts — catalog ids (see FONTS in BitmapFont.ts).
-const TITLE_FONT = 'bazouk-28'; // native white+outline
-// Table header + rows: native white + baked outline. Graphics → Small Buy Fonts swaps in
-// the compact 8px pixel font so more of the arsenal fits at once.
+// Every panel (header, stats popup, footer) uses the game's OUTLINED bitmap faces
+// (white glyph + baked black outline) so text stays legible on the metal — fonts are
+// chosen inline at each call site. The table is the one exception: it drops to the
+// compact 8px pixel font under Graphics → Small Buy Fonts so more of the arsenal fits.
 const tableFont = () => (GameConfig.smallBuyFonts ? 'silkscreen-8-out' : 'beijing-16-out');
-const ROW_FONT = 'msans-14';
-const SMALL_FONT = 'msans-12';
-const BIG_FONT = 'msans-18';
-const SUB_FONT = 'arial-14-out'; // header subtitle: native white + baked outline
-const STATUS_FONT = 'beijing-16-out'; // footer player name + credits (native outline)
 
 // The depot's "Power" figure is the weapon's derived Power stat (base damage ×
 // effective impact count, +200 for radioactive weapons, raw stat for utilities) —
@@ -199,9 +194,9 @@ export function DepotPanel() {
         onClick={e => e.stopPropagation()}
       >
         <div class="dep-head">
-          <BmpText font={TITLE_FONT} text={d.title} />
+          <BmpText font="bazouk-28" text={d.title} />
           <div class="dep-sub">
-            <BmpText font={SUB_FONT} text={d.subtitle} spacing={-1} />
+            <BmpText font="arial-14-out" text={d.subtitle} spacing={-1} />
           </div>
         </div>
 
@@ -294,7 +289,7 @@ export function DepotPanel() {
         )}
         {showStats && selW && (
           <div class="dep-stats" onClick={() => setShowStats(false)}>
-            <BmpText font={BIG_FONT} text={weaponName(selW)} />
+            <BmpText font="bazouk-28" text={weaponName(selW)} />
             <div class="dep-stat-grid">
               {(
                 [
@@ -310,13 +305,13 @@ export function DepotPanel() {
                 ] as const
               ).map(([k, v]) => (
                 <div class="dep-stat-row" key={k}>
-                  <BmpText font={ROW_FONT} text={String(k)} />
-                  <BmpText font={ROW_FONT} text={String(v)} />
+                  <BmpText font="beijing-16-out" text={String(k)} spacing={-1} />
+                  <BmpText font="beijing-16-out" text={String(v)} spacing={-1} />
                 </div>
               ))}
             </div>
             <div class="dep-hint">
-              <BmpText font={SMALL_FONT} text={d.clickToClose} />
+              <BmpText font="arial-14-out" text={d.clickToClose} spacing={-1} />
             </div>
           </div>
         )}
@@ -324,10 +319,10 @@ export function DepotPanel() {
         <div class="dep-foot">
           <div class="dep-money">
             <div class="dep-map">
-              <BmpText font={STATUS_FONT} text={playerName.value} spacing={-1} />
+              <BmpText font="beijing-16-out" text={playerName.value} spacing={-1} />
             </div>
             <div class="dep-credits">
-              <BmpText font={STATUS_FONT} text={`${d.credits} ${creds}`} spacing={-1} />
+              <BmpText font="beijing-16-out" text={`${d.credits} ${creds}`} spacing={-1} />
             </div>
           </div>
           <div class="dep-btns">
