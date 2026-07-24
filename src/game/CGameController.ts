@@ -13,7 +13,7 @@ import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR} from '../core/CTank';
 import {Roster} from '../core/CRoster';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
-import {windProfile} from '../core/wind';
+import {windProfile, isRealisticWind} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
@@ -293,6 +293,10 @@ interface FwRocket {
 // the terrain, and is collected by any tank that comes within reach — granting credits,
 // health, or a weapon. Descent speed, wobble, and the contents split match the original.
 const CRATE_DESCENT = 90; // constant chute descent speed (px/s)
+// Sideways drift per unit of wind for a descending parachute crate (px/s), Realistic mode only.
+// High vs the descent speed because a chute is nearly all sail — at full wind (±5) it drifts ~±70 px/s
+// against a 90 px/s fall, a clear ~38° slant. Eased near the ground by the wind altitude profile.
+const CRATE_WIND_DRIFT = 14;
 const CRATE_GRAVITY = 95; // free-fall accel if the chute ever detaches (px/s²)
 const CRATE_WOBBLE_DEG = 5; // pendulum amplitude (±deg), pivot at the canopy top
 const CRATE_WOBBLE_SPEED = 200; // deg/s of the sine argument (≈1.8 s per swing)
@@ -585,6 +589,9 @@ export class CGameController implements ShotWorld {
       const s = this.m_assets.getSprite('fx:smoke');
       if (s) this.m_land.setSmokeSprite(s.bitmap, s.width, s.height);
     });
+    // The rocket-exhaust colour STRIP (hot→cool) — the particle system samples its ramp so the
+    // trail puffs cool from bright/warm to blue-grey with age (the author's fire→smoke gradient).
+    this.m_assets.loadSprite('fx:plume', '/assets/gui/rocket plume.bmp');
     this.m_assets.loadImage('fx:flare', '/assets/flares/04.bmp');
     // The generic fallback fireball, keyed on its light blue-purple bg.
     this.m_assets.loadSprite('fx:explosion', '/assets/effects/explosion1.bmp', [127, 127, 255]);
@@ -751,6 +758,7 @@ export class CGameController implements ShotWorld {
 
     // Always update terrain, wind and visual effects
     this.m_time += dt;
+    this.updateEffectiveWind(dt); // fold Realistic-mode gusts onto the base wind → m_effWind
     this.updateCamera(dt); // ease the large-map camera toward the shot / active tank
     if (this.m_damageNumbers.length) {
       for (const d of this.m_damageNumbers) d.age += dt;
@@ -762,12 +770,12 @@ export class CGameController implements ShotWorld {
     }
     this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
     this.updateCrates(dt); // descend / land / collect supply crates + age pickup text
-    this.m_land.update(dt, this.m_wind);
+    this.m_land.update(dt, this.m_effWind);
     // Change Wind (Gameplay): only "Anytime" (3) drifts continuously; Per-game / After-round /
     // After-shot hold the vector constant between their discrete rerolls (see endTurn).
     if (GameConfig.changeWind === 3) this.updateWindDrift(dt);
-    this.m_particles.update(dt, this.m_wind);
-    this.m_weather.update(dt, this.m_wind);
+    this.m_particles.update(dt, this.m_effWind);
+    this.m_weather.update(dt, this.m_effWind);
     this.updateGhostShots(dt); // spectator-only visual arcs (network match)
     if (this.m_screenFlash > 0) this.m_screenFlash = Math.max(0, this.m_screenFlash - dt / 0.6);
     this.updateMoveSound();
@@ -1936,8 +1944,8 @@ export class CGameController implements ShotWorld {
       this.launchFirework();
       this.m_fireworkTimer = FW_INTERVAL_MIN + Math.random() * (FW_INTERVAL_MAX - FW_INTERVAL_MIN);
     }
-    const wx = this.m_wind.x * 0.7,
-      wy = this.m_wind.y * 0.7;
+    const wx = this.m_effWind.x * 0.7,
+      wy = this.m_effWind.y * 0.7;
 
     // Rockets: rise, trail a spark each frame, detonate on reaching the target.
     if (this.m_rockets.length) {
@@ -2078,9 +2086,14 @@ export class CGameController implements ShotWorld {
       for (const c of this.m_crates) {
         const ground = this.m_land.getHeightAt(c.x);
         if (c.y < ground) {
-          if (!c.landed)
-            c.y += CRATE_DESCENT * dt; // constant chute descent (no drift)
-          else {
+          if (!c.landed) {
+            c.y += CRATE_DESCENT * dt; // constant chute descent
+            // Realistic wind: a parachute is almost all sail, so it drifts strongly downwind. The
+            // altitude profile eases the drift as it nears the ground (windProfile → 0 at the soil),
+            // so it settles rather than skating along the surface. Linear mode → 0 (falls straight).
+            const wf = windProfile(ground - c.y);
+            c.x = clamp(c.x + this.m_effWind.x * CRATE_WIND_DRIFT * wf * dt, 0, this.m_worldWidth);
+          } else {
             c.vy += CRATE_GRAVITY * dt; // detached chute → free-fall (rarely used)
             c.y += c.vy * dt;
           }
@@ -2311,7 +2324,7 @@ export class CGameController implements ShotWorld {
     }
 
     for (const shot of activeShots) {
-      shot.update(dt, this.m_wind, this.m_windGroundAt);
+      shot.update(dt, this.m_effWind, this.m_windGroundAt);
 
       // Per-frame behaviour dispatch (extType): roller/digger/airburst/beam/…
       const weapon = getWeapon(
@@ -3882,7 +3895,7 @@ export class CGameController implements ShotWorld {
   private updateGhostShots(dt: number): void {
     if (!this.m_ghostShots.length) return;
     this.m_ghostShots = this.m_ghostShots.filter(g => {
-      g.update(dt, this.m_wind, this.m_windGroundAt);
+      g.update(dt, this.m_effWind, this.m_windGroundAt);
       const p = g.getPosition();
       if (g.isDead()) return false;
       if (p.x < -50 || p.x > this.m_worldWidth + 50 || p.y > this.m_canvas.height + 50)
@@ -3977,12 +3990,39 @@ export class CGameController implements ShotWorld {
   // ========================================================================
 
   private static readonly MAX_WIND = 5;
+  // Peak gust swing as a fraction of the sustained wind (Realistic mode). 0.3 → wind breathes ±30%.
+  private static readonly GUST_FRAC = 0.3;
 
   /** Seed a fresh random wind at the start of a game (scaled by Settings → Wind). */
   private updateWind(): void {
     const max = CGameController.MAX_WIND * this.m_windScale;
     this.m_wind = new Vec2(this.m_rng.plusMinus(max), this.m_rng.plusMinus(max) * 0.3);
     this.m_windTimer = 0;
+  }
+
+  /**
+   * Recompute `m_effWind` — the wind the physics actually feels this frame. Linear mode: exactly the
+   * sustained `m_wind`. Realistic mode: fold in GUSTS — a smooth multi-frequency envelope that makes
+   * the wind breathe (calm days gust little, strong winds gust hard, since it scales with |m_wind|).
+   * Gusts are multiplicative so a Disabled wind (0) stays dead calm. This flows into every wind-driven
+   * system at once (shots, smoke, weather, crates, fireworks) because they all read `m_effWind`.
+   */
+  private updateEffectiveWind(dt: number): void {
+    this.m_gustT += dt;
+    if (!isRealisticWind()) {
+      this.m_effWind = this.m_wind;
+      return;
+    }
+    const t = this.m_gustT;
+    // Two independent smooth envelopes in ~[-1,1] (superposed sines at incommensurate rates so the
+    // pattern never audibly repeats): gx breathes the along-wind strength, gy flutters the vertical.
+    const gx =
+      0.55 * Math.sin(t * 0.8) + 0.3 * Math.sin(t * 2.1 + 1.7) + 0.15 * Math.sin(t * 4.3 + 0.5);
+    const gy = 0.6 * Math.sin(t * 1.3 + 2.0) + 0.4 * Math.sin(t * 3.1 + 0.8);
+    this.m_effWind = new Vec2(
+      this.m_wind.x * (1 + gx * CGameController.GUST_FRAC),
+      this.m_wind.y * (1 + gy * CGameController.GUST_FRAC * 0.5),
+    );
   }
 
   /**
@@ -4641,6 +4681,11 @@ export class CGameController implements ShotWorld {
   private m_wind: Vec2 = new Vec2(0, 0);
   private m_windAccel: Vec2 = new Vec2(0, 0);
   private m_windTimer: number = 0;
+  // Effective wind actually fed to the physics each frame: the sustained `m_wind` plus Realistic-mode
+  // gusts. In Linear mode it equals `m_wind`. The LCD / snapshot report the sustained wind (m_wind),
+  // so gusts are felt (shots, smoke, crates all breathe) without the readout jittering.
+  private m_effWind: Vec2 = new Vec2(0, 0);
+  private m_gustT = 0; // gust-oscillator clock (seconds), advanced every frame
   // Terrain-surface provider handed to shots so the shared wind profile (core/wind.ts) can
   // attenuate drift near the ground in Realistic mode. Reads m_land live (it's re-created per map).
   private m_windGroundAt = (x: number): number => this.m_land.getHeightAt(Math.floor(x));

@@ -12,9 +12,9 @@
  * random angle/power error that shrinks toward zero at the top level, and steers
  * target/weapon choice from "random" (easy) toward "best" (hard).
  */
-import {SHOT_GRAVITY, SHOT_WIND_ACCEL, launchSpeed} from './CShot';
+import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_DRAG_K, launchSpeed} from './CShot';
 import {GameConfig} from './CGameConfig';
-import {windProfile} from './wind';
+import {windProfile, isRealisticWind} from './wind';
 import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE} from './CWeapon';
 import {clamp, deg2rad} from '../math/num';
@@ -95,6 +95,7 @@ export function simulateMiss(
   let x = origin.x,
     y = origin.y;
   const dt = 1 / 30;
+  const drag = isRealisticWind(); // match the real shot's Realistic-mode air drag
   let minD = Math.hypot(x - target.x, y - target.y);
 
   for (let i = 0; i < 500; i++) {
@@ -104,6 +105,11 @@ export function simulateMiss(
     const wf = windProfile(field.heightAt(clamp(x, 0, field.width - 1)) - y);
     vx += wind.x * SHOT_WIND_ACCEL * ws * wf * dt;
     vy += wind.y * SHOT_WIND_ACCEL * ws * wf * dt;
+    if (drag) {
+      const loss = SHOT_DRAG_K * Math.hypot(vx, vy) * dt;
+      vx -= vx * loss;
+      vy -= vy * loss;
+    }
     x += vx * dt;
     y += vy * dt;
 

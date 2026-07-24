@@ -6,7 +6,7 @@ import {Vec2} from '../math/Vec2';
 import {CLand} from './CLand';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
-import {windProfile} from './wind';
+import {windProfile, isRealisticWind} from './wind';
 import {TWO_PI} from '../math/num';
 
 // Trajectory constants — the single source of truth, shared with the aim AI so a
@@ -15,6 +15,11 @@ import {TWO_PI} from '../math/num';
 export const SHOT_GRAVITY = 500; // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15; // wind display units -> px/s^2 of sideways drift
 export const SHOT_SPEED_SCALE = 1; // launch speed per unit power
+// Quadratic air drag, REALISTIC wind model only: a shot loses `SHOT_DRAG_K · speed` of its velocity
+// per second, so faster/longer shots bleed more energy and the far end of the arc flattens (a real
+// shell decelerates). 0.0002 → ~10%/s at 500 px/s, ~20%/s at 1000 px/s. Shared with the aim AI so
+// bot predictions stay exact. Linear mode = 0 (drag-free ballistics, the classic feel).
+export const SHOT_DRAG_K = 0.0002;
 
 // Reference-engine → our-engine time conversion for weapon fields measured in the
 // original's ballistic time-step (batSec, sucSec). Those fields count the SAME step
@@ -159,6 +164,15 @@ export class CShot {
     const wf = groundAt ? windProfile(groundAt(this.m_pos.x) - this.m_pos.y) : 1;
     this.m_vel.x += wind.x * CShot.WIND_ACCEL * ws * wf * dt;
     this.m_vel.y += wind.y * CShot.WIND_ACCEL * ws * wf * dt;
+
+    // Air drag (Realistic model only): quadratic velocity bleed. Skipped for straight-flying
+    // beam/no-gravity shots. Fractional loss per step = SHOT_DRAG_K · speed · dt.
+    if (!this.m_skipGravity && isRealisticWind()) {
+      const speed = Math.hypot(this.m_vel.x, this.m_vel.y);
+      const loss = SHOT_DRAG_K * speed * dt;
+      this.m_vel.x -= this.m_vel.x * loss;
+      this.m_vel.y -= this.m_vel.y * loss;
+    }
 
     this.m_pos = new Vec2(this.m_pos.x + this.m_vel.x * dt, this.m_pos.y + this.m_vel.y * dt);
 

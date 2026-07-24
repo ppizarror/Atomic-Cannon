@@ -87,3 +87,30 @@ describe('CShot wind model', () => {
     expect(noGround).toBeGreaterThan(withGround * 5);
   });
 });
+
+describe('CShot air drag (Realistic only)', () => {
+  // Fire horizontally (0°) in DEAD CALM (no wind) so the only thing that can change the horizontal
+  // speed is drag. Linear → vx constant; Realistic → vx bleeds off.
+  const vxAfter = (steps: number): number => {
+    const shot = new CShot();
+    shot.init(new Vec2(0, 0), 0, 800, 0, 0); // 0° → straight to the right
+    const calm = new Vec2(0, 0);
+    for (let i = 0; i < steps; i++) shot.update(1 / 60, calm);
+    return shot.getVelocity().x;
+  };
+
+  it('Linear: horizontal speed is preserved (drag-free ballistics)', () => {
+    GameConfig.windModel = WIND_MODEL.LINEAR;
+    const v0 = vxAfter(0);
+    const v1 = vxAfter(120); // 2 s
+    expect(v1).toBeCloseTo(v0, 5);
+  });
+
+  it('Realistic: horizontal speed decays under drag', () => {
+    GameConfig.windModel = WIND_MODEL.REALISTIC;
+    const v0 = vxAfter(0);
+    const v1 = vxAfter(120); // 2 s
+    expect(v1).toBeLessThan(v0 * 0.9); // clearly slowed
+    expect(v1).toBeGreaterThan(0); // but still moving forward
+  });
+});

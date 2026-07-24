@@ -11,6 +11,10 @@ import {isRealisticWind, windProfile} from './wind';
 // so this is well below smoke's push — high-arcing ejecta leans on the wind, low chunks barely.
 // Only applied in Realistic wind mode; Linear mode leaves ejecta purely ballistic (the classic feel).
 const DEBRIS_WIND_ACCEL = 12;
+// Wind push on airborne fallout specks (Realistic mode). Ash is far lighter than dirt clods, so it
+// streams downwind into a leaning plume as it settles — but the altitude profile eases it near the
+// ground, so specks still land on/near their radiation zone (the damage area itself never moves).
+const FALLOUT_WIND_ACCEL = 26;
 
 // ============================================================================
 // INTERFACES & TYPES
@@ -1042,11 +1046,14 @@ export class CLand {
 
   update(dt: number, wind?: Vec2): void {
     const GRAVITY = 500;
-    // Realistic wind pushes flying dirt sideways (Linear mode leaves it purely ballistic — the
-    // classic feel). Terrain is broadcast authoritatively (getNetSnapshot), so wind-nudged deposits
-    // stay in sync across clients without re-simulation. Precomputed once per frame.
-    const windX = wind && isRealisticWind() ? wind.x * DEBRIS_WIND_ACCEL : 0;
-    const windY = wind && isRealisticWind() ? wind.y * DEBRIS_WIND_ACCEL : 0;
+    // Realistic wind pushes flying dirt AND airborne fallout sideways (Linear mode leaves both purely
+    // ballistic — the classic feel). Terrain is broadcast authoritatively (getNetSnapshot), so
+    // wind-nudged deposits stay in sync across clients without re-simulation. Precomputed once per frame.
+    const realistic = !!wind && isRealisticWind();
+    const windX = realistic ? wind!.x * DEBRIS_WIND_ACCEL : 0;
+    const windY = realistic ? wind!.y * DEBRIS_WIND_ACCEL : 0;
+    const foutX = realistic ? wind!.x * FALLOUT_WIND_ACCEL : 0;
+    const foutY = realistic ? wind!.y * FALLOUT_WIND_ACCEL : 0;
 
     this.m_radPulseT += dt; // drives the sinusoidal glow shimmer on the radiation specks
 
@@ -1177,6 +1184,14 @@ export class CLand {
       } // faded out → recycle
 
       if (!s.settled) {
+        // Wind drift on the still-falling ash (Realistic mode) — eased near the ground by the profile
+        // so the plume leans downwind aloft but still settles onto its zone. foutX/Y are 0 in Linear.
+        if (foutX !== 0 || foutY !== 0) {
+          const wc = clamp(Math.floor(s.x), 0, this.m_nWidth - 1);
+          const wf = windProfile(this.getHeightAt(wc) - s.y);
+          s.vx += foutX * wf * dt;
+          s.vy += foutY * wf * dt;
+        }
         s.vy += RAD_GRAV * dt;
         s.x += s.vx * dt;
         s.y += s.vy * dt;

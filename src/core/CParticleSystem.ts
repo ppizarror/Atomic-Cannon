@@ -18,6 +18,7 @@ import type {Vec2} from '../math/Vec2';
 import type {ISpriteSource} from './rendering/sprites';
 import particlesRaw from '../data/particles.json';
 import {smokeEnabled} from './CGameConfig';
+import {boundaryFactor} from './wind';
 import {between} from '../math/random';
 import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
 import {TWO_PI, deg2rad} from '../math/num';
@@ -90,11 +91,6 @@ const KIND_WIND: Record<RenderKind, number> = {
   smoke: 1.1, // was 1.6 — the original's grey smoke rides wind at ×1; 1.6 shoved it unnaturally hard
   plume: 0.4,
 };
-// Wind boundary-layer profile thickness (px). INTERP (the binary applies wind UNIFORMLY at every
-// height): wind drift ramps from ~0 AT the ground to full at this many px above it, so low-lying
-// crater fumes barely drift while high smoke streams — matching an air velocity profile.
-const WIND_PROFILE_H = 260;
-
 // Blast radius (px) below which a detonation is drawn as a compact spark-puff rather
 // than the full firework — machine gun (r8), shotgun (r4), gatling (r8). Shells and up
 // (r≥~20) get the full sequence. See `blast`.
@@ -148,38 +144,37 @@ interface Explosion {
   vy?: number;
 }
 
-// A crater "vent": a fresh crater smokes off its disturbed dirt. The original emits ONE cohort at
-// detonation — a white streamer every ~6 px across the changed-column strip, each with a lifetime
-// PROPORTIONAL TO BLAST RADIUS (so big craters smoke much longer), and never clears prior smoke.
-// We match that: no instant cohort during the flash; instead the vent releases its cohort over a
-// short window AFTER the bloom fades (so the smoke emerges from the settled dirt and BUILDS UP),
-// each puff living ∝ radius so it lingers, and every crater's vent is independent so multi-bomb
-// weapons (Black Rain) leave the whole strip smoking — later blasts never wipe earlier smoke.
+// A crater "vent": a fresh crater smokes off its disturbed dirt. After the flash fades it keeps
+// venting fumes for a while — SUCCESSIVE GENERATIONS of white puffs rising off the dirt over a
+// radius-scaled window (a big crater smokes longer), tapering out — not one instant cohort. Each
+// vent is independent, so multi-bomb weapons (Black Rain) leave the whole strip smoking; a later
+// blast in the area clears the fumes there (clearSmoke), so only settled smoke persists.
 interface CraterVent {
   x: number;
   y: number;
   r: number;
   age: number;
-  life: number;
+  life: number; // VENT_DELAY + emission window (window ∝ radius, so big craters smoke longer)
   acc: number; // per-vent fractional-puff accumulator (independent, so vents don't fight over one)
 }
 // The vent stays silent this long so smoke emerges AS the explosion bloom fades, not during it.
-const VENT_DELAY = 0.45;
-// The crater releases its whole smoke cohort over this window (staggered → it visibly builds up
-// from the dirt rather than popping in all at once).
-const VENT_EMIT = 0.7;
-// One streamer per this many px of crater width (the original's ~6 px cadence).
-const FUME_STEP = 6;
-// Smoke swell for crater fumes (compact vs SMOKE_GROW=5.5 for exhaust/trail).
-const FUME_GROW = 2.6;
-// Crater-smoke lifetime ∝ radius: life = FUME_LIFE_BASE + radius·[min,max]. Big blasts linger far
-// longer than small ones (the grounded behaviour), instead of a flat ~1.5 s that vanishes too fast.
-const FUME_LIFE_BASE = 1.2;
-const FUME_LIFE_MIN = 0.03;
-const FUME_LIFE_MAX = 0.065;
-// Crater smoke is nearly buoyancy-neutral (vs the trail's -0.12) so it HANGS over the crater and
-// fades in place, instead of ballooning up into the sky as a detached cluster.
-const FUME_GRAV = -0.02;
+const VENT_DELAY = 0.4;
+// Emission window (how long the crater keeps generating fumes) = VENT_WIN_BASE + radius·VENT_WIN_R.
+const VENT_WIN_BASE = 7.5;
+const VENT_WIN_R = 0.02;
+// Puffs emitted per second per unit radius, while venting (tapers to 0 over the window). HIGH so the
+// many small puffs overlap into a TIGHT, dense cloud (the legacy look), not spaced distinct blobs.
+const FUME_RATE = 3.2;
+// Smoke swell for crater fumes — low so puffs stay small and pack tightly (vs SMOKE_GROW=5.5 exhaust).
+const FUME_GROW = 2.0;
+// Per-puff lifetime ∝ radius: FUME_LIFE_BASE + radius·[min,max]. Each generation rises and fades
+// over this; new generations keep coming for the whole emission window.
+const FUME_LIFE_BASE = 1.0;
+const FUME_LIFE_MIN = 0.02;
+const FUME_LIFE_MAX = 0.04;
+// Crater smoke has mild buoyancy (vs the trail's -0.12) so each generation drifts gently UP off the
+// dirt and fades — a steady rising stream — without ballooning to the top of the screen.
+const FUME_GRAV = -0.05;
 
 export class CParticleSystem {
   private m_particles: Particle[] = [];
@@ -197,18 +192,18 @@ export class CParticleSystem {
   // Real sprites (looked up lazily each frame; falls back to procedural draws
   // until they finish loading). 'fx:smoke' = gui/smoke.bmp, 'fx:flare' = flares/04.bmp.
   private m_assets: ISpriteSource | null = null;
-  private m_warmSmoke: HTMLCanvasElement | null = null; // fire-tinted smoke (young trail puffs)
-  private m_whiteSmoke: HTMLCanvasElement | null = null; // white-tinted smoke (crater fumes)
+  private m_whiteSmoke: HTMLCanvasElement | null = null; // cool-white smoke (crater fumes)
 
   setAssets(a: ISpriteSource): void {
     this.m_assets = a;
-    this.m_warmSmoke = null;
     this.m_whiteSmoke = null;
+    this.m_plumeRamp = null;
   }
 
-  /** Lazily build a WHITE copy of the smoke sprite (its own alpha shape recoloured to white).
-   *  Crater fumes draw this instead of the grey `smoke.bmp` so their packed cohort stacks into a
-   *  bright white crescent — the grey sprite is kept for exhaust/trail smoke. Null until it loads. */
+  /** Lazily build a bright, COOL-tinted copy of the smoke sprite for crater fumes — the grey
+   *  `smoke.bmp` lifted toward a light blue-grey-white with `screen` (NOT a flat white fill), so its
+   *  internal fluffy TEXTURE survives: highlights near-white, crevices a cool blue-grey. That shading
+   *  is what makes the packed puffs read as distinct 3-D tufts rather than one flat white blob. */
   private whiteSmoke(): HTMLCanvasElement | null {
     if (this.m_whiteSmoke) return this.m_whiteSmoke;
     if (typeof document === 'undefined') return null; // headless (tests): no canvas to tint
@@ -220,38 +215,15 @@ export class CParticleSystem {
     c.width = w;
     c.height = h;
     const g = c.getContext('2d')!;
-    g.drawImage(spr.bitmap, 0, 0, w, h);
-    g.globalCompositeOperation = 'source-in'; // recolour to white, keep the puff's soft alpha shape
-    g.fillStyle = '#ffffff';
+    g.drawImage(spr.bitmap, 0, 0, w, h); // grey textured puff
+    g.globalCompositeOperation = 'screen'; // lift toward cool-white, KEEPING the texture gradients
+    g.fillStyle = 'rgb(150,162,190)'; // cool blue-grey — screen brightens grey toward this
     g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'destination-in'; // re-mask to the sprite's own alpha shape
+    g.drawImage(spr.bitmap, 0, 0, w, h);
     g.globalCompositeOperation = 'source-over';
     this.m_whiteSmoke = c;
     return this.m_whiteSmoke;
-  }
-
-  /** Lazily build a warm-tinted copy of the smoke sprite (keeps its texture+alpha).
-   *  Blitted additively over young trail smoke so fresh puffs near the exhaust glow
-   *  like fire, cooling to plain grey as they age. Null until the sprite exists. */
-  private warmSmoke(): HTMLCanvasElement | null {
-    if (this.m_warmSmoke) return this.m_warmSmoke;
-    if (typeof document === 'undefined') return null; // headless (tests): no canvas to tint
-    const spr = this.m_assets?.getSprite('fx:smoke');
-    if (!spr) return null;
-    const w = spr.width,
-      h = spr.height;
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const g = c.getContext('2d')!;
-    g.drawImage(spr.bitmap, 0, 0, w, h);
-    g.globalCompositeOperation = 'multiply'; // fire-orange tint, keep the puff texture
-    g.fillStyle = 'rgb(255,140,55)';
-    g.fillRect(0, 0, w, h);
-    g.globalCompositeOperation = 'destination-in'; // re-mask to the smoke's own alpha
-    g.drawImage(spr.bitmap, 0, 0, w, h);
-    g.globalCompositeOperation = 'source-over';
-    this.m_warmSmoke = c;
-    return this.m_warmSmoke;
   }
 
   // Pre-baked soft radial glow. The old draw path allocated a fresh
@@ -360,6 +332,90 @@ export class CParticleSystem {
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, TWO_PI);
     ctx.fill();
+  }
+
+  // ---- Rocket-exhaust PUFF: a soft round disc (a "cotton ball"), coloured from the
+  // gui/rocket plume.bmp hot→cool STRIP by particle age. This is the trail's real look —
+  // distinct from the fuzzy crater cloud (gui/smoke.bmp) — so exhaust reads as overlapping
+  // round puffs that widen with age into a thick, soft ribbon.
+  private m_puff: HTMLCanvasElement | null = null;
+  private m_puffNA = false;
+  private m_puffTints = new Map<number, HTMLCanvasElement>(); // quantised colour → tinted puff
+  private m_plumeRamp: RGB[] | null = null; // hot→cool colours sampled from the plume strip
+  private static readonly PUFF_SRC = 32;
+
+  /** White master puff: a SOLID-ish core with a soft edge (a cotton ball), vs the glow's diffuse
+   *  falloff. Built once; tinted per colour by `tintedPuff`. Null when there's no canvas (tests). */
+  private puffMaster(): HTMLCanvasElement | null {
+    if (this.m_puff || this.m_puffNA) return this.m_puff;
+    if (typeof document === 'undefined') {
+      this.m_puffNA = true;
+      return null;
+    }
+    const R = CParticleSystem.PUFF_SRC;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = R * 2;
+    const g = cv.getContext('2d');
+    if (!g) {
+      this.m_puffNA = true;
+      return null;
+    }
+    const grad = g.createRadialGradient(R, R, 0, R, R, R);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.68, 'rgba(255,255,255,0.95)'); // SOLID core → distinct, opaque round puffs
+    grad.addColorStop(0.9, 'rgba(255,255,255,0.35)'); // quick falloff at the rim
+    grad.addColorStop(1, 'rgba(255,255,255,0)'); // soft edge → overlaps read as a fuzzy cotton chain
+    g.fillStyle = grad;
+    g.fillRect(0, 0, R * 2, R * 2);
+    this.m_puff = cv;
+    return cv;
+  }
+
+  /** The master puff recoloured to (r,g,b), cached (4-bit/channel key, like `tintedGlow`). */
+  private tintedPuff(r: number, g: number, b: number): HTMLCanvasElement | null {
+    const master = this.puffMaster();
+    if (!master) return null;
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    const hit = this.m_puffTints.get(key);
+    if (hit) return hit;
+    const R = CParticleSystem.PUFF_SRC;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = R * 2;
+    const c = cv.getContext('2d')!;
+    c.drawImage(master, 0, 0);
+    c.globalCompositeOperation = 'source-in';
+    c.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
+    c.fillRect(0, 0, R * 2, R * 2);
+    if (this.m_puffTints.size >= 512)
+      this.m_puffTints.delete(this.m_puffTints.keys().next().value as number);
+    this.m_puffTints.set(key, cv);
+    return cv;
+  }
+
+  /** The hot→cool colour ramp sampled once from gui/rocket plume.bmp's middle row (the author's
+   *  fire→smoke strip): index by `t=age/life`, so a fresh puff is bright/warm and an old one blue-
+   *  grey. Falls back to a plain light-grey when the sprite/canvas isn't available. */
+  private plumeRamp(): RGB[] | null {
+    if (this.m_plumeRamp) return this.m_plumeRamp;
+    if (typeof document === 'undefined') return null;
+    const spr = this.m_assets?.getSprite('fx:plume');
+    if (!spr) return null;
+    const w = spr.width,
+      h = spr.height;
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const g = cv.getContext('2d', {willReadFrequently: true})!;
+    g.drawImage(spr.bitmap, 0, 0, w, h);
+    const data = g.getImageData(0, (h / 2) | 0, w, 1).data;
+    const ramp: RGB[] = [];
+    for (let x = 0; x < w; x++) {
+      const i = x * 4;
+      if (data[i + 3] < 8) continue; // skip keyed/transparent columns
+      ramp.push({r: data[i], g: data[i + 1], b: data[i + 2]});
+    }
+    this.m_plumeRamp = ramp.length ? ramp : [{r: 230, g: 232, b: 235}];
+    return this.m_plumeRamp;
   }
 
   // Downward acceleration (px/s^2). Sparks and debris arc and fall; flares and
@@ -661,12 +717,17 @@ export class CParticleSystem {
    *  Cleaner), gated only on the Draw-Smoke toggle. */
   private ventCrater(x: number, y: number, r: number): void {
     if (!smokeEnabled()) return; // Graphics → Draw Smoke (+ Detail gating)
-    this.m_craterVents.push({x, y, r, age: 0, life: VENT_DELAY + VENT_EMIT, acc: 0});
+    // Only vent when the blast actually reaches the SOIL. An AIRBURST (Sky Bomb, Sky Cluster, …)
+    // detonates high in mid-air and carves no crater — its blast sphere never touches the ground —
+    // so it must NOT fume from the dirt far below. Skip if the sphere's bottom is above the surface.
+    if (this.m_groundAt && y + r < this.m_groundAt(x)) return;
+    const window = VENT_WIN_BASE + r * VENT_WIN_R; // how long this crater keeps smoking (∝ radius)
+    this.m_craterVents.push({x, y, r, age: 0, life: VENT_DELAY + window, acc: 0});
   }
 
   /** One white smoke puff rising off the disturbed dirt across the crater width. Spawned at the
-   *  REAL post-carve surface (so it comes from the earth), white, gently rising, LIFE ∝ radius so
-   *  big craters keep smoking far longer than small ones. */
+   *  REAL post-carve surface (so it comes from the earth), white, gently rising and fading — one of
+   *  many successive generations the vent keeps producing while it smokes. */
   private spawnVentPuff(x: number, y: number, r: number): void {
     const dx = between(-r * 0.85, r * 0.85); // across the disturbed strip (stay off the far rim)
     const fx = x + dx + between(-3, 3);
@@ -676,10 +737,11 @@ export class CParticleSystem {
       : y + Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.7;
     const fy = surf - between(0, 4); // just at the dirt
     const v = 225 + Math.floor(rnd() * 28); // near-white 225..253
-    const life = FUME_LIFE_BASE + r * between(FUME_LIFE_MIN, FUME_LIFE_MAX); // ∝ radius → lingers
-    // Very gentle rise + near-neutral buoyancy (FUME_GRAV) so the puff hangs over the crater and
-    // fades in place; low swell keeps it a soft wisp, not a blob.
-    this.add(fx, fy, between(-5, 5), -between(3, 9), {r: v, g: v, b: v}, life, between(3, 5.5), 'smoke', undefined, FUME_GROW, 0.5, FUME_GRAV); // prettier-ignore
+    const life = FUME_LIFE_BASE + r * between(FUME_LIFE_MIN, FUME_LIFE_MAX); // ∝ radius
+    // Small, near-white puffs (0.6 opacity) — many of these, packed tightly by the high emission
+    // rate, overlap into a dense fine-grained cloud (the legacy tight-puff look). Gentle rise + mild
+    // buoyancy (FUME_GRAV) so each generation drifts up off the dirt and fades.
+    this.add(fx, fy, between(-5, 5), -between(8, 18), {r: v, g: v, b: v}, life, between(3, 5), 'smoke', undefined, FUME_GROW, 0.6, FUME_GRAV); // prettier-ignore
   }
 
   /**
@@ -756,17 +818,19 @@ export class CParticleSystem {
     trailType = 1,
     trailLength = 0,
     dt = 0.016,
-    withFire = true,
+    ascending = true,
   ): void {
     if (trailType <= 0) return; // no trail (nukes / beams / diggers)
     const speed = Math.hypot(vx, vy);
     const rocket = trailType >= 2; // rocket/missile exhaust
+    // A rocket's motor burns only until APEX (grounded, rocket-specific): once the shot starts
+    // descending it coasts with NO fume. Ballistic shells (else branch) have no apex gate — they
+    // trace the whole flight. `ascending` is false from apex onward.
+    if (rocket && !ascending) return;
     const lenScale = trailLength > 0 ? 0.6 + trailLength / 100 : 1; // trailLength 80 → 1.4
-    // Fill the segment the shot travelled this frame so the trail is CONTINUOUS, not blobs
-    // spaced one-per-frame — the original drops ~1 puff per frame; we sub-step the segment so
-    // faster shots still lay a connected streak. Combined with the WHOLE-flight emission and a
-    // long puff life, the trail BUILDS UP into a connected ribbon that lengthens as the shot arcs.
-    const steps = Math.max(rocket ? 2 : 1, Math.ceil((speed * dt) / 3));
+    // Fill the segment travelled this frame so the trail is CONTINUOUS, not blobs spaced one-per-
+    // frame; rockets sub-step FINER so the exhaust reads as a dense, connected ribbon.
+    const steps = Math.max(rocket ? 5 : 1, Math.ceil((speed * dt) / (rocket ? 1.2 : 3)));
     const nx = speed > 1e-3 ? vx / speed : 1;
     const ny = speed > 1e-3 ? vy / speed : 0;
     const eject = 0.1 * speed; // exhaust throw = 0.1 × |shot velocity|, BACKWARD (grounded)
@@ -774,20 +838,22 @@ export class CParticleSystem {
       const f = s / steps; // 0 = head, →1 = last-frame position
       const px = x - vx * dt * f,
         py = y - vy * dt * f;
-      // White smoke — near-dropped in place (small backward throw) so puffs stay on the path and
-      // overlap into a connected WHITE ribbon; long-lived so the whole arc's worth stays visible.
-      const v = 226 + Math.floor(rnd() * 26); // near-white 226..252
       if (rocket) {
-        // Hot exhaust FIRE near the nozzle — only while the motor burns (ascending).
-        if (withFire) {
-          this.add(px, py, -nx * eject + between(-4, 4), -ny * eject + between(-4, 4), {r: 255, g: 195, b: 95}, between(0.12, 0.22) * lenScale, between(2, 3.5), 'plume'); // prettier-ignore
+        // MANY SMALL exhaust puffs per point (grey marker r<200 → plume-disc render): fine-grained,
+        // densely packed and long-lived so they overlap into a soft wispy ribbon — the legacy look
+        // (lots of tiny particles, not a few chunky cotton balls). Two per sub-step, each with a
+        // small backward throw + jitter; colour + slow growth come from the plume strip at draw.
+        for (let n = 0; n < 3; n++) {
+          const g = 150 + Math.floor(rnd() * 30); // grey marker (r<200 → exhaust disc path)
+          this.add(px + between(-2.4, 2.4), py + between(-2.4, 2.4), -nx * eject + between(-3, 3), -ny * eject + between(-3, 3), {r: g, g, b: g}, between(0.9, 1.6) * lenScale, between(2, 3.8), 'smoke', undefined, 1.3, 0.9); // prettier-ignore
         }
-        // Thick billowing white column (grows over life via SMOKE_GROW).
-        this.add(px + between(-2, 2), py + between(-2, 2), -nx * eject + between(-3, 3), -ny * eject + between(-3, 3), {r: v, g: v, b: v}, between(0.9, 1.5) * lenScale, between(5, 8), 'smoke', undefined, SMOKE_GROW, 0.55); // prettier-ignore
-      } else {
-        // BALLISTIC shell (trailType 1: rail/artillery/shell) — a finer white smoke trace planted
-        // (vel ≈ 0) along the path; thinner and lower-swell than a rocket's billowing column.
-        this.add(px + between(-1, 1), py + between(-1, 1), between(-2, 2), between(-2, 2), {r: v, g: v, b: v}, between(0.5, 0.85) * lenScale, between(2.6, 4), 'smoke', undefined, 3, 0.5); // prettier-ignore
+      } else if (s === 0) {
+        // BALLISTIC (trailType 1: rail/artillery/shell/BOMB, trailLength 0) — the original lays NO
+        // exhaust/smoke here, just a faint white spark. ONE small, SHORT, NON-additive white dot per
+        // frame dropped in place (NOT the per-step ribbon rockets get — additive plumes stacked into a
+        // bright exhaust streak on a fast-falling Black Rain sub-bomb). So a Bomb barely sparkles.
+        const v = 226 + Math.floor(rnd() * 26); // near-white 226..252
+        this.add(px, py, 0, 0, {r: v, g: v, b: v}, between(0.05, 0.11), between(1, 1.5), 'disc'); // prettier-ignore
       }
     }
   }
@@ -929,10 +995,11 @@ export class CParticleSystem {
 
   /**
    * Integrate one step. `wind` (the game's ±5 drift vector) is applied as a horizontal acceleration
-   * scaled per particle — smoke gets shoved, sparks barely move. `groundAt(x)` (optional) enables a
-   * boundary-layer wind PROFILE: drift ramps from ~0 at the ground to full `WIND_PROFILE_H` px above
-   * it, so low fumes hug the crater and high smoke streams. INTERP — the original winds uniformly; if
-   * `groundAt` is omitted (tests) the drift is uniform (factor 1), matching the binary's model.
+   * scaled per particle — smoke gets shoved, sparks barely move. `groundAt(x)` (optional) supplies the
+   * surface height so the shared boundary-layer factor (core/wind.ts `boundaryFactor`) can attenuate
+   * drift near the ground: low fumes hug the crater, high smoke streams. This easing is applied to
+   * smoke UNCONDITIONALLY (NOT gated by the Wind Model setting) — otherwise a puff would gain full
+   * wind the instant it left the soil. When `groundAt` is omitted (tests) the drift is uniform.
    */
   update(dt: number, wind?: Vec2): void {
     if (dt <= 0) return;
@@ -944,13 +1011,10 @@ export class CParticleSystem {
     for (let i = 0; i < this.m_particles.length; i++) {
       const p = this.m_particles[i];
 
-      // Altitude factor: 0 at/below the ground under this particle → 1 at WIND_PROFILE_H above it.
-      // Uniform (1) when no ground provider is supplied (faithful fallback).
-      let alt = 1;
-      if (groundAt) {
-        const g = groundAt(p.x);
-        alt = g - p.y < 0 ? 0 : g - p.y > WIND_PROFILE_H ? 1 : (g - p.y) / WIND_PROFILE_H;
-      }
+      // Altitude factor: the boundary-layer ramp (0 at ground → 1 aloft) is applied to smoke
+      // UNCONDITIONALLY — independent of the Wind Model setting — so low crater fumes never gain
+      // full wind right off the soil (they'd rocket sideways). Uniform when no ground provider (tests).
+      const alt = groundAt ? boundaryFactor(groundAt(p.x) - p.y) : 1;
       p.vx += windAx * p.windMul * alt * dt;
       p.vy += (this.m_gravity * p.gravMul + windAy * p.windMul * alt) * dt;
       p.x += p.vx * dt;
@@ -986,18 +1050,18 @@ export class CParticleSystem {
     }
     this.m_explosions.length = ew;
 
-    // Crater vents: after VENT_DELAY (the flash has faded), release the crater's smoke cohort over
-    // VENT_EMIT so it emerges from the dirt and builds up. One puff per FUME_STEP px of crater width,
-    // spread across the emit window; each puff then lives ∝ radius (spawnVentPuff), so the smoke
-    // lingers well after the vent itself is spent. Per-vent accumulator → independent craters.
+    // Crater vents: after VENT_DELAY (the flash has faded), keep venting fumes for the whole window
+    // — successive generations of rising puffs at a rate ∝ radius that TAPERS to 0 as the vent ages,
+    // so the crater smokes for a while then peters out. Each puff lives ∝ radius (spawnVentPuff) and
+    // dies independently, so the fumes linger past the vent. Per-vent accumulator → independent craters.
     let vw = 0;
     for (let i = 0; i < this.m_craterVents.length; i++) {
       const v = this.m_craterVents[i];
       v.age += dt;
       if (v.age >= v.life) continue; // vent spent → drop (its puffs live on independently)
       if (v.age >= VENT_DELAY) {
-        const perSec = (2 * v.r) / FUME_STEP / VENT_EMIT; // whole cohort released over VENT_EMIT
-        v.acc += perSec * dt;
+        const env = 1 - (v.age - VENT_DELAY) / (v.life - VENT_DELAY); // 1 → 0 across the window
+        v.acc += v.r * FUME_RATE * env * dt;
         while (v.acc >= 1) {
           v.acc -= 1;
           this.spawnVentPuff(v.x, v.y, v.r);
@@ -1033,25 +1097,32 @@ export class CParticleSystem {
         const alpha = Math.sin(Math.min(1, t) * Math.PI) * p.op; // per-particle peak opacity
         if (alpha <= 0.01) continue;
         const d = p.size * (0.9 + t * p.grow) * 2; // small at birth → grows over life (per-particle rate)
-        if (smokeSpr) {
-          // Warm (fire tint) ONLY at the very nozzle — the plume cools to grey smoke fast, then
-          // the grey column lingers (the original's fire→smoke ramp cross-fades quickly).
-          const warmth = Math.max(0, 1.2 - t * 9);
-          // Grey base — full grey once cooled, dimmed while warm.
-          ctx.globalAlpha = Math.min(1, alpha * (0.45 + 0.55 * (1 - warmth)));
-          // White-colour smoke (crater fumes) draws the white-tinted sprite; grey exhaust/trail
-          // smoke keeps the raw grey sprite.
-          const base = p.r >= 200 ? (this.whiteSmoke() ?? smokeSpr.bitmap) : smokeSpr.bitmap;
-          ctx.drawImage(base, p.x - d / 2, p.y - d / 2, d, d);
-          // Fire tint only on young GREY smoke (exhaust nozzle) — never on the clean white earth fumes.
-          const warm = p.r < 200 && warmth > 0.02 ? this.warmSmoke() : null;
-          if (warm) {
-            const op = ctx.globalCompositeOperation;
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = alpha * warmth * 1.3;
-            ctx.drawImage(warm, p.x - d / 2, p.y - d / 2, d, d);
-            ctx.globalCompositeOperation = op;
+        // Grey smoke (r<200) = ROCKET EXHAUST → a soft round DISC (cotton ball) coloured from the
+        // gui/rocket plume.bmp strip by age (bright/warm young near the nozzle → blue-grey as it
+        // cools), widening with age into a thick soft ribbon. White smoke (r≥200) = CRATER FUMES →
+        // the fuzzy, textured cloud sprite. Two genuinely different assets/looks (as in the original).
+        if (p.r < 200) {
+          const ramp = this.plumeRamp();
+          let cr = 230,
+            cg = 232,
+            cb = 235;
+          if (ramp) {
+            const col = ramp[Math.min(ramp.length - 1, (t * ramp.length) | 0)];
+            cr = col.r;
+            cg = col.g;
+            cb = col.b;
           }
+          const puff = this.tintedPuff(cr, cg, cb);
+          if (puff) {
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(puff, p.x - d / 2, p.y - d / 2, d, d);
+            ctx.globalAlpha = 1;
+          } else {
+            this.blitGlow(ctx, p.x, p.y, d / 2, cr, cg, cb, alpha);
+          }
+        } else if (smokeSpr) {
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(this.whiteSmoke() ?? smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
           ctx.globalAlpha = 1;
         } else {
           this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, alpha);

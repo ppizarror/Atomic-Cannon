@@ -160,9 +160,10 @@ describe('Particle system', () => {
     expect(rx - lx).toBeGreaterThan(20); // opposite winds separate the smoke
   });
 
-  it('wind PROFILE (interp): a low smoke puff drifts less than a high one under the same wind', () => {
+  it('wind PROFILE: a low smoke puff drifts less than a high one under the same wind', () => {
     // Ground line at y=1000 (via a flat groundAt). A puff hugging the ground (small height above it)
-    // should barely move; a puff high above should catch the full wind.
+    // should barely move; a puff high above should catch the full wind. The smoke boundary-layer easing
+    // is applied UNCONDITIONALLY (independent of the Wind Model setting) so fumes never rocket off the soil.
     const groundY = 1000;
     const groundAt = () => groundY;
     const mk = (y: number) => {
@@ -200,6 +201,90 @@ describe('Particle system', () => {
     lo.trail(2000, 1000, '#ffffff', 120, 0, 2); // slow rocket (trailType 2)
     hi.trail(2000, 1000, '#ffffff', 950, 0, 2); // fast (high-power) rocket
     expect(hi.count()).toBeGreaterThan(lo.count()); // faster shot emits more trail smoke
+  });
+
+  // Helper: the live 'smoke' particles of a system.
+  const smokeOf = (ps: CParticleSystem) =>
+    (ps as unknown as {m_particles: {kind: string; r: number}[]}).m_particles.filter(
+      p => p.kind === 'smoke',
+    );
+
+  it('a ROCKET (trailType≥2) fumes only while ASCENDING — the motor stops at apex', () => {
+    const up = new CParticleSystem();
+    up.setBounds(4000, 2000);
+    const down = new CParticleSystem();
+    down.setBounds(4000, 2000);
+    // Same rocket; ascending vs descending (past apex). vy sign is informational — the
+    // controller passes `ascending` explicitly (arg 9); trail() gates on that.
+    up.trail(2000, 1000, '#cccccc', 300, -300, 2, 0, 1 / 60, true); // ascending → fumes
+    down.trail(2000, 1000, '#cccccc', 300, 300, 2, 0, 1 / 60, false); // past apex → no fume
+    expect(up.count()).toBeGreaterThan(0); // rocket exhausts on the way up
+    expect(down.count()).toBe(0); // …and coasts down with NO trail
+  });
+
+  it('a BALLISTIC shell (trailType 1) trails the WHOLE flight — no apex gate', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(4000, 2000);
+    ps.trail(2000, 1000, '#cccccc', 300, 300, 1, 0, 1 / 60, false); // descending
+    expect(ps.count()).toBeGreaterThan(0); // shell still sparks on the way down
+  });
+
+  it('rocket exhaust smoke is GREY (warm→grey→black ramp); crater fumes are WHITE', () => {
+    // Rocket exhaust: grey-based (r<200) so the render ramps it orange→grey→black by age.
+    const rk = new CParticleSystem();
+    rk.setBounds(4000, 2000);
+    rk.trail(2000, 1000, '#cccccc', 400, -300, 2, 0, 1 / 60, true);
+    const exhaust = smokeOf(rk);
+    expect(exhaust.length).toBeGreaterThan(0);
+    expect(exhaust.every(p => p.r < 200)).toBe(true); // exhaust is grey, not white
+
+    // Crater fumes: white (r≥200) so the render draws the cool-tinted white sprite (never darkens).
+    const cr = new CParticleSystem();
+    cr.setBounds(1600, 1200);
+    cr.blast(800, 600, 50, '#ff8c22', false);
+    for (let i = 0; i < 60; i++) cr.update(1 / 60); // past VENT_DELAY — fumes rising
+    const fumes = smokeOf(cr);
+    expect(fumes.length).toBeGreaterThan(0);
+    expect(fumes.every(p => p.r >= 200)).toBe(true); // earth fumes are white
+  });
+
+  it('the crater vent builds a DENSE cloud (many overlapping puffs alive at once)', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(2000, 2000);
+    ps.blast(1000, 1000, 60, '#ff8c22', false);
+    let maxAlive = 0;
+    for (let i = 0; i < 180; i++) {
+      ps.update(1 / 60);
+      maxAlive = Math.max(maxAlive, smokeOf(ps).length);
+    }
+    expect(maxAlive).toBeGreaterThan(30); // dense: dozens of fume puffs coexist
+  });
+
+  it('a rocket lays a DENSER trail than a ballistic shell of the same speed', () => {
+    const rk = new CParticleSystem();
+    rk.setBounds(4000, 2000);
+    const sh = new CParticleSystem();
+    sh.setBounds(4000, 2000);
+    rk.trail(2000, 1000, '#cccccc', 600, -100, 2, 0, 1 / 60, true); // rocket exhaust ribbon
+    sh.trail(2000, 1000, '#cccccc', 600, -100, 1, 0, 1 / 60, true); // shell: a faint spark
+    expect(rk.count()).toBeGreaterThan(sh.count());
+  });
+
+  it('an AIRBURST in mid-air vents NO crater fumes (no soil disturbed); a ground blast does', () => {
+    // Ground at y=1000. A blast whose sphere never reaches it must not fume from the dirt below.
+    const air = new CParticleSystem();
+    air.setBounds(2000, 2000);
+    air.setGroundProvider(() => 1000);
+    air.blast(1000, 300, 150, '#ff0000', false); // burst at y=300, r=150 → bottom y=450, well above ground
+    for (let i = 0; i < 90; i++) air.update(1 / 60); // past VENT_DELAY, into the emit window
+    expect(smokeOf(air).length).toBe(0); // Sky Bomb bursting in the air → no ground fumes
+
+    const ground = new CParticleSystem();
+    ground.setBounds(2000, 2000);
+    ground.setGroundProvider(() => 1000);
+    ground.blast(1000, 1000, 150, '#ff0000', false); // same blast AT the surface
+    for (let i = 0; i < 90; i++) ground.update(1 / 60);
+    expect(smokeOf(ground).length).toBeGreaterThan(0); // a blast in soil DOES vent fumes
   });
 
   it('a named preset drives explosion colour (eGreen → green fireball particles)', () => {
