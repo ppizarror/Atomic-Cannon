@@ -373,6 +373,24 @@ describe('Particle system', () => {
     expect(kind()).toBeGreaterThan(0); // fumes still being vented well after impact
   });
 
+  it('muzzleSmoke throws a fixed WARM spark burst (± velocity spread), not grey smoke', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(1600, 1200);
+    ps.muzzleSmoke(400, 300, 1, 0, 2, '#ff8800'); // field value 2, barrel pointing right
+    const parts = (
+      ps as unknown as {
+        m_particles: {vx: number; vy: number; r: number; g: number; b: number; kind: string}[];
+      }
+    ).m_particles;
+    const sparks = parts.filter(p => p.kind === 'flare');
+    expect(sparks).toHaveLength(30); // a FIXED count (the field scales the spread, not the count)
+    expect(parts.some(p => p.kind === 'smoke')).toBe(false); // no grey smoke anymore
+    expect(sparks.every(p => p.r >= p.b)).toBe(true); // warm embers (red ≥ blue)
+    // A symmetric burst: sparks fly BOTH ways on each axis (not a one-directional forward puff).
+    expect(sparks.some(p => p.vx > 0) && sparks.some(p => p.vx < 0)).toBe(true);
+    expect(sparks.some(p => p.vy > 0) && sparks.some(p => p.vy < 0)).toBe(true);
+  });
+
   it('out-of-bounds reap: a particle pushed past the clip window dies immediately', () => {
     const ps = new CParticleSystem();
     ps.setBounds(100, 100); // tight bounds (maxX≈300 incl. margin)

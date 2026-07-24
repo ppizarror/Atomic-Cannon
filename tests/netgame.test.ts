@@ -42,6 +42,7 @@ function netController(localIndex: number, seed = 12345): CGameController {
     roster: ROSTER,
     wind: 1,
     mapSize: 2,
+    battles: 2,
     viewW: 1280,
     viewH: 720,
     config: CFG,
@@ -77,6 +78,7 @@ describe('network match boot', () => {
         roster: ROSTER,
         wind: 1,
         mapSize,
+        battles: 2,
         viewW: 1280,
         viewH: 720,
         config: CFG,
@@ -107,6 +109,7 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1400,
       viewH: 900,
       config: CFG,
@@ -118,6 +121,7 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1400,
       viewH: 900,
       config: CFG,
@@ -141,6 +145,7 @@ describe('network match boot', () => {
         roster: ROSTER,
         wind: 1,
         mapSize: 2,
+        battles: 2,
         viewW,
         viewH: 720,
         config: CFG,
@@ -165,6 +170,7 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -183,6 +189,7 @@ describe('network match boot', () => {
         roster: ROSTER,
         wind: 1,
         mapSize: 2,
+        battles: 2,
         viewW: 1280,
         viewH: 720,
         config: CFG,
@@ -216,6 +223,7 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -229,6 +237,7 @@ describe('network match boot', () => {
       roster: ROSTER,
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -251,6 +260,33 @@ describe('network match boot', () => {
     expect(GameConfig.buryTanks).toBe(false);
     expect(GameConfig.relativeTurrets).toBe(false);
     expect(GameConfig.randomizeTurns).toBe(false);
+  });
+
+  it('advances to a fresh battle on the server signal (multi-battle war)', () => {
+    const gc = netController(0); // CFG war length = 2 battles
+    expect(gc.getBattleNum()).toBe(1);
+    expect(gc.getTotalBattles()).toBe(2);
+    const before = gc.getNetSnapshot().heights.slice();
+
+    gc.netFinishBattle(); // battle over → show the winner celebration
+    expect(gc.isNetSimBusy()).toBe(true); // the intermission queues the server's next turn
+
+    gc.netNextBattle(0x0badf00d); // server advances the war with a fresh seed
+    expect(gc.getBattleNum()).toBe(2);
+    expect(gc.isNetSimBusy()).toBe(false); // back in a live battle
+    expect(gc.getNetSnapshot().heights).not.toEqual(before); // regenerated terrain
+    expect(gc.getNetSnapshot().tanks.every(t => t.life > 0)).toBe(true); // everyone respawned
+  });
+
+  it('two clients advance to an identical next battle from the shared seed', () => {
+    const a = netController(0);
+    const b = netController(1);
+    a.netFinishBattle();
+    b.netFinishBattle();
+    a.netNextBattle(0x51234abc);
+    b.netNextBattle(0x51234abc); // SAME server seed on both clients
+    expect(a.getNetSnapshot().heights).toEqual(b.getNetSnapshot().heights);
+    expect(a.stateHash()).toBe(b.stateHash());
   });
 
   it('runs a real economy (free-fire off) bound to the LOCAL player', () => {
@@ -281,6 +317,7 @@ describe('network match boot', () => {
         roster: ROSTER,
         wind: 1,
         mapSize: 2,
+        battles: 2,
         viewW: 1280,
         viewH: 720,
         config: CFG,
@@ -407,6 +444,7 @@ describe('NetGame bridge', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -426,6 +464,7 @@ describe('NetGame bridge', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -442,6 +481,7 @@ describe('NetGame bridge', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -461,6 +501,7 @@ describe('NetGame bridge', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -478,6 +519,7 @@ describe('NetGame bridge', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -499,6 +541,7 @@ describe('NetGame bridge', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -540,6 +583,7 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,
@@ -617,6 +661,7 @@ describe('network battle-end', () => {
       order: [1, 2],
       wind: 1,
       mapSize: 2,
+      battles: 2,
       viewW: 1280,
       viewH: 720,
       config: CFG,

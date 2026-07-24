@@ -47,6 +47,9 @@ interface RoomState {
   viewH: number;
   /** The host's gameplay config, captured at Start and replayed on reconnect. */
   config: MatchConfig | null;
+  /** War length (Deathmatch): number of battles. `currentBattle` is 1-based. */
+  totalBattles: number;
+  currentBattle: number;
   /** Latest authoritative game state — replayed to a reconnecting/late-joining client. */
   snapshot: ShotResult | null;
   /** State hash of `snapshot` (so a resync target carries its drift-check hash). */
@@ -81,6 +84,8 @@ function freshState(code: string): RoomState {
     viewW: 1280,
     viewH: 720,
     config: null,
+    totalBattles: 1,
+    currentBattle: 1,
     snapshot: null,
     snapshotHash: 0,
     appVersion: null,
@@ -313,6 +318,7 @@ export class Room {
       order: s.order,
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
+      battles: s.totalBattles,
       viewW: s.viewW,
       viewH: s.viewH,
       config: s.config ?? sanitizeConfig({} as MatchConfig),
@@ -391,6 +397,9 @@ export class Room {
     s.viewH = clampInt(viewH, 240, 4096);
     // The host's gameplay config becomes the shared config (sanitized), applied on every client.
     s.config = sanitizeConfig(config);
+    // War length: a Deathmatch runs `battles` battles; Rounds/Points is always a single battle.
+    s.totalBattles = s.config.gameType === 1 ? clampInt(s.settings.battles, 1, 20) : 1;
+    s.currentBattle = 1;
     await this.save(s);
 
     this.broadcast({
@@ -399,6 +408,7 @@ export class Room {
       order: s.order,
       wind: s.settings.wind,
       mapSize: s.settings.mapSize,
+      battles: s.totalBattles,
       viewW: s.viewW,
       viewH: s.viewH,
       config: s.config,
@@ -435,7 +445,20 @@ export class Room {
     this.broadcast({t: 'stateUpdate', from: pid, seq: msg.seq, result: msg.result, hash: msg.hash});
 
     if (msg.over) {
-      // The acting client says the battle ended — stop here and show the standings.
+      // The acting client says this BATTLE ended. If the war has more battles, advance to a
+      // fresh one (new seed → new terrain, everyone respawns); otherwise the war is over.
+      if (s.currentBattle < s.totalBattles) {
+        s.currentBattle++;
+        s.seed = newSeed(); // fresh terrain for the new battle (identical on every client)
+        s.turnIdx = 0;
+        await this.save(s);
+        // Clients show the battle-winner celebration, then advance on this message; the turn
+        // hand-off is queued behind that intermission (see NetGame). Order is unchanged.
+        this.broadcast({t: 'nextBattle', battle: s.currentBattle, seed: s.seed});
+        this.broadcast({t: 'turnBegin', playerIdx: s.turnIdx, deadline: 0});
+        return;
+      }
+      // War over — stop here and show the final standings.
       s.phase = 'ended';
       await this.save(s);
       this.broadcast({t: 'gameOver'});

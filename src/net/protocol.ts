@@ -134,6 +134,8 @@ export type ServerMessage =
       /** Match settings captured at start (so a reconnect rebuilds an identical world). */
       readonly wind: number;
       readonly mapSize: number;
+      /** War length — number of battles (Deathmatch); 1 for Rounds/Points. */
+      readonly battles: number;
       /** The host's logical resolution — the shared world size every client builds at. */
       readonly viewW: number;
       readonly viewH: number;
@@ -141,6 +143,9 @@ export type ServerMessage =
       readonly config: MatchConfig;
     }
   | {readonly t: 'turnBegin'; readonly playerIdx: number; readonly deadline: number}
+  /** A Deathmatch battle ended but the war continues — advance to a fresh battle. `seed`
+   *  regenerates the terrain identically on every client; `battle` is the new battle number. */
+  | {readonly t: 'nextBattle'; readonly battle: number; readonly seed: number}
   /** The match ended; each client shows the standings (winner computed from synced state). */
   | {readonly t: 'gameOver'}
   /** A validated intent from the acting player, relayed for spectators to apply. */

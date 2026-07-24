@@ -276,6 +276,16 @@ function MatchSettingsDialog({onClose}: {onClose: () => void}) {
               onPick={v => updateMatchConfig({gameType: v})}
               editable={host}
             />
+            {/* War length applies to Deathmatch (Points/Rounds is a single battle). */}
+            {cfg.gameType === 1 && (
+              <SegField
+                label={mi.battles}
+                value={s.settings.battles}
+                options={numOpts([1, 2, 3, 5])}
+                onPick={v => updateSettings({battles: v})}
+                editable={host}
+              />
+            )}
             <SegField
               label={mi.health}
               value={cfg.hitpoints}

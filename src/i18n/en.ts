@@ -57,6 +57,7 @@ export const en: Strings = {
       hostNote: 'Chosen by the host — everyone plays these.',
       editNote: 'You set these for everyone in the match.',
       players: 'Max players',
+      battles: 'Battles',
       mapSize: 'Map size',
       wind: 'Wind',
       health: 'Tank health',

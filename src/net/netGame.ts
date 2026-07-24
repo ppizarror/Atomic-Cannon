@@ -31,6 +31,11 @@ const TEAM_HEX = [
   '#c8c8c8',
 ];
 
+/** How long every client lingers on the battle-winner celebration before the next Deathmatch
+ *  battle starts. Client-side (not server-timed) — the server sends nextBattle immediately and
+ *  each client holds it this long, so no clock sync is needed. */
+const NET_BATTLE_INTERMISSION_MS = 4500;
+
 export class NetGame {
   private m_seq = 0;
   // The authoritative keyframe (+ its hash) that arrived WHILE we were still simulating —
@@ -54,12 +59,15 @@ export class NetGame {
           msg.order,
           msg.wind,
           msg.mapSize,
+          msg.battles,
           msg.viewW,
           msg.viewH,
           msg.config,
         );
       case 'turnBegin':
         return this.onTurnBegin(msg.playerIdx);
+      case 'nextBattle':
+        return this.onNextBattle(msg.seed);
       case 'stateUpdate':
         return this.onStateUpdate(msg.result as NetSnapshot, msg.hash);
       case 'cmd':
@@ -116,6 +124,7 @@ export class NetGame {
     order: readonly number[],
     wind: number,
     mapSize: number,
+    battles: number,
     viewW: number,
     viewH: number,
     config: MatchConfig,
@@ -138,6 +147,7 @@ export class NetGame {
       roster,
       wind,
       mapSize,
+      battles,
       viewW,
       viewH,
       config,
@@ -166,10 +176,36 @@ export class NetGame {
       this.applyKeyframeIfDrifted(this.m_pendingKeyframe.result, this.m_pendingKeyframe.hash);
       this.m_pendingKeyframe = null;
     }
+    // Battle over → show the battle-winner celebration on EVERY client (deterministic: the same
+    // last team stands). The server then either ends the war (gameOver) or, for a Deathmatch with
+    // battles left, sends nextBattle. No in-battle turn hand-off follows, so don't drain one.
+    if (gc.isNetBattleOver()) {
+      gc.netFinishBattle();
+      return;
+    }
     if (this.m_pendingTurn !== null) {
       const idx = this.m_pendingTurn;
       this.m_pendingTurn = null;
       this.applyTurn(idx);
     }
+  }
+
+  /**
+   * A Deathmatch battle ended and the war continues. Hold on the battle-winner celebration for a
+   * short intermission, then advance to the fresh battle (new terrain from the shared seed). The
+   * server's turnBegin for the new battle races in immediately; it's queued (the controller reads
+   * BattleEnd as "busy") until the advance completes, then drained here.
+   */
+  private onNextBattle(seed: number): void {
+    setTimeout(() => {
+      const gc = this.host.controller;
+      if (!gc.isNetBattleActive()) return; // left the match during the intermission
+      gc.netNextBattle(seed);
+      if (this.m_pendingTurn !== null) {
+        const idx = this.m_pendingTurn;
+        this.m_pendingTurn = null;
+        this.applyTurn(idx);
+      }
+    }, NET_BATTLE_INTERMISSION_MS);
   }
 }

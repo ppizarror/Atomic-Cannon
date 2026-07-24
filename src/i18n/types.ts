@@ -109,6 +109,7 @@ export interface Strings {
       hostNote: string; // "Set by the host" caption (joiner)
       editNote: string; // "these apply to everyone" caption (host)
       players: string; // max players ("number of tanks")
+      battles: string; // war length (Deathmatch)
       mapSize: string;
       wind: string;
       health: string;
