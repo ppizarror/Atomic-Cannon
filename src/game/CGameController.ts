@@ -463,6 +463,11 @@ export class CGameController implements ShotWorld {
     this.m_viewW = this.m_netMode ? this.m_netViewW : this.m_displayW;
     this.m_viewH = this.m_netMode ? this.m_netViewH : this.m_displayH;
 
+    // Rounds/Point mode is NON-LETHAL (faithful to the original): a tank at 0 life is never marked
+    // destroyed and keeps taking turns — the round is scored by damage points, not eliminations.
+    // Only Deathmatch destroys tanks. CTank.hit()/applyRadiationDamage read this.
+    GameConfig.lethalDamage = this.m_gameType === EGameType.Deathmatch;
+
     // Reset state
     this.m_simAccum = 0; // fresh fixed-timestep accumulator
     this.m_netShotResolving = false;
@@ -3287,7 +3292,8 @@ export class CGameController implements ShotWorld {
    *  the human's — mode-aware. Deathmatch: most kills (tie → team average life%).
    *  Rounds/Points: most points (Σ net damage dealt); an exact tie across ALL teams → null
    *  (a Draw). Also null when no player teams remain. The representative is the team's own
-   *  top scorer — used for the winner flag/gloat — which in Rounds mode may be a dead tank. */
+   *  top scorer — used for the winner flag/gloat. (Rounds is non-lethal, so its rep is always
+   *  a living tank; a Deathmatch rep can be dead if its whole team was wiped.) */
   private getLeadingTeam(): {members: CTank[]; rep: CTank; human: boolean} | null {
     const teams = [...this.groupTanksByTeam(t => !t.isSentry()).values()];
     if (teams.length === 0) return null;

@@ -39,6 +39,13 @@ export const GameConfig = {
   // A gameplay rule → shared over the network via MatchConfig so every client simulates the same.
   radiationDamage: true,
 
+  // Whether a tank at 0 life is DESTROYED. Deathmatch = true (a killed tank explodes and drops
+  // out); Rounds/Point = false — faithful to the original, where the per-hit dead-flag/explosion
+  // lives entirely inside the Deathmatch branch, so a Rounds tank is never destroyed mid-game and
+  // keeps taking turns (the round is scored by damage points, not eliminations). Set per match in
+  // startGame from the game type; read by CTank.hit()/applyRadiationDamage.
+  lethalDamage: true,
+
   // ── render toggles ──
   drawSmoke: true, // Graphics → Draw Smoke (lingering ground plumes)
   colorizeTeam: true, // Tank → Colorize Team (hull tint)

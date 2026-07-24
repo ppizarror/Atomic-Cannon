@@ -1,8 +1,10 @@
 /**
  * Rounds/Points game mode (recovered from the original): a SINGLE battle that runs a fixed
- * number of rounds (a round = one full turn-order pass). It does NOT end early on an
- * elimination, dead tanks are not respawned, and the winner is the team with the most
- * POINTS (cumulative net damage dealt) — not kills. Every team tied on points is a Draw.
+ * number of rounds (a round = one full turn-order pass). It is NON-LETHAL — a tank bottoms out
+ * at 0 life but is never destroyed and keeps taking turns (faithful to the original, whose per-hit
+ * dead-flag/explosion is gated to Deathmatch; the manual says "no tank is ever destroyed"). So it
+ * never ends early on an elimination, and the winner is the team with the most POINTS (cumulative
+ * net damage dealt) — not kills. Every team tied on points is a Draw.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -34,22 +36,42 @@ describe('Rounds / Points mode', () => {
     expect(gc.getStatusLine()).toBe('Round 1 of 7');
   });
 
-  it('an elimination does NOT end the game — only the round count does', () => {
+  it('is non-lethal: a hit that would kill only bottoms life at 0 — the tank lives on', () => {
     const gc = roundsGame(2);
     const p = priv(gc);
 
-    // Wipe one team. In Deathmatch this ends the battle; in Rounds it must not.
+    // A massive hit in Rounds must NOT destroy the tank (it does in Deathmatch). Life floors at 0
+    // but the tank stays alive and keeps its turn — "no tank is ever destroyed".
     p.m_tanks[1].hit(999_999);
-    expect(p.m_tanks[1].isAlive()).toBe(false);
+    expect(p.m_tanks[1].isAlive()).toBe(true); // never destroyed in Rounds
+    expect(p.m_tanks[1].getHealth().nLife).toBe(0); // life still bottoms out at 0
+  });
+
+  it('an elimination never happens, so the game ends only on the round count', () => {
+    const gc = roundsGame(2);
+    const p = priv(gc);
+
+    // Even a would-be-fatal blast leaves both teams standing → the battle can't end early.
+    p.m_tanks[1].hit(999_999);
     p.m_gameState = EGameState.Battle;
     p.endBattleIfDecided();
-    expect(p.m_gameState).toBe(EGameState.Battle); // still going
+    expect(p.m_gameState).toBe(EGameState.Battle); // still going — no team was wiped
 
     // Drive turns until it ends on its own — that must be by the round count.
     let guard = 0;
     while (p.m_gameState === EGameState.Battle && guard++ < 200) p.endTurn();
     expect(p.m_gameState).toBe(EGameState.BattleEnd);
     expect(p.m_currentRound).toBeGreaterThan(2); // played the full count (counter passed N)
+  });
+
+  it('Deathmatch, by contrast, DOES destroy a tank at 0 life', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(1);
+    gc.setGameType(EGameType.Deathmatch);
+    gc.startGame(2);
+    const t = (gc as unknown as GCInternals).m_tanks;
+    t[1].hit(999_999);
+    expect(t[1].isAlive()).toBe(false); // lethal in Deathmatch
   });
 
   it('the winner is the team with the most POINTS (damage), not kills', () => {

@@ -541,6 +541,9 @@ export class Room {
       const owner = Room.ownerOf(s, pos);
       const p = owner === undefined ? undefined : s.players[owner];
       if (!p || !p.connected) return false; // owner dropped → skip
+      // Rounds/Point (gameType 0) is non-lethal: a tank bottoms at 0 life but is never destroyed
+      // and keeps taking turns. Only skip the dead in Deathmatch (gameType 1).
+      if (s.config && s.config.gameType !== 1) return true;
       const tankIdx = Room.tankAt(s, pos);
       return s.snapshot ? (s.snapshot.tanks[tankIdx]?.life ?? 1) > 0 : true; // dead tank → skip
     };

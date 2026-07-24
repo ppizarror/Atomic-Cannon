@@ -601,8 +601,13 @@ export class CTank {
 
     if (this.m_health.nLife <= 0) {
       this.m_health.nLife = 0;
-      this.m_bExploded = true;
-      this.m_bIsAlive = false;
+      // Rounds/Point mode is non-lethal: the tank bottoms out at 0 life but is NEVER destroyed —
+      // it keeps taking turns and the round is scored by damage points (faithful to the original,
+      // which gates the dead-flag/explosion to Deathmatch). Only Deathmatch kills.
+      if (GameConfig.lethalDamage) {
+        this.m_bExploded = true;
+        this.m_bIsAlive = false;
+      }
     }
 
     return lifeBefore - this.m_health.nLife;
@@ -636,8 +641,13 @@ export class CTank {
 
     if (this.m_health.nLife <= 0) {
       this.m_health.nLife = 0;
-      this.m_bExploded = true;
-      this.m_bIsAlive = false;
+      // Rounds/Point mode is non-lethal: the tank bottoms out at 0 life but is NEVER destroyed —
+      // it keeps taking turns and the round is scored by damage points (faithful to the original,
+      // which gates the dead-flag/explosion to Deathmatch). Only Deathmatch kills.
+      if (GameConfig.lethalDamage) {
+        this.m_bExploded = true;
+        this.m_bIsAlive = false;
+      }
     }
   }
 
