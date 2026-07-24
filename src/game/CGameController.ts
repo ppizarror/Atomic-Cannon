@@ -3024,6 +3024,14 @@ export class CGameController implements ShotWorld {
     // player whose turn it now is, and clear the shot the camera was tracking.
     this.m_manualScroll = false;
     this.m_activeShot = null;
+    // Focus the player whose turn it is. On a large (multi-screen) map the eased scroll can't
+    // cross several screens before a bot fires (~0.6s later), so if the active tank is OFF-SCREEN
+    // snap the camera onto it — the player must SEE whose turn it is. When it's already on screen
+    // (small maps / adjacent tanks) let updateCamera ease the short distance smoothly.
+    const focusX = tank.getPosition().x;
+    if (focusX < this.m_camX || focusX > this.m_camX + this.m_viewW) {
+      this.centerCameraOn(focusX);
+    }
 
     // Re-arm the taunt state for the new turn: no shot yet (gates the post-fire gloat)
     // and a fresh idle-taunt countdown.
@@ -4588,16 +4596,19 @@ export class CGameController implements ShotWorld {
     // Hide weapons disabled in Game Content; the staple (Shell) is always available.
     const staple = getDefaultWeaponIndex();
     const enabled = (i: number) => i === staple || weaponEnabled(i);
-    // On the human's turn the arsenal lists only what's IN STOCK — you can't select a
-    // weapon you don't own (the unlimited staple always qualifies; free-fire makes every
-    // weapon in stock). During a bot's turn the full enabled list is shown so the bot's
-    // chosen weapon still appears in the HUD.
-    if (this.isPlayerTurn()) {
-      return WEAPON_DATABASE.filter(
-        w => enabled(w.index) && this.activeEconomy().hasStock(w.index),
-      );
-    }
-    return WEAPON_DATABASE.filter(w => enabled(w.index));
+    // No active tank yet (arsenal preview before a match / on a menu) → there's no inventory to
+    // read, so show the enabled arsenal (what could be bought).
+    const tank = this.getCurrentTank();
+    if (!tank) return WEAPON_DATABASE.filter(w => enabled(w.index));
+    // Otherwise the ACTIVE player's own arsenal — only what THEY have in stock — whether that's the
+    // local human, a bot, or a remote player (every client mirrors each player's economy via relayed
+    // buys, and bots buy through their own economy). So a spectator watching someone else's turn sees
+    // the acting player's real inventory (e.g. a Shell-only bot shows only Shell), not the whole
+    // arsenal. The unlimited staple always qualifies; free-fire puts every weapon in stock; the active
+    // player's chosen weapon is by definition in their stock, so it always appears.
+    return WEAPON_DATABASE.filter(
+      w => enabled(w.index) && this.economyFor(tank).hasStock(w.index),
+    );
   }
 
   getCurrentWeaponIndex(): number {

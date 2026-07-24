@@ -68,8 +68,13 @@ describe('Weapon selection', () => {
     expect(human.getWeaponIndex()).toBe(CTRL);
   });
 
-  it('bot turn shows the full arsenal (not the lock)', () => {
-    expect(gc.getWeaponDefs()).toHaveLength(WEAPON_DATABASE.length);
+  it("bot turn shows the BOT's own stock, not the full arsenal", () => {
+    gc.m_currentPlayerIndex = 1; // the bot's turn
+    const defs = gc.getWeaponDefs();
+    // Spectating the bot shows only what it actually owns — far fewer than the whole database
+    // (this is the fix for "the enemy list shows nukes it doesn't have").
+    expect(defs.length).toBeGreaterThan(0);
+    expect(defs.length).toBeLessThan(WEAPON_DATABASE.length);
   });
 
   it('human weapon is restored on their turn', () => {

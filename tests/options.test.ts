@@ -10,6 +10,8 @@ import {CGameController} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
 import {CLand} from '../src/core/CLand';
 import {GameConfig} from '../src/core/CGameConfig';
+import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {weaponEnabled} from '../src/core/CGameContent';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
 
@@ -108,6 +110,101 @@ describe('Formerly-no-op Settings options', () => {
     expect(offR.after).toBe(offR.before); // legacy: fallout is purely cosmetic, no tank damage
 
     GameConfig.radiationDamage = true; // restore default
+  });
+
+  it('the weapon list shows the ACTIVE player\'s own stock, not the full arsenal', () => {
+    const gc = humanGame(2);
+    const p = gc as unknown as {
+      m_tanks: CTank[];
+      m_currentPlayerIndex: number;
+      economyFor(t: CTank): {grant(i: number): void; hasStock(i: number): boolean};
+    };
+    const botIdx = p.m_tanks.findIndex(t => !t.isHuman());
+    expect(botIdx).toBeGreaterThanOrEqual(0);
+    p.m_currentPlayerIndex = botIdx; // spectate the bot's turn
+    const econ = p.economyFor(p.m_tanks[botIdx]);
+
+    // A weapon the bot does NOT own must be ABSENT (previously the whole arsenal was shown).
+    const missing = WEAPON_DATABASE.find(w => weaponEnabled(w.index) && !econ.hasStock(w.index));
+    expect(missing).toBeDefined();
+    const has = () => gc.getWeaponDefs().some(w => w.index === missing!.index);
+    expect(has()).toBe(false); // not shown — the bot doesn't own it
+
+    const before = gc.getWeaponDefs().length;
+    econ.grant(missing!.index); // give it to the bot → the list tracks its real inventory
+    expect(has()).toBe(true);
+    expect(gc.getWeaponDefs().length).toBe(before + 1);
+  });
+
+  it('the camera snaps to the active tank at turn-begin when it is off-screen (large maps)', () => {
+    GameConfig.landSize = 5; // wide world → the two tanks are off-screen from each other
+    const gc = humanGame(2);
+    GameConfig.landSize = 3; // restore for other tests (world already built at 5)
+    const p = gc as unknown as {m_tanks: CTank[]; m_currentPlayerIndex: number; m_viewW: number; beginTurn(): void};
+
+    // Battle start centred the camera on player 0; find a tank currently OFF-SCREEN.
+    const cam = gc.getCameraX();
+    const farIdx = p.m_tanks.findIndex(t => {
+      const x = t.getPosition().x;
+      return x < cam || x > cam + p.m_viewW;
+    });
+    expect(farIdx).toBeGreaterThanOrEqual(0); // a big map DOES place a tank off-screen
+
+    p.m_currentPlayerIndex = farIdx;
+    p.beginTurn(); // its turn begins → camera must snap so the player can see it
+    const focusX = p.m_tanks[farIdx].getPosition().x;
+    const after = gc.getCameraX();
+    expect(focusX).toBeGreaterThanOrEqual(after); // the once-off-screen tank is now visible
+    expect(focusX).toBeLessThanOrEqual(after + p.m_viewW);
+  });
+
+  it('a tank falls into a crater carved under it, and respects the Bury Tanks setting', () => {
+    const W = 1200, H = 500, SURF = 300;
+    const build = (): CLand => {
+      const land = new CLand(W, H) as unknown as {
+        generateFlat(): void;
+        m_arrHeights: Int16Array;
+        m_pixels: Uint32Array;
+        m_material: Uint8Array;
+      };
+      land.generateFlat();
+      land.m_pixels = new Uint32Array(W * H);
+      land.m_material = new Uint8Array(W * H);
+      for (let x = 0; x < W; x++) {
+        land.m_arrHeights[x] = SURF;
+        for (let y = SURF; y < H; y++) land.m_pixels[y * W + x] = 0xff3c5a1e >>> 0;
+      }
+      return land as unknown as CLand;
+    };
+    const settled = (land: CLand): CTank => {
+      const t = new CTank('T', 0);
+      (t as unknown as {init(x: number, l: CLand): void}).init(600, land);
+      for (let i = 0; i < 60; i++) t.update(land, 1 / 60);
+      return t;
+    };
+
+    // Carve a crater directly under the tank → it drops onto the new, lower surface.
+    const land = build();
+    const tank = settled(land);
+    const yStart = tank.getPosition().y;
+    land.carveDiscCollapse(600, SURF, 90, true, true, true);
+    for (let i = 0; i < 300; i++) { land.update(1 / 60); tank.update(land, 1 / 60); }
+    expect(tank.getPosition().y).toBeGreaterThan(yStart + 10); // it FELL into the crater
+
+    // Pile dirt over a tank: Bury OFF lifts it back to the surface; Bury ON leaves it buried.
+    const pile = (bury: boolean): number => {
+      GameConfig.buryTanks = bury;
+      const l = build();
+      const t = settled(l);
+      const before = t.getPosition().y;
+      const pv = l as unknown as {m_arrHeights: Int16Array};
+      for (let c = 560; c < 640; c++) pv.m_arrHeights[c] = SURF - 40; // 40px of dirt on top
+      for (let i = 0; i < 200; i++) t.update(l, 1 / 60);
+      return t.getPosition().y - before;
+    };
+    expect(pile(false)).toBeLessThan(-10); // Bury OFF: lifted up out of the dirt (smaller y)
+    expect(Math.abs(pile(true))).toBeLessThan(2); // Bury ON: stays put, buried
+    GameConfig.buryTanks = false; // restore
   });
 
   it('Buy Time gates the depot: Anytime always open, Automatic never', () => {
