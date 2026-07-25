@@ -1108,12 +1108,14 @@ canvas {
 }
 
 /* The scrolling content is a column of bitmap-font sections (colour + size come
-   from the fonts themselves; this is layout / spacing only). */
+   from the fonts themselves; this is layout / spacing only). The extra right padding (beyond the
+   base 12px track reserve) keeps the content clear of the scrollbar instead of butting against it. */
 .about-body .cscroll-view {
   display: flex;
   flex-direction: column;
   gap: 18px;
   padding-top: 2px;
+  padding-right: 24px;
 }
 
 .about-section {
@@ -1181,13 +1183,21 @@ canvas {
   fill: rgba(10, 26, 20, 0.9);
 }
 .stat-map-grid {
-  stroke: rgba(120, 220, 140, 0.14);
-  stroke-width: 0.5;
+  stroke: rgba(120, 220, 140, 0.07);
+  stroke-width: 0.4;
 }
-.stat-map-dot {
-  fill: rgba(123, 216, 143, 0.55);
-  stroke: var(--green-focus);
-  stroke-width: 0.6;
+/* Choropleth countries: a faint base (no games); an inline green fill (scaled by games) overrides it.
+   The thin border keeps every country legible even at the base tint. */
+.stat-map-land {
+  fill: rgba(120, 220, 140, 0.09);
+  stroke: rgba(140, 230, 160, 0.45);
+  stroke-width: 0.35;
+  stroke-linejoin: round;
+}
+.stat-map-empty {
+  fill: rgba(200, 220, 205, 0.6);
+  font-size: 9px;
+  font-family: inherit;
 }
 
 .stat-countries {

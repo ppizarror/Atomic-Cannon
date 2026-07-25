@@ -1,6 +1,6 @@
 {
   "name": "atomic-cannon",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Atomic Cannon - Web port of classic turn-based tank combat game",
   "type": "module",
   "homepage": "https://github.com/ppizarror/Atomic-Cannon",
@@ -25,13 +25,13 @@
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.worker.json"
   },
   "dependencies": {
-    "@preact/signals": "^2.9.4",
+    "@preact/signals": "^2.10.0",
     "pixi-filters": "^6.1.5",
     "pixi.js": "^8.19.0",
     "preact": "^10.29.7"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260722.1",
+    "@cloudflare/workers-types": "^5.20260724.1",
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.1.1",
     "oxlint": "^1.75.0",
@@ -41,6 +41,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10",
-    "wrangler": "^4.113.0"
+    "wrangler": "^4.114.0"
   }
 }

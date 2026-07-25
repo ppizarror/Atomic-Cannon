@@ -170,6 +170,7 @@ export interface Strings {
       playTime: string;
       longestGame: string;
       byCountry: string;
+      mapEmpty: string;
     };
   };
 

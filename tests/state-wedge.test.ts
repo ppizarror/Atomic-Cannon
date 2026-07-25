@@ -15,7 +15,10 @@ type Priv = {
   m_pendingSalvos: number;
   m_gameState: EGameState;
   m_shots: unknown[];
+  m_currentPlayerIndex: number;
+  m_tanks: {m_bIsAlive: boolean; getTeamId(): number}[];
   executeBotTurn(): void;
+  updateBattle(dt: number): void;
 };
 const priv = (gc: CGameController) => gc as unknown as Priv;
 
@@ -47,5 +50,25 @@ describe('state-machine wedge guards', () => {
 
     // The guard keeps it inert — botMove→startTankMove must NOT flip state back to Battle.
     expect(p.m_gameState).toBe(EGameState.BattleEnd);
+  });
+
+  it('forfeits the turn when the ACTING tank dies passively mid-turn (no hang)', () => {
+    // 3 solo bots on distinct teams: a mid-turn passive death (radiation DOT / a mine) leaves 2 teams
+    // → the battle is UNDECIDED, so endBattleIfDecided won't fire. Bots have no shot clock and the
+    // scheduled fire() bails on a dead tank without handing off, so without the forfeit the match hangs.
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(0); // all bots → no human shot clock to mask a hang
+    gc.startGame(3);
+    const p = priv(gc);
+    expect(new Set(p.m_tanks.map(t => t.getTeamId())).size).toBe(3); // FFA: one death stays undecided
+
+    p.m_gameState = EGameState.Battle;
+    const actor = p.m_currentPlayerIndex;
+    p.m_tanks[actor].m_bIsAlive = false; // the acting bot just died to radiation / a mine
+
+    p.updateBattle(0); // the frame after the passive death
+
+    expect(p.m_currentPlayerIndex).not.toBe(actor); // play advanced to a living tank (was: hung here)
+    expect(p.m_gameState).toBe(EGameState.Battle); // a fresh live turn, not wedged
   });
 });
