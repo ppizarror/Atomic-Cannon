@@ -18,6 +18,60 @@ import {tauntLines} from './tauntsStore';
 import {roster} from './playersStore';
 import {showFramerate, showFrameCount, maxFps} from './store';
 
+/**
+ * Seed every settings-mirror field of GameConfig from the persisted Settings (via settingsValues,
+ * which falls back to the catalog default when a value was never stored). This is the ONLY writer
+ * of those fields — GameConfig itself holds inert placeholders, so the catalog is the single source
+ * of truth for every default. Called from applyGameSettings (boot + each game + on any change) and
+ * from the test setup, so the same catalog-derived defaults apply in-game and in unit tests.
+ */
+export function applyGameConfig(): void {
+  // Tank
+  GameConfig.kickbackScale = S.kickbackScale();
+  GameConfig.tankSizeScale = S.tankSizeScale();
+  GameConfig.relativeTurrets = S.relativeTurrets();
+  GameConfig.buryTanks = S.buryTanks();
+  GameConfig.powerScale = S.powerScale();
+  GameConfig.hitpoints = S.hitpoints();
+  GameConfig.chatter = S.chatter();
+  GameConfig.colorizeTeam = S.colorizeTeam();
+  // Gameplay
+  GameConfig.landSize = S.landSize(); // world-width multiplier (applied at next startGame)
+  GameConfig.changeWind = S.changeWind();
+  GameConfig.windModel = S.windModel();
+  GameConfig.explosionScale = S.explosionScale();
+  GameConfig.utilityTurn = S.utilityTurn();
+  GameConfig.randomizeTurns = S.randomizeTurns();
+  GameConfig.alternateTurns = S.alternateTurns();
+  GameConfig.crateChance = S.crateChance();
+  GameConfig.rightClickFires = S.rightClickFires();
+  GameConfig.radiationDamage = S.radiationDamage(); // fallout DOT vs cosmetic-only (shared in net via MatchConfig)
+  GameConfig.buyTime = S.buyTime();
+  // Graphics
+  GameConfig.tracking = S.tracking();
+  GameConfig.drawSmoke = S.drawSmoke();
+  GameConfig.detail = S.detail();
+  GameConfig.craterFill = S.craterFill();
+  GameConfig.highContrast = S.highContrast();
+  GameConfig.showAiStats = S.showAiStats();
+  GameConfig.showTeamColor = S.showTeamColor();
+  GameConfig.smallBuyFonts = S.smallBuyFonts();
+  // Graphics — More Graphics Options
+  GameConfig.showTurn = S.showTurn();
+  GameConfig.blastCircles = S.blastCircles();
+  GameConfig.showPoints = S.showPoints(); // floating damage numbers per hit
+  GameConfig.showPowerBars = S.showPowerBars();
+  GameConfig.showTankStats = S.showTankStats();
+  GameConfig.autoScroll = S.autoScroll(); // camera follows the shot / active tank
+  GameConfig.cameraMode = S.cameraMode(); // turn hand-off: Smooth / Instant / Cinematic
+  GameConfig.showLastAim = S.showLastAim();
+  GameConfig.explosionWaves = S.explosionWaves();
+  GameConfig.cameraShake = S.cameraShake();
+  GameConfig.explodeLosers = S.explodeLosers();
+  GameConfig.demo = S.demo();
+  GameConfig.ambientLight = S.ambientLight();
+}
+
 export function applyGameSettings(c: CGameController): void {
   // A LIVE network match runs the host's shared MatchConfig (applied once in startNetworkGame).
   // A local Settings change mid-match must NOT re-derive the simulation config from THIS client's
@@ -38,54 +92,15 @@ export function applyGameSettings(c: CGameController): void {
   c.setTotalRounds(S.rounds());
   c.setGameType(S.gameType());
   c.setVariance(S.variance());
-  GameConfig.radiationDamage = S.radiationDamage(); // fallout DOT vs cosmetic-only (shared in net via MatchConfig)
   c.setGameSpeed(S.gameSpeed());
   c.setWindScale(S.windScale());
   c.setLandMode(S.landMode());
   c.setDifficulty(S.difficulty());
 
-  // Cross-cutting scalars + render toggles, read directly off GameConfig
-  // by the tank badge / shot launch / blast / render-gate sites.
-  GameConfig.landSize = S.landSize(); // world-width multiplier (applied at next startGame)
-  GameConfig.kickbackScale = S.kickbackScale();
-  GameConfig.explosionScale = S.explosionScale();
-  GameConfig.powerScale = S.powerScale();
-  GameConfig.tankSizeScale = S.tankSizeScale();
-  GameConfig.hitpoints = S.hitpoints();
-  GameConfig.drawSmoke = S.drawSmoke();
-  GameConfig.colorizeTeam = S.colorizeTeam();
-  GameConfig.chatter = S.chatter();
-  GameConfig.crateChance = S.crateChance();
-  GameConfig.showTeamColor = S.showTeamColor();
-  GameConfig.showPowerBars = S.showPowerBars();
-  GameConfig.showTankStats = S.showTankStats();
-  GameConfig.tracking = S.tracking();
-  GameConfig.showTurn = S.showTurn();
-  GameConfig.showPoints = S.showPoints(); // floating damage numbers per hit
-  GameConfig.autoScroll = S.autoScroll(); // camera follows the shot / active tank
-  GameConfig.cameraMode = S.cameraMode(); // turn hand-off: Smooth / Instant / Cinematic
-  GameConfig.showLastAim = S.showLastAim();
-  GameConfig.explosionWaves = S.explosionWaves();
-  GameConfig.cameraShake = S.cameraShake();
-  GameConfig.explodeLosers = S.explodeLosers();
-  GameConfig.blastCircles = S.blastCircles();
-  GameConfig.highContrast = S.highContrast();
-  GameConfig.showAiStats = S.showAiStats();
-  GameConfig.demo = S.demo();
-  GameConfig.ambientLight = S.ambientLight();
-  // Formerly-unwired options (Settings parity).
-  GameConfig.rightClickFires = S.rightClickFires();
-  GameConfig.smallBuyFonts = S.smallBuyFonts();
-  GameConfig.relativeTurrets = S.relativeTurrets();
-  GameConfig.buryTanks = S.buryTanks();
-  GameConfig.utilityTurn = S.utilityTurn();
-  GameConfig.randomizeTurns = S.randomizeTurns();
-  GameConfig.alternateTurns = S.alternateTurns();
-  GameConfig.buyTime = S.buyTime();
-  GameConfig.changeWind = S.changeWind();
-  GameConfig.windModel = S.windModel();
-  GameConfig.detail = S.detail();
-  GameConfig.craterFill = S.craterFill();
+  // Every GameConfig field (scalars + render toggles), read directly off GameConfig by the tank
+  // badge / shot launch / blast / render-gate sites. The catalog is the sole default source.
+  applyGameConfig();
+
   // Framerate overlay (top-right DOM readouts): FPS at mode ≥ 1, + frame count at Full.
   const frameMode = S.framerate();
   showFramerate.value = frameMode >= 1;

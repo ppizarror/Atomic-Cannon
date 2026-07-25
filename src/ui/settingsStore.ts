@@ -23,7 +23,10 @@ const vals = signal<Vals>(loadJSON<Vals>(KEY, {}));
  *  e.g. `setStartCredits(NaN)` would make tank credits NaN and pool that across the team. */
 export function getVal(id: SettingId): number {
   const v = vals.value[id];
-  return typeof v === 'number' && Number.isFinite(v) ? v : SETTINGS[id].default;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  // Catalog toggles may store their default as a boolean for readability — coerce to 0|1.
+  const d = SETTINGS[id].default;
+  return typeof d === 'boolean' ? (d ? 1 : 0) : d;
 }
 
 /** Set `id` and persist the whole map. */

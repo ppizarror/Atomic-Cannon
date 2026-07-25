@@ -13,8 +13,10 @@
  * an unregistered id is a COMPILE error (`id: SettingId`).
  */
 export interface SettingMeta {
-  /** Value until the player changes it — raw stored units (enum index / stepper value / 0|1). */
-  default: number;
+  /** Value until the player changes it — raw stored units (enum index / stepper value). A plain
+   *  ON/OFF toggle is written as a `boolean` here purely for readability; `getVal` coerces it to
+   *  the stored 0|1 the widgets and engine getters expect, so it reads as a number everywhere else. */
+  default: number | boolean;
   /** Enum index → engine scalar (e.g. Wind index → wind multiplier). Same length as the
    *  matching i18n `options` array. */
   scale?: readonly number[];
@@ -32,13 +34,13 @@ const CATALOG = {
 
   // ── Tank ── (kickback / player-size carry engine scalars; index → multiplier)
   'tank.kickback': {default: 2, scale: [0, 0.6, 1, 1.5]},
-  'tank.size': {default: 1, scale: [0.72, 1, 1.35]},
-  'tank.relTurrets': {default: 0},
-  'tank.bury': {default: 0},
+  'tank.size': {default: 2, scale: [0.72, 1, 1.35]},
+  'tank.relTurrets': {default: false},
+  'tank.bury': {default: false},
   'tank.powerScale': {default: 100},
   'tank.hitpoints': {default: 1000},
-  'tank.chatter': {default: 1},
-  'tank.colorize': {default: 1},
+  'tank.chatter': {default: true},
+  'tank.colorize': {default: false},
 
   // ── Gameplay ──
   'gp.battles': {default: 2},
@@ -50,42 +52,42 @@ const CATALOG = {
   'gp.changeWind': {default: 0},
   'gp.windModel': {default: 0}, // 0 Linear (uniform) · 1 Realistic (boundary-layer profile)
   'gp.explosionSize': {default: 1, scale: [0.7, 1, 1.35, 1.8]},
-  'gp.variance': {default: 1},
-  'gp.utilTurn': {default: 0},
-  'gp.randTurns': {default: 0},
-  'gp.altTurns': {default: 0}, // interleave teams (A1,B1,A2,B2) instead of contiguous (A1,A2,B1,B2)
+  'gp.variance': {default: true},
+  'gp.utilTurn': {default: false},
+  'gp.randTurns': {default: false},
+  'gp.altTurns': {default: false}, // interleave teams (A1,B1,A2,B2) instead of contiguous (A1,A2,B1,B2)
   'gp.crates': {default: 20},
   'gp.updateScale': {default: 10},
-  'gp.rcFires': {default: 1},
-  'gp.radiationDamage': {default: 1}, // fallout hurts tanks on it (on) vs cosmetic-only (off, legacy)
+  'gp.rcFires': {default: true},
+  'gp.radiationDamage': {default: true}, // fallout hurts tanks on it (on) vs cosmetic-only (off, legacy)
 
   // ── Graphics ──
-  'gfx.tracking': {default: 1},
-  'gfx.smoke': {default: 1},
+  'gfx.tracking': {default: true},
+  'gfx.smoke': {default: true},
   'gfx.detail': {default: 2}, // render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame
-  'gfx.craterFill': {default: 0}, // fill craters with soil (off = transparent, the faithful default)
-  'gfx.highContrast': {default: 0},
+  'gfx.craterFill': {default: false}, // fill craters with soil (off = transparent, the faithful default)
+  'gfx.highContrast': {default: false},
   'gfx.landType': {default: 5},
-  'gfx.aiStats': {default: 0},
-  'gfx.teamColor': {default: 1},
-  'gfx.smallBuy': {default: 0},
+  'gfx.aiStats': {default: false},
+  'gfx.teamColor': {default: true},
+  'gfx.smallBuy': {default: false},
 
   // ── More Graphics ──
-  'gfx.showTurn': {default: 1},
-  'gfx.blastCircles': {default: 0},
-  'gfx.showPoints': {default: 1},
-  'gfx.showPower': {default: 1},
-  'gfx.tankStats': {default: 0},
-  'gfx.autoScroll': {default: 1},
+  'gfx.showTurn': {default: true},
+  'gfx.blastCircles': {default: false},
+  'gfx.showPoints': {default: true},
+  'gfx.showPower': {default: true},
+  'gfx.tankStats': {default: false},
+  'gfx.autoScroll': {default: true},
   'gfx.camera': {default: 0}, // turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic
-  'gfx.lastAim': {default: 1},
-  'gfx.expWaves': {default: 1},
-  'gfx.camShake': {default: 1},
-  'gfx.explodeLosers': {default: 1}, // blow up the non-winning teams when a battle ends (cosmetic)
+  'gfx.lastAim': {default: true},
+  'gfx.expWaves': {default: true},
+  'gfx.camShake': {default: true},
+  'gfx.explodeLosers': {default: true}, // blow up the non-winning teams when a battle ends (cosmetic)
   'gfx.framerate': {default: 0},
   'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144]},
-  'gfx.demo': {default: 0},
-  'gfx.ambientLight': {default: 1},
+  'gfx.demo': {default: false},
+  'gfx.ambientLight': {default: true},
 
   // ── Audio ── (Sound/Music/volumes/Stereo all bind live to CAudio, not stored here)
 } satisfies Record<string, SettingMeta>;

@@ -92,7 +92,6 @@ export const gameSettings = {
   /** Max framerate cap (ticker.maxFPS): 0 = uncapped (display refresh rate). */
   maxFps: (): number => scale('gfx.fpsCap', 0),
 
-  // ── formerly-unwired options (Settings parity) ──
   /** Right-click fires the shot (like Space / the FIRE button). */
   rightClickFires: (): boolean => getVal('gp.rcFires') !== 0,
   /** Depot list uses the smaller bitmap font. */

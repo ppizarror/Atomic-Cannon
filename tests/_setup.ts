@@ -7,5 +7,13 @@
  * call installDomMocks() themselves.
  */
 import {installDomMocks} from './_dom';
+import {applyGameConfig} from '../src/ui/applySettings';
 
 installDomMocks();
+
+// GameConfig's settings-mirror fields hold only inert placeholders; their real defaults live in
+// settingsCatalog and are pushed in by applyGameConfig (the same writer used in-game). Seed them
+// here so every test runs against the real catalog defaults, not stale literals. Runs once per test
+// file (setupFiles re-evaluate per file), re-establishing the baseline; a test that needs a specific
+// value still sets it directly.
+applyGameConfig();
