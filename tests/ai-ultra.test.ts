@@ -23,18 +23,53 @@ const flat: AimField = {heightAt: () => GY, width: 1000, height: 620};
 // A base weapon; override per test. Radius/innerR are already in on-screen px (caller folds scale).
 function weapon(over: Partial<UltraWeapon>): UltraWeapon {
   return {
-    index: 0, ext: 0, cost: 0, count: Infinity, damage: 60, radius: 30, innerR: 5, spread: 0,
-    dotValue: 0, earth: 0, piercing: false, isBeam: false, isCleaner: false, isMine: false,
-    isPremium: false, offensive: true, ...over,
+    index: 0,
+    ext: 0,
+    cost: 0,
+    count: Infinity,
+    damage: 60,
+    radius: 30,
+    innerR: 5,
+    spread: 0,
+    dotValue: 0,
+    earth: 0,
+    piercing: false,
+    isBeam: false,
+    isCleaner: false,
+    isMine: false,
+    isPremium: false,
+    offensive: true,
+    ...over,
   };
 }
 function enemy(over: Partial<UltraEnemy>): UltraEnemy {
-  return {x: 700, y: GY - 10, life: 1000, maxLife: 1000, shield: 0, hitRadius: 14, buried: false, ...over};
+  return {
+    x: 700,
+    y: GY - 10,
+    life: 1000,
+    maxLife: 1000,
+    shield: 0,
+    hitRadius: 14,
+    buried: false,
+    ...over,
+  };
 }
 
 function ctx(over: Partial<UltraCtx>): UltraCtx {
   return {
-    self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+    self: {
+      x: 100,
+      y: GY - 24,
+      life: 1000,
+      maxLife: 1000,
+      shield: 0,
+      armor: 0,
+      hazmat: 0,
+      credits: 0,
+      onRadiation: false,
+      buried: false,
+      threatened: false,
+    },
     enemies: [enemy({})],
     weapons: [weapon({})],
     crates: [],
@@ -125,7 +160,11 @@ describe('bestOffensiveShot — expected value', () => {
     // the planner must not report a shot (→ it will reposition/range instead of firing forever).
     const enemies = [enemy({x: 980, y: GY - 300})]; // high and near the right edge
     const shot = bestOffensiveShot(
-      ctx({enemies, weapons: [weapon({damage: 60, radius: 30})], muzzleFor: () => ({x: 100, y: GY - 24})}),
+      ctx({
+        enemies,
+        weapons: [weapon({damage: 60, radius: 30})],
+        muzzleFor: () => ({x: 100, y: GY - 24}),
+      }),
     );
     // Either no shot at all, or one that genuinely lands on the target — never a phantom graze.
     if (shot) expect(shot.hits).toBeGreaterThan(0);
@@ -140,7 +179,19 @@ describe('Ultra personalities — divergent play', () => {
     const base = {
       enemies: [enemy({x: 700, life: 1000})],
       weapons: [shell, heal],
-      self: {x: 100, y: GY - 24, life: 420, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+      self: {
+        x: 100,
+        y: GY - 24,
+        life: 420,
+        maxLife: 1000,
+        shield: 0,
+        armor: 0,
+        hazmat: 0,
+        credits: 0,
+        onRadiation: false,
+        buried: false,
+        threatened: false,
+      },
     };
     const cautious = planUltraTurn(ctx({...base, weights: ULTRA_PERSONALITIES.cautious}));
     const ruthless = planUltraTurn(ctx({...base, weights: ULTRA_PERSONALITIES.ruthless}));
@@ -156,7 +207,12 @@ describe('Ultra personalities — divergent play', () => {
     for (let i = 0; i < 40; i++) {
       const r = i / 40;
       const shot = bestOffensiveShot(
-        ctx({enemies, weapons: [a, b], rnd: () => r, weights: {...ULTRA_PERSONALITIES.balanced, explore: 0.3}}),
+        ctx({
+          enemies,
+          weapons: [a, b],
+          rnd: () => r,
+          weights: {...ULTRA_PERSONALITIES.balanced, explore: 0.3},
+        }),
       );
       if (shot) picks.add(shot.weaponIndex);
     }
@@ -169,7 +225,12 @@ describe('Ultra personalities — divergent play', () => {
     const other = weapon({index: 1, damage: 90, radius: 40});
     for (const r of [0.01, 0.5, 0.99]) {
       const shot = bestOffensiveShot(
-        ctx({enemies, weapons: [shell, other], rnd: () => r, weights: {...ULTRA_PERSONALITIES.trickster, explore: 0.5}}),
+        ctx({
+          enemies,
+          weapons: [shell, other],
+          rnd: () => r,
+          weights: {...ULTRA_PERSONALITIES.trickster, explore: 0.5},
+        }),
       );
       expect(shot?.kills).toBe(1); // always a lethal shot regardless of the explore roll
     }
@@ -185,8 +246,17 @@ describe('Ultra personalities — divergent play', () => {
 
 describe('Ultra when BURIED', () => {
   const buriedSelf = {
-    x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0,
-    onRadiation: false, buried: true, threatened: false,
+    x: 100,
+    y: GY - 24,
+    life: 1000,
+    maxLife: 1000,
+    shield: 0,
+    armor: 0,
+    hazmat: 0,
+    credits: 0,
+    onRadiation: false,
+    buried: true,
+    threatened: false,
   };
   const beam = weapon({index: 5, isBeam: true, damage: 300, radius: 40});
   const cleaner = weapon({index: 7, isCleaner: true, damage: 0, offensive: false, count: 1});
@@ -199,7 +269,12 @@ describe('Ultra when BURIED', () => {
 
   it('digs itself out with a cleaner when there is no safe attack', () => {
     const plan = planUltraTurn(
-      ctx({self: buriedSelf, weapons: [shell, cleaner], enemies: [enemy({x: 700, life: 1000})], moveMaxDist: 0}),
+      ctx({
+        self: buriedSelf,
+        weapons: [shell, cleaner],
+        enemies: [enemy({x: 700, life: 1000})],
+        moveMaxDist: 0,
+      }),
     );
     expect(plan.action).toBe('fire');
     if (plan.action === 'fire') {
@@ -210,7 +285,12 @@ describe('Ultra when BURIED', () => {
 
   it('SHOOTS a low-life enemy with a beam instead of cleaning itself', () => {
     const plan = planUltraTurn(
-      ctx({self: buriedSelf, weapons: [beam, cleaner], enemies: [enemy({x: 700, life: 40})], moveMaxDist: 0}),
+      ctx({
+        self: buriedSelf,
+        weapons: [beam, cleaner],
+        enemies: [enemy({x: 700, life: 40})],
+        moveMaxDist: 0,
+      }),
     );
     expect(plan.action).toBe('fire');
     if (plan.action === 'fire') {
@@ -220,7 +300,9 @@ describe('Ultra when BURIED', () => {
   });
 
   it('attacks with a beam (never a ballistic) while buried', () => {
-    const shot = bestOffensiveShot(ctx({self: buriedSelf, weapons: [shell, beam], enemies: [enemy({x: 700})]}));
+    const shot = bestOffensiveShot(
+      ctx({self: buriedSelf, weapons: [shell, beam], enemies: [enemy({x: 700})]}),
+    );
     expect(shot?.weaponIndex).toBe(5); // only the beam is considered
   });
 
@@ -241,10 +323,26 @@ describe('Ultra pro tactics — mines & cover', () => {
   });
 
   it('moves to COVER behind a ridge when threatened (the enemy has its range)', () => {
-    const ridge: AimField = {heightAt: x => (x >= 380 && x <= 420 ? 200 : 500), width: 1000, height: 620};
+    const ridge: AimField = {
+      heightAt: x => (x >= 380 && x <= 420 ? 200 : 500),
+      width: 1000,
+      height: 620,
+    };
     const plan = planUltraTurn(
       ctx({
-        self: {x: 650, y: GY - 24, life: 800, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: true},
+        self: {
+          x: 650,
+          y: GY - 24,
+          life: 800,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: false,
+          buried: false,
+          threatened: true,
+        },
         enemies: [enemy({x: 700})],
         weapons: [], // nothing to fire → cover is the play
         field: ridge,
@@ -259,10 +357,26 @@ describe('Ultra pro tactics — mines & cover', () => {
   });
 
   it('does NOT seek cover when not threatened', () => {
-    const ridge: AimField = {heightAt: x => (x >= 380 && x <= 420 ? 200 : 500), width: 1000, height: 620};
+    const ridge: AimField = {
+      heightAt: x => (x >= 380 && x <= 420 ? 200 : 500),
+      width: 1000,
+      height: 620,
+    };
     const plan = planUltraTurn(
       ctx({
-        self: {x: 650, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+        self: {
+          x: 650,
+          y: GY - 24,
+          life: 1000,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: false,
+          buried: false,
+          threatened: false,
+        },
         enemies: [enemy({x: 700})],
         weapons: [],
         field: ridge,
@@ -273,10 +387,19 @@ describe('Ultra pro tactics — mines & cover', () => {
   });
 
   it('does NOT fire a beam THROUGH a hill (no line of sight)', () => {
-    const hill: AimField = {heightAt: x => (x >= 400 && x <= 450 ? 150 : GY), width: 1000, height: 620};
+    const hill: AimField = {
+      heightAt: x => (x >= 400 && x <= 450 ? 150 : GY),
+      width: 1000,
+      height: 620,
+    };
     const beam = weapon({index: 5, isBeam: true, damage: 300, radius: 40});
     const shot = bestOffensiveShot(
-      ctx({weapons: [beam], enemies: [enemy({x: 700, y: GY - 10})], field: hill, muzzleFor: () => ({x: 100, y: GY - 24})}),
+      ctx({
+        weapons: [beam],
+        enemies: [enemy({x: 700, y: GY - 10})],
+        field: hill,
+        muzzleFor: () => ({x: 100, y: GY - 24}),
+      }),
     );
     expect(shot).toBeNull(); // the ridge blocks the ray → the beam is not a valid shot
   });
@@ -288,10 +411,26 @@ describe('Ultra pro tactics — mines & cover', () => {
   });
 
   it('does NOT take cover on a radiation spot, nor drive over a mine to it', () => {
-    const ridge: AimField = {heightAt: x => (x >= 380 && x <= 420 ? 200 : 500), width: 1000, height: 620};
+    const ridge: AimField = {
+      heightAt: x => (x >= 380 && x <= 420 ? 200 : 500),
+      width: 1000,
+      height: 620,
+    };
     const plan = planUltraTurn(
       ctx({
-        self: {x: 650, y: GY - 24, life: 800, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: true},
+        self: {
+          x: 650,
+          y: GY - 24,
+          life: 800,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: false,
+          buried: false,
+          threatened: true,
+        },
         enemies: [enemy({x: 700})],
         weapons: [],
         field: ridge,
@@ -305,7 +444,19 @@ describe('Ultra pro tactics — mines & cover', () => {
   it('does NOT reposition across a mine', () => {
     const plan = planUltraTurn(
       ctx({
-        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+        self: {
+          x: 100,
+          y: GY - 24,
+          life: 1000,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: false,
+          buried: false,
+          threatened: false,
+        },
         enemies: [enemy({x: 900})], // far → would reposition toward it…
         weapons: [],
         moveMaxDist: 400,
@@ -317,13 +468,26 @@ describe('Ultra pro tactics — mines & cover', () => {
 });
 
 describe('Ultra desperation — low life', () => {
-  const hurt = (life: number) =>
-    ({x: 100, y: GY - 24, life, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false});
+  const hurt = (life: number) => ({
+    x: 100,
+    y: GY - 24,
+    life,
+    maxLife: 1000,
+    shield: 0,
+    armor: 0,
+    hazmat: 0,
+    credits: 0,
+    onRadiation: false,
+    buried: false,
+    threatened: false,
+  });
 
   it('a badly hurt bot with a heal in stock HEALS instead of chipping', () => {
     const heal = weapon({index: 5, ext: 10, damage: 0, offensive: false, count: 1});
     const shell = weapon({index: 0, damage: 60, radius: 30});
-    const plan = planUltraTurn(ctx({weapons: [shell, heal], enemies: [enemy({x: 700, life: 1000})], self: hurt(200)}));
+    const plan = planUltraTurn(
+      ctx({weapons: [shell, heal], enemies: [enemy({x: 700, life: 1000})], self: hurt(200)}),
+    );
     expect(plan.action).toBe('buff'); // the urgency curve makes healing beat a 60-dmg chip shot at 20% life
   });
 
@@ -343,7 +507,13 @@ describe('Ultra desperation — low life', () => {
 
 describe('rangePowerCorrection — walking shots onto target', () => {
   const opts = (over: Partial<Parameters<typeof rangePowerCorrection>[0]>) => ({
-    selfX: 100, targetX: 700, lastPower: 500, landedX: 700, hitTol: 18, gain: 0.9, ...over,
+    selfX: 100,
+    targetX: 700,
+    lastPower: 500,
+    landedX: 700,
+    hitTol: 18,
+    gain: 0.9,
+    ...over,
   });
 
   it('overshoot → less power, undershoot → more, on-target → unchanged', () => {
@@ -359,12 +529,21 @@ describe('rangePowerCorrection — walking shots onto target', () => {
 
   it('converges onto the target within a few shots (range ∝ power²)', () => {
     // Toy physics: real landing = selfX + k·power² (a drift-free monotonic range model).
-    const selfX = 100, targetX = 700, k = (targetX + 220 - selfX) / (500 * 500); // 500 power overshoots
+    const selfX = 100,
+      targetX = 700,
+      k = (targetX + 220 - selfX) / (500 * 500); // 500 power overshoots
     let power = 500;
     let landedX = selfX + k * power * power; // first shot overshoots to ~920
     expect(landedX).toBeGreaterThan(targetX + 100);
     for (let i = 0; i < 8; i++) {
-      power = rangePowerCorrection({selfX, targetX, lastPower: power, landedX, hitTol: 8, gain: 0.9});
+      power = rangePowerCorrection({
+        selfX,
+        targetX,
+        lastPower: power,
+        landedX,
+        hitTol: 8,
+        gain: 0.9,
+      });
       landedX = selfX + k * power * power;
     }
     expect(Math.abs(landedX - targetX)).toBeLessThan(20); // walked onto the target
@@ -376,7 +555,19 @@ describe('planUltraTurn — purposeful action selection', () => {
     const plan = planUltraTurn(
       ctx({
         weapons: [], // nothing to fire
-        self: {x: 100, y: GY - 24, life: 250, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        self: {
+          x: 100,
+          y: GY - 24,
+          life: 250,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: true,
+          buried: false,
+          threatened: false,
+        },
         moveMaxDist: 200,
         radiationAt: x => Math.abs(x - 100) < 50, // clean ground exists just off the carpet
       }),
@@ -390,7 +581,19 @@ describe('planUltraTurn — purposeful action selection', () => {
       ctx({
         weapons: [weapon({index: 0, damage: 150, radius: 40})], // a real shot
         enemies: [enemy({x: 700})],
-        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        self: {
+          x: 100,
+          y: GY - 24,
+          life: 1000,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: true,
+          buried: false,
+          threatened: false,
+        },
         moveMaxDist: 200,
         radiationAt: x => Math.abs(x - 100) < 50,
       }),
@@ -403,7 +606,19 @@ describe('planUltraTurn — purposeful action selection', () => {
       ctx({
         weapons: [weapon({index: 0, damage: 150, radius: 40})],
         enemies: [enemy({x: 700})],
-        self: {x: 100, y: GY - 24, life: 700, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        self: {
+          x: 100,
+          y: GY - 24,
+          life: 700,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: true,
+          buried: false,
+          threatened: false,
+        },
         crates: [{x: 200, kind: 'credits', amount: 2000, landed: true}],
         moveMaxDist: 300,
         radiationAt: x => Math.abs(x - 100) < 50,
@@ -416,7 +631,19 @@ describe('planUltraTurn — purposeful action selection', () => {
     const plan = planUltraTurn(
       ctx({
         weapons: [],
-        self: {x: 100, y: GY - 24, life: 300, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        self: {
+          x: 100,
+          y: GY - 24,
+          life: 300,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: true,
+          buried: false,
+          threatened: false,
+        },
         crates: [{x: 200, kind: 'credits', amount: 500, landed: true}], // clean ground + loot
         moveMaxDist: 300,
         radiationAt: x => Math.abs(x - 100) < 50, // x=200 is clean
@@ -432,7 +659,11 @@ describe('planUltraTurn — purposeful action selection', () => {
   it('drives to grab a valuable credits crate on the far side (away from the enemy)', () => {
     // Crate at x=60 is AWAY from the enemy at x=700 (self at 100) → grabbing it keeps distance.
     const plan = planUltraTurn(
-      ctx({weapons: [], crates: [{x: 60, kind: 'credits', amount: 2000, landed: true}], moveMaxDist: 300}),
+      ctx({
+        weapons: [],
+        crates: [{x: 60, kind: 'credits', amount: 2000, landed: true}],
+        moveMaxDist: 300,
+      }),
     );
     expect(plan.action).toBe('move');
     if (plan.action === 'move') {
@@ -444,7 +675,11 @@ describe('planUltraTurn — purposeful action selection', () => {
   it('will NOT chase a crate that pulls it toward the enemy (keeps its distance)', () => {
     // Crate at x=400 sits between self (100) and enemy (700) → grabbing it closes distance → skipped.
     const plan = planUltraTurn(
-      ctx({weapons: [], crates: [{x: 400, kind: 'credits', amount: 2000, landed: true}], moveMaxDist: 400}),
+      ctx({
+        weapons: [],
+        crates: [{x: 400, kind: 'credits', amount: 2000, landed: true}],
+        moveMaxDist: 400,
+      }),
     );
     if (plan.action === 'move') expect(plan.note).not.toBe('crate:credits'); // not the crate
   });
@@ -462,7 +697,12 @@ describe('planUltraTurn — purposeful action selection', () => {
 
   it('never grabs a BOMB crate (it is a trap)', () => {
     const plan = planUltraTurn(
-      ctx({weapons: [], crates: [{x: 60, kind: 'bomb', amount: 0, landed: true}], moveMaxDist: 300, enemies: [enemy({})]}),
+      ctx({
+        weapons: [],
+        crates: [{x: 60, kind: 'bomb', amount: 0, landed: true}],
+        moveMaxDist: 300,
+        enemies: [enemy({})],
+      }),
     );
     // No shot, no real crate, not on radiation → falls back to reposition (never a bomb-crate move).
     if (plan.action === 'move') expect(plan.note).not.toBe('crate:bomb');
@@ -489,7 +729,19 @@ describe('planUltraTurn — purposeful action selection', () => {
     const plan = planUltraTurn(
       ctx({
         weapons: [heal],
-        self: {x: 100, y: GY - 24, life: 200, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+        self: {
+          x: 100,
+          y: GY - 24,
+          life: 200,
+          maxLife: 1000,
+          shield: 0,
+          armor: 0,
+          hazmat: 0,
+          credits: 0,
+          onRadiation: false,
+          buried: false,
+          threatened: false,
+        },
       }),
     );
     expect(plan.action).toBe('buff');

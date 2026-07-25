@@ -46,12 +46,7 @@ import {
   canMoveNow,
   loadUiBmp,
 } from './store';
-import {
-  weaponPower,
-  weaponDamagePerArea,
-  weaponName,
-  weaponTypeName,
-} from '../core/CWeapon';
+import {weaponPower, weaponDamagePerArea, weaponName, weaponTypeName} from '../core/CWeapon';
 import {strings} from '../i18n';
 import {clamp, wrapIndex} from '../math/num';
 import {WeaponIcon} from './WeaponIcon';

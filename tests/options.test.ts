@@ -112,7 +112,7 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.radiationDamage = true; // restore default
   });
 
-  it('the weapon list shows the ACTIVE player\'s own stock, not the full arsenal', () => {
+  it("the weapon list shows the ACTIVE player's own stock, not the full arsenal", () => {
     const gc = humanGame(2);
     const p = gc as unknown as {
       m_tanks: CTank[];
@@ -149,7 +149,9 @@ describe('Formerly-no-op Settings options', () => {
 
     const staple = WEAPON_DATABASE.findIndex(w => w.id === 'shell');
     // Two enabled non-staple weapons, one with a HIGHER database index than the other.
-    const others = WEAPON_DATABASE.filter(w => w.index !== staple && weaponEnabled(w.index)).map(w => w.index);
+    const others = WEAPON_DATABASE.filter(w => w.index !== staple && weaponEnabled(w.index)).map(
+      w => w.index,
+    );
     const wHi = others[others.length - 1];
     const wLo = others[0];
     expect(wHi).toBeGreaterThan(wLo); // db order alone would put wLo first
@@ -169,7 +171,12 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.landSize = 5; // wide world → the two tanks are off-screen from each other
     const gc = humanGame(2);
     GameConfig.landSize = 3; // restore for other tests (world already built at 5)
-    const p = gc as unknown as {m_tanks: CTank[]; m_currentPlayerIndex: number; m_viewW: number; beginTurn(): void};
+    const p = gc as unknown as {
+      m_tanks: CTank[];
+      m_currentPlayerIndex: number;
+      m_viewW: number;
+      beginTurn(): void;
+    };
 
     // Battle start centred the camera on player 0; find a tank currently OFF-SCREEN.
     const cam = gc.getCameraX();
@@ -188,7 +195,9 @@ describe('Formerly-no-op Settings options', () => {
   });
 
   it('a tank falls into a crater carved under it, and respects the Bury Tanks setting', () => {
-    const W = 1200, H = 500, SURF = 300;
+    const W = 1200,
+      H = 500,
+      SURF = 300;
     const build = (): CLand => {
       const land = new CLand(W, H) as unknown as {
         generateFlat(): void;
@@ -217,7 +226,10 @@ describe('Formerly-no-op Settings options', () => {
     const tank = settled(land);
     const yStart = tank.getPosition().y;
     land.carveDiscCollapse(600, SURF, 90, true, true, true);
-    for (let i = 0; i < 300; i++) { land.update(1 / 60); tank.update(land, 1 / 60); }
+    for (let i = 0; i < 300; i++) {
+      land.update(1 / 60);
+      tank.update(land, 1 / 60);
+    }
     expect(tank.getPosition().y).toBeGreaterThan(yStart + 10); // it FELL into the crater
 
     // Pile dirt over a tank: Bury OFF lifts it back to the surface; Bury ON leaves it buried.
@@ -253,7 +265,9 @@ describe('Formerly-no-op Settings options', () => {
   });
 
   it('a BURIED tank cannot drive or fly (only being buried blocks it)', () => {
-    const W = 800, H = 400, SURF = 250;
+    const W = 800,
+      H = 400,
+      SURF = 250;
     const land = new CLand(W, H) as unknown as {
       generateFlat(): void;
       m_arrHeights: Int16Array;

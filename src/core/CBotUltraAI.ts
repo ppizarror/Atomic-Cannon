@@ -96,7 +96,14 @@ export interface UltraCtx {
 
 /** The chosen action. `note` is a short human/debug/test label for WHY. */
 export type UltraPlan =
-  | {action: 'fire'; weaponIndex: number; angleDeg: number; power: number; targetX: number; note: string}
+  | {
+      action: 'fire';
+      weaponIndex: number;
+      angleDeg: number;
+      power: number;
+      targetX: number;
+      note: string;
+    }
   | {action: 'move'; destX: number; note: string}
   | {action: 'buff'; weaponIndex: number; note: string}
   | {action: 'skip'; note: string};
@@ -162,11 +169,33 @@ export const ULTRA_PERSONALITIES: Record<string, UltraWeights> = {
   balanced: {...ULTRA_WEIGHTS_DEFAULT},
   // Kills at any cost: fat kill bounty, cheap to justify a nuke, rarely bothers with tricks, heals late,
   // and disciplined (low exploration — takes the best shot).
-  ruthless: {...ULTRA_WEIGHTS_DEFAULT, killBonus: 1600, premiumWaste: 1200, trickChance: 0.05, healBelow: 0.4, buryBonus: 120, explore: 0.1},
+  ruthless: {
+    ...ULTRA_WEIGHTS_DEFAULT,
+    killBonus: 1600,
+    premiumWaste: 1200,
+    trickChance: 0.05,
+    healBelow: 0.4,
+    buryBonus: 120,
+    explore: 0.1,
+  },
   // Survival first: modest aggression, hoards premiums, heals early, values loot, mixes weapons up.
-  cautious: {...ULTRA_WEIGHTS_DEFAULT, killBonus: 1000, premiumWaste: 6000, creditValue: 0.5, healBelow: 0.78, explore: 0.35},
+  cautious: {
+    ...ULTRA_WEIGHTS_DEFAULT,
+    killBonus: 1000,
+    premiumWaste: 6000,
+    creditValue: 0.5,
+    healBelow: 0.78,
+    explore: 0.35,
+  },
   // Plays mind-games: loves traps/reposition/bury setups over raw damage, very varied.
-  trickster: {...ULTRA_WEIGHTS_DEFAULT, trickChance: 0.42, buryBonus: 380, killBonus: 1100, dotWeight: 0.8, explore: 0.45},
+  trickster: {
+    ...ULTRA_WEIGHTS_DEFAULT,
+    trickChance: 0.42,
+    buryBonus: 380,
+    killBonus: 1100,
+    dotWeight: 0.8,
+    explore: 0.45,
+  },
 };
 export const ULTRA_PERSONALITY_NAMES = Object.keys(ULTRA_PERSONALITIES);
 
@@ -253,7 +282,8 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
   // Higher value wins; at equal value the CHEAPER weapon does (bank the pricey stuff).
   const better = (a: ShotPlan, b: ShotPlan): boolean =>
     a.value > b.value ||
-    (a.value === b.value && weaponCost(weapons, a.weaponIndex) < weaponCost(weapons, b.weaponIndex));
+    (a.value === b.value &&
+      weaponCost(weapons, a.weaponIndex) < weaponCost(weapons, b.weaponIndex));
 
   for (const e of enemies) {
     // BEAMS are hitscan straight rays: only score them when the LINE from the muzzle to the enemy is
@@ -280,7 +310,15 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     // BALLISTIC: solve one arc to this enemy, then score every arced weapon at its impact.
     const arc = bestAim(muzzleFor, {x: e.x, y: e.y}, wind, field, gustT0);
     const origin = muzzleFor(arc.angleDeg);
-    const shot = simulateShot(origin, arc.angleDeg, arc.power, wind, field, {x: e.x, y: e.y}, gustT0);
+    const shot = simulateShot(
+      origin,
+      arc.angleDeg,
+      arc.power,
+      wind,
+      field,
+      {x: e.x, y: e.y},
+      gustT0,
+    );
     // The engine detonates a shell on PROXIMITY (within the tank's hit radius) or on terrain — NOT on
     // a near-miss graze. So a direct hit explodes on the tank; anything else explodes where it lands.
     // Scoring an overshoot at its true far landing (not the fly-by point) is what stops Ultra firing a
@@ -376,7 +414,8 @@ function adjustForPremium(
   desperate: boolean,
 ): number {
   // DESPERATE (near death, can't heal): no reservation — throw everything, it's do-or-die.
-  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || value >= PREMIUM_MIN_VALUE) return value;
+  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || value >= PREMIUM_MIN_VALUE)
+    return value;
   return value - wt.premiumWaste;
 }
 
@@ -434,7 +473,11 @@ function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note
   // loot. Same value as a plain flee (the crate is a free bonus of the destination, not a reason to run
   // when healthy), so it never overrides a shot the low base wouldn't.
   const crate = ctx.crates.find(
-    c => c.landed && c.kind !== 'bomb' && Math.abs(c.x - self.x) <= moveMaxDist && reachableCleanSafe(c.x),
+    c =>
+      c.landed &&
+      c.kind !== 'bomb' &&
+      Math.abs(c.x - self.x) <= moveMaxDist &&
+      reachableCleanSafe(c.x),
   );
   if (crate) return {destX: crate.x, value, note: 'flee-to-crate'};
   // Else hop to the nearest clean ground (fully off the carpet, so it's a ONE-turn escape).
@@ -528,7 +571,14 @@ function bestMineLay(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
   if (ctx.mines.some(mx => Math.abs(mx - e.x) < MINE_SPACING)) return null;
   const arc = bestAim(ctx.muzzleFor, {x: e.x, y: e.y}, ctx.wind, ctx.field, ctx.gustT0);
   return {
-    plan: {action: 'fire', weaponIndex: mine.index, angleDeg: arc.angleDeg, power: arc.power, targetX: e.x, note: 'mine'},
+    plan: {
+      action: 'fire',
+      weaponIndex: mine.index,
+      angleDeg: arc.angleDeg,
+      power: arc.power,
+      targetX: e.x,
+      note: 'mine',
+    },
     value: MINE_VALUE,
   };
 }
@@ -539,8 +589,7 @@ function bestBuff(ctx: UltraCtx): {weaponIndex: number; value: number; note: str
   const own = (ext: number) => weapons.find(w => w.ext === ext && w.count > 0);
   let best: {weaponIndex: number; value: number; note: string} | null = null;
   const offer = (w: UltraWeapon | undefined, value: number, note: string) => {
-    if (w && value > 0 && (!best || value > best.value))
-      best = {weaponIndex: w.index, value, note};
+    if (w && value > 0 && (!best || value > best.value)) best = {weaponIndex: w.index, value, note};
   };
   // Heal (ext 10): a DESPERATION curve. Below the personality's threshold the heal is worth only ~0.4×
   // the life it restores (so near full a strong attack still wins — no turtling), but the value climbs
@@ -561,8 +610,7 @@ function bestBuff(ctx: UltraCtx): {weaponIndex: number; value: number; note: str
   return best;
 }
 
-const clampX = (x: number, field: AimField): number =>
-  Math.max(20, Math.min(field.width - 20, x));
+const clampX = (x: number, field: AimField): number => Math.max(20, Math.min(field.width - 20, x));
 
 /** When BURIED, dig out with a cleaner (an earth-remover — deals NO damage): fired near-vertically so
  *  it clears the dirt on/around the tank without hurting it. High value: being buried blocks driving
@@ -573,7 +621,14 @@ function bestCleanSelf(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
   const cleaner = ctx.weapons.find(w => w.isCleaner && w.count > 0);
   if (!cleaner) return null;
   return {
-    plan: {action: 'fire', weaponIndex: cleaner.index, angleDeg: 90, power: 300, targetX: ctx.self.x, note: 'clean-self'},
+    plan: {
+      action: 'fire',
+      weaponIndex: cleaner.index,
+      angleDeg: 90,
+      power: 300,
+      targetX: ctx.self.x,
+      note: 'clean-self',
+    },
     value: DIG_OUT_VALUE,
   };
 }
@@ -608,21 +663,46 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   // SURVIVAL plays are always in the running (they can rightly override a mediocre shot): flee the
   // fallout you're standing on, and self-buff/heal when hurt.
   const flee = bestRadiationEscape(ctx);
-  if (flee) cands.push({plan: {action: 'move', destX: flee.destX, note: flee.note}, value: flee.value, trick: false});
+  if (flee)
+    cands.push({
+      plan: {action: 'move', destX: flee.destX, note: flee.note},
+      value: flee.value,
+      trick: false,
+    });
   const buff = bestBuff(ctx);
-  if (buff) cands.push({plan: {action: 'buff', weaponIndex: buff.weaponIndex, note: buff.note}, value: buff.value, trick: false});
+  if (buff)
+    cands.push({
+      plan: {action: 'buff', weaponIndex: buff.weaponIndex, note: buff.note},
+      value: buff.value,
+      trick: false,
+    });
 
   // POSITIONING / LOOT plays — ONLY when the bot can't actually hit an enemy this turn. Firing always
   // comes first: a bot with a real shot shoots, it doesn't wander off for a crate or into cover.
   if (!canHit) {
     const crate = bestCrateGrab(ctx);
-    if (crate) cands.push({plan: {action: 'move', destX: crate.destX, note: crate.note}, value: crate.value, trick: true});
+    if (crate)
+      cands.push({
+        plan: {action: 'move', destX: crate.destX, note: crate.note},
+        value: crate.value,
+        trick: true,
+      });
     const cover = bestCoverMove(ctx);
-    if (cover) cands.push({plan: {action: 'move', destX: cover.destX, note: cover.note}, value: cover.value, trick: true});
+    if (cover)
+      cands.push({
+        plan: {action: 'move', destX: cover.destX, note: cover.note},
+        value: cover.value,
+        trick: true,
+      });
     const mine = bestMineLay(ctx);
     if (mine) cands.push({plan: mine.plan, value: mine.value, trick: true});
     const repo = bestReposition(ctx);
-    if (repo) cands.push({plan: {action: 'move', destX: repo.destX, note: repo.note}, value: repo.value, trick: true});
+    if (repo)
+      cands.push({
+        plan: {action: 'move', destX: repo.destX, note: repo.note},
+        value: repo.value,
+        trick: true,
+      });
   }
 
   if (!cands.length) return {action: 'skip', note: 'no-action'};

@@ -15,7 +15,10 @@ type Priv = {
   m_pendingSalvos: number;
   m_gameState: EGameState;
   m_shots: unknown[];
+  m_timers: unknown[];
   m_currentPlayerIndex: number;
+  m_netMode: boolean;
+  m_onNetTurnEnd: (() => void) | null;
   m_tanks: {m_bIsAlive: boolean; getTeamId(): number}[];
   executeBotTurn(): void;
   updateBattle(dt: number): void;
@@ -65,10 +68,35 @@ describe('state-machine wedge guards', () => {
     p.m_gameState = EGameState.Battle;
     const actor = p.m_currentPlayerIndex;
     p.m_tanks[actor].m_bIsAlive = false; // the acting bot just died to radiation / a mine
+    const stale = {at: 0, fn: () => {}}; // its already-scheduled fire()/executeBotTurn closure
+    p.m_timers = [stale] as unknown[];
 
     p.updateBattle(0); // the frame after the passive death
 
     expect(p.m_currentPlayerIndex).not.toBe(actor); // play advanced to a living tank (was: hung here)
     expect(p.m_gameState).toBe(EGameState.Battle); // a fresh live turn, not wedged
+    // The dead actor's stale closure must be dropped, else it would fire against the NEW current tank
+    // (wrong-tank / double shot). (beginTurn for the next tank queues ITS own fresh closures instead.)
+    expect(p.m_timers.includes(stale)).toBe(false);
+  });
+
+  it('the net forfeit latches — it does not re-fire endTurn every frame', () => {
+    // In net, endTurn only REPORTS to the server (no local advance), so the dead-actor guard would
+    // stay true and burst duplicate turn-end reports each frame without the m_turnForfeited latch.
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(0);
+    gc.startGame(3);
+    const p = priv(gc);
+    p.m_netMode = true;
+    let reported = 0;
+    p.m_onNetTurnEnd = () => reported++;
+    p.m_gameState = EGameState.Battle;
+    p.m_tanks[p.m_currentPlayerIndex].m_bIsAlive = false;
+
+    p.updateBattle(0);
+    p.updateBattle(0);
+    p.updateBattle(0); // three frames still awaiting the server's turnBegin
+
+    expect(reported).toBe(1); // reported exactly once, not once per frame
   });
 });

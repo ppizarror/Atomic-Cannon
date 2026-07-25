@@ -27,6 +27,12 @@ const CLUSTER_POWER = 0.5;
 const ROLL_SPEED = 260;
 // Max shot lifetime before it self-detonates (10.0s).
 const MAX_LIFE = 10;
+// Swept-collision resolution: a single Euler step can span 35-50px on big maps vs a ~16px tank hit
+// radius, so the endpoint point-sample can tunnel through a tank / thin ridge the path crossed. We
+// walk the frame's segment in sub-steps ≤ CCD_STEP px apart; CCD_MAX_SUBS bounds the loop (a real
+// step never exceeds ~50px, so ~13 sub-steps; the cap is a runaway guard).
+const CCD_STEP = 4;
+const CCD_MAX_SUBS = 16;
 
 /** The world a shot behaves against — implemented by the game controller. */
 export interface ShotWorld {
@@ -92,10 +98,11 @@ export interface ShotWorld {
 
 export type FlyAction = 'continue' | 'detonate' | 'consumed';
 
-function tankHit(shot: CShot, world: ShotWorld): CTank | null {
-  const p = shot.getPosition();
+/** First live tank whose hit radius contains (x, y), or null. Point test — the swept walk in
+ *  weaponFlyStep calls it per sub-step so a fast shot can't step clean over a tank between frames. */
+function tankAt(world: ShotWorld, x: number, y: number): CTank | null {
   for (const t of world.tanks) {
-    if (t.isAlive() && t.distanceTo(p.x, p.y) < t.getHitRadius()) return t;
+    if (t.isAlive() && t.distanceTo(x, y) < t.getHitRadius()) return t;
   }
   return null;
 }
@@ -112,7 +119,7 @@ export function weaponFlyStep(
   dt: number,
 ): FlyAction {
   const land = world.land;
-  const p = shot.getPosition();
+  let p = shot.getPosition();
 
   // Left the world entirely.
   if (p.x < -60 || p.x > land.width + 60 || p.y > land.height + 80) return 'consumed';
@@ -123,9 +130,31 @@ export function weaponFlyStep(
   // Battery: primary shots drop a bomblet straight down every batSec while descending.
   if (!isBeam) batteryTick(shot, weapon, world, dt);
 
+  // Swept collision: walk this frame's segment (prev→cur) so a fast shot can't tunnel a tank/ridge.
+  const prev = shot.getPrevPosition();
+  const segX = p.x - prev.x;
+  const segY = p.y - prev.y;
+  const segLen = Math.hypot(segX, segY);
+  const subs = segLen > CCD_STEP ? Math.min(CCD_MAX_SUBS, Math.ceil(segLen / CCD_STEP)) : 1;
+
+  // Earliest TANK contact along the path (k=subs is the endpoint, so this subsumes the old point
+  // test). Snap the shot to that point so the blast centres on the impact, not a step beyond it.
+  // Every ext detonates on a tank hit (mine/sentry deploy only when they instead meet ground first),
+  // so snapping is always followed by detonate/deploy — never a mutated position that keeps flying.
+  let hit: CTank | null = null;
+  for (let k = 1; k <= subs && !hit; k++) {
+    const sx = prev.x + (segX * k) / subs;
+    const sy = prev.y + (segY * k) / subs;
+    const t = tankAt(world, sx, sy);
+    if (t) {
+      hit = t;
+      shot.setPosition(sx, sy);
+      p = shot.getPosition();
+    }
+  }
+
   const surfaceY = land.getHeightAt(Math.floor(p.x));
   const belowSurface = p.y >= surfaceY - 4;
-  const hit = tankHit(shot, world);
 
   // Lifetime cap (rebound/roller can loop) — detonate rather than fly forever.
   if (shot.getAge() > MAX_LIFE) return 'detonate';
@@ -181,11 +210,20 @@ export function weaponFlyStep(
       return rollerStep(shot, world, surfaceY, hit);
 
     case EXT.REBOUND:
-      // Anti-grav LATCHES on the first dip below the surface and never clears — so once buried it
-      // keeps accelerating upward and jets back up and out (rather than re-toggling every frame,
-      // which just oscillated it around the surface line).
+      // Rebounder: dip into terrain → anti-grav jets it back up and OUT; then, once it re-emerges into
+      // open air, gravity is restored so it arcs back DOWN and detonates on the next impact. (Anti-grav
+      // latches while it's inside the mass — set every sub-surface frame — so it doesn't oscillate on
+      // the surface line; it clears exactly once, on emergence, marking the shot "rebounded".) Without
+      // the clear it accelerated upward forever, flew off the (unbounded) top of the world, and idled
+      // ~10s until the lifetime cap fired a harmless sky detonation — a dead turn that did no damage.
       if (hit) return 'detonate';
-      if (belowSurface) shot.setAntiGrav(true);
+      if (shot.hasRebounded()) return belowSurface ? 'detonate' : 'continue'; // falling back → impact
+      if (belowSurface) {
+        shot.setAntiGrav(true); // buried: jet up and out
+      } else if (shot.isAntiGrav()) {
+        shot.setAntiGrav(false); // emerged: restore gravity so it arcs back down
+        shot.setRebounded(true);
+      }
       return 'continue';
 
     case EXT.MINE:
@@ -204,7 +242,18 @@ export function weaponFlyStep(
 
     default:
       // Ballistic (Shell/Bomb/Rocket/Dirt/Cleaner/NUKE/DOT/Organic/Missile/Tracer/Death).
-      return hit || belowSurface ? 'detonate' : 'continue';
+      if (hit) return 'detonate';
+      // Swept terrain: detonate at the FIRST sub-point the path crosses below the surface (snap the
+      // crater onto it), so a fast shot neither tunnels over a thin ridge nor detonates buried deep.
+      for (let k = 1; k <= subs; k++) {
+        const sx = prev.x + (segX * k) / subs;
+        const sy = prev.y + (segY * k) / subs;
+        if (sy >= land.getHeightAt(Math.floor(sx)) - 4) {
+          shot.setPosition(sx, sy);
+          return 'detonate';
+        }
+      }
+      return 'continue';
   }
 }
 

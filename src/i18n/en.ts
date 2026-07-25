@@ -3,7 +3,33 @@
  * prose (no manual line breaks); the About screen wraps them to fit at draw time.
  * `{token}` placeholders are filled by `fmt` at the call site (see index.ts).
  */
-import type {Strings} from './types';
+import type {RowCopy, Strings} from './types';
+
+/** Rows shared verbatim between the pre-game setup screen (`play`) and `settings.gameplay`. */
+const battlesRow: RowCopy = {label: 'Battles', tip: 'How many battles per Deathmatch'};
+const roundsRow: RowCopy = {label: 'Rounds', tip: 'How many rounds in a Point game'};
+const difficultyRow: RowCopy = {
+  label: 'Difficulty',
+  tip: 'How badly the computer will dominate you',
+  options: [
+    '1. Easiest',
+    '2. Very Easy',
+    '3. Easy',
+    '4. Moderate',
+    '5. Fun',
+    '6. Challenging',
+    '7. Hard',
+    '8. Very Hard',
+    '9. Mastery',
+    '10. Elite',
+    '11. Ultra',
+  ],
+};
+const windRow: RowCopy = {
+  label: 'Wind',
+  tip: 'How the wind affects the trajectories',
+  options: ['Disabled', 'Low', 'Medium', 'High'],
+};
 
 export const en: Strings = {
   common: {
@@ -111,6 +137,7 @@ export const en: Strings = {
       playTime: 'Time played',
       longestGame: 'Longest game',
       byCountry: 'Games by country ({n})',
+      mapEmpty: 'No games logged yet',
     },
     sections: [
       {
@@ -387,35 +414,15 @@ export const en: Strings = {
       tip: 'Deathmatch = destroy teams, scored by kills. Rounds = damage points over set rounds.',
       options: ['Rounds', 'Deathmatch'],
     },
-    battles: {label: 'Battles', tip: 'How many battles per Deathmatch'},
-    rounds: {label: 'Rounds', tip: 'How many rounds in a Point game'},
+    battles: battlesRow,
+    rounds: roundsRow,
     landSize: {
       label: 'Land Size',
       tip: 'How large the battle landscape is',
       options: ['1 Screen', '2x', '3x', '4x', '5x'],
     },
-    difficulty: {
-      label: 'Difficulty',
-      tip: 'How badly the computer will dominate you',
-      options: [
-        '1. Easiest',
-        '2. Very Easy',
-        '3. Easy',
-        '4. Moderate',
-        '5. Fun',
-        '6. Challenging',
-        '7. Hard',
-        '8. Very Hard',
-        '9. Mastery',
-        '10. Elite',
-        '11. Ultra',
-      ],
-    },
-    wind: {
-      label: 'Wind',
-      tip: 'How the wind affects the trajectories',
-      options: ['Disabled', 'Low', 'Medium', 'High'],
-    },
+    difficulty: difficultyRow,
+    wind: windRow,
     startHint: 'Start the game',
     startGame: 'Start Game',
     cancelHint: 'Return to the main menu',
@@ -499,30 +506,10 @@ export const en: Strings = {
     },
     gameplay: {
       header: 'Adjust gameplay settings',
-      battles: {label: 'Battles', tip: 'How many battles per Deathmatch'},
-      rounds: {label: 'Rounds', tip: 'How many rounds in a Point game'},
-      difficulty: {
-        label: 'Difficulty',
-        tip: 'How badly the computer will dominate you',
-        options: [
-          '1. Easiest',
-          '2. Very Easy',
-          '3. Easy',
-          '4. Moderate',
-          '5. Fun',
-          '6. Challenging',
-          '7. Hard',
-          '8. Very Hard',
-          '9. Mastery',
-          '10. Elite',
-          '11. Ultra',
-        ],
-      },
-      wind: {
-        label: 'Wind',
-        tip: 'How the wind affects the trajectories',
-        options: ['Disabled', 'Low', 'Medium', 'High'],
-      },
+      battles: battlesRow,
+      rounds: roundsRow,
+      difficulty: difficultyRow,
+      wind: windRow,
       changeWind: {
         label: 'Change Wind',
         tip: 'Defines when the wind changes direction',

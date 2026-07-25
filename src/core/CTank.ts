@@ -1263,10 +1263,6 @@ export class CTank {
     return this.m_sTankType;
   }
 
-  getTeamColor(): string {
-    return this.m_sColor;
-  }
-
   /** Screen/world hit-test for hover (badge detail). */
   isPointInside(px: number, py: number): boolean {
     const dx = px - this.m_vPos.x,

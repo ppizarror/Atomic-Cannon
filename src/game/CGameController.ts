@@ -901,7 +901,7 @@ export class CGameController implements ShotWorld {
           !this.m_land.isSettling() &&
           !this.m_tanks.some(t => t.isAlive() && (t.isFalling() || t.isMoving()))
         ) {
-          this.checkBattleEnd();
+          this.endTurn();
         }
         break;
 
@@ -1331,9 +1331,7 @@ export class CGameController implements ShotWorld {
         ) {
           this.drawTurnIndicator(ctx, tank);
         }
-      } else if (!tank.m_bExploded || tank.isAlive()) {
-        // Skip dead tanks that are already exploded
-      } else {
+      } else if (tank.m_bExploded && !tank.isAlive()) {
         // Draw wreckage for exploded but not yet cleaned up tanks
         tank.draw(ctx, this.m_assets);
       }
@@ -1517,7 +1515,7 @@ export class CGameController implements ShotWorld {
       const p = t.getPosition();
       const dx = Math.round(clamp(p.x * sx + m, m + d, m + width - d));
       const dy = Math.round(clamp(p.y * sy + m, m + d, m + height - d));
-      ctx.fillStyle = t.getTeamColor();
+      ctx.fillStyle = t.getColor();
       ctx.fillRect(dx - d, dy - d + 1, d * 2, d * 2);
       if (t === cur) {
         ctx.strokeStyle = '#fff';
@@ -2415,9 +2413,7 @@ export class CGameController implements ShotWorld {
       }
       case 'weapon':
       case 'bomb':
-        // Grant to the PICKING tank's economy (net: its own; solo human: the shared depot).
-        if ((tank.isHuman() || this.m_netMode) && c.weaponIndex >= 0)
-          this.economyFor(tank).grant(c.weaponIndex);
+        if (c.weaponIndex >= 0) this.economyFor(tank).grant(c.weaponIndex);
         msg = fmt(strings.value.game.foundWeapon, {weapon: getWeapon(c.weaponIndex).getName()});
         color = '#bfe9b0';
         break;
@@ -2521,10 +2517,34 @@ export class CGameController implements ShotWorld {
 
     // A tank can die DURING the Battle state — from radiation fallout, or a mine
     // detonating under a settling tank — not only from a resolving shot. The shot path
-    // declares the winner in the Explosion state (checkBattleEnd); this covers those
+    // declares the winner in the Explosion state (via endTurn); this covers those
     // passive deaths so the battle ends the instant only one side is left, instead of
     // stalling until the human fires a needless final shot.
     this.endBattleIfDecided();
+
+    // The ACTING tank itself can die passively (radiation DOT / a mine) mid-turn, BEFORE it fires. If
+    // that death leaves the battle UNDECIDED (a living teammate, or 3+ teams), endBattleIfDecided
+    // above won't end anything — yet a bot/sentry has no forfeit clock and its already-scheduled
+    // fire() bails on a dead tank without handing off, so the turn would never advance and the match
+    // hangs. (A human would merely stall until the shot clock forfeits — or forever if shot-time is
+    // off.) Force the dead actor's turn to end. Guarded to Battle: if the death DID decide the battle,
+    // endBattleIfDecided already flipped state to BattleEnd and endTurn no-ops via its own guard.
+    //
+    // Latch it ONCE per turn (m_turnForfeited): in net, endTurn only reports to the server and does
+    // NOT advance locally, so without the latch this would re-fire every frame until the server's
+    // turnBegin lands (a burst of duplicate shotResults). And drop the dead actor's already-queued
+    // closures first — its scheduled fire()/executeBotTurn/waitForRest read getCurrentTank() FRESH at
+    // fire time, so once endTurn advances to the next tank they'd otherwise drive the WRONG tank (a
+    // premature/double shot, or a Move-drive poll racing the new turn). Mirrors finishBattle's clear.
+    if (
+      this.m_gameState === EGameState.Battle &&
+      !this.m_turnForfeited &&
+      !this.getCurrentTank().isAlive()
+    ) {
+      this.m_turnForfeited = true;
+      this.m_timers = [];
+      this.endTurn();
+    }
   }
 
   /** Per-tank physics (gravity/fall/settle/drive/jet) + radiation damage-over-time,
@@ -2535,7 +2555,12 @@ export class CGameController implements ShotWorld {
     // Radiation Damage OFF (legacy/faithful): fallout is purely cosmetic — the original binary
     // never damages a tank with it (only the radioactive weapon's INITIAL blast is armor-piercing,
     // wired separately via isRadioactive). ON (default): "green ground = danger", handled below.
-    const zones = GameConfig.radiationDamage ? this.m_land.getRadiationZones() : null;
+    // NET: fallout is cosmetic-only here too. DOT is a per-frame accumulator, but the aim phase runs
+    // free (not lockstep) — each client would apply a different tick count over an actor's think time
+    // and drift/false-desync. So it's neutralized in net exactly as wind gusts are (the initial
+    // radioactive blast, being resolved in the deterministic shot window, still lands normally).
+    const zones =
+      GameConfig.radiationDamage && !this.m_netMode ? this.m_land.getRadiationZones() : null;
     // The strongest live zone drives the DOT rate; fallout only exists while a zone is live.
     let radDps = 0;
     if (zones) for (const z of zones) if (z.damagePerSecond > radDps) radDps = z.damagePerSecond;
@@ -3010,10 +3035,6 @@ export class CGameController implements ShotWorld {
     }
   }
 
-  private checkBattleEnd(): void {
-    this.endTurn();
-  }
-
   /**
    * Handle tank destroyed event
    */
@@ -3158,11 +3179,16 @@ export class CGameController implements ShotWorld {
   }
 
   /** Credit the shooter for damage dealt to an ENEMY tank: `lifeRemoved × CreditDamage`
-   *  (self/friendly earns nothing), then pool across the shooter's team. Records the
-   *  shooter as the victim's last-damager for kill attribution. */
+   *  (self/friendly earns nothing), then pool across the shooter's team. On a DAMAGING hit,
+   *  records the shooter as the victim's last-damager for kill attribution. */
   private creditDamage(shooter: CTank | null, victim: CTank, lifeRemoved: number): void {
+    // A hit that removed NO life (fully soaked by an all-or-nothing shield / 100% armor, or barely
+    // grazing the blast edge) must leave attribution untouched: otherwise a harmless graze overwrites
+    // the victim's real last-damager and steals the kill + credit when the victim later dies to that
+    // earlier damage (e.g. radiation DOT). Only a hit that actually took life reassigns the "killer".
+    if (lifeRemoved <= 0) return;
     victim.setLastDamager(shooter);
-    if (!shooter || lifeRemoved <= 0) return;
+    if (!shooter) return;
     // Standings: every damaging hit counts toward the shooter's accuracy; friendly /
     // self damage subtracts from Damage/hit (so it can go negative, as in the original).
     const friendly = shooter === victim || shooter.getTeamId() === victim.getTeamId();
@@ -3275,6 +3301,7 @@ export class CGameController implements ShotWorld {
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
     this.m_movePlacing = false; // a fresh turn is never mid-placement
+    this.m_turnForfeited = false; // fresh turn: the passive-death forfeit latch is re-armed
     const tank = this.getCurrentTank();
     // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it up
     // on the human's turn-begin from whatever credits are on hand (a no-op when broke). In net,
@@ -3372,6 +3399,12 @@ export class CGameController implements ShotWorld {
     this.m_currentRound = 1; // the round counter resets each battle (round-1 forced-aim keys off it)
     this.m_shots = [];
     this.m_pendingSalvos = 0; // no salvos carry across a battle boundary (defensive; matches setupBattle)
+    this.m_netShotResolving = false; // nor a stale resolving flag (defensive; matches setupBattle)
+    // Drop any closure still queued from the finished battle (e.g. an explode-losers cascade the player
+    // clicked past before it finished): m_time is monotonic and nextBattle RESPAWNS the tanks those
+    // closures captured, so a survivor would otherwise be blown up by a stale corpse's timer. finishBattle
+    // already clears these today, so this is defensive — and mirrors setupBattle's own m_timers reset.
+    this.m_timers = [];
     this.m_mines = [];
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
@@ -6124,7 +6157,7 @@ export class CGameController implements ShotWorld {
     return this.m_tanks.map(t => ({
       name: t.getName(),
       lifePct: Math.max(0, Math.round((t.getHealth().nLife / t.getMaxLife()) * 100)), // → 0..100
-      color: t.getTeamColor(),
+      color: t.getColor(),
       alive: t.isAlive(),
       active: t === cur,
     }));
@@ -6142,6 +6175,9 @@ export class CGameController implements ShotWorld {
   // Only counts while awaiting the human's shot: true from beginTurn (human,
   // limit on) until fire()/expiry/turn-end. Bots never time out.
   private m_turnTimerRunning: boolean = false;
+  // Latch so the acting-tank passive-death forfeit fires endTurn ONCE per turn (re-armed in beginTurn),
+  // not every frame while awaiting the server's net turn hand-off. See the forfeit in updateBattle.
+  private m_turnForfeited = false;
 
   // Game state machine
   private m_gameState: EGameState = EGameState.Battle;

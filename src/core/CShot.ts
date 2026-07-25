@@ -3,7 +3,6 @@
  */
 
 import {Vec2} from '../math/Vec2';
-import {CLand} from './CLand';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind} from './wind';
@@ -102,6 +101,8 @@ export class CShot {
     this.m_vel.x = Math.cos(fRadAngle) * speed;
     this.m_vel.y = Math.sin(fRadAngle) * speed;
 
+    this.m_prevX = this.m_pos.x; // seed the swept-collision segment (no bogus frame-1 sweep)
+    this.m_prevY = this.m_pos.y;
     this.m_bIsDead = false;
     this.m_trailPoints = [];
     this.addTrailPoint();
@@ -128,6 +129,8 @@ export class CShot {
     this.m_vel.x = Math.cos(turretAngleRad) * speed;
     this.m_vel.y = -Math.sin(turretAngleRad) * speed;
 
+    this.m_prevX = this.m_pos.x; // seed the swept-collision segment (no bogus frame-1 sweep)
+    this.m_prevY = this.m_pos.y;
     this.m_bIsDead = false;
     this.m_trailPoints = [];
     this.addTrailPoint();
@@ -147,6 +150,8 @@ export class CShot {
     this.m_owner = owner || null;
     this.m_damage = damage;
     this.m_radius = radius;
+    this.m_prevX = this.m_pos.x; // seed the swept-collision segment (no bogus frame-1 sweep)
+    this.m_prevY = this.m_pos.y;
     this.m_bIsDead = false;
     this.m_trailPoints = [];
     this.addTrailPoint();
@@ -166,17 +171,16 @@ export class CShot {
     if (this.m_bIsDead) return;
 
     this.m_prevY = this.m_pos.y;
+    this.m_prevX = this.m_pos.x;
 
     // Gravity + wind scale with the world (√worldScale) exactly like the launch speed, so the
     // whole trajectory is one uniform physics zoom — a full-power shot keeps its reach and arc
     // shape on big maps instead of falling short. Flight time stays constant (speed & gravity
     // scale together).
     const ws = Math.sqrt(GameConfig.worldScale);
-    if (!this.m_skipGravity) {
-      // Rebound/jet shots invert gravity once they've dipped below the surface.
-      const g = (this.m_antiGrav ? -CShot.GRAVITY : CShot.GRAVITY) * ws;
-      this.m_vel.y += g * dt;
-    }
+    // Rebound/jet shots invert gravity once they've dipped below the surface.
+    const g = (this.m_antiGrav ? -CShot.GRAVITY : CShot.GRAVITY) * ws;
+    this.m_vel.y += g * dt;
     // Wind altitude factor: 1 (uniform) in Linear mode; a 0-at-ground → 1-aloft ramp in Realistic.
     const wf = groundAt ? windProfile(groundAt(this.m_pos.x) - this.m_pos.y) : 1;
     this.m_vel.x += wind.x * CShot.WIND_ACCEL * ws * wf * dt;
@@ -184,7 +188,7 @@ export class CShot {
 
     // Air drag (Realistic model only): quadratic velocity bleed. Skipped for straight-flying
     // beam/no-gravity shots. Fractional loss per step = SHOT_DRAG_K · speed · dt.
-    if (!this.m_skipGravity && isRealisticWind()) {
+    if (isRealisticWind()) {
       const speed = Math.hypot(this.m_vel.x, this.m_vel.y);
       const loss = SHOT_DRAG_K * speed * dt;
       this.m_vel.x -= this.m_vel.x * loss;
@@ -202,16 +206,21 @@ export class CShot {
     }
   }
 
-  setSkipGravity(skip: boolean): void {
-    this.m_skipGravity = skip;
-  }
-
   setAntiGrav(on: boolean): void {
     this.m_antiGrav = on;
   }
 
   isAntiGrav(): boolean {
     return this.m_antiGrav;
+  }
+
+  /** Rebounder state: true once the shot has jetted up out of terrain and is falling back down. */
+  hasRebounded(): boolean {
+    return this.m_rebounded;
+  }
+
+  setRebounded(on: boolean): void {
+    this.m_rebounded = on;
   }
 
   // Kinematic accessors the weapon behaviours read/write (roller snap, apex test…).
@@ -275,18 +284,6 @@ export class CShot {
     this.m_trailPoints = this.m_trailPoints.filter(pt => pt.age < this.m_maxTrailAge);
   }
 
-  checkTerrainCollision(land: CLand): boolean {
-    const nTerrainHeight = land.getHeightAt(Math.floor(this.m_pos.x));
-    if (this.m_pos.y >= nTerrainHeight - 5) {
-      return true;
-    }
-    if (this.m_pos.x < -50 || this.m_pos.x > land.width + 50 || this.m_pos.y > land.height + 50) {
-      this.m_bIsDead = true;
-      return false;
-    }
-    return false;
-  }
-
   checkTankCollision(tank: CTank): boolean {
     if (!tank.isAlive()) return false;
 
@@ -296,6 +293,12 @@ export class CShot {
 
   getPosition(): Vec2 {
     return this.m_pos.clone();
+  }
+
+  /** Position at the START of the current frame's step (before update() advanced it). The swept-
+   *  collision test walks the segment prevPos→pos so a fast shot can't tunnel through a tank/ridge. */
+  getPrevPosition(): Vec2 {
+    return new Vec2(this.m_prevX, this.m_prevY);
   }
 
   /** Exhaust point — the missile's REAR, where the trail/plume pours from. The trail
@@ -410,9 +413,10 @@ export class CShot {
   private m_maxTrailPoints: number;
   private m_weaponIndex: number = -1;
   private m_generation: number = 0;
-  private m_skipGravity: boolean = false;
   private m_antiGrav: boolean = false;
+  private m_rebounded: boolean = false;
   private m_prevY: number = 0;
+  private m_prevX: number = 0;
   private m_movingDown: boolean = false;
   private m_age: number = 0;
   // Behaviour scratch: roller "grounded" latch, battery drop counter.

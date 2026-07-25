@@ -69,7 +69,6 @@ export interface RawWeapon {
   soundHit: string;
   trailType: number;
   trailLength: number;
-  flareParam: number;
   flareType: number;
   flareBmp: string;
   flareSize: number;
@@ -336,10 +335,6 @@ export class CWeapon {
 
   getHitSound(): string {
     return this.m_def.soundHit;
-  }
-
-  getFlareBitmap(): string {
-    return this.m_def.flareBmp || this.m_def.expBitmap;
   }
 
   /** Explosion style as the authoritative {@link ExpType} token ({@link EXP.NUKE} = biggest +

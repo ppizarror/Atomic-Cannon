@@ -113,7 +113,20 @@ describe('CLand — erasing terrain clears its radiation', () => {
     const land = landWithPixels(W, H, surf);
     const specks = (land as unknown as {m_radSpecks: {x: number; y: number}[]}).m_radSpecks;
     const mk = (x: number, y: number) => ({
-      x, y, vx: 0, vy: 0, age: 0, life: 10, settled: true, size: 1, rise: 0, phase: 0, pw: 1, r: 255, g: 0, b: 0,
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      life: 10,
+      settled: true,
+      size: 1,
+      rise: 0,
+      phase: 0,
+      pw: 1,
+      r: 255,
+      g: 0,
+      b: 0,
     });
     const R = 60,
       cx = 300,
