@@ -529,6 +529,7 @@ export class CGameController implements ShotWorld {
 
     // Reset state
     this.m_simAccum = 0; // fresh fixed-timestep accumulator
+    this.stopMovementAudio(); // silence any tank-drive / jet loop from a match restarted mid-drive
     this.m_netShotResolving = false;
     this.m_pendingSalvos = 0; // a fresh match has no succession salvos queued (a burst interrupted by
     // Quit→menu freezes the sim mid-count; without this reset the stale value would wedge the first
@@ -779,7 +780,11 @@ export class CGameController implements ShotWorld {
     const cfg = LAND_DATA[this.pickLandscapeIndex()];
     this.m_ambient = hexToRgb(cfg.ambient); // per-map mood tint for Ambient Lighting (from land.json)
 
-    // Precipitation / blowing sand declared by this map (snow, rain, hail, dust).
+    // Precipitation / blowing sand declared by this map (snow, rain, hail, dust). Size the weather
+    // field to THIS match's logical view first — it was created at the boot canvas size, which differs
+    // from m_viewW/H on a net match (host resolution) or after a pre-Play window resize, otherwise
+    // leaving a strip of sky with no precipitation or a visible toroidal-wrap seam inside the view.
+    this.m_weather.setBounds(this.m_viewW, this.m_viewH);
     this.m_weather.configure(cfg.weather);
 
     // A themed name for the depot footer, derived from the map's dominant weather (localised).
@@ -1257,7 +1262,11 @@ export class CGameController implements ShotWorld {
         return first.getPosition().x;
       }
     }
-    if (this.m_particles.hasActiveExplosions()) return this.m_lastImpactX;
+    // Hold on the impact only while the BLAST itself animates — NOT the ~8s of cosmetic crater smoke
+    // (hasActiveExplosions counts that). The turn hands off on the same hasActiveBlast() gate (see the
+    // shot-settle check), so using hasActiveExplosions here parked the camera on the PREVIOUS crater
+    // for seconds into the next turn, undoing beginTurn's snap onto the new current tank.
+    if (this.m_particles.hasActiveBlast()) return this.m_lastImpactX;
     return this.getCurrentTank().getPosition().x;
   }
 

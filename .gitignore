@@ -9,6 +9,7 @@
 # Dist/packages
 dist/
 node_modules
+scripts/
 
 # Public assets
 public/

@@ -224,6 +224,9 @@ export class CSoundManager extends GainChannel {
   stopAllLoops(): void {
     // Snapshot the keys first — stopLoop() deletes from m_loops as we go.
     for (const name of Array.from(this.m_loops.keys())) this.stopLoop(name);
+    // Also cancel any loop still DECODING (wanted but never started) — stopLoop only reaches started
+    // loops, so without this a loop requested just before "SFX off" would start when its buffer lands.
+    this.m_loopWanted.clear();
   }
 
   private now(): number {

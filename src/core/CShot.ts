@@ -330,7 +330,7 @@ export class CShot {
 
     // Real projectile sprite, rotated to point along its velocity. Each round blits
     // so its LONGEST side spans `weapon.size × scale` px, aspect preserved, pivoted
-    // at centre. `size` is the DISPLAY size (weapons.txt col 4) — the BLAST radius
+    // at centre. `size` is the DISPLAY size — the BLAST radius
     // is the separate `radius` field — so a size-15 Stinger reads as a small missile
     // even though rocket.bmp is 32px wide.
     if (sprite) {

@@ -1828,8 +1828,9 @@ canvas {
   padding: 24px 28px;
 }
 .ie-intro {
+  width: 100%; /* BmpParagraph wraps to its measured width — 0 (empty) if it can shrink */
   margin-bottom: 10px;
-  text-align: center;
+  align-items: center;
 }
 .ie-status-fail canvas {
   filter: drop-shadow(0 0 2px rgba(220, 40, 40, 0.9));
@@ -1849,6 +1850,7 @@ canvas {
   display: block;
 }
 .confirm-body {
+  width: 100%; /* give BmpParagraph a width to wrap into (else it collapses empty) */
   align-items: center;
 }
 .confirm-buttons {

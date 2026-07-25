@@ -14,6 +14,33 @@ const isCyan = (px: Uint8ClampedArray, i: number) =>
 
 const FIRST = 33; // '!'  — the strip starts here; space (32) is advance-only.
 
+// The bitmap strips cover ASCII 33..126 ONLY. Authored copy (and future translations) uses typographic
+// punctuation outside that range — em/en dash, ellipsis, middle dot, curly quotes, nbsp — which would
+// otherwise render as blank gaps ("Import — load…" → "Import  load"). Fold those to ASCII before
+// measure/render. One-to-many (… → ...) is fine: the folded string is what gets measured and drawn.
+const ASCII_FOLD: Record<string, string> = {
+  '‒': '-', // figure dash
+  '–': '-', // en dash
+  '—': '-', // em dash
+  '―': '-', // horizontal bar
+  '…': '...', // ellipsis
+  '·': '-', // middle dot (used as a separator)
+  '‘': "'", // left single quote
+  '’': "'", // right single quote / apostrophe
+  '“': '"', // left double quote
+  '”': '"', // right double quote
+  ' ': ' ', // non-breaking space
+  // Spanish stuff
+  'Á': 'A', 'á': 'a',
+  'É': 'E', 'é': 'e',
+  'Í': 'I', 'í': 'i',
+  'Ó': 'O', 'ó': 'o',
+  'Ú': 'U', 'ú': 'u',
+  'Ñ': 'N', 'ñ': 'n',
+};
+export const asciiFold = (text: string): string =>
+  text.replace(/[‒-―…·‘’“” ]/g, m => ASCII_FOLD[m] ?? m);
+
 // Cap the per-string label caches (oldest-evicted). Fonts live for the whole page session, and
 // numeric readouts ("Credits: 12345", "Life: 87") mint a fresh entry per distinct value — over a
 // long multi-battle session that would grow without bound. Mirrors the particle tint-cache guard.
@@ -104,6 +131,7 @@ export class BitmapFont {
   }
 
   measure(text: string, spacing = 1): number {
+    text = asciiFold(text);
     let w = 0;
     for (const c of text)
       w +=
@@ -133,6 +161,7 @@ export class BitmapFont {
 
   render(text: string, opts: {spacing?: number} = {}): HTMLCanvasElement {
     const spacing = opts.spacing ?? 1;
+    text = asciiFold(text); // map typographic punctuation to ASCII so it isn't drawn as blank gaps
     const src = this.cv; // the glyph atlas, drawn in its own baked colour (no recolour)
     // No atlas yet (still loading, or the `.bmp` failed) → the catalog HTML fallback,
     // so callers always get a real sized canvas and never invent their own font.

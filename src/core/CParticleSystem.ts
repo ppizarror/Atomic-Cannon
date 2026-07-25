@@ -25,10 +25,6 @@ import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
 import {TWO_PI, deg2rad} from '../math/num';
 import {EXP, type ExpType, isNukeExp} from './weapons/ExpType';
 
-// Per-weapon explosion presets from weapons.txt's ParticleEffectTable: each
-// weapon's `blast`/`trail` names one of these (colour, count, speed, life,
-// spread), giving each weapon its own explosion — e.g. a nuke's giant yellow
-// `eYellowPC` burst vs a small `eWhite` puff.
 interface ParticlePreset {
   posVar: number;
   density: number;

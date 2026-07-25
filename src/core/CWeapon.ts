@@ -1,9 +1,7 @@
 /**
  * CWeapon - weapon definitions, loaded from the bundled game data.
  *
- * Source of truth is `data/weapons.json` (104 weapons parsed from weapons.txt) —
- * NOT a hardcoded list. Colors come from `data/particles.json` (each weapon's
- * blast/trail particle effect).
+ * Source of truth is `data/weapons.json` (104 weapons).
  */
 
 import weaponsRaw from '../data/weapons.json';
@@ -37,7 +35,7 @@ export type WeaponType =
   | 'Utility'
   | string;
 
-/** One row of data/weapons.json (46-column schema from weapons.txt). */
+/** One row of data/weapons.json (46-column schema). */
 export interface RawWeapon {
   /** Stable slug (e.g. "magma.beam") — the engine/AI match key and the i18n key for the
    *  weapon's display name/description. NEVER localised, so game logic can rely on it. */
@@ -271,7 +269,7 @@ export class CWeapon {
   // Multi-fire fields: `spawn` = the number of SIMULTANEOUS rounds fired in a fan;
   // `spread` = degrees BETWEEN those rounds; `sucNum` = SUCCESSION — the shot fires
   // `sucNum+1` times in a row (`sucSec` apart). So a Cannon (spawn 5) sprays 5
-  // pellets; a Machine Gun (sucNum 11) fires ~12 times. (The weapons.txt column
+  // pellets; a Machine Gun (sucNum 11) fires ~12 times. (The original column
   // NAMES are misleading.)
   getSpawnCount(): number {
     return this.m_def.spawn || 1; // simultaneous fan count
@@ -349,7 +347,7 @@ export class CWeapon {
     return this.m_def.expBitmap || '';
   }
 
-  // --- trail / muzzle / in-flight flare (weapons.txt fields) ----------
+  // --- trail / muzzle / in-flight flare fields ----------
   /** 0 = no trail, 1 = basic flare+smoke, 2–6 = rocket-plume exhaust. */
   getTrailType(): number {
     return this.m_def.trailType || 0;
@@ -381,7 +379,7 @@ export class CWeapon {
 // ---------------------------------------------------------------------------
 // Derived weapon stats shown in the weapon-details LCD / depot.
 //
-// These are NOT columns in weapons.txt — they're computed once at weapon-load
+// These are NOT columns in the source data — they're computed once at weapon-load
 // (CWeapon post-parse) and stored as Power and Damage-per-area. Reference stat
 // anchors:
 //   Shell 50 · Rocket 100 · Earth Destroy 25 · Plutonium Nuke 650 · Toxic Cow 700.

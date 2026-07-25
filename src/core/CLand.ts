@@ -1439,14 +1439,14 @@ export class CLand {
   // =====================================================================
 
   /**
-   * Set the depth-sorted texture layers (from land.txt): the smallest depth is
+   * Set the depth-sorted texture layers: the smallest depth is
    * the surface cap, larger depths are deeper strata. Rebuilds the cached bitmap.
    */
   setLayers(
     layers: {image: CanvasImageSource; depth: number}[],
     bareImage?: CanvasImageSource,
   ): void {
-    // land.txt depths are authored for a ~480px play area; scale them
+    // Layer depths are authored for a ~480px play area; scale them
     // to our (taller) terrain so the strata bands stay proportional.
     const scale = this.m_nHeight / 480;
     this.m_layers = layers

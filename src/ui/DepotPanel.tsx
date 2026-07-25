@@ -194,7 +194,9 @@ export function DepotPanel() {
   // closeDepot directly, so a forfeit can't equip this tank's pick onto the next player's tank.
   const closeAndEquip = () => {
     closeDepot();
-    game().selectWeapon(sel);
+    // Equip the picked row only if it's actually usable — the unlimited staple or something you own.
+    // Browsing an un-owned weapon (to read its stats) must NOT switch you to a weapon you can't fire.
+    if (owned[sel] === UNLIMITED || (owned[sel] ?? 0) > 0) game().selectWeapon(sel);
   };
 
   const selW = WEAPON_DATABASE[sel];
