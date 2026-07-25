@@ -88,6 +88,10 @@ export interface ShotResult {
   /** Full terrain heightmap (per-column surface Y). */
   readonly heights: readonly number[];
   readonly wind: {readonly x: number; readonly y: number};
+  /** The seeded-gameplay-RNG cursor at this snapshot. A reconnecting/late-joining client MUST
+   *  restore it (the state hash mixes the cursor), or its sim runs out of phase with the room and
+   *  false-flags a desync on the next shot. See CGameController.applyNetSnapshot. */
+  readonly rngState: number;
 }
 
 // ── Client → room ──────────────────────────────────────────────────────────

@@ -303,6 +303,27 @@ describe('network match boot', () => {
     expect(a.stateHash()).toBe(b.stateHash()); // tanks + terrain + RNG all agree
   });
 
+  it('a bootstrapping client restores the RNG cursor so its hash matches the room', () => {
+    // The state hash mixes the seeded-RNG cursor, and every shot advances it (kickback / crates /
+    // variance). A mid-battle reconnect or spectator boots to the BATTLE-START cursor, so without
+    // carrying the cursor in the snapshot it runs out of phase → false desync + real divergence.
+    const rngOf = (gc: CGameController) =>
+      (gc as unknown as {m_rng: {float(): number; getState(): number}}).m_rng;
+
+    const room = netController(0);
+    for (let i = 0; i < 7; i++) rngOf(room).float(); // advance as prior shots in the battle would
+
+    const snap = room.getNetSnapshot();
+    expect(snap.rngState).toBe(rngOf(room).getState()); // the snapshot captured the live cursor
+
+    const joiner = netController(0); // a fresh (re)joining client — same seed → battle-start cursor
+    expect(joiner.stateHash()).not.toBe(room.stateHash()); // out of phase BEFORE bootstrap (the bug)
+
+    joiner.applyNetSnapshot(snap);
+    expect(rngOf(joiner).getState()).toBe(rngOf(room).getState()); // cursor restored
+    expect(joiner.stateHash()).toBe(room.stateHash()); // now IN PHASE with the room
+  });
+
   it('live aim: streams throttled aim commands to spectators while the local player adjusts', () => {
     const FIXED = 1 / 60;
     const cmds: {t: string}[] = [];
@@ -498,7 +519,7 @@ describe('network match boot', () => {
     expect(spectator.getNetSnapshot().tanks[1].credits).toBe(3000);
   });
 
-  // T4 — jet flight steering must be relayed. Flight is followed by an aim+fire in the SAME turn
+  // Jet flight steering must be relayed. Flight is followed by an aim+fire in the SAME turn
   // (before any turn-end keyframe), so a spectator that only replayed the ignite would land the tank
   // elsewhere and mis-simulate the relayed shot. The controller relays each thrust CHANGE + the cut.
   function bootNetWithSink(localIndex: number, sink: (c: GameCommand) => void): CGameController {

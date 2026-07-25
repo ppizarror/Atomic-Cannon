@@ -34,7 +34,7 @@ describe('Settings auto-pagination', () => {
   });
 
   it('an overflowing category chains sub-pages with a free next-page nav on all but the last', () => {
-    // Graphics is the long one: > 24 options → three pages.
+    // Graphics is the long one: > 20 options → three pages (at PAGE_SIZE 10).
     const p0 = getSettingsPage('graphics')!;
     const p1 = getSettingsPage('graphics~1')!;
     const p2 = getSettingsPage('graphics~2')!;

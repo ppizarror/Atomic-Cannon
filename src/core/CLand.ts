@@ -955,9 +955,12 @@ export class CLand {
       s.phase = Math.random() * TWO_PI; // independent glow phase (no coherent wave/banding)
       s.pw = 3 + Math.random() * 4.5; // independent glow rate (each speck breathes at its own speed)
       s.rise = 0;
-      s.r = r;
-      s.g = g;
-      s.b = b;
+      // Each grain's colour is randomised INDEPENDENTLY within the weapon's per-channel irRGB max, so
+      // the cloud ranges dark→bright — the original's natural fallout sparkle — instead of every speck
+      // carrying the same flat tint. Integer channels: the draw packs them into a colour key + rgb().
+      s.r = (Math.random() * (r + 1)) | 0;
+      s.g = (Math.random() * (g + 1)) | 0;
+      s.b = (Math.random() * (b + 1)) | 0;
       this.m_radSpecks.push(s);
     }
     if (this.m_radSpecks.length > 17000)
@@ -1677,7 +1680,8 @@ export class CLand {
         g = (g + (lum - g) * DESAT) * DARK * TG;
         b = (b + (lum - b) * DESAT) * DARK * TB;
         out[hy * hw + hx] =
-          (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>> 0;
+          (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>>
+          0;
       }
     }
     bctx.putImageData(img, 0, 0);

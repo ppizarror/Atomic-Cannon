@@ -567,11 +567,8 @@ export interface Strings {
     tankArmor: string;
     tankShield: string;
     tankCredits: string;
-    /** Per-tank battle-status line — `{name}: {pct}% life`. Also the Deathmatch standings label. */
+    /** Per-tank battle-status line — `{name}: {pct}% life`. */
     statusLife: string;
-    /** Between-battles standings label floated over a surviving tank in Points mode —
-     *  `{name}: {n} points`. (Deathmatch reuses {@link statusLife}.) */
-    standingPoints: string;
     /** Battle/shot status line — Battle `{battle}` of `{total}` - Shot `{shot}`. */
     statusBattle: string;
     /** Rounds/Points status line — Round `{round}` of `{total}`. */

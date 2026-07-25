@@ -728,7 +728,6 @@ export const en: Strings = {
     tankShield: 'Shield {n}',
     tankCredits: 'Credits {n}',
     statusLife: '{name}: {pct}% life',
-    standingPoints: '{name}: {n} points',
     statusBattle: 'Battle {battle} of {total} - Shot {shot}',
     statusRound: 'Round {round} of {total}',
     cantMoveUnderground: "Can't move underground.",

@@ -397,6 +397,11 @@ export interface NetSnapshot {
   /** Full terrain heightmap (per-column surface Y). */
   heights: number[];
   wind: {x: number; y: number};
+  /** The seeded gameplay-RNG cursor at this snapshot. `stateHash` mixes the cursor, and shots draw
+   *  from it (kickback, crate rolls, variance jitter), so a client that bootstraps from a snapshot
+   *  MUST restore it — otherwise it starts a fraction out of phase with the room and both desyncs
+   *  its own next shot AND false-flags a lockstep divergence. Restored in {@link applyNetSnapshot}. */
+  rngState: number;
 }
 
 /**
@@ -4538,6 +4543,7 @@ export class CGameController implements ShotWorld {
       tanks,
       heights: Array.from(this.m_land.getHeights()),
       wind: {x: this.m_wind.x, y: this.m_wind.y},
+      rngState: this.m_rng.getState(), // capture the cursor so a bootstrap restores it exactly
     };
   }
 
@@ -4586,6 +4592,11 @@ export class CGameController implements ShotWorld {
     if (s.heights.length) this.m_land.setHeightmap(s.heights);
     this.m_wind.x = s.wind.x;
     this.m_wind.y = s.wind.y;
+    // Restore the seeded-RNG cursor so this client resumes IN PHASE with the room: the state hash
+    // mixes the cursor and shots draw from it, so a bootstrap that skipped this ran a fraction out of
+    // phase — desyncing its next shot and false-flagging a divergence. (Older snapshots without the
+    // field leave the cursor untouched.) See {@link NetSnapshot.rngState}.
+    if (typeof s.rngState === 'number') this.m_rng.setState(s.rngState);
     this.markDirty();
   }
 
