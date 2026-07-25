@@ -1,5 +1,5 @@
 /**
- * T5 — server-side turn deadline / AFK forfeit. The Room Durable Object arms an alarm at each
+ * Server-side turn deadline / AFK forfeit. The Room Durable Object arms an alarm at each
  * turn's deadline; if the active player never acts, the alarm force-advances the turn so a
  * connected-but-idle player can't stall the room forever. These tests drive the DO's `alarm()`
  * against a mock DurableObjectState and assert the forfeit / re-arm / no-op branches.
@@ -93,7 +93,7 @@ function playingState(over: Record<string, unknown> = {}): Record<string, unknow
 const turnBegins = (ws: FakeSocket): Record<string, unknown>[] =>
   ws.sent.map(s => JSON.parse(s) as Record<string, unknown>).filter(m => m.t === 'turnBegin');
 
-describe('Room AFK forfeit alarm (T5)', () => {
+describe('Room AFK forfeit alarm', () => {
   it('an elapsed deadline force-advances the turn to the next living player', async () => {
     const a = makeSocket();
     const b = makeSocket();

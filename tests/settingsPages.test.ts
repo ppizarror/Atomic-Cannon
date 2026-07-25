@@ -1,8 +1,8 @@
 /**
- * Settings auto-pagination — every category page shows at most PAGE_SIZE (12) real options; any
+ * Settings auto-pagination — every category page shows at most PAGE_SIZE (10) real options; any
  * longer list auto-splits into `<base>~<n>` sub-pages, each ending in a free "next page" nav (which
- * does NOT count toward the cap). Locks the "never more than 12 options on a page" invariant and
- * the Graphics layout (Explode Losers on the 3rd page).
+ * does NOT count toward the cap). Locks the "never more than PAGE_SIZE options on a page" invariant
+ * and the Graphics layout (Explode Losers on the 3rd page).
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -12,7 +12,7 @@ import {setController} from '../src/ui/store';
 import {CGameController} from '../src/game/CGameController';
 import {strings} from '../src/i18n';
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 10; // must track settingsPages.ts
 const CATEGORIES = ['economy', 'tank', 'gameplay', 'graphics', 'audio', 'content'];
 
 // audioRows reads the live controller (game()), so a controller must exist.

@@ -203,7 +203,7 @@ export class CAudio {
   }
 
   /** A victory-fireworks burst — one of the two thunder claps at random, panned to
-   *  the burst's screen column. */
+   *  the burst's WORLD column (the pan axis is world width, like every other SFX). */
   firework(worldX: number): void {
     const s = SFX.FIREWORK[Math.random() < 0.5 ? 0 : 1];
     this.m_sfx.play(s, worldX, {throttle: false});

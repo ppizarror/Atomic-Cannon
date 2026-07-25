@@ -317,17 +317,17 @@ export function chooseBotWeapon(
   const val = (i: number): number => db[i].damage; // the magnitude field (dmg / heal / shield / armor value)
   const firstOwned = (e: number): number | undefined => owned.find(i => ext(i) === e);
 
-  // E — random OFFENSIVE pick: any owned non-Shell, non-utility, damaging weapon, skipping Death.
+  // Random OFFENSIVE pick: any owned non-Shell, non-utility, damaging weapon, skipping Death.
   const offensive = owned.filter(i => i !== shell && !BOT_UTILITY_EXT.has(ext(i)) && val(i) > 0);
   const nonDeath = offensive.filter(i => ext(i) !== BOT_EXT.DEATH);
   let sel = nonDeath.length ? nonDeath[Math.floor(rnd() * nonDeath.length)] : shell;
 
-  // F — "strongest weapon" upgrade: level>8, 70% → the highest-power (damage) non-Death round.
+  // "Strongest weapon" upgrade: level>8, 70% → the highest-power (damage) non-Death round.
   if (level > 8 && rnd() < 0.7 && nonDeath.length) {
     sel = nonDeath.reduce((b, i) => (val(i) > val(b) ? i : b), nonDeath[0]);
   }
 
-  // G — no-arc fallback (level>4, the solver found no hitting arc): reach for a weapon that
+  // No-arc fallback (level>4, the solver found no hitting arc): reach for a weapon that
   // doesn't need one, in the original's order. Leave the pick as-is if none are owned.
   if (level > 4 && !solutionFound) {
     const ladder = [
@@ -340,7 +340,7 @@ export function chooseBotWeapon(
     if (pick !== undefined) sel = pick;
   }
 
-  // H — defensive self-buff (each overwrites `sel`; last match wins → Heal > Hazmat > Armor > Shield).
+  // Defensive self-buff (each overwrites `sel`; last match wins → Heal > Hazmat > Armor > Shield).
   const s7 = firstOwned(BOT_EXT.SHIELD);
   const s11 = firstOwned(BOT_EXT.ARMOR);
   const s14 = firstOwned(BOT_EXT.HAZMAT);

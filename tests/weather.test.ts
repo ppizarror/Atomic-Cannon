@@ -155,7 +155,7 @@ describe('Weather system', () => {
     expect(threw).toBe(false); // draw does not throw
   });
 
-  it('precip (snow/rain/hail) blits ADDITIVE; dust stays alpha; blend restored after (T6)', () => {
+  it('precip (snow/rain/hail) blits ADDITIVE; dust stays alpha; blend restored after', () => {
     // A recording ctx that logs the composite op in force at each paint (fill/stroke).
     const recordingCtx = () => {
       const ops: string[] = [];

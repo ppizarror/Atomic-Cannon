@@ -159,7 +159,7 @@ describe('Particle system', () => {
     expect(b.count()).toBeGreaterThan(a.count()); // nuclear blast emits more
   });
 
-  // T2 — the flare-burst RING density follows the weapon's explosion STYLE (expType), not a single
+  // The flare-burst RING density follows the weapon's explosion STYLE (expType), not a single
   // nuke-vs-not switch: SINGLE = central puff only (no ring), BURST = ~r·0.5 ring, DENSE = ~r·2 ring
   // (4× BURST). At r=40 (non-nuke, non-small) the flare burst is the ONLY thing pushed to
   // m_explosions, so its length = ring particles + 1 central puff.
