@@ -74,6 +74,8 @@ export const gameSettings = {
   showTurn: (): boolean => getVal('gfx.showTurn') !== 0,
   showPoints: (): boolean => getVal('gfx.showPoints') !== 0,
   autoScroll: (): boolean => getVal('gfx.autoScroll') !== 0,
+  /** Turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic. */
+  cameraMode: (): number => getVal('gfx.camera'),
   showLastAim: (): boolean => getVal('gfx.lastAim') !== 0,
   explosionWaves: (): boolean => getVal('gfx.expWaves') !== 0,
   /** Camera shake on big/nuke blasts (a port embellishment — not in the original). */

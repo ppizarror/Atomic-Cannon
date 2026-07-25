@@ -232,6 +232,11 @@ const KICK_SIZE_MAX = 3.5;
 const CAMERA_SCROLL_SPEED = 1100;
 // Where the followed object sits in the view: 0.5 = dead centre.
 const CAMERA_CENTER = 0.5;
+// Graphics → Camera: how the view moves to the next player when the turn hands off. Matches the
+// gfx.camera enum order (0 Smooth — the implicit default, just ease across / 1 Instant / 2 Cinematic).
+const CAM_INSTANT = 1;
+const CAM_CINEMATIC = 2;
+const CAM_DWELL_SEC = 0.8; // Cinematic: how long the camera lingers on the impact before it pans away
 
 // "Show Points" floating damage numbers: life (s) and rise distance over that life
 // (px). Spawn jitter (px) matches the original (±20 / ±12).
@@ -1270,7 +1275,13 @@ export class CGameController implements ShotWorld {
     // (debris slumping, a knocked-up tank still falling) instead of easing toward the shooter early; and
     // it does NOT hold during a Move drive (that's Battle state), so the camera follows the driving tank.
     // Once the turn hands off, state is Battle and we follow the new current tank — no crater smoke lag.
-    if (this.m_gameState === EGameState.ShotFlying || this.m_gameState === EGameState.Explosion) {
+    // ...and, in Cinematic mode, keep lingering on the impact for a beat AFTER the hand-off (m_camDwell,
+    // counted down in updateCamera) before the pan to the next player begins.
+    if (
+      this.m_gameState === EGameState.ShotFlying ||
+      this.m_gameState === EGameState.Explosion ||
+      this.m_camDwell > 0
+    ) {
       return this.m_lastImpactX;
     }
     return this.getCurrentTank().getPosition().x;
@@ -1283,6 +1294,7 @@ export class CGameController implements ShotWorld {
    * result is always clamped to the world.
    */
   private updateCamera(dt: number): void {
+    if (this.m_camDwell > 0) this.m_camDwell -= dt; // Cinematic dwell on the impact, then release the pan
     if (this.maxCamX() === 0) {
       this.m_camX = this.m_camTargetX = 0;
       return;
@@ -3373,13 +3385,17 @@ export class CGameController implements ShotWorld {
     // player whose turn it now is, and clear the shot the camera was tracking.
     this.m_manualScroll = false;
     this.m_activeShot = null;
-    // Focus the player whose turn it is. On a large (multi-screen) map the eased scroll can't
-    // cross several screens before a bot fires (~0.6s later), so if the active tank is OFF-SCREEN
-    // snap the camera onto it — the player must SEE whose turn it is. When it's already on screen
-    // (small maps / adjacent tanks) let updateCamera ease the short distance smoothly.
+    // Focus the player whose turn it is — Graphics → Camera picks the feel of the hand-off:
+    //  • INSTANT   — if the active tank is OFF-SCREEN, snap onto it (the player must SEE whose turn it
+    //                is even across several screens before a bot fires ~0.6s later). On-screen eases.
+    //  • SMOOTH    — never snap; updateCamera eases across to the new tank (no jarring jump).
+    //  • CINEMATIC — hold on the impact for a beat (updateCamera counts m_camDwell down), then ease.
     const focusX = tank.getPosition().x;
-    if (focusX < this.m_camX || focusX > this.m_camX + this.m_viewW) {
+    const offScreen = focusX < this.m_camX || focusX > this.m_camX + this.m_viewW;
+    if (GameConfig.cameraMode === CAM_INSTANT && offScreen) {
       this.centerCameraOn(focusX);
+    } else if (GameConfig.cameraMode === CAM_CINEMATIC && offScreen) {
+      this.m_camDwell = CAM_DWELL_SEC; // linger on the crater, then pan (see cameraFollowX/updateCamera)
     }
 
     // Re-arm the taunt state for the new turn: no shot yet (gates the post-fire gloat)
@@ -5997,6 +6013,7 @@ export class CGameController implements ShotWorld {
   private m_worldWidth = 0;
   private m_camX = 0;
   private m_camTargetX = 0;
+  private m_camDwell = 0; // Cinematic camera: seconds left lingering on the impact before the pan (see beginTurn)
   private m_manualScroll = false;
   // The ONE shot the camera tracks this turn (latched to the first of a salvo, so it
   // doesn't zig-zag across a multi-missile volley — the original follows a single

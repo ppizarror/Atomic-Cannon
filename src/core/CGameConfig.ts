@@ -14,6 +14,9 @@ export const GameConfig = {
   // 1..5 for "1 Screen / Small / Normal / Large / Massive" (1 = no scroll).
   landSize: 3,
   autoScroll: true, // More Graphics Options → Auto Scroll (camera follows the shot / active tank)
+  // Turn hand-off camera: 0 Smooth (eased pan to the next player), 1 Instant (hard snap when they're
+  // off-screen), 2 Cinematic (dwell on the impact, then pan). See CGameController's CAM_* constants.
+  cameraMode: 0,
 
   // World linear scale = worldWidth / viewWidth (= landSize, 1..5). Set at map load. The
   // original multiplies launch power AND gravity by the map scale so a full-power shot covers

@@ -63,6 +63,7 @@ export function applyGameSettings(c: CGameController): void {
   GameConfig.showTurn = S.showTurn();
   GameConfig.showPoints = S.showPoints(); // floating damage numbers per hit
   GameConfig.autoScroll = S.autoScroll(); // camera follows the shot / active tank
+  GameConfig.cameraMode = S.cameraMode(); // turn hand-off: Smooth / Instant / Cinematic
   GameConfig.showLastAim = S.showLastAim();
   GameConfig.explosionWaves = S.explosionWaves();
   GameConfig.cameraShake = S.cameraShake();

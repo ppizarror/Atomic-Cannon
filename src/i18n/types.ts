@@ -436,6 +436,7 @@ export interface Strings {
       showPower: RowCopy;
       tankStats: RowCopy;
       autoScroll: RowCopy;
+      camera: RowCopy;
       lastAim: RowCopy;
       expWaves: RowCopy;
       camShake: RowCopy;

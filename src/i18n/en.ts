@@ -580,6 +580,11 @@ export const en: Strings = {
       showPower: {label: 'Show Power', tip: 'Display power bars for each tank'},
       tankStats: {label: 'Show Tank Stats', tip: 'Display stats of each tank'},
       autoScroll: {label: 'Auto Scroll', tip: 'Automatically scrolls during game events'},
+      camera: {
+        label: 'Camera',
+        tip: 'How the view moves to the next player: Smooth pan, Instant snap, or Cinematic (dwell on the impact, then pan)',
+        options: ['Smooth', 'Instant', 'Cinematic'],
+      },
       lastAim: {label: 'Show Last Aim', tip: 'Show last power and angle position'},
       expWaves: {label: 'Explosion Waves', tip: 'A very cool refractive wave effect for nukes'},
       camShake: {label: 'Camera Shake', tip: 'Shake the screen on big and nuclear explosions'},

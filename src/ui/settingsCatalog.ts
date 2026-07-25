@@ -77,6 +77,7 @@ const CATALOG = {
   'gfx.showPower': {default: 1},
   'gfx.tankStats': {default: 0},
   'gfx.autoScroll': {default: 1},
+  'gfx.camera': {default: 0}, // turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic
   'gfx.lastAim': {default: 1},
   'gfx.expWaves': {default: 1},
   'gfx.camShake': {default: 1},

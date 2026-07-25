@@ -194,6 +194,7 @@ function graphicsRows(): Widget[] {
     toggle(s.showPower, 'gfx.showPower'),
     toggle(s.tankStats, 'gfx.tankStats'),
     toggle(s.autoScroll, 'gfx.autoScroll'),
+    enumW(s.camera, 'gfx.camera'),
     toggle(s.lastAim, 'gfx.lastAim'),
     toggle(s.expWaves, 'gfx.expWaves'),
     toggle(s.camShake, 'gfx.camShake'),
