@@ -35,7 +35,7 @@ const BOT_EXT = {
   DEATH: 12,
   HAZMAT: 14,
 } as const;
-const BOT_UTILITY_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
+export const BOT_UTILITY_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
 
 /** Is this extType one the bot applies to ITSELF (shield/heal/armor/hazmat) rather than firing? */
 export function isBotSelfBuff(ext: number): boolean {
@@ -51,11 +51,15 @@ export interface BotStats {
   maxLife: number;
 }
 
-// Difficulty is a single 0..10 skill level (0 = "Dummy": never aims; 10 =
-// "Einstein": perfect aim). 5 is a reasonable mid default.
+// Difficulty is a single skill level (0 = "Dummy": never aims; 10 = perfect aim). Level 11 = ULTRA,
+// a wholly different brain (see CBotUltraAI): not just perfect aim but expected-value shot planning,
+// nuke reservation, purposeful movement (crate/radiation/reposition), and self-preservation. 5 is a
+// reasonable mid default. Levels 1..10 behave exactly as before; only 11 routes to the Ultra planner.
 export const AI_LEVEL_MIN = 0;
-export const AI_LEVEL_MAX = 10;
+export const AI_LEVEL_MAX = 11;
 export const AI_DEFAULT_LEVEL = 5;
+/** The top difficulty: routes the turn to the Ultra planner instead of the scatter-degraded solve. */
+export const AI_LEVEL_ULTRA = 11;
 
 // Aim search bounds (power in the game's 10..1000 scale; the sweep covers 100+).
 const P_MIN = 100;
@@ -104,19 +108,32 @@ export function angleError(level: number, rnd: () => number = Math.random): numb
   return (rnd() < 0.5 ? -1 : 1) * mag;
 }
 
+const ONE_GUST = {x: 1, y: 1}; // neutral gust factor (Linear mode / gustT0 omitted)
+
+/** Full result of a virtual shot: the closest approach to the aim `target` (with the position
+ *  there) AND the terminal impact point (terrain contact, or where it left the field). The Ultra
+ *  planner centres a weapon's blast on the impact — or the near point for a direct hit — to score
+ *  multi-tank damage; the plain aim solver only needs `minDist`. */
+export interface ShotResult {
+  minDist: number; // closest the arc passes to the aim target
+  nearX: number; // position at that closest approach (blast centre for a direct hit)
+  nearY: number;
+  hitX: number; // terminal point: terrain contact or field exit (blast centre for a near-miss)
+  hitY: number;
+  hitGround: boolean; // true if it stopped ON terrain (a real detonation), false if it flew off
+}
+
 /**
- * Fly a virtual shot and return the closest distance it passes to `target`.
- * Uses the same semi-implicit Euler integrator as a real shot, so the aim it
- * finds transfers exactly. Stops on terrain contact or leaving the field.
+ * Fly a virtual shot with the exact projectile physics and return where it goes ({@link ShotResult}).
+ * Uses the same semi-implicit Euler integrator as a real shot, so the aim it finds transfers exactly.
+ * Stops on terrain contact or leaving the field.
  *
  * `gustT0` (Realistic wind) is the gust-clock time AT LAUNCH: each step re-samples the shared gust
  * envelope at `gustT0 + i·dt` and scales the base `wind` by it, so the predicted arc rides the same
  * breathing wind the real shot will — a bot then leads the gust instead of aiming at the mean.
  * Omit it (or Linear mode) → the gust factor is a flat 1, i.e. the sustained wind as before.
  */
-const ONE_GUST = {x: 1, y: 1}; // neutral gust factor (Linear mode / gustT0 omitted)
-
-export function simulateMiss(
+export function simulateShot(
   origin: Pt,
   angleDeg: number,
   power: number,
@@ -124,7 +141,7 @@ export function simulateMiss(
   field: AimField,
   target: Pt,
   gustT0?: number,
-): number {
+): ShotResult {
   const r = deg2rad(angleDeg);
   // Match the REAL launch physics exactly (incl. the √worldScale zoom) so the solver's
   // prediction stays accurate on scaled maps — otherwise bots would over/undershoot.
@@ -137,6 +154,9 @@ export function simulateMiss(
   const dt = 1 / 30;
   const drag = isRealisticWind(); // match the real shot's Realistic-mode air drag
   let minD = Math.hypot(x - target.x, y - target.y);
+  let nearX = x,
+    nearY = y;
+  let hitGround = false;
 
   for (let i = 0; i < 500; i++) {
     vy += SHOT_GRAVITY * ws * dt;
@@ -157,12 +177,33 @@ export function simulateMiss(
     y += vy * dt;
 
     const d = Math.hypot(x - target.x, y - target.y);
-    if (d < minD) minD = d;
+    if (d < minD) {
+      minD = d;
+      nearX = x;
+      nearY = y;
+    }
 
     if (x < -40 || x > field.width + 40 || y > field.height + 60) break;
-    if (y >= field.heightAt(clamp(x, 0, field.width - 1))) break; // hit ground
+    if (y >= field.heightAt(clamp(x, 0, field.width - 1))) {
+      hitGround = true;
+      break; // hit ground
+    }
   }
-  return minD;
+  return {minDist: minD, nearX, nearY, hitX: x, hitY: y, hitGround};
+}
+
+/** Closest distance a virtual shot passes to `target` — the aim solver's objective. Thin wrapper
+ *  over {@link simulateShot} (same integrator), kept for the many call sites that only need the miss. */
+export function simulateMiss(
+  origin: Pt,
+  angleDeg: number,
+  power: number,
+  wind: Pt,
+  field: AimField,
+  target: Pt,
+  gustT0?: number,
+): number {
+  return simulateShot(origin, angleDeg, power, wind, field, target, gustT0).minDist;
 }
 
 /**

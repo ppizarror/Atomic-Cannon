@@ -7,7 +7,7 @@ import {describe, it, expect, vi} from 'vitest';
 import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
-import {simulateMiss, AI_LEVEL_MAX, type AimField} from '../src/core/CBotAI';
+import {simulateMiss, AI_LEVEL_MAX, AI_LEVEL_ULTRA, type AimField} from '../src/core/CBotAI';
 import {Vec2} from '../src/math/Vec2';
 import {GameConfig} from '../src/core/CGameConfig';
 
@@ -78,5 +78,38 @@ describe('Bot AI (integration)', () => {
     // The old AI capped power at 100 (range ~16px) and never reached a target 600px
     // away; the new one uses the full scale.
     expect(good).toBeGreaterThanOrEqual(RUNS - 1);
+  });
+});
+
+// Ultra (level 11) routes through the whole planner pipeline (buildUltraCtx → planUltraTurn →
+// execute). This drives it end-to-end through the real controller to catch any wiring break the
+// pure-planner unit tests can't, and confirms it commits a real firing solution on a one-screen map.
+describe('Ultra AI (level 11) — end-to-end wiring', () => {
+  it('picks and commits a real shot at the enemy without error', () => {
+    let ultraGood = 0;
+    const RUNS_U = 6;
+    for (let run = 0; run < RUNS_U; run++) {
+      const gc = new CGameController(makeCanvas(900, 600)) as unknown as GC;
+      gc.startGame(2);
+      gc.setDifficulty(AI_LEVEL_ULTRA); // route to executeUltraTurn
+      gc.m_currentPlayerIndex = 1; // bot's turn
+      const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.99); // no trick play / random branch
+      gc.executeBotTurn();
+      rnd.mockRestore();
+
+      const power = gc.getPower();
+      const angle = gc.getAngle();
+      expect(power).toBeGreaterThanOrEqual(100); // committed a fire (not left at a stale 0)
+      const field: AimField = {
+        heightAt: x => gc.m_land.getHeightAt(x),
+        width: gc.m_land.width,
+        height: gc.m_land.height,
+      };
+      const enemy = gc.m_tanks[0].getPosition();
+      const origin = gc.m_tanks[1].muzzleForAngle(angle);
+      const miss = simulateMiss(origin, angle, power, gc.m_wind, field, {x: enemy.x, y: enemy.y});
+      if (miss < 60) ultraGood++;
+    }
+    expect(ultraGood).toBeGreaterThanOrEqual(RUNS_U - 1); // Ultra hits on the large majority
   });
 });
