@@ -69,12 +69,14 @@ export function openDepot(): void {
   freezeSim();
   showDepot.value = true;
   uiOpen();
+  pushRoute();
 }
 
 export function closeDepot(): void {
   showDepot.value = false;
   unfreezeSim();
   uiClose();
+  popRoute();
 }
 
 // Pause menu — an overlay over the frozen battle (Resume / Settings / Quit).
@@ -87,6 +89,7 @@ export function openPauseMenu(): void {
   freezeSim();
   showPause.value = true;
   uiOpen();
+  pushRoute();
 }
 
 /** Resume: close the pause menu and unfreeze the sim. */
@@ -94,6 +97,7 @@ export function resumeGame(): void {
   showPause.value = false;
   unfreezeSim();
   uiClose();
+  popRoute();
 }
 
 // Help overlay — the "?" panel button. Shows a modal control reference. Freeze the
@@ -106,6 +110,7 @@ export function openHelp(): void {
   freezeSim();
   showHelp.value = true;
   uiOpen();
+  pushRoute();
 }
 
 /** Close Help and unfreeze the sim. */
@@ -113,6 +118,7 @@ export function closeHelp(): void {
   showHelp.value = false;
   unfreezeSim();
   uiClose();
+  popRoute();
 }
 
 // Where the Settings screen returns to when done — the pause menu or the main menu.
@@ -133,18 +139,26 @@ export function openSettings(from: 'pause' | 'menu'): void {
   // in-battle pause menu it's a dialog panel opening over the frozen battle.
   if (from === 'menu') uiMenuForward();
   else uiOpen();
+  pushRoute();
 }
 
-/** Enter a category's option page (from the Settings root). */
+/** Enter a Settings page. Route-wise: descending into a page pushes; a Back to an ancestor (an
+ *  editor returning to its `content` group, or to root) pops; paginating within the same category
+ *  rewrites (Done always returns to root, so the `~n` pages aren't a back-stack). */
 export function openSettingsPage(id: string): void {
+  const prev = settingsPage.value;
   settingsPage.value = id;
   uiClick();
+  if (id === parentPage(prev)) popRoute();
+  else if (baseOf(id) === baseOf(prev) && id !== prev) replaceRoute();
+  else pushRoute();
 }
 
 /** Leave an option page back to the Settings root ("Return to the settings menu"). */
 export function settingsPageBack(): void {
   settingsPage.value = 'root';
   uiClick();
+  popRoute();
 }
 
 /** Leave Settings, returning to whichever menu opened it (battle stays frozen). */
@@ -157,6 +171,7 @@ export function closeSettings(): void {
     screen.value = 'menu';
     uiMenuBack(); // returning to the main menu — the menu "back" whirr
   }
+  popRoute();
 }
 
 /** Enter the main menu: freeze the battle behind it and play menu music. We freeze only the RENDER
@@ -174,6 +189,163 @@ export function goToMenu(): void {
   game().setPaused(false);
   paused.value = true;
   game().getAudio()?.menuMusic();
+  resetRoute(); // quitting a game is a fresh root — clear the in-app back stack
+}
+
+// ═══ URL routing ════════════════════════════════════════════════════════════════════════════════
+// Navigation is mirrored to the browser URL (History API). A FORWARD move — opening a screen, a
+// settings page, or a battle overlay — pushes a history entry; a BACK move — the browser Back
+// button, the ESC key, or any in-app Back / Done button — lands on the parent. All three are kept
+// consistent so they behave identically ("go up one level"). Inert until initRouter() runs (only
+// main.tsx boot calls it), so the history-less unit-test environment is completely untouched.
+
+const hasHistory = typeof window !== 'undefined' && typeof window.history?.pushState === 'function';
+let routerOn = false; // initRouter() flips this on in the browser; stays false under test
+let routeDepth = 0; // in-app history depth (0 = the entry page): lets a back fall through to a parent
+let applyingRoute = false; // guards the popstate reconcile from re-pushing
+
+const TOP_SCREEN: Partial<Record<string, Screen>> = {
+  '': 'menu',
+  play: 'setup',
+  network: 'network',
+  about: 'about',
+  manual: 'manual',
+  highscores: 'highscores',
+  settings: 'settings',
+  battle: 'battle',
+};
+
+/** The URL path representing the current navigation signals. */
+function currentPath(): string {
+  switch (screen.value) {
+    case 'settings':
+      return settingsPage.value === 'root' ? '/settings' : `/settings/${settingsPage.value}`;
+    case 'battle':
+      if (showHelp.value) return '/battle/help';
+      if (showDepot.value) return '/battle/depot';
+      if (showPause.value) return '/battle/pause';
+      return '/battle';
+    case 'setup':
+      return '/play';
+    case 'network':
+      return '/network';
+    case 'about':
+      return '/about';
+    case 'manual':
+      return '/manual';
+    case 'highscores':
+      return '/highscores';
+    default:
+      return '/';
+  }
+}
+
+/** The full URL written to history: the current path plus the PRESERVED query string and hash, so
+ *  `?dev`/test params (`?battle`, `?land`, `?settings`, `?weapontest`…) stay alive across navigation
+ *  instead of being dropped by a path-only history write (`?land` is re-read on every new battle). */
+function navUrl(): string {
+  return currentPath() + window.location.search + window.location.hash;
+}
+
+/** Base category id (strips the `~<n>` pagination suffix). */
+const baseOf = (id: string): string => id.split('~')[0];
+/** The page one level up from `id` in the Settings tree (editors nest under `content`; everything
+ *  else — including paginated sub-pages, whose Done returns to root — sits directly under root). */
+const parentPage = (id: string): string =>
+  id === 'root' ? 'root' : id.includes('.') ? id.split('.')[0] : 'root';
+
+/** Push a forward entry for the just-changed navigation state. */
+function pushRoute(): void {
+  if (!routerOn || applyingRoute) return;
+  if (currentPath() === window.location.pathname) return;
+  routeDepth += 1;
+  window.history.pushState({d: routeDepth}, '', navUrl());
+}
+
+/** Rewrite the current entry to the just-changed state (no new history entry). */
+function replaceRoute(): void {
+  if (!routerOn || applyingRoute) return;
+  window.history.replaceState({d: routeDepth}, '', navUrl());
+}
+
+/** Pop one entry after an in-app back (state already changed synchronously). Falls back to
+ *  rewriting the URL when there's nothing to pop (a deep link opened straight onto a child). */
+function popRoute(): void {
+  if (!routerOn || applyingRoute) return;
+  if (routeDepth > 0)
+    window.history.back(); // popstate reconciles (a no-op: state already matches)
+  else window.history.replaceState({d: 0}, '', navUrl());
+}
+
+/** Reset history to the current state as a fresh root (quitting a game / boot). */
+function resetRoute(): void {
+  if (!routerOn) return;
+  routeDepth = 0;
+  window.history.replaceState({d: 0}, '', navUrl());
+}
+
+/** Show exactly one (or no) battle overlay, matching the sim-freeze to it. Idempotent. */
+function reconcileOverlay(kind: '' | 'pause' | 'help' | 'depot'): void {
+  if (kind === 'depot' && !showDepot.value) refreshEconomy();
+  showPause.value = kind === 'pause';
+  showHelp.value = kind === 'help';
+  showDepot.value = kind === 'depot';
+  const wantFrozen = kind !== '';
+  if (wantFrozen && !paused.value) freezeSim();
+  else if (!wantFrozen && paused.value) unfreezeSim();
+}
+
+/** Drive the navigation signals (and their sim-freeze side effects) to match `path`. Absolute and
+ *  idempotent — used by the popstate handler (browser Back/Forward) and any deep link. */
+function routeTo(path: string): void {
+  const parts = path.replace(/^\/+/, '').split('/').filter(Boolean);
+  const target = TOP_SCREEN[parts[0] ?? ''] ?? 'menu';
+  const sub = parts[1] ? decodeURIComponent(parts[1]) : '';
+
+  if (target === 'battle') {
+    if (screen.value !== 'battle') screen.value = 'battle';
+    reconcileOverlay(sub === 'pause' || sub === 'help' || sub === 'depot' ? sub : '');
+    return;
+  }
+  reconcileOverlay(''); // a non-battle screen has no overlay and must not stay sim-frozen
+  if (target === 'menu' && screen.value === 'battle') {
+    goToMenu(); // battle → menu needs the drive-audio stop + menu-music restart (see goToMenu)
+    return;
+  }
+  screen.value = target;
+  if (target === 'settings') settingsPage.value = sub || 'root';
+}
+
+/** Wire the browser Back/Forward buttons and seed the entry URL. Call once at boot. */
+export function initRouter(): void {
+  if (!hasHistory) return;
+  routerOn = true;
+  window.history.replaceState({d: 0}, '', navUrl());
+  window.addEventListener('popstate', e => {
+    routeDepth = (e.state as {d?: number} | null)?.d ?? 0;
+    applyingRoute = true;
+    try {
+      routeTo(window.location.pathname);
+    } finally {
+      applyingRoute = false;
+    }
+  });
+}
+
+/** One level up — the shared action behind ESC and the on-screen Back / Done buttons. */
+export function escapeBack(): void {
+  if (screen.value === 'battle') {
+    if (showHelp.value) closeHelp();
+    else if (showDepot.value) closeDepot();
+    else if (showPause.value) resumeGame();
+    else openPauseMenu(); // no overlay open: ESC opens the pause menu (a forward move)
+  } else if (screen.value === 'settings') {
+    if (settingsPage.value === 'root') closeSettings();
+    else settingsPageBack();
+  } else if (screen.value !== 'menu') {
+    backToMenu();
+  }
+  // the main menu is the top level — ESC does nothing there
 }
 
 /** A match needs at least two teams (humans + computers) to have an opponent. */
@@ -188,6 +360,7 @@ function enterBattle(players: number, humans: number, tanksPerTeam: number): voi
   game().startGame(players); // also starts the battle music
   screen.value = 'battle';
   unfreezeSim();
+  pushRoute();
 }
 
 /** Start a battle from the current (persisted) Play setup — the Start Game button.
@@ -203,6 +376,7 @@ export function startBattle(): void {
 export function openPlaySetup(): void {
   screen.value = 'setup';
   uiMenuForward();
+  pushRoute();
 }
 
 /** Quick Play → start immediately with the last-used setup. If that setup can't start a match
@@ -220,6 +394,7 @@ export function quickPlay(): void {
 export function openNetworkGame(): void {
   screen.value = 'network';
   uiMenuForward();
+  pushRoute();
 }
 
 /** A plain 2-player battle (dev URL affordances + boot) — does not touch the setup. */
@@ -232,22 +407,26 @@ export function playNewGame(): void {
 export function openAbout(): void {
   screen.value = 'about';
   uiMenuForward();
+  pushRoute();
 }
 
 /** Main menu → Manual (the how-to-play document), and back. */
 export function openManual(): void {
   screen.value = 'manual';
   uiMenuForward();
+  pushRoute();
 }
 
 /** Main menu → High Scores (the Battle Heroes hall of fame). */
 export function openHighScores(): void {
   screen.value = 'highscores';
   uiMenuForward();
+  pushRoute();
 }
 export function backToMenu(): void {
   screen.value = 'menu';
   uiMenuBack();
+  popRoute();
 }
 
 /** Quit the current battle back to the main menu (UI). */

@@ -24,20 +24,16 @@ import {
   screen,
   canFire,
   openDepot,
-  closeDepot,
-  showDepot,
   triggerHudWave,
   paused as pausedSignal,
   openPauseMenu,
-  resumeGame,
-  showPause,
   goToMenu,
   playNewGame,
   openSettings,
   openSettingsPage,
   openPlaySetup,
-  showHelp,
-  closeHelp,
+  initRouter,
+  escapeBack,
   showFramerate,
   fps,
   showFrameCount,
@@ -183,6 +179,11 @@ async function main(): Promise<void> {
     }
   }
 
+  // Mirror navigation to the URL (browser Back / ESC / in-app Back all go one level up). After the
+  // dev affordances above so their `?flag` reads see the original query before the router rewrites
+  // the path to the resting screen (e.g. `?settings=graphics` → `/settings/graphics`).
+  initRouter();
+
   // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
   // pause menu, and the DOM FX all read one source. 'P' = a quiet screenshot freeze
   // (no menu); ESC = the pause menu (Resume / Settings / Quit).
@@ -219,6 +220,21 @@ async function main(): Promise<void> {
   // actions are resolved through the player's key bindings (Customize Controls); the
   // pressed key maps to an action, so rebinding takes effect immediately.
   document.addEventListener('keydown', e => {
+    // Escape / the bound Exit action goes ONE LEVEL UP on any screen — a settings sub-page to its
+    // parent, a sub-screen to the menu, a battle overlay closed (or, with none open, the pause menu
+    // opened). This mirrors the browser Back button (see the router). Skipped while typing in a
+    // field (the field owns Escape, e.g. blur) and while a Controls rebind is capturing keys (its
+    // capture-phase listener stops propagation first). Escape is always honoured so an unbound /
+    // rebound Exit can never lock the player out.
+    const isExit =
+      e.code === 'Escape' ||
+      (screen.value === 'battle' && resolveAction(bindings.value, e.code) === 'exit');
+    if (isExit && !isTypingTarget(e.target)) {
+      e.preventDefault();
+      escapeBack();
+      return;
+    }
+
     if (!gameplayKeys(e)) return;
     const action = resolveAction(bindings.value, e.code);
 
@@ -229,19 +245,6 @@ async function main(): Promise<void> {
       const p = !pausedSignal.value;
       gameController.setPaused(p);
       pausedSignal.value = p; // freeze DOM FX (HUD ripple) too
-      return;
-    }
-
-    // The Exit action (Escape by default) backs out of the topmost overlay: Help, then
-    // the depot, then the pause menu; with none open it opens the pause menu. Escape is
-    // always honoured as a fallback so an unbound/rebound Exit can never lock the player
-    // out of the menu.
-    if (action === 'exit' || e.code === 'Escape') {
-      e.preventDefault();
-      if (showHelp.value) closeHelp();
-      else if (showDepot.value) closeDepot();
-      else if (showPause.value) resumeGame();
-      else openPauseMenu();
       return;
     }
 
