@@ -41,17 +41,29 @@ const TEAM_HEX = [
  *  each client holds it this long, so no clock sync is needed. */
 const NET_BATTLE_INTERMISSION_MS = 4500;
 
+type RelayedCommand = Parameters<typeof applyCommand>[1];
+
+/** One turn-flow event, queued in wire order when it can't be applied yet (see NetGame.m_queue). */
+type QueuedEvent =
+  | {readonly t: 'cmd'; readonly cmd: RelayedCommand}
+  | {
+      readonly t: 'turn';
+      readonly playerIdx: number;
+      readonly handoff: boolean;
+      readonly roundWrapped: boolean;
+    }
+  | {readonly t: 'state'; readonly result: NetSnapshot; readonly hash: number};
+
 export class NetGame {
   private m_seq = 0;
-  // The authoritative keyframe (+ its hash) that arrived WHILE we were still simulating —
-  // checked against our own result once we settle; applied only if we actually drifted.
-  private m_pendingKeyframe: {result: NetSnapshot; hash: number} | null = null;
-  // A server turn hand-off that arrived mid-simulation — applied once our sim settles, so
-  // a late `turnBegin` can never interrupt an in-flight shot.
-  private m_pendingTurn: number | null = null;
-  private m_pendingHandoff = false; // the queued turn's hand-off flag (crate roll + per-turn income)
+  // Ordered queue of turn-flow events (relayed cmd / turnBegin / stateUpdate) that arrived while our
+  // own sim was still resolving a shot — or behind an already-queued event. Draining them IN ORDER
+  // once the sim settles preserves lockstep: applying a LATER turn's command to the current tank, or
+  // dropping an intervening turnBegin's once-per-turn effects (seeded crate/income draws), would
+  // diverge. Replaces the old single-slot pending-turn/keyframe stash, which lost intervening turns
+  // under a stall (e.g. a backgrounded tab whose rAF sim freezes while messages keep arriving).
+  private m_queue: QueuedEvent[] = [];
   private m_intermissionTimer: ReturnType<typeof setTimeout> | null = null; // between-battle advance
-  private m_pendingRoundWrapped = false; // the queued turn's round-wrap flag (per-round income)
   // True once we've begun playing turns in lockstep (first turnBegin). While FALSE we have no
   // independent simulation to trust (fresh boot / reconnect), so a keyframe is a BOOTSTRAP we adopt;
   // once TRUE our own deterministic sim is authoritative for us and a keyframe is never adopted —
@@ -80,13 +92,21 @@ export class NetGame {
           msg.config,
         );
       case 'turnBegin':
-        return this.onTurnBegin(msg.playerIdx, msg.handoff ?? false, msg.roundWrapped ?? false);
+        return this.dispatch({
+          t: 'turn',
+          playerIdx: msg.playerIdx,
+          handoff: msg.handoff ?? false,
+          roundWrapped: msg.roundWrapped ?? false,
+        });
       case 'nextBattle':
         return this.onNextBattle(msg.seed);
       case 'stateUpdate':
-        return this.onStateUpdate(msg.result as NetSnapshot, msg.hash);
+        return this.dispatch({t: 'state', result: msg.result as NetSnapshot, hash: msg.hash});
       case 'cmd':
-        return this.onRemoteCommand(msg.cmd);
+        // Defend against a malformed relayed command (the server validates too, but never trust the
+        // wire): applyCommand switches on cmd.t, which would throw on a non-object.
+        if (msg.cmd && typeof msg.cmd === 'object') this.dispatch({t: 'cmd', cmd: msg.cmd});
+        return;
       case 'gameOver':
         return this.host.controller.netFinishBattle();
       // chat: handled in a later phase (in-match chat).
@@ -94,34 +114,45 @@ export class NetGame {
   }
 
   /**
-   * A relayed intent from the acting player, replayed verbatim through the command bus:
-   * select-weapon, aim, then fire. Because the sim is deterministic (seeded RNG + fixed
-   * timestep), every client computes the SAME shot outcome — no one has to trust the
-   * shooter's reported damage (that's the cheat-resistance).
+   * Apply a turn-flow event now, or QUEUE it (in wire order) if our sim is still resolving a shot or
+   * events are already queued ahead of it. This is the single ordering point: relayed commands
+   * (select-weapon/aim/fire), turn hand-offs, and keyframes all flow through it so a stalled client
+   * can't apply a later turn's command to the current tank or skip an intervening turn's effects.
    */
-  private onRemoteCommand(cmd: Parameters<typeof applyCommand>[1]): void {
-    // Defend against a malformed relayed command (the server validates too, but never trust the wire):
-    // applyCommand switches on cmd.t, which would throw on a non-object.
-    if (!cmd || typeof cmd !== 'object') return;
-    applyCommand(this.host.controller, cmd);
+  private dispatch(ev: QueuedEvent): void {
+    if (this.m_queue.length > 0 || this.host.controller.isNetSimBusy()) {
+      this.m_queue.push(ev);
+    } else {
+      this.runEvent(ev);
+    }
   }
 
-  /** Server turn hand-off — queue it if we're mid-shot, else apply now. */
-  private onTurnBegin(playerIdx: number, handoff: boolean, roundWrapped: boolean): void {
-    if (this.host.controller.isNetSimBusy()) {
-      this.m_pendingTurn = playerIdx;
-      this.m_pendingHandoff = handoff;
-      this.m_pendingRoundWrapped = roundWrapped;
-    } else {
-      this.applyTurn(playerIdx, handoff, roundWrapped);
+  private runEvent(ev: QueuedEvent): void {
+    switch (ev.t) {
+      case 'cmd':
+        // Deterministic replay of the actor's intent — every client computes the SAME shot outcome
+        // (seeded RNG + fixed timestep), so no one trusts the shooter's reported damage.
+        return applyCommand(this.host.controller, ev.cmd);
+      case 'turn':
+        return this.applyTurn(ev.playerIdx, ev.handoff, ev.roundWrapped);
+      case 'state':
+        return this.reconcileKeyframe(ev.result, ev.hash);
+    }
+  }
+
+  /** Drain queued events in order, stopping the moment one makes the sim busy again (a relayed fire) —
+   *  the settle callback resumes the drain. So each pass applies exactly one turn's worth of events. */
+  private drainQueue(): void {
+    while (this.m_queue.length > 0 && !this.host.controller.isNetSimBusy()) {
+      this.runEvent(this.m_queue.shift()!);
     }
   }
 
   private applyTurn(playerIdx: number, handoff: boolean, roundWrapped: boolean): void {
-    this.m_pendingKeyframe = null; // stale — belongs to the turn that just ended
-    // We're now playing turns in lockstep: from here on our own sim is authoritative for us and a
-    // keyframe is detect-only. (A reconnect bootstraps via the keyframe BEFORE this first turnBegin.)
-    this.m_hasSimulated = true;
+    // NOTE: m_hasSimulated is flipped in onTurnSettled (after we actually simulate a turn), NOT here.
+    // A client that reconnects/joins DURING a shot's flight misses the already-broadcast fire cmd, so
+    // it never simulates that shot; keeping it in bootstrap mode lets it ADOPT the shot's result
+    // keyframe instead of comparing a stale pre-shot hash and false-flagging a permanent desync.
     const gc = this.host.controller;
     // Once-per-turn hand-off effects, driven by the server so they fire EXACTLY once (the local
     // endTurn can repeat). Deterministic: every client runs them from the same settled sim state
@@ -132,19 +163,11 @@ export class NetGame {
   }
 
   /**
-   * A server snapshot. Mid-shot it's stashed for a post-settle reconcile. Otherwise:
-   *  • BOOTSTRAP (we haven't simulated yet — fresh boot / reconnect): adopt it to catch up.
-   *  • KEYFRAME (we've been playing): we simulated this turn ourselves, so we TRUST OUR OWN state
-   *    and never adopt the actor's self-reported snapshot — a mismatch is a cheat/desync we flag.
+   * A server snapshot, reconciled in wire order (see the queue). BOOTSTRAP (we haven't simulated yet
+   * — fresh boot / reconnect): adopt it to catch up. KEYFRAME (we've been playing): we simulated this
+   * turn ourselves, so we TRUST OUR OWN state and never adopt the actor's self-reported snapshot — a
+   * mismatch is a cheat/desync we flag.
    */
-  private onStateUpdate(result: NetSnapshot, hash: number): void {
-    if (this.host.controller.isNetSimBusy()) {
-      this.m_pendingKeyframe = {result, hash};
-      return;
-    }
-    this.reconcileKeyframe(result, hash);
-  }
-
   private reconcileKeyframe(result: NetSnapshot, hash: number): void {
     const gc = this.host.controller;
     if (!this.m_hasSimulated) {
@@ -169,8 +192,13 @@ export class NetGame {
     viewH: number,
     config: MatchConfig,
   ): void {
-    this.m_pendingKeyframe = null;
-    this.m_pendingTurn = null;
+    this.m_queue = []; // drop anything queued for a prior match/boot
+    // Clear a pending between-battle timer — a reconnect can re-boot via startGame DURING the
+    // intermission, and a stale timer would then advance a battle with the WRONG (old) seed.
+    if (this.m_intermissionTimer !== null) {
+      clearTimeout(this.m_intermissionTimer);
+      this.m_intermissionTimer = null;
+    }
     // Fresh boot (or reconnect re-boot): until the first turnBegin we have no sim to trust, so the
     // next keyframe is a bootstrap to adopt. resumeMatch sends startGame→stateUpdate→turnBegin, so
     // the reconnect snapshot lands here while this is still false and is correctly adopted.
@@ -206,9 +234,10 @@ export class NetGame {
   }
 
   /**
-   * Our local simulation for this turn just settled (fires on every client). The acting
-   * client reports its authoritative state + hash; a spectator reconciles against any
-   * keyframe that raced in mid-shot. Then we apply a turn hand-off that was held back.
+   * Our local simulation for this turn just settled (fires on every client). The acting client
+   * reports its authoritative state + hash; then the queued turn-flow events drain IN ORDER — the
+   * just-ended turn's keyframe reconciles first, then the next turnBegin + that turn's commands (up
+   * to the fire that makes us busy again, which re-triggers this on settle).
    */
   private onTurnSettled(): void {
     const gc = this.host.controller;
@@ -220,22 +249,15 @@ export class NetGame {
         hash: gc.stateHash(),
         over: gc.isNetBattleOver(),
       });
-    } else if (this.m_pendingKeyframe) {
-      this.reconcileKeyframe(this.m_pendingKeyframe.result, this.m_pendingKeyframe.hash);
-      this.m_pendingKeyframe = null;
     }
-    // Battle over → show the battle-winner celebration on EVERY client (deterministic: the same
-    // last team stands). The server then either ends the war (gameOver) or, for a Deathmatch with
-    // battles left, sends nextBattle. No in-battle turn hand-off follows, so don't drain one.
+    // Battle over → show the battle-winner celebration on EVERY client (deterministic: the same last
+    // team stands). The server then ends the war (gameOver) or sends nextBattle. Don't drain a turn:
+    // the queue's stale entries are cleared on nextBattle / gameOver ends the match.
     if (gc.isNetBattleOver()) {
       gc.netFinishBattle();
       return;
     }
-    if (this.m_pendingTurn !== null) {
-      const idx = this.m_pendingTurn;
-      this.m_pendingTurn = null;
-      this.applyTurn(idx, this.m_pendingHandoff, this.m_pendingRoundWrapped);
-    }
+    this.drainQueue();
   }
 
   /**
@@ -245,17 +267,17 @@ export class NetGame {
    * BattleEnd as "busy") until the advance completes, then drained here.
    */
   private onNextBattle(seed: number): void {
+    // Drop the ended battle's queued events (its final stateUpdate) — reconciling them against the
+    // regenerated battle would flag a bogus divergence. The new battle's turnBegin arrives AFTER this
+    // message (server order) and re-queues behind the BattleEnd "busy" gate, then drains below.
+    this.m_queue = [];
     if (this.m_intermissionTimer !== null) clearTimeout(this.m_intermissionTimer);
     this.m_intermissionTimer = setTimeout(() => {
       this.m_intermissionTimer = null;
       const gc = this.host.controller;
       if (!gc.isNetBattleActive()) return; // left the match during the intermission
       gc.netNextBattle(seed);
-      if (this.m_pendingTurn !== null) {
-        const idx = this.m_pendingTurn;
-        this.m_pendingTurn = null;
-        this.applyTurn(idx, this.m_pendingHandoff, this.m_pendingRoundWrapped);
-      }
+      this.drainQueue(); // apply the new battle's first turnBegin (queued behind BattleEnd)
     }, NET_BATTLE_INTERMISSION_MS);
   }
 

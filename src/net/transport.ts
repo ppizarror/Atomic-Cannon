@@ -38,6 +38,12 @@ export interface WebSocketTransportOptions {
  *  backoff resets — long enough that an accept-then-drop server can't reset the backoff each cycle. */
 const STABLE_CONN_MS = 5000;
 
+/** Defensive caps on a (buggy or hostile) server: drop an absurdly large frame, bound the offline
+ *  send backlog, and ignore a message flood far above any legitimate rate (aim relays are ~16/s). */
+const MAX_FRAME_BYTES = 512 * 1024; // biggest legit frame is a stateUpdate heightmap; this is generous
+const MAX_OUTBOX = 512; // queued outgoing messages while offline
+const MAX_MSG_PER_SEC = 200; // well above real traffic; a flood past this is dropped
+
 export class WebSocketTransport implements NetTransport {
   private m_ws: WebSocket | null = null;
   private m_status: ConnStatus = 'idle';
@@ -88,6 +94,8 @@ export class WebSocketTransport implements NetTransport {
 
     ws.onmessage = (ev: MessageEvent) => {
       const data = typeof ev.data === 'string' ? ev.data : '';
+      if (data.length > MAX_FRAME_BYTES) return; // drop an oversized frame rather than parse it
+      if (!this.underRateLimit()) return; // drop a flood far above any legitimate message rate
       const msg = parseServerMessage(data);
       if (msg) for (const cb of this.m_msgSubs) cb(msg);
     };
@@ -137,7 +145,21 @@ export class WebSocketTransport implements NetTransport {
       this.m_ws.send(raw);
     } else {
       this.m_outbox.push(raw); // delivered on (re)connect
+      if (this.m_outbox.length > MAX_OUTBOX) this.m_outbox.shift(); // bound the offline backlog
     }
+  }
+
+  private m_rateWindowStart = 0;
+  private m_rateCount = 0;
+  /** True while under the per-second incoming-message cap; a flood past it is dropped. Time-based
+   *  (Date.now) — this is transport hygiene, not gameplay, so it never touches the seeded sim RNG. */
+  private underRateLimit(): boolean {
+    const now = Date.now();
+    if (now - this.m_rateWindowStart >= 1000) {
+      this.m_rateWindowStart = now;
+      this.m_rateCount = 0;
+    }
+    return ++this.m_rateCount <= MAX_MSG_PER_SEC;
   }
 
   onMessage(cb: (m: ServerMessage) => void): () => void {

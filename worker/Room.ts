@@ -312,6 +312,9 @@ export class Room {
             (old.deserializeAttachment() as Attachment | null)?.playerId === existing.id
           ) {
             try {
+              // Unbind the evicted socket FIRST so its (async) close can't be mistaken for the live
+              // player still holding a socket, nor mask a genuine disconnect of the new one.
+              old.serializeAttachment({playerId: null} satisfies Attachment);
               old.close(4000, 'superseded');
             } catch {
               /* already gone */
@@ -333,12 +336,20 @@ export class Room {
     // A new joiner (no reconnect token) once the match is underway comes in as a SPECTATOR — they
     // watch the deterministic sim but never take a slot in the turn order.
     if (s.phase !== 'lobby') {
-      // Count only CONNECTED spectators toward the cap — a disconnected spectator's slot is reaped on
-      // close (see webSocketClose), but count connected-only too so a burst of join/drop can never
-      // wedge the room at `room_full` with ghost spectators.
-      const specs = Object.values(s.players).filter(p => p.spectator && p.connected).length;
-      if (specs >= MAX_SPECTATORS) {
+      const specSlots = Object.values(s.players).filter(p => p.spectator);
+      // Cap on CONNECTED spectators — a disconnected one keeps its slot for token reconnect but never
+      // wedges the room at `room_full`.
+      if (specSlots.filter(p => p.connected).length >= MAX_SPECTATORS) {
         return this.send(ws, {t: 'error', code: 'room_full', message: 'no spectator slots left'});
+      }
+      // Bound total spectator slots: reap the OLDEST disconnected spectators over the budget, so a
+      // join/drop spammer can't grow the roster unboundedly while the newest keep their reconnect slot.
+      const stale = specSlots.filter(p => !p.connected).sort((a, b) => a.id - b.id);
+      let over = specSlots.length + 1 - MAX_SPECTATORS; // +1 for the joiner about to be added
+      for (const d of stale) {
+        if (over <= 0) break;
+        delete s.players[d.id];
+        over--;
       }
       const sid = s.nextId++;
       const spec: StoredPlayer = {
@@ -763,10 +774,10 @@ export class Room {
       }
     }
     const s = await this.load();
-    // In-lobby drops free the slot; in-game player drops keep it for reconnect. A SPECTATOR always
-    // frees its slot on drop (it holds no turn and rarely reconnects) so ghosts can't fill the cap.
-    const removeSlot = s.phase === 'lobby' || !!s.players[att.playerId]?.spectator;
-    await this.dropPlayer(s, att.playerId, removeSlot);
+    // In-lobby drops free the slot; in-game drops (players AND spectators) keep it so a token
+    // reconnect can resume. Disconnected spectators don't count toward the cap and are reaped
+    // oldest-first if they pile up past the budget (see the spectator-join path in onHello).
+    await this.dropPlayer(s, att.playerId, /*removeSlot=*/ s.phase === 'lobby');
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {

@@ -1086,6 +1086,44 @@ describe('network battle-end', () => {
   });
 });
 
+describe('net turn-flow queue', () => {
+  it('queues turn-flow events while busy and drains them in order (no single-slot overwrite)', () => {
+    const gc = netController(0); // 2 players, 1 tank each; m_netMode true
+    const ng = ng2(gc);
+    gc.netSetActivePlayer(0);
+
+    const busy = gc as unknown as {m_netShotResolving: boolean};
+    const q = ng as unknown as {m_queue: unknown[]; drainQueue(): void};
+
+    busy.m_netShotResolving = true; // our sim is mid-shot → not idle
+    // Two turn hand-offs arrive while busy — the OLD single-slot stash kept only the LAST, dropping
+    // the intervening turn's once-per-turn effects (seeded crate/income draws → RNG divergence).
+    ng.handle({t: 'turnBegin', playerIdx: 1, deadline: 0, handoff: true, roundWrapped: false});
+    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0, handoff: true, roundWrapped: false});
+    expect(q.m_queue).toHaveLength(2); // BOTH queued, in order (not overwritten)
+
+    busy.m_netShotResolving = false;
+    q.drainQueue();
+    expect(q.m_queue).toHaveLength(0); // both drained
+    expect(gc.isLocalNetTurn()).toBe(true); // ended on the last turn (player 0 = mine), via player 1
+  });
+
+  it('applies a relayed command immediately when idle, but queues it while busy', () => {
+    const gc = netController(0);
+    const ng = ng2(gc);
+    gc.netSetActivePlayer(0);
+    const busy = gc as unknown as {m_netShotResolving: boolean};
+    const q = ng as unknown as {m_queue: unknown[]};
+
+    ng.handle({t: 'cmd', from: 2, seq: 1, cmd: {t: 'selectWeapon', index: 0}});
+    expect(q.m_queue).toHaveLength(0); // idle → applied now, not queued
+
+    busy.m_netShotResolving = true;
+    ng.handle({t: 'cmd', from: 2, seq: 2, cmd: {t: 'aim', angle: 45, power: 500}});
+    expect(q.m_queue).toHaveLength(1); // busy → queued (not applied to the wrong turn's tank)
+  });
+});
+
 /** Minimal bridge over an already-booted controller (no client sends needed). */
 function ng2(gc: CGameController): NetGame {
   const client = {
