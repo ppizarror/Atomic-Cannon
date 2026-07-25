@@ -16,6 +16,7 @@ type Priv = {
   m_shots: unknown[];
   m_gameState: EGameState;
   m_camDwell: number;
+  m_impactThisTurn: boolean;
   m_viewW: number;
   m_camX: number;
   m_currentPlayerIndex: number;
@@ -55,11 +56,12 @@ describe('camera follow target', () => {
 });
 
 describe('camera hand-off mode (Graphics → Camera)', () => {
-  function dwellForMode(mode: number): number {
+  function dwellForMode(mode: number, impact = true): number {
     const {p} = game();
     p.m_viewW = 1; // force the current tank off-screen so the hand-off branch runs
     p.m_camX = 0;
     p.m_camDwell = 0;
+    p.m_impactThisTurn = impact; // did a blast land on the turn that just ended?
     const prev = GameConfig.cameraMode;
     GameConfig.cameraMode = mode;
     try {
@@ -70,8 +72,9 @@ describe('camera hand-off mode (Graphics → Camera)', () => {
     }
   }
 
-  it('Cinematic lingers on the impact (sets a dwell); Smooth and Instant do not', () => {
-    expect(dwellForMode(2)).toBeGreaterThan(0); // Cinematic
+  it('Cinematic dwells only after a blast landed; Smooth and Instant never dwell', () => {
+    expect(dwellForMode(2, true)).toBeGreaterThan(0); // Cinematic + a blast this turn → linger
+    expect(dwellForMode(2, false)).toBe(0); // Cinematic but a SHOTLESS turn → no wrong-way pan
     expect(dwellForMode(0)).toBe(0); // Smooth — just eases, no dwell
     expect(dwellForMode(1)).toBe(0); // Instant — snaps, no dwell
   });

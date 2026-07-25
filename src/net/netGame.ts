@@ -51,6 +51,7 @@ type QueuedEvent =
       readonly playerIdx: number;
       readonly handoff: boolean;
       readonly roundWrapped: boolean;
+      readonly turnGen: number; // the server's generation for this turn — echoed back in our shotResult
     }
   | {readonly t: 'state'; readonly result: NetSnapshot; readonly hash: number};
 
@@ -63,6 +64,7 @@ export class NetGame {
   // diverge. Replaces the old single-slot pending-turn/keyframe stash, which lost intervening turns
   // under a stall (e.g. a backgrounded tab whose rAF sim freezes while messages keep arriving).
   private m_queue: QueuedEvent[] = [];
+  private m_turnGen = 0; // the current turn's server generation (from turnBegin) — echoed in shotResult
   private m_intermissionTimer: ReturnType<typeof setTimeout> | null = null; // between-battle advance
   // True once we've begun playing turns in lockstep (first turnBegin). While FALSE we have no
   // independent simulation to trust (fresh boot / reconnect), so a keyframe is a BOOTSTRAP we adopt;
@@ -97,6 +99,7 @@ export class NetGame {
           playerIdx: msg.playerIdx,
           handoff: msg.handoff ?? false,
           roundWrapped: msg.roundWrapped ?? false,
+          turnGen: msg.turnGen ?? 0,
         });
       case 'nextBattle':
         return this.onNextBattle(msg.seed);
@@ -134,7 +137,7 @@ export class NetGame {
         // (seeded RNG + fixed timestep), so no one trusts the shooter's reported damage.
         return applyCommand(this.host.controller, ev.cmd);
       case 'turn':
-        return this.applyTurn(ev.playerIdx, ev.handoff, ev.roundWrapped);
+        return this.applyTurn(ev.playerIdx, ev.handoff, ev.roundWrapped, ev.turnGen);
       case 'state':
         return this.reconcileKeyframe(ev.result, ev.hash);
     }
@@ -148,7 +151,13 @@ export class NetGame {
     }
   }
 
-  private applyTurn(playerIdx: number, handoff: boolean, roundWrapped: boolean): void {
+  private applyTurn(
+    playerIdx: number,
+    handoff: boolean,
+    roundWrapped: boolean,
+    turnGen: number,
+  ): void {
+    this.m_turnGen = turnGen; // remember this turn's generation so our shotResult echoes it (idempotency)
     // NOTE: m_hasSimulated is flipped in onTurnSettled (after we actually simulate a turn), NOT here.
     // A client that reconnects/joins DURING a shot's flight misses the already-broadcast fire cmd, so
     // it never simulates that shot; keeping it in bootstrap mode lets it ADOPT the shot's result
@@ -252,6 +261,7 @@ export class NetGame {
         result: gc.getNetSnapshot(),
         hash: gc.stateHash(),
         over: gc.isNetBattleOver(),
+        turnGen: this.m_turnGen, // the turn we're settling — server drops it if a newer turn began
       });
     }
     // Battle over → show the battle-winner celebration on EVERY client (deterministic: the same last

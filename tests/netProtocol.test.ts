@@ -55,6 +55,36 @@ describe('isValidShotResult', () => {
     expect(isValidShotResult({...goodResult(1), wind: {x: 1}}, 1)).toBe(false);
     expect(isValidShotResult({...goodResult(1), rngState: 'x'}, 1)).toBe(false);
   });
+
+  it('range-checks mine indices (peers use them to index arrays)', () => {
+    const mine = (o: object) => ({x: 1, y: 2, armed: 0, weaponIndex: 5, ownerIdx: 0, ...o});
+    expect(isValidShotResult({...goodResult(2), mines: [mine({})]}, 2)).toBe(true);
+    expect(isValidShotResult({...goodResult(2), mines: [mine({ownerIdx: 2})]}, 2)).toBe(false); // >= tankCount
+    expect(isValidShotResult({...goodResult(2), mines: [mine({ownerIdx: -2})]}, 2)).toBe(false); // < -1
+    expect(isValidShotResult({...goodResult(2), mines: [mine({weaponIndex: 1e9})]}, 2)).toBe(false);
+    expect(isValidShotResult({...goodResult(2), mines: [mine({weaponIndex: 1.5})]}, 2)).toBe(false); // non-int
+  });
+
+  it('validates crates (kind + integer weapon index)', () => {
+    const crate = (o: object) => ({
+      x: 1,
+      y: 2,
+      vy: 0,
+      kind: 'weapon',
+      amount: 0,
+      weaponIndex: 5,
+      landed: true,
+      ...o,
+    });
+    expect(isValidShotResult({...goodResult(1), crates: [crate({})]}, 1)).toBe(true);
+    expect(isValidShotResult({...goodResult(1), crates: [crate({kind: 'lolgrenade'})]}, 1)).toBe(
+      false,
+    );
+    expect(isValidShotResult({...goodResult(1), crates: [crate({weaponIndex: 1.5})]}, 1)).toBe(
+      false,
+    );
+    expect(isValidShotResult({...goodResult(1), crates: [crate({landed: 'yes'})]}, 1)).toBe(false);
+  });
 });
 
 describe('isValidGameCommand', () => {

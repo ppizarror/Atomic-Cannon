@@ -104,6 +104,17 @@ export interface ShotResult {
     readonly weaponIndex: number;
     readonly ownerIdx: number;
   }>;
+  /** Supply crates on the field, authoritative so a reconnecting/keyframe client reproduces them
+   *  (a missed crate diverges the hash on pickup). `kind`: weapon|credits|health|bomb. Optional. */
+  readonly crates?: ReadonlyArray<{
+    readonly x: number;
+    readonly y: number;
+    readonly vy: number;
+    readonly kind: string;
+    readonly amount: number;
+    readonly weaponIndex: number;
+    readonly landed: boolean;
+  }>;
 }
 
 // ── Client → room ──────────────────────────────────────────────────────────
@@ -137,6 +148,10 @@ export type ClientMessage =
       readonly hash: number;
       /** The acting client detected the battle ended on this shot (one team left). */
       readonly over?: boolean;
+      /** The turn-generation this result settles (from the turnBegin that opened it). The server
+       *  rejects a result whose gen isn't the live one, so a duplicate/stale result can't be
+       *  re-consumed. Optional for back-compat: an omitted gen skips the idempotency check. */
+      readonly turnGen?: number;
     }
   | {readonly t: 'chat'; readonly text: string}
   // A spectator's own deterministic result disagreed with the acting client's keyframe — a cheat or
@@ -189,6 +204,9 @@ export type ServerMessage =
       readonly handoff?: boolean;
       /** True when the turn order just wrapped (a full round completed) → award per-round income. */
       readonly roundWrapped?: boolean;
+      /** This turn's generation — the actor echoes it in its shotResult so a stale/duplicate result
+       *  (an old gen) is rejected. Optional for back-compat with older peers. */
+      readonly turnGen?: number;
     }
   /** A Deathmatch battle ended but the war continues — advance to a fresh battle. `seed`
    *  regenerates the terrain identically on every client; `battle` is the new battle number. */
@@ -219,6 +237,7 @@ export type ErrorCode =
   | 'not_your_turn'
   | 'bad_message'
   | 'game_in_progress'
+  | 'not_enough_players'
   | 'name_taken';
 
 /** Narrowing helpers (defensive parse at the socket boundary). */
@@ -241,6 +260,11 @@ export function parseServerMessage(raw: string): ServerMessage | null {
 }
 
 const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+// Weapon indices are into the ~104-entry database; a generous cap rejects wild out-of-range values
+// (which would index arrays on peers) without coupling the validator to the exact DB length.
+const MAX_WEAPON_INDEX = 1000;
+const CRATE_KINDS = new Set(['weapon', 'credits', 'health', 'bomb']);
 
 /**
  * Structural validation of an actor's authoritative {@link ShotResult} BEFORE the server stores or
@@ -275,7 +299,9 @@ export function isValidShotResult(r: unknown, tankCount: number): r is ShotResul
   const w = o.wind as Record<string, unknown> | undefined;
   if (!w || typeof w !== 'object' || !isFiniteNum(w.x) || !isFiniteNum(w.y)) return false;
   if (!isFiniteNum(o.rngState)) return false;
-  // Mines are optional (older peers omit them); if present, every entry must be well-formed.
+  // Mines are optional (older peers omit them); if present, every entry must be well-formed. Indices
+  // are integer + range-checked — peers use them to index the tank/weapon arrays, so a huge or
+  // fractional value must not slip through (ownerIdx -1 = ownerless; otherwise a real tank index).
   if (o.mines !== undefined) {
     if (!Array.isArray(o.mines) || o.mines.length > 10_000) return false;
     for (const m of o.mines) {
@@ -285,8 +311,34 @@ export function isValidShotResult(r: unknown, tankCount: number): r is ShotResul
         !isFiniteNum(mk.x) ||
         !isFiniteNum(mk.y) ||
         !isFiniteNum(mk.armed) ||
-        !isFiniteNum(mk.weaponIndex) ||
-        !isFiniteNum(mk.ownerIdx)
+        !isInt(mk.weaponIndex) ||
+        mk.weaponIndex < 0 ||
+        mk.weaponIndex > MAX_WEAPON_INDEX ||
+        !isInt(mk.ownerIdx) ||
+        mk.ownerIdx < -1 ||
+        mk.ownerIdx >= tankCount
+      ) {
+        return false;
+      }
+    }
+  }
+  // Crates optional; kind must be one of the four, weaponIndex integer in range (-1 = none).
+  if (o.crates !== undefined) {
+    if (!Array.isArray(o.crates) || o.crates.length > 1_000) return false;
+    for (const c of o.crates) {
+      if (!c || typeof c !== 'object') return false;
+      const ck = c as Record<string, unknown>;
+      if (
+        !isFiniteNum(ck.x) ||
+        !isFiniteNum(ck.y) ||
+        !isFiniteNum(ck.vy) ||
+        !isFiniteNum(ck.amount) ||
+        !isInt(ck.weaponIndex) ||
+        ck.weaponIndex < -1 ||
+        ck.weaponIndex > MAX_WEAPON_INDEX ||
+        typeof ck.landed !== 'boolean' ||
+        typeof ck.kind !== 'string' ||
+        !CRATE_KINDS.has(ck.kind)
       ) {
         return false;
       }

@@ -93,7 +93,32 @@ function playingState(over: Record<string, unknown> = {}): Record<string, unknow
     snapshotHash: 0,
     appVersion: 'v',
     contested: false,
+    turnGen: 5,
+    expectedColumns: 0,
     ...over,
+  };
+}
+
+/** A well-formed ShotResult for `n` tanks (all alive at full life unless overridden). */
+function shotResultFor(
+  n: number,
+  patch: (i: number) => Record<string, unknown> = () => ({}),
+): Record<string, unknown> {
+  return {
+    tanks: Array.from({length: n}, (_v, i) => ({
+      x: i,
+      y: 0,
+      life: 1000,
+      shield: 0,
+      armor: 0,
+      hazmat: 0,
+      credits: 3000,
+      alive: true,
+      ...patch(i),
+    })),
+    heights: [100, 101, 102],
+    wind: {x: 0, y: 0},
+    rngState: 42,
   };
 }
 
@@ -179,5 +204,96 @@ describe('Room message validation (net robustness)', () => {
 
     expect(stored().seed).toBe(999); // seed NOT re-rolled — clients not yanked into a new world
     expect(msgs(host).some(m => m.t === 'error' && m.code === 'game_in_progress')).toBe(true);
+  });
+});
+
+describe('Room shotResult hardening', () => {
+  const live = () => ({turnDeadline: Date.now() + 100_000}); // a non-expired turn
+
+  it('drops a duplicate shotResult carrying a stale turnGen (no skipped squad turn)', async () => {
+    const a = makeSocket(1);
+    const b = makeSocket(2);
+    // tanksPerTeam=2 → player 1 owns turn positions 0 AND 1 (a contiguous squad).
+    const {room, stored} = makeRoom(playingState({tanksPerTeam: 2, ...live()}), [a, b]);
+    const result = shotResultFor(4); // 2 players × 2 tanks
+
+    // Player 1's tank-0 result (gen 5) → accepted; the turn advances to position 1 (still player 1).
+    await deliver(room, a, {t: 'shotResult', seq: 1, result, hash: 1, turnGen: 5});
+    expect(stored().turnIdx).toBe(1);
+    expect(stored().turnGen).not.toBe(5); // a new turn opened → generation bumped
+
+    // A duplicate of the SAME (stale gen 5) result — player 1 still owns position 1, so ownership
+    // passes, but the stale gen must drop it. Without the guard it advances to player 2, skipping
+    // player 1's tank-1 turn.
+    await deliver(room, a, {t: 'shotResult', seq: 1, result, hash: 1, turnGen: 5});
+    expect(stored().turnIdx).toBe(1); // unchanged — the duplicate was ignored
+  });
+
+  it('ignores an over claim the snapshot does not bear out (no early battle end)', async () => {
+    const a = makeSocket(1);
+    const b = makeSocket(2);
+    const {room, stored} = makeRoom(playingState({totalBattles: 2, ...live()}), [a, b]);
+
+    // Player 1 claims the battle ended, but BOTH teams are alive → illegit → just a normal advance.
+    await deliver(room, a, {
+      t: 'shotResult',
+      seq: 1,
+      result: shotResultFor(2),
+      hash: 1,
+      over: true,
+      turnGen: 5,
+    });
+
+    expect(stored().currentBattle).toBe(1); // battle NOT advanced
+    expect(stored().turnIdx).toBe(1); // fell through to a normal turn advance
+  });
+
+  it('honours an over claim once only one team survives', async () => {
+    const a = makeSocket(1);
+    const b = makeSocket(2);
+    const {room, stored} = makeRoom(playingState({totalBattles: 2, ...live()}), [a, b]);
+
+    // Tank 1 (player 2's team) is dead → one team left → over is legit → advance to the next battle.
+    const result = shotResultFor(2, i => (i === 1 ? {alive: false, life: 0} : {}));
+    await deliver(room, a, {t: 'shotResult', seq: 1, result, hash: 1, over: true, turnGen: 5});
+
+    expect(stored().currentBattle).toBe(2);
+  });
+
+  it('rejects a later snapshot whose heightmap width changed', async () => {
+    const a = makeSocket(1);
+    const b = makeSocket(2);
+    const {room, stored} = makeRoom(playingState(live()), [a, b]);
+
+    await deliver(room, a, {
+      t: 'shotResult',
+      seq: 1,
+      result: shotResultFor(2),
+      hash: 1,
+      turnGen: 5,
+    });
+    expect(stored().expectedColumns).toBe(3); // pinned by the first snapshot
+
+    // Player 2's turn now — a result with a different-width heightmap must be rejected.
+    const genNow = stored().turnGen as number;
+    const bad = {...shotResultFor(2), heights: [1, 2]};
+    await deliver(room, b, {t: 'shotResult', seq: 2, result: bad, hash: 2, turnGen: genNow});
+    expect(msgs(b).some(m => m.t === 'error' && m.code === 'bad_message')).toBe(true);
+  });
+
+  it('drops frames from a socket over the inbound rate cap', async () => {
+    const a = makeSocket(1);
+    const b = makeSocket(2);
+    const {room} = makeRoom(playingState(live()), [a, b]);
+
+    // Flood with unparseable frames — each valid frame would draw an error reply; past the cap the
+    // frame is dropped before it even replies, so the response count is bounded well under the flood.
+    // overRate() runs synchronously at the top of each handler, so firing them together still counts
+    // them all against the one 1s window.
+    await Promise.all(
+      Array.from({length: 400}, () => room.webSocketMessage(a as unknown as WsParam, '{bad')),
+    );
+    expect(a.sent.length).toBeLessThan(400); // some frames were dropped by the rate cap
+    expect(a.sent.length).toBeLessThanOrEqual(310); // ~SERVER_MAX_MSG_PER_SEC (300) in the 1s window
   });
 });

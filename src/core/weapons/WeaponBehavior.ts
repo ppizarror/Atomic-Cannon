@@ -173,10 +173,10 @@ export function weaponFlyStep(
       return hit ? 'detonate' : 'continue';
 
     case EXT.AIRBURST:
-      // Detonate at the apex (once it starts descending) — but ONLY the PRIMARY
-      // (gen 0). Its cluster submunitions are launched DOWNWARD from the apex, so
-      // they're already "moving down"; if they also airburst they'd all pop at the
-      // top instead of raining down. Gen≥1 fly ballistically and burst on impact.
+      // Detonate at the apex (once it starts descending) — but ONLY the PRIMARY (gen 0). Its cluster
+      // submunitions are fanned out from the apex (some downward like shrapnel, some up-and-over like
+      // sky.cluster) and MUST NOT airburst themselves — they'd all pop at the top instead of arcing
+      // down. So gen≥1 fly ballistically and burst on impact (they still rain down either way).
       if (hit || belowSurface) return 'detonate';
       return shot.getGeneration() === 0 && shot.isMovingDown() ? 'detonate' : 'continue';
 

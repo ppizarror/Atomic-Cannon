@@ -174,7 +174,7 @@ const MAX_AIM_MARKERS = 16;
 const STRUCTURE_SCALE = 0.45;
 
 const controlWeaponIndex = (): number =>
-  CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.name === CONTROL_WEAPON) : -1;
+  CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
 
 // Hard ceiling on tanks on the field. 16 real players (startGame cap) plus a little
 // headroom for deployed Sentry turrets, past which deploySentry no-ops.
@@ -440,6 +440,17 @@ export interface NetSnapshot {
    *  for kill attribution. `stateHash` mixes them so mine drift is DETECTED. Optional for back-compat
    *  with older snapshots (absent → mines left untouched). */
   mines?: {x: number; y: number; armed: number; weaponIndex: number; ownerIdx: number}[];
+  /** Supply crates on the field — authoritative so a reconnecting/keyframe client reproduces them
+   *  (a missed crate then diverges the hash on a health-crate pickup). Optional for back-compat. */
+  crates?: {
+    x: number;
+    y: number;
+    vy: number;
+    kind: string; // one of CrateKind; validated/narrowed on adopt (matches the wire ShotResult type)
+    amount: number;
+    weaponIndex: number;
+    landed: boolean;
+  }[];
 }
 
 /**
@@ -570,6 +581,7 @@ export class CGameController implements ShotWorld {
     this.m_netAimDirty = false;
     this.m_lastImpactX = 0; // fresh camera focus (no stale prior-match impact)
     this.m_camDwell = 0; // no Cinematic dwell carried across matches
+    this.m_impactThisTurn = false; // no carried-over "a blast landed" flag
     // Fresh per-match stat tally.
     this.m_stats = {
       weaponsFired: 0,
@@ -1812,6 +1824,10 @@ export class CGameController implements ShotWorld {
    *  replaces any this speaker already has. */
   private tryTaunt(cat: TauntCategory, speaker: CTank | null, chancePct: number): void {
     if (!GameConfig.chatter || !speaker) return;
+    // A dead tank speaks ONLY its death line — never an idle/gloat 'taunt' (which would overwrite the
+    // death cry via the same-speaker filter below). Death cat is called from handleTankDestroyed after
+    // the tank is already marked dead, so it must be exempt from the alive check.
+    if (cat !== 'death' && !speaker.isAlive()) return;
     if (speaker.isSentry()) return; // Sentries never taunt
     if (Math.random() * 100 > chancePct) return;
     const line = pickTaunt(cat);
@@ -1836,7 +1852,10 @@ export class CGameController implements ShotWorld {
   /** Age bubbles (dropping the expired) and run the idle-taunt countdown, which only
    *  ticks while a live tank is waiting to fire (no shot in flight). */
   private updateTaunts(dt: number): void {
-    if (this.m_bubbles.length) {
+    // Age bubbles out — EXCEPT on the standings screen, where the victor's gloat bubble must persist
+    // beside the winner flag until the player advances (clearTaunts). It's created in finishBattle, so
+    // ageing it here would let it vanish after TAUNT_LIFE seconds mid-celebration.
+    if (this.m_gameState !== EGameState.BattleEnd && this.m_bubbles.length) {
       for (const b of this.m_bubbles) b.age += dt;
       this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT_LIFE);
     }
@@ -2377,7 +2396,7 @@ export class CGameController implements ShotWorld {
       amount = (this.m_rng.int(9) + 1) * 200; // 200..1800
     else if (kind === 'health')
       amount = (this.m_rng.int(9) + 1) * 100; // 100..900
-    else weaponIndex = WEAPON_DATABASE.findIndex(w => w.name === 'Bomb');
+    else weaponIndex = WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
     this.m_crates.push({
       x,
       y: 0, // top of the map
@@ -2408,7 +2427,7 @@ export class CGameController implements ShotWorld {
     }
     return pool.length
       ? pool[this.m_rng.int(pool.length)]
-      : WEAPON_DATABASE.findIndex(w => w.name === 'Bomb');
+      : WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
   }
 
   /** Per-frame crate physics: descend under the chute (constant speed), land on the
@@ -2823,6 +2842,7 @@ export class CGameController implements ShotWorld {
     isCleaner = false,
   ): void {
     this.m_lastImpactX = x; // the camera holds here while this blast animates
+    this.m_impactThisTurn = true; // a blast landed → the Cinematic dwell may linger on it at hand-off
     // Show Blast Circles: a ring at the blast's damage radius, fading out.
     if (GameConfig.blastCircles && radiusPx !== undefined && radiusPx > 0) {
       this.m_blastCircles.push({x, y, r: radiusPx, age: 0});
@@ -3404,9 +3424,13 @@ export class CGameController implements ShotWorld {
     const offScreen = focusX < this.m_camX || focusX > this.m_camX + this.m_viewW;
     if (GameConfig.cameraMode === CAM_INSTANT && offScreen) {
       this.centerCameraOn(focusX);
-    } else if (GameConfig.cameraMode === CAM_CINEMATIC && offScreen) {
-      this.m_camDwell = CAM_DWELL_SEC; // linger on the crater, then pan (see cameraFollowX/updateCamera)
+    } else if (GameConfig.cameraMode === CAM_CINEMATIC && offScreen && this.m_impactThisTurn) {
+      // Only linger if a blast actually landed on the turn that just ended — a shotless hand-off
+      // (a shot-clock forfeit, a move-only turn) has no impact to dwell on, so we'd otherwise pan the
+      // wrong way toward a stale/zero m_lastImpactX. Without an impact, fall through to the Smooth ease.
+      this.m_camDwell = CAM_DWELL_SEC;
     }
+    this.m_impactThisTurn = false; // re-arm for the new turn (set true again when this turn's shot lands)
 
     // Re-arm the taunt state for the new turn: no shot yet (gates the post-fire gloat)
     // and a fresh idle-taunt countdown.
@@ -3499,7 +3523,18 @@ export class CGameController implements ShotWorld {
     this.m_currentPlayerIndex = 0;
     this.m_winnerName = '';
     this.m_gameState = EGameState.Battle;
+    // Fresh camera state for the new battle BEFORE beginTurn — else the previous battle's winning-blast
+    // impact/flag would survive into a regenerated map and make Cinematic mode arm a dwell on a stale
+    // coordinate (a wrong-way drift). Mirrors startGame's reset order. (Client-local; no net effect.)
+    this.m_impactThisTurn = false;
+    this.m_lastImpactX = 0;
+    this.m_camDwell = 0;
     this.beginTurn();
+    // A new battle OPENS framed on the first player — like startGame, and regardless of the Camera
+    // mode (which governs mid-battle turn hand-offs). Without this snap the default Smooth mode would
+    // pan in across the fresh map from wherever BattleEnd left the camera (the winner) — slow on big maps.
+    this.m_manualScroll = false;
+    this.centerCameraOn(this.getCurrentTank().getPosition().x);
     // Start a fresh battle track. This also cuts the previous battle's win/lose
     // jingle (battleWon/battleLost, played once): starting a new looping bed
     // replaces whatever the music player was last asked to play, so the victory
@@ -5320,6 +5355,15 @@ export class CGameController implements ShotWorld {
       mix(m.weaponIndex);
     }
     mix(this.m_mines.length);
+    // Crates: spawned in deterministic (seeded) order, so hashing in array order detects one that
+    // landed/drifted/was collected on one client but not another (position + landed + weapon + count).
+    for (const c of this.m_crates) {
+      mix(Math.round(c.x));
+      mix(Math.round(c.y));
+      mix(c.landed ? 1 : 0);
+      mix(c.weaponIndex);
+    }
+    mix(this.m_crates.length);
     mix(this.m_rng.getState());
     return h >>> 0;
   }
@@ -5359,6 +5403,18 @@ export class CGameController implements ShotWorld {
         armed: m.armed,
         weaponIndex: m.weaponIndex,
         ownerIdx: m.owner ? this.m_tanks.indexOf(m.owner) : -1,
+      })),
+      // Supply crates — authoritative so a reconnecting/keyframe client reproduces a crate already on
+      // the field (else it'd miss the drop, then diverge when a health crate is picked up). id/phase
+      // are cosmetic (local wobble/tracking) — regenerated on adopt.
+      crates: this.m_crates.map(c => ({
+        x: c.x,
+        y: c.y,
+        vy: c.vy,
+        kind: c.kind,
+        amount: c.amount,
+        weaponIndex: c.weaponIndex,
+        landed: c.landed,
       })),
     };
   }
@@ -5426,6 +5482,20 @@ export class CGameController implements ShotWorld {
         armed: m.armed,
         weaponIndex: m.weaponIndex,
         owner: m.ownerIdx >= 0 ? (this.m_tanks[m.ownerIdx] ?? null) : null,
+      }));
+    }
+    // Reproduce supply crates (fresh local id + wobble phase — those are cosmetic/tracking only).
+    if (Array.isArray(s.crates)) {
+      this.m_crates = s.crates.map(c => ({
+        x: c.x,
+        y: c.y,
+        vy: c.vy,
+        kind: c.kind as CrateKind, // one of the 4 kinds (server-validated); an unknown kind is inert on pickup
+        amount: c.amount,
+        weaponIndex: c.weaponIndex,
+        landed: c.landed,
+        phase: 0,
+        id: ++this.m_crateSeq,
       }));
     }
     this.markDirty();
@@ -5815,8 +5885,8 @@ export class CGameController implements ShotWorld {
     const owner = this.m_tanks[0];
     if (!owner) return;
     const ox = owner.getPosition().x;
-    const turret = WEAPON_DATABASE.findIndex(w => w.name === 'Sentry Turret');
-    const mg = WEAPON_DATABASE.findIndex(w => w.name === 'Sentry Minigun');
+    const turret = WEAPON_DATABASE.findIndex(w => w.id === 'sentry.turret');
+    const mg = WEAPON_DATABASE.findIndex(w => w.id === 'sentry.minigun');
     this.deploySentry(ox - 60, 0, owner, turret);
     this.deploySentry(ox + 60, 0, owner, mg);
     // Aim each freshly-dropped sentry at the nearest enemy so the turrets read correctly.
@@ -6037,6 +6107,7 @@ export class CGameController implements ShotWorld {
   // World X of the most recent blast — the camera holds here while the explosion
   // animation plays out, so a nuke finishes on screen before the turn hands off.
   private m_lastImpactX = 0;
+  private m_impactThisTurn = false; // did a blast land this turn? (gates the Cinematic camera dwell)
 
   private m_land: CLand;
   private m_tanks: CTank[] = [];

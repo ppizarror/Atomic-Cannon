@@ -9,7 +9,12 @@ import {makeCanvas} from './_dom';
 import {CGameController} from '../src/game/CGameController';
 import type {CTank} from '../src/core/CTank';
 
-type Priv = {m_tanks: CTank[]; m_mines: {x: number; owner: CTank | null; armed: number}[]};
+type Priv = {
+  m_tanks: CTank[];
+  m_mines: {x: number; owner: CTank | null; armed: number}[];
+  m_crates: {x: number; kind: string}[];
+  addCrate(x: number, forced?: string): void;
+};
 const priv = (gc: CGameController) => gc as unknown as Priv;
 
 function game(): CGameController {
@@ -49,5 +54,30 @@ describe('mine net sync', () => {
 
     priv(a).m_mines[0].armed = 0; // arming → armed transition
     expect(a.stateHash()).not.toBe(h1); // the armed state is part of the hash
+  });
+});
+
+describe('crate net sync', () => {
+  it('a snapshot round-trip reproduces crates and syncs the hashed state', () => {
+    const a = game();
+    priv(a).addCrate(321, 'health');
+    const snap = a.getNetSnapshot();
+    expect(snap.crates).toHaveLength(1);
+    expect(snap.crates?.[0]).toMatchObject({x: 321, kind: 'health'});
+
+    const b = game();
+    expect(b.stateHash()).not.toBe(a.stateHash()); // b has no crate (+ different terrain)
+    b.applyNetSnapshot(snap);
+
+    expect(b.stateHash()).toBe(a.stateHash()); // crates are hashed → now identical
+    expect(priv(b).m_crates).toHaveLength(1);
+    expect(priv(b).m_crates[0]).toMatchObject({x: 321, kind: 'health'});
+  });
+
+  it('stateHash reflects a crate', () => {
+    const a = game();
+    const h0 = a.stateHash();
+    priv(a).addCrate(200, 'weapon');
+    expect(a.stateHash()).not.toBe(h0); // a new crate changes the hash → drift detectable
   });
 });

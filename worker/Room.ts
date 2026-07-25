@@ -45,6 +45,12 @@ const MAX_SPECTATORS = 8;
  *  — it's a stall guard, not the gameplay shot clock (which is client-side and much shorter). */
 const TURN_DEADLINE_MS = 120_000;
 
+/** Server-side per-socket inbound cap. The client enforces its own (MAX_MSG_PER_SEC=200), but a
+ *  hostile client bypasses that — so the DO, the one place a peer can't route around, caps too.
+ *  Generous (above the client cap) so legit bursts pass; a real flood is dropped before it's parsed
+ *  or amplified across every socket. */
+const SERVER_MAX_MSG_PER_SEC = 300;
+
 interface RoomState {
   code: string;
   phase: 'lobby' | 'playing' | 'ended';
@@ -80,6 +86,14 @@ interface RoomState {
    *  once set, every current and future (reconnect/spectator) client is flagged, so a cheating
    *  actor's stored snapshot can't silently poison a late joiner without the warning showing. */
   contested: boolean;
+  /** Monotonic turn-generation counter, bumped on every turnBegin and echoed by the actor's
+   *  shotResult. A stale/duplicate result carries an old gen and is rejected — so a resent or
+   *  hostile-repeat result can't be re-consumed to skip a squad tank's turn or a whole battle. */
+  turnGen: number;
+  /** Column count (heightmap length) of the FIRST accepted snapshot this match — the world width is
+   *  fixed at Start, so every later snapshot must match (a wrong-width map would build mismatched
+   *  terrain on any bootstrapping client). 0 until the first snapshot pins it. */
+  expectedColumns: number;
 }
 
 interface Attachment {
@@ -119,6 +133,8 @@ function freshState(code: string): RoomState {
     snapshotHash: 0,
     appVersion: null,
     contested: false,
+    turnGen: 0,
+    expectedColumns: 0,
   };
 }
 
@@ -161,6 +177,23 @@ export class Room {
     private readonly ctx: DurableObjectState,
     _env: Env,
   ) {}
+
+  /** Per-socket inbound-message counters for the current 1s window (in-memory — a hibernated DO isn't
+   *  under flood, and wakes with a fresh window). Cleared per socket on close. */
+  private readonly m_rate = new Map<WebSocket, {n: number; t: number}>();
+
+  /** True if `ws` has exceeded SERVER_MAX_MSG_PER_SEC this second — checked before parse/load so a
+   *  flood is dropped cheaply. (Workers' Date.now advances on the I/O between DO invocations.) */
+  private overRate(ws: WebSocket): boolean {
+    const now = Date.now();
+    const r = this.m_rate.get(ws);
+    if (!r || now - r.t >= 1000) {
+      this.m_rate.set(ws, {n: 1, t: now});
+      return false;
+    }
+    r.n++;
+    return r.n > SERVER_MAX_MSG_PER_SEC;
+  }
 
   // ── HTTP: the WebSocket upgrade ────────────────────────────────────────────
   async fetch(req: Request): Promise<Response> {
@@ -236,6 +269,8 @@ export class Room {
 
   // ── Message handling ────────────────────────────────────────────────────────
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    // Drop a flooding socket's frame before it's parsed / loads storage / is re-broadcast to peers.
+    if (this.overRate(ws)) return;
     const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
     // Cap frame size (the biggest legit message is a shotResult with a full 5-screen
     // heightmap, ~30 KB of JSON) so a client can't flood the room with huge payloads.
@@ -421,7 +456,12 @@ export class Room {
       // A (re)joiner mid-turn gets the REMAINING budget, not a fresh one — the server's alarm still
       // owns the real forfeit time, so don't re-arm it here.
       const remaining = s.turnDeadline ? Math.max(0, s.turnDeadline - Date.now()) : 0;
-      this.send(ws, {t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline: remaining});
+      this.send(ws, {
+        t: 'turnBegin',
+        playerIdx: Room.tankAt(s, s.turnIdx),
+        deadline: remaining,
+        turnGen: s.turnGen,
+      });
     }
     // A contested match: warn the (re)joiner too, since their bootstrap snapshot came from a state
     // some client already flagged as divergent.
@@ -494,12 +534,22 @@ export class Room {
       return;
     }
     const connected = Object.values(s.players).filter(p => p.connected);
-    if (connected.length < s.settings.minPlayers) return;
+    if (connected.length < s.settings.minPlayers) {
+      // Tell the host WHY nothing happened (the other guards in this method report; this one didn't).
+      if (host)
+        this.send(host, {
+          t: 'error',
+          code: 'not_enough_players',
+          message: 'need more players to start',
+        });
+      return;
+    }
 
     s.phase = 'playing';
     s.seed = newSeed();
     s.order = connected.map(p => p.id);
     s.turnIdx = 0;
+    s.expectedColumns = 0; // re-pin the heightmap width on this match's first snapshot (a room can rematch)
     // The host's resolution becomes the shared world size (clamped to a sane range).
     s.viewW = clampInt(viewW, 320, 4096);
     s.viewH = clampInt(viewH, 240, 4096);
@@ -530,12 +580,29 @@ export class Room {
       viewH: s.viewH,
       config: s.config,
     });
-    this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline});
+    this.broadcast({
+      t: 'turnBegin',
+      playerIdx: Room.tankAt(s, s.turnIdx),
+      deadline,
+      turnGen: s.turnGen,
+    });
   }
 
   /** Total tanks in play = one squad per player. Turns cycle over POSITIONS [0, total). */
   private static totalTanks(s: RoomState): number {
     return s.order.length * s.tanksPerTeam;
+  }
+
+  /** In Deathmatch, is the battle actually decided? — ≤1 team has a living tank. Team of tank i is
+   *  floor(i / tanksPerTeam): squads are contiguous and net snapshots carry NO sentries (the tank
+   *  count is fixed at order.length × tanksPerTeam and isValidShotResult enforces it). */
+  private static battleDecided(s: RoomState, snap: ShotResult): boolean {
+    const per = Math.max(1, s.tanksPerTeam);
+    const teams = new Set<number>();
+    snap.tanks.forEach((t, i) => {
+      if (t.alive) teams.add(Math.floor(i / per));
+    });
+    return teams.size <= 1;
   }
 
   /** The TANK INDEX active at turn-order position `pos`. Contiguous by default (identity: pos IS
@@ -583,6 +650,11 @@ export class Room {
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
     }
+    // Idempotency: drop a stale/duplicate result whose turn-generation isn't the live turn's. A resend
+    // (or a hostile repeat) would otherwise be re-consumed — the owner still owns the NEXT turn in a
+    // contiguous squad, so a duplicate tank-0 result would skip tank-1's turn and double the hand-off
+    // income, or (after over) advance the battle twice, skipping a battle. Silent drop — not an error.
+    if (typeof msg.turnGen === 'number' && msg.turnGen !== s.turnGen) return;
     // Validate the authoritative result STRUCTURALLY before persisting/broadcasting it. A malformed
     // result (null/short tank array, non-finite fields, bad heightmap) would otherwise be stored as
     // the room snapshot and crash — or NaN-corrupt — every client that later bootstraps from it (a
@@ -593,23 +665,45 @@ export class Room {
       if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'invalid shot result'});
       return;
     }
+    // The world width is fixed for the whole match — pin the heightmap column count on the first
+    // snapshot and reject any later result of a different width (it would build a mismatched terrain
+    // on any client that bootstraps from it).
+    if (s.expectedColumns === 0) s.expectedColumns = msg.result.heights.length;
+    else if (msg.result.heights.length !== s.expectedColumns) {
+      const ws = this.socketFor(pid);
+      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'heightmap width changed'});
+      return;
+    }
     // Broadcast the authoritative outcome + its hash, and keep both for reconnects.
     s.snapshot = msg.result;
     s.snapshotHash = msg.hash;
     this.broadcast({t: 'stateUpdate', from: pid, seq: msg.seq, result: msg.result, hash: msg.hash});
 
-    if (msg.over) {
+    // Honour a battle-end claim only if the snapshot bears it out — in Deathmatch, ≤1 team with a
+    // living tank. A hostile/buggy actor can't end a battle (or cycle seeds / reach gameOver) early;
+    // an unfounded `over` falls through to a normal turn advance. Rounds ends on the round count (the
+    // server doesn't track it), so trust `over` there.
+    const overIsLegit =
+      !!msg.over && (!s.config || s.config.gameType !== 1 || Room.battleDecided(s, msg.result));
+    if (overIsLegit) {
       // The acting client says this BATTLE ended. If the war has more battles, advance to a
       // fresh one (new seed → new terrain, everyone respawns); otherwise the war is over.
       if (s.currentBattle < s.totalBattles) {
         s.currentBattle++;
         s.seed = newSeed(); // fresh terrain for the new battle (identical on every client)
-        s.turnIdx = 0;
-        // Drop the previous battle's authoritative state — it belongs to terrain that no longer
-        // exists. Without this, a player reconnecting before the new battle's first shot would
-        // have last battle's heightmap + dead-tank positions stamped over the fresh battle.
+        // Drop the previous battle's authoritative state FIRST — it belongs to terrain that no longer
+        // exists (a reconnecter before the new battle's first shot would otherwise get the old
+        // heightmap + dead-tank positions), AND its dead-tank life would wrongly mark respawned tanks
+        // unplayable in firstLivingTurn below.
         s.snapshot = null;
         s.snapshotHash = 0;
+        // A divergence flag tied to the now-discarded terrain no longer applies — clear it so it stops
+        // warning every joiner for the rest of the war (resumeMatch re-emits desyncFlag while set).
+        s.contested = false;
+        // Open the new battle on the first CONNECTED player (all tanks respawn alive), NOT blindly
+        // position 0 — if order[0] dropped during the previous battle, a blind 0 would hand the turn
+        // to a gone player and stall the whole battle until the ~120s AFK alarm skips it.
+        s.turnIdx = this.firstLivingTurn(s);
         const nbDeadline = await this.armTurn(s); // fresh battle → arm the first turn's backstop
         await this.save(s);
         // Clients show the battle-winner celebration, then advance on this message; the turn
@@ -619,6 +713,7 @@ export class Room {
           t: 'turnBegin',
           playerIdx: Room.tankAt(s, s.turnIdx),
           deadline: nbDeadline,
+          turnGen: s.turnGen,
         });
         return;
       }
@@ -643,30 +738,41 @@ export class Room {
       deadline,
       handoff: true,
       roundWrapped,
+      turnGen: s.turnGen,
     });
   }
 
   /** Advance to the next turn, skipping players whose tank is DEAD (life ≤ 0) or whose socket
    *  is DISCONNECTED — a dropped player must never hold the turn, or the match stalls. */
+  /** Can turn POSITION `pos` take a turn? Its owner must be present+connected, and in Deathmatch its
+   *  tank must still be alive (Rounds/Point is non-lethal — a 0-life tank keeps playing). */
+  private playablePos(s: RoomState, pos: number): boolean {
+    const owner = Room.ownerOf(s, pos);
+    const p = owner === undefined ? undefined : s.players[owner];
+    if (!p || !p.connected) return false; // owner dropped → skip
+    if (s.config && s.config.gameType !== 1) return true;
+    const tankIdx = Room.tankAt(s, pos);
+    return s.snapshot ? (s.snapshot.tanks[tankIdx]?.life ?? 1) > 0 : true; // dead tank → skip
+  }
+
   private nextLivingTurn(s: RoomState): number {
     const n = Room.totalTanks(s); // cycle over turn POSITIONS (one per tank)
     if (n === 0) return 0;
-    const playable = (pos: number) => {
-      const owner = Room.ownerOf(s, pos);
-      const p = owner === undefined ? undefined : s.players[owner];
-      if (!p || !p.connected) return false; // owner dropped → skip
-      // Rounds/Point (gameType 0) is non-lethal: a tank bottoms at 0 life but is never destroyed
-      // and keeps taking turns. Only skip the dead in Deathmatch (gameType 1).
-      if (s.config && s.config.gameType !== 1) return true;
-      const tankIdx = Room.tankAt(s, pos);
-      return s.snapshot ? (s.snapshot.tanks[tankIdx]?.life ?? 1) > 0 : true; // dead tank → skip
-    };
     let pos = s.turnIdx;
     for (let step = 0; step < n; step++) {
       pos = (pos + 1) % n;
-      if (playable(pos)) return pos;
+      if (this.playablePos(s, pos)) return pos;
     }
     return (s.turnIdx + 1) % n; // no one playable (shouldn't happen — <2-connected ends the game)
+  }
+
+  /** The first playable turn POSITION scanning from 0 INCLUSIVE — used to open a fresh battle. Unlike
+   *  nextLivingTurn (which starts at turnIdx+1), this can land ON position 0. Prevents a new battle
+   *  from being handed to a since-dropped order[0] (a 120s AFK-alarm stall until it self-heals). */
+  private firstLivingTurn(s: RoomState): number {
+    const n = Room.totalTanks(s);
+    for (let pos = 0; pos < n; pos++) if (this.playablePos(s, pos)) return pos;
+    return 0;
   }
 
   /** Arm the AFK backstop for the turn that's about to begin: record its wall-clock forfeit time on
@@ -674,6 +780,7 @@ export class Room {
    *  one, so a shot/hand-off that opens the next turn automatically cancels the old turn's deadline.
    *  Returns the ms budget to advertise to clients in `turnBegin` (0 = no limit). */
   private async armTurn(s: RoomState): Promise<number> {
+    s.turnGen++; // a NEW turn is opening — bump the generation the actor must echo in its shotResult
     s.turnDeadline = Date.now() + TURN_DEADLINE_MS;
     await this.ctx.storage.setAlarm(s.turnDeadline);
     return TURN_DEADLINE_MS;
@@ -712,6 +819,7 @@ export class Room {
       deadline,
       handoff: true,
       roundWrapped,
+      turnGen: s.turnGen,
     });
   }
 
@@ -761,6 +869,7 @@ export class Room {
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
+    this.m_rate.delete(ws); // drop this socket's rate-limit counter
     const att = ws.deserializeAttachment() as Attachment | null;
     if (att?.playerId == null) return;
     // If another socket is STILL bound to this player (a superseded reconnect socket closing late),
@@ -817,7 +926,12 @@ export class Room {
         const deadline = await this.armTurn(s); // the leaver held the turn → arm the successor's
         await this.save(s);
         this.broadcast({t: 'roster', players: Room.publicPlayers(s)});
-        this.broadcast({t: 'turnBegin', playerIdx: Room.tankAt(s, s.turnIdx), deadline});
+        this.broadcast({
+          t: 'turnBegin',
+          playerIdx: Room.tankAt(s, s.turnIdx),
+          deadline,
+          turnGen: s.turnGen,
+        });
         return;
       }
     }

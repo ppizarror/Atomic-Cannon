@@ -191,6 +191,12 @@ export class CTank {
     // Spawn at full health — Tank → Hitpoints sets the starting/max life.
     this.m_maxLife = GameConfig.hitpoints;
     this.m_health.nLife = this.m_maxLife;
+    // Zero the defensive pools too (defensive — init runs on a fresh CTank where these are already 0,
+    // but mirror respawn so a future reuse of init() on a live tank can't leak a stale shield/armor).
+    this.m_health.nShield = 0;
+    this.m_health.nArmor = 0;
+    this.m_health.nHazmat = 0;
+    this.m_health.fRadiation = 0;
     this.m_lastDamager = null; // no attacker yet this match
     // A fresh tank starts a new war with a clean scorecard.
     this.resetStats();
@@ -214,6 +220,14 @@ export class CTank {
     this.m_bIsMoving = false;
     this.m_bFalling = false;
     this.m_bExploded = false;
+    // Clear in-progress motion state too, so a tank respawned while a drive/jet was queued at the
+    // previous battle's end doesn't crawl toward a stale target or fly on leftover fuel on its first
+    // update. m_bBuried self-recomputes next tick, but reset it so it isn't stale for that frame's
+    // queries (aim gate / move-range planner / HUD read it at the battle boundary).
+    this.m_driveTargetX = null;
+    this.m_fJetFuel = 0;
+    this.m_jetInput = {up: false, left: false, right: false};
+    this.m_bBuried = false;
   }
 
   /** Zero the cumulative war scorecard (called on a fresh tank / new war). */
@@ -1180,6 +1194,10 @@ export class CTank {
     // Alive is a FLAG, not derived from life (a Rounds tank is alive at 0 life). Use the snapshot's
     // explicit flag; fall back to life>0 only for an older snapshot that predates the field.
     this.m_bIsAlive = s.alive ?? s.life > 0;
+    // If the authoritative snapshot says this tank is alive, clear a locally-predicted explosion — a
+    // client that mispredicted the death (m_bExploded=true) would otherwise render a LIVE tank as a
+    // wreck (no barrel/badge) until its next respawn.
+    if (this.m_bIsAlive) this.m_bExploded = false;
     this.setCredits(num(s.credits, this.m_credits));
   }
 

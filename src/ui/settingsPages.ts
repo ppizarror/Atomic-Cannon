@@ -129,7 +129,7 @@ function gameplayRows(): Widget[] {
     stepper(s.battles, 'gp.battles', 1, 50, 1),
     stepper(s.rounds, 'gp.rounds', 1, 50, 1),
     // Difficulty is a stored preference (persisted + applied via applyGameSettings →
-    // controller.setDifficulty); index 0..9 maps to AI level 1..10.
+    // controller.setDifficulty); index 0..10 maps to AI level 1..11 (the last being Ultra).
     enumW(s.difficulty, 'gp.difficulty'),
     enumW(s.wind, 'gp.wind'),
     enumW(s.changeWind, 'gp.changeWind'),
