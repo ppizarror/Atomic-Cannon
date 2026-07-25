@@ -297,16 +297,30 @@ async function main(): Promise<void> {
     }
   });
 
-  // Release thrust keys (and clear all thrust when flight ends). Gameplay-only, in
-  // step with the keydown gate so a key pressed in the battle but released elsewhere
-  // (or vice-versa) can't strand thrust on.
+  // Release thrust on ANY keyup — a key release must always release thrust, even if focus moved into
+  // a text field (chat) between press and release, or the keydown was on the battle screen. Keydown
+  // stays gameplay-gated (don't START thrust while typing); keyup is always safe to honour, so it is
+  // NOT gated — gating it on `gameplayKeys` was exactly what stranded the jet "on".
   document.addEventListener('keyup', e => {
-    if (!gameplayKeys(e)) return;
     const dir = thrustKey(e.code);
-    if (dir) {
+    if (dir && thrust[dir]) {
       thrust[dir] = false;
       pushThrust();
     }
+  });
+
+  // Losing the window (Alt-Tab, an OS notification, the tab going hidden) never delivers the keyup,
+  // so proactively release all held thrust — otherwise the jet keeps thrusting on return with no key
+  // actually down until that exact key is pressed and released again.
+  const resetThrust = (): void => {
+    if (thrust.up || thrust.left || thrust.right) {
+      thrust.up = thrust.left = thrust.right = false;
+      pushThrust();
+    }
+  };
+  window.addEventListener('blur', resetThrust);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) resetThrust();
   });
 
   // Client coords → the scene's pixel space (SCREEN space; the canvas may be

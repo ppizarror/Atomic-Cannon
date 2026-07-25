@@ -227,3 +227,71 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     return null;
   }
 }
+
+const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Structural validation of an actor's authoritative {@link ShotResult} BEFORE the server stores or
+ * broadcasts it. `parseClientMessage` only checks `t`, so a malformed `result` (a `null`/short tank
+ * array, non-finite fields, a wrong-length heightmap) would otherwise poison the stored snapshot and
+ * crash — or NaN-corrupt — every reconnecting/spectating client that adopts it. `tankCount` is the
+ * room's known total tank count.
+ */
+export function isValidShotResult(r: unknown, tankCount: number): r is ShotResult {
+  if (!r || typeof r !== 'object') return false;
+  const o = r as Record<string, unknown>;
+  if (!Array.isArray(o.tanks) || o.tanks.length !== tankCount) return false;
+  for (const t of o.tanks) {
+    if (!t || typeof t !== 'object') return false;
+    const tk = t as Record<string, unknown>;
+    if (
+      !isFiniteNum(tk.x) ||
+      !isFiniteNum(tk.y) ||
+      !isFiniteNum(tk.life) ||
+      !isFiniteNum(tk.shield) ||
+      !isFiniteNum(tk.armor) ||
+      !isFiniteNum(tk.hazmat) ||
+      !isFiniteNum(tk.credits)
+    ) {
+      return false;
+    }
+  }
+  if (!Array.isArray(o.heights) || o.heights.length === 0 || o.heights.length > 100_000)
+    return false;
+  for (const h of o.heights) if (!isFiniteNum(h)) return false;
+  const w = o.wind as Record<string, unknown> | undefined;
+  if (!w || typeof w !== 'object' || !isFiniteNum(w.x) || !isFiniteNum(w.y)) return false;
+  if (!isFiniteNum(o.rngState)) return false;
+  return true;
+}
+
+/**
+ * Structural validation of a relayed {@link GameCommand}-shaped object BEFORE the server rebroadcasts
+ * it to peers. A malformed `cmd` (null, an unknown `t`, non-finite index/coords) would crash or
+ * NaN-corrupt every peer's `applyCommand`. Kept in sync with the command union in `net/commands.ts`.
+ */
+export function isValidGameCommand(cmd: unknown): boolean {
+  if (!cmd || typeof cmd !== 'object') return false;
+  const c = cmd as Record<string, unknown>;
+  switch (c.t) {
+    case 'resetAim':
+    case 'autobuy':
+    case 'cutJet':
+    case 'fire':
+      return true;
+    case 'aim':
+      return isFiniteNum(c.angle) && isFiniteNum(c.power);
+    case 'selectWeapon':
+    case 'buy':
+    case 'sell':
+      return isFiniteNum(c.index) && Number.isInteger(c.index);
+    case 'move':
+      return isFiniteNum(c.destX);
+    case 'jet':
+      return (
+        typeof c.up === 'boolean' && typeof c.left === 'boolean' && typeof c.right === 'boolean'
+      );
+    default:
+      return false;
+  }
+}

@@ -12,14 +12,20 @@ interface FakeSocket {
   send(raw: string): void;
   deserializeAttachment(): unknown;
 }
-const makeSocket = (): FakeSocket => {
+const makeSocket = (playerId: number | null = null): FakeSocket => {
   const sent: string[] = [];
   return {
     sent,
     send: (raw: string) => sent.push(raw),
-    deserializeAttachment: () => ({playerId: null}),
+    deserializeAttachment: () => ({playerId}),
   };
 };
+const msgs = (ws: FakeSocket): Record<string, unknown>[] =>
+  ws.sent.map(s => JSON.parse(s) as Record<string, unknown>);
+
+/** Deliver a client message through the DO's handler (the FakeSocket stands in for a WebSocket). */
+const deliver = (room: Room, ws: FakeSocket, obj: unknown): Promise<void> =>
+  room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(obj));
 
 function makeRoom(state: Record<string, unknown>, sockets: FakeSocket[]) {
   const store = new Map<string, unknown>([['room', state]]);
@@ -132,5 +138,48 @@ describe('Room AFK forfeit alarm', () => {
 
     expect(stored().turnIdx).toBe(0);
     expect(turnBegins(a)).toHaveLength(0);
+  });
+});
+
+describe('Room message validation (net robustness)', () => {
+  it('rejects a malformed shotResult without poisoning the stored snapshot (NET-1/3)', async () => {
+    const actor = makeSocket(1); // owns turn 0 (order[0] = 1)
+    const {room, stored} = makeRoom(playingState({snapshot: null}), [actor]);
+
+    await deliver(room, actor, {
+      t: 'shotResult',
+      seq: 1,
+      hash: 0,
+      over: false,
+      result: {tanks: [null], heights: [], wind: {x: 0, y: 0}, rngState: 0}, // the room-bricking payload
+    });
+
+    expect(stored().snapshot).toBeNull(); // NOT stored → no future reconnect/spectator crash
+    expect(stored().turnIdx).toBe(0); // turn not advanced
+    expect(msgs(actor).some(m => m.t === 'error' && m.code === 'bad_message')).toBe(true);
+  });
+
+  it('rejects a malformed cmd instead of relaying it to peers (NET-4)', async () => {
+    const actor = makeSocket(1);
+    const spectator = makeSocket(2);
+    const {room} = makeRoom(playingState(), [actor, spectator]);
+
+    await deliver(room, actor, {t: 'cmd', seq: 1, cmd: {t: 'move', destX: NaN}}); // would drive peers' tank to NaN
+
+    expect(msgs(actor).some(m => m.t === 'error' && m.code === 'bad_message')).toBe(true);
+    expect(msgs(spectator).some(m => m.t === 'cmd')).toBe(false); // never relayed
+  });
+
+  it('rejects a start once the match is under way (NET-5)', async () => {
+    const host = makeSocket(1); // hostId = 1
+    const {room, stored} = makeRoom(playingState({seed: 999}), [host]);
+
+    await room.webSocketMessage(
+      host,
+      JSON.stringify({t: 'start', viewW: 1280, viewH: 720, config: {}}),
+    );
+
+    expect(stored().seed).toBe(999); // seed NOT re-rolled — clients not yanked into a new world
+    expect(msgs(host).some(m => m.t === 'error' && m.code === 'game_in_progress')).toBe(true);
   });
 });

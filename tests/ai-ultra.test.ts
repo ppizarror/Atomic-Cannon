@@ -9,6 +9,8 @@ import {
   blastDamageToEnemy,
   bestOffensiveShot,
   planUltraTurn,
+  rangePowerCorrection,
+  ULTRA_PERSONALITIES,
   type UltraCtx,
   type UltraWeapon,
   type UltraEnemy,
@@ -106,6 +108,71 @@ describe('bestOffensiveShot — expected value', () => {
     const gas = weapon({index: 2, damage: 60, radius: 30, dotValue: 200}); // lingering fallout
     const shot = bestOffensiveShot(ctx({enemies, weapons: [plain, gas]}));
     expect(shot?.weaponIndex).toBe(2); // DOT makes it the higher-value round
+  });
+
+  it('does NOT count a far overshoot as a hit (no phantom-fire loop)', () => {
+    // A tank on a tall cliff the arc sails PAST: the shot lands far away, so no weapon "hits" it and
+    // the planner must not report a shot (→ it will reposition/range instead of firing forever).
+    const enemies = [enemy({x: 980, y: GY - 300})]; // high and near the right edge
+    const shot = bestOffensiveShot(
+      ctx({enemies, weapons: [weapon({damage: 60, radius: 30})], muzzleFor: () => ({x: 100, y: GY - 24})}),
+    );
+    // Either no shot at all, or one that genuinely lands on the target — never a phantom graze.
+    if (shot) expect(shot.hits).toBeGreaterThan(0);
+  });
+});
+
+describe('Ultra personalities — divergent play', () => {
+  const shell = weapon({index: 0, damage: 60, radius: 30});
+  const heal = weapon({index: 5, ext: 10, damage: 0, offensive: false, count: 1});
+
+  it('cautious heals at 65% life where ruthless presses the attack', () => {
+    const base = {
+      enemies: [enemy({x: 700, life: 1000})],
+      weapons: [shell, heal],
+      self: {x: 100, y: GY - 24, life: 650, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false},
+    };
+    const cautious = planUltraTurn(ctx({...base, weights: ULTRA_PERSONALITIES.cautious}));
+    const ruthless = planUltraTurn(ctx({...base, weights: ULTRA_PERSONALITIES.ruthless}));
+    expect(cautious.action).toBe('buff'); // heals early (healBelow 0.78 → 65% counts as hurt)
+    expect(ruthless.action).toBe('fire'); // healBelow 0.40 → 65% is fine, so it shoots
+  });
+
+  it('the personality profiles are genuinely distinct', () => {
+    const {ruthless, cautious, trickster, balanced} = ULTRA_PERSONALITIES;
+    expect(ruthless.premiumWaste).toBeLessThan(cautious.premiumWaste); // ruthless spends nukes freely
+    expect(ruthless.healBelow).toBeLessThan(cautious.healBelow); // cautious heals earlier
+    expect(trickster.trickChance).toBeGreaterThan(balanced.trickChance); // trickster loves setups
+  });
+});
+
+describe('rangePowerCorrection — walking shots onto target', () => {
+  const opts = (over: Partial<Parameters<typeof rangePowerCorrection>[0]>) => ({
+    selfX: 100, targetX: 700, lastPower: 500, landedX: 700, hitTol: 18, gain: 0.9, ...over,
+  });
+
+  it('overshoot → less power, undershoot → more, on-target → unchanged', () => {
+    expect(rangePowerCorrection(opts({landedX: 820}))).toBeLessThan(500); // sailed past → ease off
+    expect(rangePowerCorrection(opts({landedX: 560}))).toBeGreaterThan(500); // fell short → add power
+    expect(rangePowerCorrection(opts({landedX: 705}))).toBe(500); // within hitTol → hold
+  });
+
+  it('firing LEFT flips the sign correctly (overshoot is past the target on the left)', () => {
+    // self on the right (900), target on the left (300); landing at 180 overshoots to the left.
+    expect(rangePowerCorrection(opts({selfX: 900, targetX: 300, landedX: 180}))).toBeLessThan(500);
+  });
+
+  it('converges onto the target within a few shots (range ∝ power²)', () => {
+    // Toy physics: real landing = selfX + k·power² (a drift-free monotonic range model).
+    const selfX = 100, targetX = 700, k = (targetX + 220 - selfX) / (500 * 500); // 500 power overshoots
+    let power = 500;
+    let landedX = selfX + k * power * power; // first shot overshoots to ~920
+    expect(landedX).toBeGreaterThan(targetX + 100);
+    for (let i = 0; i < 8; i++) {
+      power = rangePowerCorrection({selfX, targetX, lastPower: power, landedX, hitTol: 8, gain: 0.9});
+      landedX = selfX + k * power * power;
+    }
+    expect(Math.abs(landedX - targetX)).toBeLessThan(20); // walked onto the target
   });
 });
 

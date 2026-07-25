@@ -47,12 +47,19 @@ function refreshEconomy(): void {
 export function openDepot(): void {
   if (controller && !controller.canOpenDepot()) return;
   refreshEconomy();
+  // Freeze the sim while shopping (as Help does) so the shot-timer can't drain — and, more
+  // importantly, can't FORFEIT the turn out from under the open depot, which would then leave it
+  // buying/selling against whoever's turn it became (credits are per-tank).
+  game().setPaused(true);
+  paused.value = true;
   showDepot.value = true;
   uiOpen();
 }
 
 export function closeDepot(): void {
   showDepot.value = false;
+  game().setPaused(false);
+  paused.value = false;
   uiClose();
 }
 
@@ -184,8 +191,14 @@ export function openPlaySetup(): void {
   uiMenuForward();
 }
 
-/** Quick Play → start immediately with the last-used setup. */
+/** Quick Play → start immediately with the last-used setup. If that setup can't start a match
+ *  (e.g. a persisted 1-human / 0-computer config), open the Play setup instead of silently doing
+ *  nothing — a dead button with no feedback. */
 export function quickPlay(): void {
+  if (playersOf(setup.value) < MIN_PLAYERS) {
+    openPlaySetup();
+    return;
+  }
   startBattle();
 }
 
@@ -419,15 +432,21 @@ export function uiMenuBack(): void {
 export function syncHud(): void {
   const c = controller;
   if (!c) return;
+  // Safety net: if the depot is open but buying is no longer allowed (the turn moved on — e.g. a
+  // server turn hand-off in a net match), close it so a stale depot can't buy/sell for another tank.
+  if (showDepot.value && !c.canOpenDepot()) closeDepot();
   power.value = Math.round(c.getPower());
   angle.value = Math.round(c.getAngle());
   wind.value = c.getWindValue();
   weaponIndex.value = c.getCurrentWeaponIndex();
-  // The selectable list can change with the turn (the human's control-weapon
-  // lock vs. a bot's full arsenal); refresh only when it actually flips so the
-  // list doesn't re-render every frame.
+  // The selectable list can change with the turn or a buy/sell (the human's control-weapon lock vs.
+  // a bot's full arsenal; a purchased weapon replacing a spent one). Refresh only when the actual
+  // sequence changes — compare element refs (WEAPON_DATABASE entries are stable), NOT just length +
+  // first: the staple (Shell) is ALWAYS first, so a length+first guard misses a same-length swap
+  // (e.g. Shell+Rocket → Shell+Nuke) and leaves the HUD showing the previous arsenal.
   const defs = c.getWeaponDefs() as WeaponDef[];
-  if (defs.length !== weapons.value.length || defs[0] !== weapons.value[0]) {
+  const cur = weapons.value;
+  if (defs.length !== cur.length || defs.some((d, i) => d !== cur[i])) {
     weapons.value = defs;
   }
   playerName.value = c.getCurrentPlayerName();
@@ -487,7 +506,8 @@ export function syncHud(): void {
   }));
   const battle = c.getStatusLine(); // "Round N of M" (Rounds) or "Battle N of M - Shot X"
   const notice = c.getStatusNotice(); // "Can't move underground." while the acting tank is buried
-  const sig = lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle + '#' + notice;
+  const sig =
+    lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle + '#' + notice;
   if (sig !== lastBattleSig) {
     lastBattleSig = sig;
     battleStatus.value = {lines, battle, notice};

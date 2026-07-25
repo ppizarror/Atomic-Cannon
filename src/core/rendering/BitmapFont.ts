@@ -14,6 +14,18 @@ const isCyan = (px: Uint8ClampedArray, i: number) =>
 
 const FIRST = 33; // '!'  — the strip starts here; space (32) is advance-only.
 
+// Cap the per-string label caches (oldest-evicted). Fonts live for the whole page session, and
+// numeric readouts ("Credits: 12345", "Life: 87") mint a fresh entry per distinct value — over a
+// long multi-battle session that would grow without bound. Mirrors the particle tint-cache guard.
+const FONT_CACHE_MAX = 512;
+function capSet<V>(map: Map<string, V>, key: string, value: V): void {
+  map.set(key, value);
+  if (map.size > FONT_CACHE_MAX) {
+    const oldest = map.keys().next().value as string | undefined;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+}
+
 export class BitmapFont {
   ready = false;
   height = 0;
@@ -156,7 +168,7 @@ export class BitmapFont {
     const hit = this.rendered.get(key);
     if (hit) return hit;
     const cv = this.render(text, opts);
-    if (this.ready) this.rendered.set(key, cv);
+    if (this.ready) capSet(this.rendered, key, cv);
     return cv;
   }
 
@@ -190,7 +202,7 @@ export class BitmapFont {
       }
     }
     const res = top < 0 ? {top: 0, height: this.height || 1} : {top, height: bot - top + 1};
-    if (this.ready) this.bounds.set(key, res);
+    if (this.ready) capSet(this.bounds, key, res);
     return res;
   }
 }

@@ -1417,6 +1417,7 @@ export class CLand {
   }
 
   getNormal(x: number): Vec2 {
+    x = Math.floor(x); // a fractional x would index the typed height array as `undefined` → NaN normal
     if (!this.m_arrHeights || x < 1 || x >= this.m_nWidth - 1) {
       return new Vec2(0, -1);
     }
@@ -1835,9 +1836,16 @@ export class CLand {
         // Filled Craters: draw the atmospheric PRISTINE terrain first, so carved-away regions reveal
         // the mountain's darkened interior behind the live terrain (not the sky). Off → craters are voids.
         if (GameConfig.craterFill && this.m_backdropCanvas) {
+          // Upscale+blur only the VISIBLE span of the half-res backdrop, not the whole world — on a
+          // Land-Size-5 map (~5× the view) a full-world blurred upscale twice per frame is a big cost.
+          const spanW = this.tileSpanW();
+          const bw = this.m_backdropCanvas.width,
+            bh = this.m_backdropCanvas.height;
+          const bx = (spanX / W) * bw, // the backdrop is world-sized (at half res), so scale span → backdrop px
+            bwSpan = (spanW / W) * bw;
           ctx.save();
           ctx.filter = 'blur(3px)'; // soften → the backdrop recedes (depth of field)
-          ctx.drawImage(this.m_backdropCanvas, 0, 0, W, H); // upscale the half-res backdrop to world size
+          ctx.drawImage(this.m_backdropCanvas, bx, 0, bwSpan, bh, spanX, 0, spanW, H);
           // rim shadow: a soft black echo of the live terrain, dropped a few px INTO the carved
           // void, so the crater edge casts an ambient-occlusion shadow onto the backdrop below it.
           ctx.filter = 'blur(3px) brightness(0)';
@@ -1848,8 +1856,12 @@ export class CLand {
         ctx.drawImage(tile, spanX, 0);
       }
     } else {
-      // Gradient fallback until the land tiles finish loading.
-      for (let x = 0; x < W - 1; x++) {
+      // Gradient fallback until the land tiles finish loading — clip to the VISIBLE span, not the
+      // full world, or a big map allocates ~W gradients + fills EVERY frame during the async load
+      // (tileSpanX/W fall back to the whole world when no viewport has been set).
+      const fx0 = this.tileSpanX();
+      const fx1 = Math.min(W - 1, fx0 + this.tileSpanW());
+      for (let x = fx0; x < fx1; x++) {
         const yTop = this.m_arrHeights[x];
         if (yTop >= H) continue;
         const grad = ctx.createLinearGradient(0, yTop, 0, H);

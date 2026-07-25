@@ -48,7 +48,7 @@ export const gameSettings = {
     const i = getVal('gfx.landType');
     return i >= 0 && i <= 4 ? i : -1;
   },
-  /** Computer AI level 1..10 (difficulty enum index 0..9 → level index+1). */
+  /** Computer AI level 1..11 (difficulty enum index 0..10 → level index+1; 11 = Ultra). */
   difficulty: (): number => getVal('gp.difficulty') + 1,
 
   /** Blast knockback scalar (Off = 0). */

@@ -18,10 +18,12 @@ type Vals = Partial<Record<SettingId, number>>;
 // Signal-backed so widgets that read it re-render on change.
 const vals = signal<Vals>(loadJSON<Vals>(KEY, {}));
 
-/** Current value for `id`, or its catalog default if never set. */
+/** Current value for `id`, or its catalog default if never set (or if the stored value is corrupt).
+ *  A non-finite value from a mangled/foreign `atomic.settings` must never reach an engine setter —
+ *  e.g. `setStartCredits(NaN)` would make tank credits NaN and pool that across the team. */
 export function getVal(id: SettingId): number {
   const v = vals.value[id];
-  return v === undefined ? SETTINGS[id].default : v;
+  return typeof v === 'number' && Number.isFinite(v) ? v : SETTINGS[id].default;
 }
 
 /** Set `id` and persist the whole map. */

@@ -8,6 +8,7 @@ import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
 import {simulateMiss, AI_LEVEL_MAX, AI_LEVEL_ULTRA, type AimField} from '../src/core/CBotAI';
+import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {Vec2} from '../src/math/Vec2';
 import {GameConfig} from '../src/core/CGameConfig';
 
@@ -24,9 +25,13 @@ type Tank = {
 // Accessor view over CGameController's soft-private (`m_`) internals plus the few
 // public methods the test drives. Kept standalone (not `CGameController & …`) because
 // intersecting a class that has private members collapses the type to `never`.
+type Econ = {getCredits(): number; getOwned(i: number): number; isUnlimited(i: number): boolean};
 type GC = {
   startGame(numTanks: number): void;
   setDifficulty(level: number): void;
+  setHumanCount(n: number): void;
+  setStartCredits(n: number): void;
+  economyFor(tank: Tank): Econ;
   getPower(): number;
   getAngle(): number;
   m_tanks: Tank[];
@@ -111,5 +116,28 @@ describe('Ultra AI (level 11) — end-to-end wiring', () => {
       if (miss < 60) ultraGood++;
     }
     expect(ultraGood).toBeGreaterThanOrEqual(RUNS_U - 1); // Ultra hits on the large majority
+  });
+
+  it('a flush Ultra bot SPENDS its credits (buys defense/offense) instead of hoarding + Shell-spamming', () => {
+    const gc = new CGameController(makeCanvas(900, 600)) as unknown as GC;
+    gc.setHumanCount(0); // both tanks are bots
+    gc.setDifficulty(AI_LEVEL_ULTRA);
+    gc.setStartCredits(6000); // flush — an old-behaviour bot would sit on this
+    gc.startGame(2);
+    gc.m_currentPlayerIndex = 0;
+
+    const econ = gc.economyFor(gc.m_tanks[0]);
+    const before = econ.getCredits();
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    gc.executeBotTurn(); // runs the Ultra economy pass, then acts
+    rnd.mockRestore();
+
+    expect(econ.getCredits()).toBeLessThan(before - 1000); // spent a real chunk, not hoarding
+    // …and it now holds finite (non-Shell) rounds/utilities, not just the free staple.
+    let finiteOwned = 0;
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      if (!econ.isUnlimited(i)) finiteOwned += econ.getOwned(i);
+    }
+    expect(finiteOwned).toBeGreaterThan(0);
   });
 });

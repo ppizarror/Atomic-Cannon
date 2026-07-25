@@ -15,6 +15,8 @@ import {
   type MatchConfig,
   type ShotResult,
   parseClientMessage,
+  isValidShotResult,
+  isValidGameCommand,
   PROTOCOL_VERSION,
 } from '../src/net/protocol';
 
@@ -301,6 +303,21 @@ export class Room {
     if (msg.reconnect) {
       const existing = Object.values(s.players).find(p => p.token === msg.reconnect);
       if (existing) {
+        // Evict any socket still bound to this player before rebinding — a flapping reconnect or a
+        // double-opened tab can leave TWO live sockets for one id, and the stale one's later close
+        // would then flip this now-live player to disconnected (and possibly end the match).
+        for (const old of this.ctx.getWebSockets()) {
+          if (
+            old !== ws &&
+            (old.deserializeAttachment() as Attachment | null)?.playerId === existing.id
+          ) {
+            try {
+              old.close(4000, 'superseded');
+            } catch {
+              /* already gone */
+            }
+          }
+        }
         existing.connected = true;
         ws.serializeAttachment({playerId: existing.id} satisfies Attachment);
         await this.save(s);
@@ -316,7 +333,10 @@ export class Room {
     // A new joiner (no reconnect token) once the match is underway comes in as a SPECTATOR — they
     // watch the deterministic sim but never take a slot in the turn order.
     if (s.phase !== 'lobby') {
-      const specs = Object.values(s.players).filter(p => p.spectator).length;
+      // Count only CONNECTED spectators toward the cap — a disconnected spectator's slot is reaped on
+      // close (see webSocketClose), but count connected-only too so a burst of join/drop can never
+      // wedge the room at `room_full` with ghost spectators.
+      const specs = Object.values(s.players).filter(p => p.spectator && p.connected).length;
       if (specs >= MAX_SPECTATORS) {
         return this.send(ws, {t: 'error', code: 'room_full', message: 'no spectator slots left'});
       }
@@ -454,6 +474,14 @@ export class Room {
       if (host) this.send(host, {t: 'error', code: 'not_host', message: 'only the host can start'});
       return;
     }
+    // A start is only valid from the lobby — never mid-match or after game over. Without this a host
+    // (or a client spoofing `start`) could re-roll the seed and yank every client into a fresh world
+    // mid-turn.
+    if (s.phase !== 'lobby') {
+      if (host)
+        this.send(host, {t: 'error', code: 'game_in_progress', message: 'match already started'});
+      return;
+    }
     const connected = Object.values(s.players).filter(p => p.connected);
     if (connected.length < s.settings.minPlayers) return;
 
@@ -520,6 +548,13 @@ export class Room {
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
     }
+    // Validate the command shape before relaying — a malformed cmd (null, unknown type, non-finite
+    // index/coords) would crash or NaN-corrupt every peer's applyCommand.
+    if (!isValidGameCommand(msg.cmd)) {
+      const ws = this.socketFor(pid);
+      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'invalid command'});
+      return;
+    }
     // Relay the intent so spectators mirror the acting player's aim/inventory.
     this.broadcast(
       {t: 'cmd', from: pid, seq: msg.seq, cmd: msg.cmd},
@@ -535,6 +570,16 @@ export class Room {
     if (s.phase !== 'playing' || Room.ownerOf(s, s.turnIdx) !== pid) {
       const ws = this.socketFor(pid);
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
+      return;
+    }
+    // Validate the authoritative result STRUCTURALLY before persisting/broadcasting it. A malformed
+    // result (null/short tank array, non-finite fields, bad heightmap) would otherwise be stored as
+    // the room snapshot and crash — or NaN-corrupt — every client that later bootstraps from it (a
+    // reconnect or a new spectator), permanently bricking the room across DO hibernation. Reject it;
+    // the turn stays put and the AFK alarm forfeits it if the actor never sends a valid result.
+    if (!isValidShotResult(msg.result, Room.totalTanks(s))) {
+      const ws = this.socketFor(pid);
+      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'invalid shot result'});
       return;
     }
     // Broadcast the authoritative outcome + its hash, and keep both for reconnects.
@@ -707,9 +752,21 @@ export class Room {
   async webSocketClose(ws: WebSocket): Promise<void> {
     const att = ws.deserializeAttachment() as Attachment | null;
     if (att?.playerId == null) return;
+    // If another socket is STILL bound to this player (a superseded reconnect socket closing late),
+    // this close is stale — the player is live on the newer socket, so it must not drop them.
+    for (const other of this.ctx.getWebSockets()) {
+      if (
+        other !== ws &&
+        (other.deserializeAttachment() as Attachment | null)?.playerId === att.playerId
+      ) {
+        return;
+      }
+    }
     const s = await this.load();
-    // In-lobby drops free the slot; in-game drops keep it for reconnect.
-    await this.dropPlayer(s, att.playerId, /*removeSlot=*/ s.phase === 'lobby');
+    // In-lobby drops free the slot; in-game player drops keep it for reconnect. A SPECTATOR always
+    // frees its slot on drop (it holds no turn and rarely reconnects) so ghosts can't fill the cap.
+    const removeSlot = s.phase === 'lobby' || !!s.players[att.playerId]?.spectator;
+    await this.dropPlayer(s, att.playerId, removeSlot);
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {

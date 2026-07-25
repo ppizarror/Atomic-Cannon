@@ -99,6 +99,9 @@ export class NetGame {
    * shooter's reported damage (that's the cheat-resistance).
    */
   private onRemoteCommand(cmd: Parameters<typeof applyCommand>[1]): void {
+    // Defend against a malformed relayed command (the server validates too, but never trust the wire):
+    // applyCommand switches on cmd.t, which would throw on a non-object.
+    if (!cmd || typeof cmd !== 'object') return;
     applyCommand(this.host.controller, cmd);
   }
 

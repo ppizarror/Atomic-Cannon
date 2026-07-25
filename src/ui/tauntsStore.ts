@@ -42,7 +42,21 @@ const KEY = 'atomic.taunts';
 /** Only the lists the player has edited are stored; the rest fall back to DEFAULTS. */
 type Overrides = Partial<Record<TauntCategory, string[]>>;
 
-const overrides = signal<Overrides>(loadJSON<Overrides>(KEY, {}));
+/** Keep only well-formed overrides: each category must be an ARRAY of strings. `loadJSON` guards the
+ *  parse, not the shape — a corrupt or foreign `atomic.taunts` value (a category mapped to a
+ *  non-array) would otherwise throw in `pushToEngine`'s `.map` at module load and take down boot.
+ *  Mirrors the shape-guarding the highscores / players stores already do. */
+function sanitize(raw: unknown): Overrides {
+  const out: Overrides = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const cat of ['death', 'postFire', 'taunt'] as TauntCategory[]) {
+    const v = (raw as Record<string, unknown>)[cat];
+    if (Array.isArray(v)) out[cat] = v.filter((l): l is string => typeof l === 'string');
+  }
+  return out;
+}
+
+const overrides = signal<Overrides>(sanitize(loadJSON<Overrides>(KEY, {})));
 
 /** Push a category's gameplay-ready lines (trimmed, no blanks) into the engine's live
  *  pool. Blank lines are allowed in the editor draft but never reach a bubble. */
