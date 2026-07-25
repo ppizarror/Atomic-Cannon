@@ -1,11 +1,12 @@
 {
-  // Build tooling (vite.config.ts) + tests. Tests run in node (tsx) but import
-  // browser code from src/, so they need both node and DOM types.
+  // Build tooling (vite.config.ts) + tests. Tests run in node (tsx) but import browser code from
+  // src/ (DOM types) AND the Durable-Object room from worker/ (Cloudflare types) — the net tests
+  // exercise the real Room — so this config carries node + DOM + workers-types.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "types": ["node", "@cloudflare/workers-types"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

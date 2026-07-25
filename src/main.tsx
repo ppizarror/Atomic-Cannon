@@ -466,6 +466,7 @@ async function main(): Promise<void> {
   let fpsFrames = 0,
     fpsAccumMs = 0;
   let frameNum = 0; // raw monotonic frame index for the frame counter
+  let sizePollMs = 0; // accumulates toward the periodic viewport self-heal check (below)
 
   // Max Framerate (More Graphics): cap the Pixi ticker so a high-refresh display doesn't
   // burn CPU running the loop at 120/144 Hz. maxFPS = 0 means uncapped (display rate).
@@ -475,6 +476,25 @@ async function main(): Promise<void> {
 
   compositor.app.ticker.add(ticker => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.1);
+    // Self-heal the viewport. The refit above is driven by a `resize` event / ResizeObserver, but
+    // some real size changes never deliver a usable callback — most notably opening the page with
+    // devtools DOCKED and then closing it (the window and container grow back, but no reliable
+    // resize notification arrives), and DPR changes from a monitor move or browser zoom. Left
+    // unhandled, the renderer stays stuck at the stale size and the world is stranded in a corner
+    // with a black band beside it. So a few times a second, compare the live renderer size to the
+    // container and re-fit on any drift. This is cheap: refit() coalesces to a single rAF and
+    // compositor.resize() no-ops when the sizes already match, so a steady viewport costs only two
+    // client-size reads per poll.
+    sizePollMs += ticker.deltaMS;
+    if (sizePollMs >= 250) {
+      sizePollMs = 0;
+      const r = compositor.app.renderer;
+      if (
+        Math.round(r.width) !== container.clientWidth ||
+        Math.round(r.height) !== container.clientHeight
+      )
+        refit();
+    }
     // Keep the scene render target at the world's LOGICAL size. It only changes when a new
     // match sets it (solo = the window size at start; net = a fixed shared resolution), so
     // this is a no-op almost every frame; the compositor stretches it to the live viewport.

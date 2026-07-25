@@ -882,15 +882,17 @@ export class CParticleSystem {
     trailType = 1,
     trailLength = 0,
     dt = 0.016,
-    ascending = true,
+    motorBurning = true,
   ): void {
     if (trailType <= 0) return; // no trail (nukes / beams / diggers)
     const speed = Math.hypot(vx, vy);
     const rocket = trailType >= 2; // rocket/missile exhaust
-    // A rocket's motor burns only until APEX (grounded, rocket-specific): once the shot starts
-    // descending it coasts with NO fume. Ballistic shells (else branch) have no apex gate — they
-    // trace the whole flight. `ascending` is false from apex onward.
-    if (rocket && !ascending) return;
+    // Rocket exhaust smokes only while the motor is burning. The caller computes `motorBurning`
+    // as max(MIN_BURN, time-to-apex): the authentic apex cutoff for arced shots, but with a
+    // minimum burn so a downward/flat shot (which never ascends) still emits an initial plume
+    // instead of nothing. Once the motor cuts out the rocket coasts silently. Ballistic shells
+    // (else branch) have no motor gate — they trace the whole flight.
+    if (rocket && !motorBurning) return;
     const lenScale = trailLength > 0 ? 0.6 + trailLength / 100 : 1; // trailLength 80 → 1.4
     // Fill the segment travelled this frame so the trail is CONTINUOUS, not blobs spaced one-per-
     // frame; rockets sub-step FINER so the exhaust reads as a dense, connected ribbon.

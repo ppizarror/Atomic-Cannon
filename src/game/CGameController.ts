@@ -4141,7 +4141,9 @@ export class CGameController implements ShotWorld {
     const w = getWeapon(i);
     const ext = WEAPON_DATABASE[i].extType ?? 0;
     if (BOT_UTILITY_EXT.has(ext) || isBeamExt(w.getExtType())) return false; // not death/mine/utility/beam
-    return w.isNukeClass() || (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE;
+    return (
+      w.isNukeClass() || (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE
+    );
   }
   private isBeamWeapon(i: number): boolean {
     return isBeamExt(getWeapon(i).getExtType());
@@ -4168,29 +4170,35 @@ export class CGameController implements ShotWorld {
     const maxLife = tank.getMaxLife();
     const onRad = this.m_land.radiationAt(Math.floor(tank.getPosition().x));
     const R = CGameController.ULTRA_CREDIT_RESERVE;
-    // Minimal reactive defence — heal only when actually hurt; one armour; hazmat only if irradiated.
-    if (h.nLife < maxLife * 0.5 && !this.botOwnsExt(econ, 10)) this.botBuyOneOfExt(econ, 10, 1); // heal
+    // Buy a HEAL as soon as it's hurt (< 60%) and holds none — so a heal is in stock BEFORE it gets
+    // critical, and a bot with money always has the self-heal option the desperation curve will use.
+    if (h.nLife < maxLife * 0.6 && !this.botOwnsExt(econ, 10)) this.botBuyOneOfExt(econ, 10, 1); // heal
     if (h.nArmor <= 0 && !this.botOwnsExt(econ, 11)) this.botBuyOneOfExt(econ, 11, 1); // armor
     if (onRad && h.nHazmat <= 0 && !this.botOwnsExt(econ, 14)) this.botBuyOneOfExt(econ, 14, 1); // hazmat
 
-    // Leverage weapons — buy the strongest NUKE, then a BEAM, then a GAS round (one of each if missing).
-    if (econ.getCredits() > R && !this.ultraOwnsPremium(econ))
-      this.ultraBuyMatching(econ, i => this.isNukeWeapon(i), true);
-    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isBeamWeapon(i)))
-      this.ultraBuyMatching(econ, i => this.isBeamWeapon(i), false);
-    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isRadWeapon(i)))
-      this.ultraBuyMatching(econ, i => this.isRadWeapon(i), false);
-    // A MINE for area denial (cheapest); one is enough.
-    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16))
-      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16, false);
-    // A DEATH (kamikaze) round ONLY when SURROUNDED — 2+ enemies close, so dying takes them with it.
-    // Pointless when they're spread out, so it isn't bought then.
+    // A DEATH (kamikaze) round FIRST when SURROUNDED — 2+ enemies close, so dying takes them with it.
+    // Priority (bought before the pricey nuke can drain the purse); pointless/skipped when spread out.
     if (
       econ.getCredits() > R &&
       this.ultraEnemiesWithin(tank, CGameController.ULTRA_SURROUND_RADIUS) >= 2 &&
       !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12)
     )
-      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12, true);
+      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12, false);
+
+    // Leverage weapons — a NUKE (cheapest true nuke, so it affords one AND keeps credits for variety —
+    // not blowing the whole purse on the single priciest), then a BEAM, then a GAS round.
+    if (econ.getCredits() > R && !this.ultraOwnsPremium(econ))
+      this.ultraBuyMatching(econ, i => this.isNukeWeapon(i), false);
+    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isBeamWeapon(i)))
+      this.ultraBuyMatching(econ, i => this.isBeamWeapon(i), false);
+    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isRadWeapon(i)))
+      this.ultraBuyMatching(econ, i => this.isRadWeapon(i), false);
+    // A MINE for area denial (cheapest); one is enough.
+    if (
+      econ.getCredits() > R &&
+      !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16)
+    )
+      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16, false);
 
     // Fill with strong varied rounds until stocked, spending most of the balance (maxCost = credits, so
     // a second nuke is fair game). Keeps the planner's hands full of real firepower.
@@ -4225,7 +4233,11 @@ export class CGameController implements ShotWorld {
   /** Buy the best affordable weapon matching `pred` — the strongest (highest damage) if `strongest`,
    *  else the cheapest. Used to guarantee a specific class (nuke / beam / gas) actually gets bought,
    *  unlike the weighted-random fill. Returns whether it bought. */
-  private ultraBuyMatching(econ: CEconomy, pred: (i: number) => boolean, strongest: boolean): boolean {
+  private ultraBuyMatching(
+    econ: CEconomy,
+    pred: (i: number) => boolean,
+    strongest: boolean,
+  ): boolean {
     const cands: number[] = [];
     for (let i = 0; i < WEAPON_DATABASE.length; i++) {
       const w = WEAPON_DATABASE[i];
@@ -4580,6 +4592,7 @@ export class CGameController implements ShotWorld {
   // Ranging correction tuning.
   private static readonly RANGE_TARGET_TOL = 60; // "same target" if the aim point moved < this (px)
   private static readonly RANGE_HIT_TOL = 18; // a landing within this of the target counts as a hit
+  private static readonly RANGE_ANGLE_TOL = 4; // range-correct power only while the solver angle is stable (deg)
   // Damped: the physics estimate (range ∝ power²) under-reads the true sensitivity at long range, so
   // gain 0.9 over-corrected ~1.7× and the shots oscillated. Half-stepping converges instead of ringing.
   private static readonly RANGE_GAIN = 0.5; // fraction of the physics-estimated correction to apply
@@ -4595,34 +4608,43 @@ export class CGameController implements ShotWorld {
     botTank: CTank,
     plan: {targetX: number; weaponIndex: number; angleDeg: number; power: number},
   ): {weaponIndex: number; angleDeg: number; power: number} {
+    // Beams are hitscan STRAIGHT rays — never arced or ranged. Fire exactly as the planner aimed
+    // (straight at the target, full power); reusing a ballistic record's angle would bend the ray.
+    if (this.isBeamWeapon(plan.weaponIndex))
+      return {weaponIndex: plan.weaponIndex, angleDeg: plan.angleDeg, power: plan.power};
     const rec = this.m_ultraShot.get(botTank);
-    const sameTarget = rec && Math.abs(rec.targetX - plan.targetX) <= CGameController.RANGE_TARGET_TOL;
+    const sameTarget =
+      rec && Math.abs(rec.targetX - plan.targetX) <= CGameController.RANGE_TARGET_TOL;
 
-    // Already fired at THIS target → COMMIT the planner's real pick (its strong weapon), reusing the
-    // measured angle and correcting the power toward the last landing (if it recorded; else hold). This
-    // is the key rule: after at most one shot the bot uses its BOLD weapon — it never keeps lobbing
-    // Shells at a stationary enemy. `plan.weaponIndex` is already the best-value round the bot owns.
-    if (rec && sameTarget) {
-      const power =
-        rec.landedX !== undefined
-          ? rangePowerCorrection({
-              selfX: botTank.getPosition().x,
-              targetX: plan.targetX,
-              lastPower: rec.power,
-              landedX: rec.landedX,
-              hitTol: CGameController.RANGE_HIT_TOL,
-              gain: CGameController.RANGE_GAIN,
-            })
-          : rec.power;
+    // RANGE-CORRECT the power only when the situation is STABLE: same target, we have a landing, AND the
+    // fresh solver angle still matches the one we last fired. bestAim returns angle+power as a MATCHED
+    // pair, so we may only tweak the power while the angle is unchanged — walking the round in off the
+    // last landing (drift the solver can't foresee) with the BOLD weapon. If the angle has moved (a dirt
+    // wall grew, the target shifted), we fall through to bestAim's FRESH pair, which arcs over the new
+    // terrain — never firing a stale angle into a hill.
+    if (
+      rec &&
+      sameTarget &&
+      rec.landedX !== undefined &&
+      Math.abs(plan.angleDeg - rec.angle) < CGameController.RANGE_ANGLE_TOL
+    ) {
+      const power = rangePowerCorrection({
+        selfX: botTank.getPosition().x,
+        targetX: plan.targetX,
+        lastPower: rec.power,
+        landedX: rec.landedX,
+        hitTol: CGameController.RANGE_HIT_TOL,
+        gain: CGameController.RANGE_GAIN,
+      });
       return {weaponIndex: plan.weaponIndex, angleDeg: rec.angle, power};
     }
 
-    // FRESH target: normally throw the real weapon straight away (players want to SEE the big guns; a
-    // nuke's blast forgives the aim). Only a CAUTIOUS bot spends ONE Shell to measure a true nuke first,
-    // and never when all-in (scarce ammo). Everyone else — and every non-nuke round — fires directly.
+    // FRESH pair (new target, changed terrain, or first shot): throw the real weapon with bestAim's own
+    // matched (angle, power) — terrain- and gust-aware. Only a CAUTIOUS bot spends ONE Shell to measure a
+    // true nuke on a genuinely fresh target, and never when all-in (scarce ammo).
     const cautious = this.ultraWeightsFor(botTank).premiumWaste >= 5000;
     const allIn = this.ultraFiniteOffense(this.economyFor(botTank)) <= 2;
-    const measureFirst = cautious && !allIn && this.isNukeWeapon(plan.weaponIndex);
+    const measureFirst = !sameTarget && cautious && !allIn && this.isNukeWeapon(plan.weaponIndex);
     const wi = measureFirst ? getDefaultWeaponIndex() : plan.weaponIndex;
     return {weaponIndex: wi, angleDeg: plan.angleDeg, power: plan.power};
   }
@@ -4711,7 +4733,9 @@ export class CGameController implements ShotWorld {
           (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE,
         // Offensive = a damaging round the bot may fire AT a target (Shell + beams included; the
         // utility/self-buff/death/mine/move/tracer/jet types are not).
-        offensive: w.getDamage() > 0 && !BOT_UTILITY_EXT.has(extNum),
+        // Airburst (ext 13) detonates at the ARC APEX, not on the ground — the planner aims ballistic,
+        // so it can't place one correctly; keep it out of the firing pool rather than wasting it.
+        offensive: w.getDamage() > 0 && !BOT_UTILITY_EXT.has(extNum) && extNum !== 13,
       });
     }
 
@@ -4738,11 +4762,11 @@ export class CGameController implements ShotWorld {
         threatened: this.ultraTookDamageSinceLastTurn(botTank),
       },
       enemies: enemies.map(e => {
-        const ep = e.getPosition();
+        const c = e.getBodyCenter(); // aim at the collision CENTRE, not the hull top (beams grazed high)
         const eh = e.getHealth();
         return {
-          x: ep.x,
-          y: ep.y,
+          x: c.x,
+          y: c.y,
           life: eh.nLife,
           maxLife: e.getMaxLife(),
           shield: eh.nShield,
@@ -4764,6 +4788,7 @@ export class CGameController implements ShotWorld {
         this.aimDegToward(botTank.getTurretPivot(), new Vec2(t.x, t.y)),
       moveMaxDist,
       radiationAt: (x: number) => this.m_land.radiationAt(Math.floor(x)),
+      mines: this.m_mines.map(m => m.x), // known mines — the bot won't drive over one
       weights: this.ultraWeightsFor(botTank), // this bot's personality (ruthless / cautious / …)
       rnd: Math.random,
     };

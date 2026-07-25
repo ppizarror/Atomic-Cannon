@@ -39,6 +39,7 @@ export class CMusicPlayer extends GainChannel {
   private m_ready: Promise<void>;
   private m_current: string | null = null; // filename currently requested
   private m_loop = false; // whether the current track loops
+  private m_playGen = 0; // bumped per play() so a superseded in-flight load doesn't also post 'play'
   private m_onEnded: (() => void) | null = null;
   private m_buffers = new Map<string, ArrayBuffer>();
   private m_loading = new Map<string, Promise<ArrayBuffer | null>>(); // in-flight fetch dedup
@@ -105,12 +106,16 @@ export class CMusicPlayer extends GainChannel {
     if (loop && this.m_current === file) return; // already looping this bed
     this.m_current = file;
     this.m_loop = loop;
+    const gen = ++this.m_playGen; // this call's generation
 
     await this.m_ready;
     if (!this.m_node) return;
 
     const data = await this.fetchModule(file);
-    if (!data || this.m_current !== file) return; // superseded while loading
+    // Superseded while loading — a newer play()/replay() started (gen bumped), or the requested track
+    // changed. Bail so two concurrent loads of the same bed (boot play + unlock replay) don't BOTH
+    // post 'play' → a restart/stutter.
+    if (!data || this.m_current !== file || gen !== this.m_playGen) return;
 
     this.m_node.port.postMessage({cmd: 'repeatCount', val: loop ? LOOP_FOREVER : PLAY_ONCE});
     // The worklet takes ownership of the buffer; hand it a copy so our cache stays intact.

@@ -58,6 +58,21 @@ export const DEFAULT_TEAM_COLOR = TEAM_COLORS[0];
 // Cached per sprite+colour. ----------
 const tintCache = new Map<string, HTMLCanvasElement>();
 
+// Cap the sprite-derivation caches (oldest-evicted). Keyed by (hull|colour); the Players editor's
+// custom-colour picker can mint arbitrary keys, so bound them like the BitmapFont / particle caches.
+const SPRITE_CACHE_MAX = 128;
+function capSpriteCache(
+  map: Map<string, HTMLCanvasElement>,
+  key: string,
+  cv: HTMLCanvasElement,
+): void {
+  map.set(key, cv);
+  if (map.size > SPRITE_CACHE_MAX) {
+    const oldest = map.keys().next().value as string | undefined;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+}
+
 // Perceptual luminance of a pixel (0..1).
 const lumaOf = (r: number, g: number, b: number): number =>
   (0.299 * r + 0.587 * g + 0.114 * b) / 255;
@@ -90,7 +105,7 @@ function tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElemen
     px[i + 2] = Math.round(tb * f);
   }
   g.putImageData(im, 0, 0);
-  tintCache.set(key, cv);
+  capSpriteCache(tintCache, key, cv);
   return cv;
 }
 
@@ -109,7 +124,7 @@ function silhouette(sprite: Sprite, color: string, key: string): HTMLCanvasEleme
   g.globalCompositeOperation = 'source-in'; // recolour every opaque pixel
   g.fillStyle = color;
   g.fillRect(0, 0, cv.width, cv.height);
-  silCache.set(key, cv);
+  capSpriteCache(silCache, key, cv);
   return cv;
 }
 
@@ -278,11 +293,9 @@ export class CTank {
     // TILTED to the terrain under it (the original does this on placement), not flat at 0° until
     // the first physics tick runs.
     this.m_fAngle = this.computeBodyTilt(pLand);
-
-    // Check if tank has fallen underground somehow
-    if (this.m_vPos.y > nTerrainHeight) {
-      this.m_bFalling = true;
-    }
+    // (No underground check here: the line above snaps y ONTO the surface (nTerrainHeight − height),
+    // which is always above it, so any `y > nTerrainHeight` test would be dead. Burial/fall is driven
+    // by the physics tick + the Bury-Tanks flag, not this placement snap.)
   }
 
   /** Body tilt = the angle of the AVERAGE terrain normal across the tank's FOOTPRINT (its tread
@@ -1190,17 +1203,25 @@ export class CTank {
     armor: number;
     hazmat: number;
     credits: number;
+    /** Explicit alive flag — a Rounds/Points tank sits at 0 life yet ALIVE, so alive can't be
+     *  derived from life. Optional for back-compat; falls back to `life > 0` if absent. */
+    alive?: boolean;
   }): void {
-    this.m_vPos.x = s.x;
-    this.m_vPos.y = s.y;
+    // Defence-in-depth: the server validates the snapshot, but never trust the wire — a non-finite
+    // field slipping through would poison m_vPos/getHeightAt and cascade with no recovery.
+    const num = (v: number, prev: number): number => (Number.isFinite(v) ? v : prev);
+    this.m_vPos.x = num(s.x, this.m_vPos.x);
+    this.m_vPos.y = num(s.y, this.m_vPos.y);
     this.m_vVel.x = 0;
     this.m_vVel.y = 0;
-    this.m_health.nLife = s.life;
-    this.m_health.nShield = s.shield;
-    this.m_health.nArmor = s.armor;
-    this.m_health.nHazmat = s.hazmat;
-    this.m_bIsAlive = s.life > 0; // alive is a flag, not derived from nLife
-    this.setCredits(s.credits);
+    this.m_health.nLife = num(s.life, this.m_health.nLife);
+    this.m_health.nShield = num(s.shield, this.m_health.nShield);
+    this.m_health.nArmor = num(s.armor, this.m_health.nArmor);
+    this.m_health.nHazmat = num(s.hazmat, this.m_health.nHazmat);
+    // Alive is a FLAG, not derived from life (a Rounds tank is alive at 0 life). Use the snapshot's
+    // explicit flag; fall back to life>0 only for an older snapshot that predates the field.
+    this.m_bIsAlive = s.alive ?? s.life > 0;
+    this.setCredits(num(s.credits, this.m_credits));
   }
 
   /** Add (or subtract) credits, floored at 0. Used by the earning economy. */
@@ -1308,6 +1329,12 @@ export class CTank {
     const dx = x - this.m_vPos.x;
     const dy = y - (this.m_vPos.y + tankHeight() / 2);
     return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  /** The tank's collision CENTRE — the point `distanceTo` measures from, and what a shot/beam should
+   *  aim AT (its `getPosition` is the top of the hull, so aiming there grazes high). */
+  getBodyCenter(): Vec2 {
+    return new Vec2(this.m_vPos.x, this.m_vPos.y + tankHeight() / 2);
   }
 
   // ========================================================================

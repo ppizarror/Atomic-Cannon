@@ -273,17 +273,17 @@ describe('Particle system', () => {
       p => p.kind === 'smoke',
     );
 
-  it('a ROCKET (trailType≥2) fumes only while ASCENDING — the motor stops at apex', () => {
-    const up = new CParticleSystem();
-    up.setBounds(4000, 2000);
-    const down = new CParticleSystem();
-    down.setBounds(4000, 2000);
-    // Same rocket; ascending vs descending (past apex). vy sign is informational — the
-    // controller passes `ascending` explicitly (arg 9); trail() gates on that.
-    up.trail(2000, 1000, '#cccccc', 300, -300, 2, 0, 1 / 60, true); // ascending → fumes
-    down.trail(2000, 1000, '#cccccc', 300, 300, 2, 0, 1 / 60, false); // past apex → no fume
-    expect(up.count()).toBeGreaterThan(0); // rocket exhausts on the way up
-    expect(down.count()).toBe(0); // …and coasts down with NO trail
+  it('a ROCKET (trailType≥2) fumes only while the MOTOR is burning — then coasts silently', () => {
+    const on = new CParticleSystem();
+    on.setBounds(4000, 2000);
+    const off = new CParticleSystem();
+    off.setBounds(4000, 2000);
+    // Same rocket; motor burning vs cut out. vy sign is informational — the controller passes
+    // `motorBurning` explicitly (arg 9 = ascending OR age < ROCKET_MIN_BURN); trail() gates on that.
+    on.trail(2000, 1000, '#cccccc', 300, -300, 2, 0, 1 / 60, true); // motor on → fumes
+    off.trail(2000, 1000, '#cccccc', 300, 300, 2, 0, 1 / 60, false); // motor off → no fume
+    expect(on.count()).toBeGreaterThan(0); // rocket exhausts while the motor burns
+    expect(off.count()).toBe(0); // …and coasts with NO trail once it cuts out
   });
 
   it('a BALLISTIC shell (trailType 1) trails the WHOLE flight — no apex gate', () => {

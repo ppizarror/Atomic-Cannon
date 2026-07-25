@@ -11,6 +11,7 @@ import {
   weaponFlyStep,
   weaponDetonate,
   spawnCluster,
+  firedIntoTerrain,
   type ShotWorld,
 } from '../src/core/weapons/WeaponBehavior';
 
@@ -359,5 +360,44 @@ describe('Weapon behaviour', () => {
     shot.setWeaponIndex(w.getIndex());
     weaponDetonate(shot, w, world);
     expect(land.getHeightAt(400)).toBe(before); // Beam leaves no crater
+  });
+
+  describe('a shot fired from inside terrain (buried tank)', () => {
+    const surface = 300;
+    const BALLISTIC = getWeapon(WEAPON_DATABASE.findIndex(x => (x.extType ?? 0) === 0));
+    const DIGGER = getWeapon(WEAPON_DATABASE.findIndex(x => x.extType === 1));
+    // Minimal owner stand-in — firedIntoTerrain only reads isBuried().
+    const owner = (buried: boolean) => ({isBuried: () => buried}) as any;
+    // Spawn a shot at muzzle-Y `my` with the given weapon and owner.
+    const muzzleShot = (w: ReturnType<typeof getWeapon>, my: number, buried: boolean): CShot => {
+      const shot = new CShot();
+      shot.initFromVelocity(new Vec2(400, my), 300, -300, w.getDamage(), w.getRadius(), owner(buried));
+      shot.setWeaponIndex(w.getIndex());
+      return shot;
+    };
+
+    it('detonates a ballistic shot at the muzzle when the firer is buried and the muzzle is in dirt', () => {
+      const world = new MockWorld(flatLand(surface));
+      const shot = muzzleShot(BALLISTIC, surface + 10, true); // muzzle 10px below surface
+      expect(firedIntoTerrain(shot, BALLISTIC, world)).toBe(true);
+    });
+
+    it('does NOT detonate a normal (un-buried) tank firing steeply downward, even if the muzzle dips underground', () => {
+      const world = new MockWorld(flatLand(surface));
+      const shot = muzzleShot(BALLISTIC, surface + 10, false); // same muzzle depth, firer not buried
+      expect(firedIntoTerrain(shot, BALLISTIC, world)).toBe(false);
+    });
+
+    it('does NOT detonate a buried firer whose muzzle pokes ABOVE the surface (barrel cleared the dirt)', () => {
+      const world = new MockWorld(flatLand(surface));
+      const shot = muzzleShot(BALLISTIC, surface - 20, true); // muzzle 20px above surface
+      expect(firedIntoTerrain(shot, BALLISTIC, world)).toBe(false);
+    });
+
+    it('exempts a Digger fired while buried — it tunnels, it does not detonate at the muzzle', () => {
+      const world = new MockWorld(flatLand(surface));
+      const shot = muzzleShot(DIGGER, surface + 10, true);
+      expect(firedIntoTerrain(shot, DIGGER, world)).toBe(false);
+    });
   });
 });

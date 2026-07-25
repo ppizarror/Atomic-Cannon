@@ -8,7 +8,9 @@ import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {GameConfig} from '../src/core/CGameConfig';
-import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, getWeapon} from '../src/core/CWeapon';
+import {EXT} from '../src/core/weapons/ExtType';
+import {CTank} from '../src/core/CTank';
 import {NetGame, type NetGameHost} from '../src/net/netGame';
 import {applyCommand, type GameCommand} from '../src/net/commands';
 import type {RoomClient, RoomClientState} from '../src/net/roomClient';
@@ -120,6 +122,25 @@ describe('network match boot', () => {
     GameConfig.alternateTurns = true;
     gc.startGame(2);
     expect(gc.getTurnOrder()).toEqual([0, 2, 1, 3]); // interleaved: A1, B1, A2, B2
+    GameConfig.alternateTurns = false; // restore global
+  });
+
+  it('alternate turns + a deployed sentry keeps a valid turn-order permutation', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(2);
+    gc.setTanksPerTeam(2);
+    GameConfig.alternateTurns = true;
+    gc.startGame(2); // 2 teams × 2 tanks = 4
+    // A deployed Sentry is APPENDED, making the tank count (5) non-multiple of the squad size (2).
+    const priv = gc as unknown as {m_tanks: {setTankType(s: string): void}[]};
+    const sentry = new CTank('Sentry', 0);
+    sentry.setTankType('Sentry');
+    priv.m_tanks.push(sentry as unknown as (typeof priv.m_tanks)[number]); // now 5 tanks
+
+    const order = gc.getTurnOrder();
+    expect(order).toHaveLength(5);
+    expect(new Set(order).size).toBe(5); // a valid PERMUTATION: no tank fires twice, none skipped…
+    expect(order).toContain(4); // …and the sentry (index 4) actually gets a turn
     GameConfig.alternateTurns = false; // restore global
   });
 
@@ -575,6 +596,23 @@ describe('network match boot', () => {
     expect(cmds.filter(c => c.t === 'jet' || c.t === 'cutJet')).toHaveLength(0);
   });
 
+  it('relays a Move destination on the local turn (peers drive to the same X)', () => {
+    const cmds: GameCommand[] = [];
+    const gc = bootNetWithSink(0, c => cmds.push(c));
+    gc.netSetActivePlayer(0); // my turn
+    gc.setWeaponTest(true); // Move selectable/usable
+    const moveIdx = WEAPON_DATABASE.findIndex((_, i) => getWeapon(i).getExtType() === EXT.MOVE);
+    expect(moveIdx).toBeGreaterThanOrEqual(0);
+    gc.selectWeapon(moveIdx);
+    gc.fire(); // arms the click-to-place band (human + net + local turn)
+    const from = gc.getCurrentTank().getPosition().x;
+    gc.placeMove(from + 60); // commit the move
+
+    const move = cmds.find(c => c.t === 'move');
+    expect(move).toBeDefined(); // WITHOUT this relay the tank moves on the actor only → desync
+    expect(move && move.t === 'move' && Number.isFinite(move.destX)).toBe(true);
+  });
+
   it('a spectator applying a relayed jet command reproduces the thrust (tank rises)', () => {
     // The actor ignites and thrusts up; the spectator, fed the relayed `jet`, climbs the same way.
     // Without the relay the tank keeps its (empty) thrust and just idles/falls. Ignite the flying
@@ -966,7 +1004,11 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
 
   it('true lockstep: a peer keyframe never overwrites our own simulated state; a mismatch is flagged', () => {
     const {gc, ng, divergences} = bridge(1);
-    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // we're now simulating in lockstep
+    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // our turn
+    // Simulate the turn settling → from here our OWN sim is authoritative and keyframes are
+    // detect-only (m_hasSimulated flips in onTurnSettled, not on turnBegin — so a mid-shot reconnect
+    // stays in bootstrap and adopts instead of false-flagging).
+    (gc as unknown as {m_onNetTurnEnd?: () => void}).m_onNetTurnEnd?.();
     const inSync = gc.stateHash();
 
     // A keyframe that WOULD kill tank 1.

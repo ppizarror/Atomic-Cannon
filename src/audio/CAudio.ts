@@ -175,18 +175,23 @@ export class CAudio {
     if (this.m_applyingAudio) return; // an apply is running; it re-reads m_suspended after each await
     this.m_applyingAudio = true;
     try {
-      for (let i = 0; i < 4; i++) {
-        if (!this.m_unlocked) break; // can't touch the context until the autoplay lock clears
-        if (this.m_suspended && this.m_ctx.state === 'running') {
-          await this.m_ctx.suspend().catch(() => {});
-        } else if (!this.m_suspended && this.m_ctx.state === 'suspended') {
-          await this.m_ctx.resume().catch(() => {});
-        } else {
-          break; // context already matches the intent
-        }
-      }
+      // Apply the intent, then apply ONCE MORE: a rapid pause↔unpause can flip `m_suspended` during
+      // the first await, which the naive one-shot check would miss (leaving the context stuck). Two
+      // passes cover that realistic race; each pass re-reads the latest intent.
+      await this.stepAudioState();
+      await this.stepAudioState();
     } finally {
       this.m_applyingAudio = false;
+    }
+  }
+
+  /** One convergence step: drive the context toward the current intended `m_suspended` state. */
+  private async stepAudioState(): Promise<void> {
+    if (!this.m_unlocked) return; // can't touch the context until the autoplay lock clears
+    if (this.m_suspended && this.m_ctx.state === 'running') {
+      await this.m_ctx.suspend().catch(() => {});
+    } else if (!this.m_suspended && this.m_ctx.state === 'suspended') {
+      await this.m_ctx.resume().catch(() => {});
     }
   }
 
@@ -304,13 +309,19 @@ export class CAudio {
 
   // ── Music ────────────────────────────────────────────────────────────────
 
+  // Which looped bed is the CURRENT context — recorded even while music is DISABLED so a later
+  // "enable music" re-arms the RIGHT track (menu music on the menu, not a battle track).
+  private m_musicContext: 'menu' | 'battle' | null = null;
+
   menuMusic(): void {
+    this.m_musicContext = 'menu';
     this.preloadMenu(); // warm the menu SFX so the first hover / click isn't silent
     void this.m_music.play(MENU_MUSIC, true);
   }
 
   /** Start a battle: one random looped track. */
   battleMusic(): void {
+    this.m_musicContext = 'battle';
     const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
     void this.m_music.play(pick, true);
   }
@@ -348,8 +359,12 @@ export class CAudio {
 
   setMusicEnabled(on: boolean): void {
     this.m_music.setEnabled(on);
-    // Re-arm the current bed when unmuted mid-battle (setEnabled(false) stops it).
-    if (on && !this.m_music.currentTrack()) this.battleMusic();
+    // Re-arm the CURRENT context's bed when unmuted (setEnabled(false) stopped it) — menu music on
+    // the menu, battle music in a battle. A screen-unaware re-arm played a battle track over the menu.
+    if (on && !this.m_music.currentTrack()) {
+      if (this.m_musicContext === 'battle') this.battleMusic();
+      else if (this.m_musicContext === 'menu') this.menuMusic();
+    }
     this.saveSettings();
   }
 

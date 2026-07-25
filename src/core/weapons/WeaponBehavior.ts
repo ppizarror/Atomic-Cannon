@@ -208,6 +208,37 @@ export function weaponFlyStep(
   }
 }
 
+/**
+ * True when a shot has been fired from INSIDE solid terrain and should detonate right at its
+ * muzzle — a buried tank (Bury Tanks on, whole hull under the dirt) whose barrel tip sits below
+ * the piled-up surface. Its shot must blow up in place, clearing the dirt around the tank, instead
+ * of flying the normal arc: the regular `weaponFlyStep` collision runs only AFTER the first full
+ * integration step, so a fast shot clears the thin dirt column before it is ever tested.
+ *
+ * Gated on the FIRER actually being buried (not merely a muzzle dipping underground) so a normal
+ * tank aiming steeply DOWNWARD — whose barrel tip can legitimately dip below its own surface column
+ * — is not affected. Terrain-only: never a tank test, because the muzzle sits inside the firer's
+ * own hit radius. Sub-surface specialists are exempt — they handle being underground themselves
+ * (diggers/escapers tunnel, rebounders jet out, rollers roll, mines/sentries deploy, beams hitscan).
+ */
+export function firedIntoTerrain(shot: CShot, weapon: CWeapon, world: ShotWorld): boolean {
+  const ext = weapon.getExtType();
+  if (
+    ext === EXT.DIGGER ||
+    ext === EXT.ROLLER ||
+    ext === EXT.ESCAPE ||
+    ext === EXT.REBOUND ||
+    ext === EXT.MINE ||
+    ext === EXT.SENTRY ||
+    isBeamExt(ext)
+  )
+    return false;
+  const owner = shot.getOwner();
+  if (!owner || !owner.isBuried()) return false; // only a genuinely buried firer
+  const p = shot.getPosition();
+  return p.y >= world.land.getHeightAt(Math.floor(p.x)) - 4; // muzzle truly inside the dirt
+}
+
 /** The screen-Y a digger detonates at. The original is floor-relative ("floor − rand"),
  *  which on our terrain proportions either pops shallow (entry near the floor) or bottoms
  *  out at the world origin. Instead we detonate part-way DOWN from where the shot ENTERED —

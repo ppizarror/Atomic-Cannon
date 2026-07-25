@@ -241,6 +241,10 @@ export class NetGame {
    */
   private onTurnSettled(): void {
     const gc = this.host.controller;
+    // We just simulated a full turn ourselves → from here our own deterministic sim is authoritative
+    // and keyframes become detect-only (the anti-cheat). Set here, not on turnBegin, so a mid-shot
+    // reconnect (which never simulated the in-flight shot) stays in bootstrap and adopts its result.
+    this.m_hasSimulated = true;
     if (gc.isLocalNetTurn()) {
       this.client.send({
         t: 'shotResult',

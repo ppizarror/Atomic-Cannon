@@ -27,6 +27,10 @@ const MIN_GRIP = 22; // px — the grip never shrinks below this, however long t
 export function ClassicScrollbar({class: cls = '', style, rootRef, children, ...rest}: Props) {
   const viewRef = useRef<HTMLDivElement>(null);
   const [grip, setGrip] = useState({top: 0, height: 0, show: false});
+  // Removes the active grip-drag's window listeners; set while dragging, cleared on pointer-up. An
+  // unmount MID-DRAG (e.g. the depot auto-closes on a net turn hand-off) would otherwise leak them.
+  const dragCleanup = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => () => dragCleanup.current?.(), []);
 
   // Recompute grip size/position from the live scroll metrics.
   const sync = useCallback(() => {
@@ -73,9 +77,11 @@ export function ClassicScrollbar({class: cls = '', style, rootRef, children, ...
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      dragCleanup.current = null;
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    dragCleanup.current = up; // so an unmount mid-drag removes these
   };
 
   return (

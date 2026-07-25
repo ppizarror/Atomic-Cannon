@@ -392,6 +392,7 @@ export const en: Strings = {
         '8. Very Hard',
         '9. Mastery',
         '10. Elite',
+        '11. Ultra',
       ],
     },
     wind: {
@@ -498,6 +499,7 @@ export const en: Strings = {
           '8. Very Hard',
           '9. Mastery',
           '10. Elite',
+          '11. Ultra',
         ],
       },
       wind: {
