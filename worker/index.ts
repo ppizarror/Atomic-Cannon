@@ -6,13 +6,20 @@
 import {newRoomCode, normalizeRoomCode, isValidRoomCode} from '../src/net/roomCode';
 
 export {Room} from './Room';
+export {Stats} from './Stats';
 
 interface Env {
   ROOM: DurableObjectNamespace;
+  STATS: DurableObjectNamespace;
   ASSETS: Fetcher;
   /** Per-IP limiter on room creation (see `ratelimits` in wrangler.jsonc). */
   ROOM_LIMIT: RateLimit;
+  /** Per-IP limiter on stats uploads. */
+  STATS_LIMIT: RateLimit;
 }
+
+/** The single global Stats DO instance. */
+const statsStub = (env: Env) => env.STATS.get(env.STATS.idFromName('global'));
 
 const json = (data: unknown, status = 200): Response =>
   new Response(JSON.stringify(data), {
@@ -32,6 +39,37 @@ export default {
       const {success} = await env.ROOM_LIMIT.limit({key: ip});
       if (!success) return json({error: 'slow down — too many rooms'}, 429);
       return json({code: newRoomCode()});
+    }
+
+    // Global play stats. GET = the aggregate for the About screen (short-cached); POST = one finished
+    // match's delta, stamped with the visitor's edge country and folded into the global Stats DO.
+    if (url.pathname === '/api/stats') {
+      if (req.method === 'POST') {
+        const ip = req.headers.get('CF-Connecting-IP') ?? 'anon';
+        const {success} = await env.STATS_LIMIT.limit({key: ip});
+        if (!success) return json({error: 'slow down'}, 429);
+        let delta: unknown;
+        try {
+          delta = await req.json();
+        } catch {
+          return json({error: 'bad body'}, 400);
+        }
+        const country = (req as {cf?: {country?: string}}).cf?.country ?? 'XX';
+        return statsStub(env).fetch(
+          new Request('https://do/stats', {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({delta, country}),
+          }),
+        );
+      }
+      // GET — pass the aggregate through with a brief edge cache so a spike of About visits can't
+      // hammer the DO.
+      const res = await statsStub(env).fetch(new Request('https://do/stats'));
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: {'content-type': 'application/json', 'cache-control': 'public, max-age=30'},
+      });
     }
 
     // WebSocket join: /room/<CODE>

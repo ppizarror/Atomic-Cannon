@@ -16,6 +16,7 @@ import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
 import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
+import {postGameStats} from '../net/stats';
 import {wrapIndex} from '../math/num';
 import {knockoutWhere} from '../util/canvas';
 
@@ -332,6 +333,8 @@ export function advanceWar(): void {
   if (s.warOver) {
     // War over: record every team on the Battle Heroes boards before leaving.
     submitBattleHeroes(game().getBattleHeroes());
+    // Fire-and-forget the anonymous global play stats (one uploader per net match; always in solo).
+    if (game().isStatsUploader()) void postGameStats(game().getMatchStats());
     goToMenu();
   } else game().nextBattle();
 }

@@ -154,6 +154,23 @@ export interface Strings {
     /** The credits / story document, top to bottom. */
     sections: AboutSection[];
     back: string;
+    /** Global play-stats panel (counters + games-per-country). `byCountry` takes `{n}`. */
+    stats: {
+      title: string;
+      unavailable: string;
+      games: string;
+      onlineGames: string;
+      tanksDestroyed: string;
+      weaponsFired: string;
+      shotsFired: string;
+      damageDealt: string;
+      nukesFired: string;
+      terrainCarved: string;
+      creditsSpent: string;
+      playTime: string;
+      longestGame: string;
+      byCountry: string;
+    };
   };
 
   // ── Manual / How-to-play card (main-menu help document) ────────────────────

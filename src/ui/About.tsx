@@ -13,6 +13,7 @@ import {BmpParagraph} from './BmpParagraph';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {Modal} from './Modal';
 import {ModalButton} from './ModalButton';
+import {StatsPanel} from './StatsPanel';
 
 export function About() {
   const s = strings.value.about;
@@ -43,6 +44,12 @@ export function About() {
             ))}
           </section>
         ))}
+        <section class="about-section">
+          <div class="about-sec-head">
+            <BmpText font="beijing-20-out" text={s.stats.title} />
+          </div>
+          <StatsPanel />
+        </section>
       </ClassicScrollbar>
       <ModalButton label={s.back} onClick={backToMenu} class="about-back" />
     </Modal>

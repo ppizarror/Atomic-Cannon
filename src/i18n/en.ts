@@ -96,6 +96,22 @@ export const en: Strings = {
     title: 'ATOMIC CANNON',
     subtitle: 'A web preservation port',
     back: 'Back',
+    stats: {
+      title: 'Global Stats',
+      unavailable: 'Global stats are offline right now.',
+      games: 'Games played',
+      onlineGames: 'Online games',
+      tanksDestroyed: 'Tanks destroyed',
+      weaponsFired: 'Weapons fired',
+      shotsFired: 'Shots fired',
+      damageDealt: 'Damage dealt',
+      nukesFired: 'Nukes launched',
+      terrainCarved: 'Craters blasted',
+      creditsSpent: 'Credits spent',
+      playTime: 'Time played',
+      longestGame: 'Longest game',
+      byCountry: 'Games by country ({n})',
+    },
     sections: [
       {
         heading: 'The Story',

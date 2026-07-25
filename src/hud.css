@@ -1131,6 +1131,103 @@ canvas {
   margin-bottom: 3px;
 }
 
+/* ── Global stats panel (About) ─────────────────────────────────────────────── */
+.stat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stat-empty {
+  opacity: 0.7;
+}
+/* Two columns of label→value rows on wide cards, one column when narrow. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 18px;
+}
+@media (max-width: 460px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--green-line);
+}
+.stat-value {
+  filter: brightness(1.15);
+}
+.stat-value canvas {
+  /* tint the numbers amber to set them off from the labels */
+  filter: sepia(1) saturate(3) hue-rotate(5deg) brightness(1.05);
+}
+
+.stat-map-head {
+  margin-top: 4px;
+  opacity: 0.9;
+}
+.stat-map {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  display: block;
+  border: 1px solid var(--green-line);
+}
+.stat-map-bg {
+  fill: rgba(10, 26, 20, 0.9);
+}
+.stat-map-grid {
+  stroke: rgba(120, 220, 140, 0.14);
+  stroke-width: 0.5;
+}
+.stat-map-dot {
+  fill: rgba(123, 216, 143, 0.55);
+  stroke: var(--green-focus);
+  stroke-width: 0.6;
+}
+
+.stat-countries {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.stat-country {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stat-flag {
+  flex: 0 0 auto;
+  font-size: 15px;
+  line-height: 1;
+}
+.stat-cname {
+  flex: 0 0 40%;
+  min-width: 0;
+  overflow: hidden;
+}
+.stat-bar-wrap {
+  flex: 1 1 auto;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--green-line);
+}
+.stat-bar {
+  display: block;
+  height: 100%;
+  background: var(--green-focus);
+  opacity: 0.8;
+}
+.stat-cnum {
+  flex: 0 0 auto;
+  min-width: 44px;
+  text-align: right;
+}
+
 .bmp-para-gap {
   height: 8px; /* blank line between flowing paragraphs */
 }
