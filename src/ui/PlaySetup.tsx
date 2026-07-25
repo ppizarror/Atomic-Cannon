@@ -13,6 +13,7 @@ import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import type {RowCopy} from '../i18n';
 import {BmpText} from './BmpText';
+import {SettingsScreen} from './SettingsScreen';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
 import {backToMenu, startBattle, MIN_PLAYERS} from './store';
@@ -64,7 +65,10 @@ export function PlaySetup() {
   ];
 
   return (
-    <div class="settings-screen">
+    <SettingsScreen
+      subtitle={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))}
+      spacing={-1}
+    >
       <div class="menu-list settings-rows">
         <button
           class="settings-row srow-done menu-btn"
@@ -89,13 +93,6 @@ export function PlaySetup() {
           <BmpText font="bazouk-28" text={p.cancel} />
         </button>
       </div>
-      <div class="settings-subtitle">
-        <BmpText
-          font="beijing-16-out"
-          text={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))}
-          spacing={-1}
-        />
-      </div>
-    </div>
+    </SettingsScreen>
   );
 }

@@ -125,9 +125,10 @@ export class CSoundManager extends GainChannel {
       this.spawn(buf, this.panFor(worldX), opts.volume ?? 1);
       return;
     }
-    // Not resident yet — load then play (skips if it turns out to be missing).
+    // Not resident yet — load then play (skips if it turns out to be missing, OR if SFX was disabled
+    // while the buffer was decoding — otherwise a sound queued just before "SFX off" still fires).
     this.loadBuffer(name).then(b => {
-      if (b) this.spawn(b, this.panFor(worldX), opts.volume ?? 1);
+      if (b && this.m_enabled) this.spawn(b, this.panFor(worldX), opts.volume ?? 1);
     });
   }
 
@@ -175,7 +176,9 @@ export class CSoundManager extends GainChannel {
       // with nothing left to stop it (an eternal jet/tank-move drone).
       this.m_loopWanted.add(name);
       this.loadBuffer(name).then(b => {
-        if (b && this.m_loopWanted.has(name) && !this.m_loops.has(name)) {
+        // ...and only if SFX is still enabled — a disable while decoding must not start the drone
+        // (onDisable also clears m_loopWanted, but guard here too in case the buffer resolves first).
+        if (b && this.m_enabled && this.m_loopWanted.has(name) && !this.m_loops.has(name)) {
           this.beginLoop(name, b, worldX);
         }
       });

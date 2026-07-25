@@ -12,9 +12,9 @@
 import {useState} from 'preact/hooks';
 import {strings} from '../i18n';
 import {closeSettings, settingsOrigin, settingsPage, openSettingsPage} from './store';
-import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {ClassicScrollbar} from './ClassicScrollbar';
+import {SettingsScreen} from './SettingsScreen';
 import {SettingsPage} from './SettingsPage';
 import {WeaponsEditor, LandscapesEditor} from './EnableListEditor';
 import {ControlsEditor} from './ControlsEditor';
@@ -87,7 +87,7 @@ function SettingsRoot() {
     onClick: closeSettings,
   };
   return (
-    <div class="settings-screen">
+    <SettingsScreen subtitle={sub}>
       <ClassicScrollbar class="settings-scroll">
         <div class="menu-list settings-list">
           {categories().map(e => (
@@ -96,9 +96,6 @@ function SettingsRoot() {
           <SettingsItem key="Done" entry={done} onHover={setSub} />
         </div>
       </ClassicScrollbar>
-      <div class="settings-subtitle">
-        {sub ? <BmpText font="beijing-16-out" text={sub} /> : null}
-      </div>
-    </div>
+    </SettingsScreen>
   );
 }

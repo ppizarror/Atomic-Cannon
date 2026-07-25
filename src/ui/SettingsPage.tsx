@@ -12,6 +12,7 @@ import {useEffect, useState} from 'preact/hooks';
 import {strings} from '../i18n';
 import {settingsPageBack} from './store';
 import {BmpText} from './BmpText';
+import {SettingsScreen} from './SettingsScreen';
 import {getSettingsPage} from './settingsPages';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
@@ -32,7 +33,7 @@ export function SettingsPage({id}: {id: string}) {
   if (!page) return null;
 
   return (
-    <div class="settings-screen">
+    <SettingsScreen subtitle={sub ?? page.header}>
       <ClassicScrollbar class="settings-scroll">
         <div class="menu-list settings-rows">
           {page.rows.map((w, i) => (
@@ -48,9 +49,6 @@ export function SettingsPage({id}: {id: string}) {
           </button>
         </div>
       </ClassicScrollbar>
-      <div class="settings-subtitle">
-        <BmpText font="beijing-16-out" text={sub ?? page.header} />
-      </div>
-    </div>
+    </SettingsScreen>
   );
 }

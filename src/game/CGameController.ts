@@ -1071,6 +1071,22 @@ export class CGameController implements ShotWorld {
     }
   }
 
+  /** Silence the per-frame movement loops (tank-drive / jet) and reset their state. Call when LEAVING
+   *  a battle: updateMoveSound is the only thing that stops these loops, but it runs from update() —
+   *  which is skipped while the sim is frozen. Quitting to the menu mid-drive freezes the sim yet
+   *  RESUMES the AudioContext (goToMenu), so a drive/jet drone would otherwise play on under the menu
+   *  until the next battle's first frame. Safe to call anytime (no-op when nothing is looping). */
+  stopMovementAudio(): void {
+    if (this.m_tanksMoving) {
+      this.m_audio?.stopTankMove();
+      this.m_tanksMoving = false;
+    }
+    if (this.m_jetSounding) {
+      this.m_audio?.stopJet();
+      this.m_jetSounding = false;
+    }
+  }
+
   /**
    * Jet flight (extType 17): the active tank thrusts against gravity until its
    * fuel runs out and it settles. Flight repositions the tank but does NOT end

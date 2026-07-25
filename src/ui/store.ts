@@ -157,6 +157,10 @@ export function closeSettings(): void {
 export function goToMenu(): void {
   showPause.value = false;
   screen.value = 'menu';
+  // Stop the tank-drive / jet loops BEFORE freezing the sim: paused.value below skips update() (the
+  // only thing that stops those loops), while setPaused(false) resumes the AudioContext — so a drive
+  // interrupted by pause→Quit would otherwise drone on under the menu music until the next battle.
+  game().stopMovementAudio();
   game().setPaused(false);
   paused.value = true;
   game().getAudio()?.menuMusic();

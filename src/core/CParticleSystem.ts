@@ -16,6 +16,7 @@
 
 import type {Vec2} from '../math/Vec2';
 import type {ISpriteSource} from './rendering/sprites';
+import {TintedSpriteCache} from './rendering/TintedSpriteCache';
 import particlesRaw from '../data/particles.json';
 import {smokeEnabled} from './CGameConfig';
 import {boundaryFactor} from './wind';
@@ -282,73 +283,20 @@ export class CParticleSystem {
   // fallback, every frame — hundreds of allocations per blast frame. Instead we
   // bake one white glow sprite once, tint it per colour into a small cache, and
   // blit it with drawImage — the hot path then allocates nothing.
-  private m_glow: HTMLCanvasElement | null = null;
-  private m_glowNA = false; // no DOM (unit tests) → callers fall back to a gradient
-  private m_tints = new Map<number, HTMLCanvasElement>(); // quantised colour → tinted glow
   private static readonly GLOW_SRC = 32; // master glow radius (px); scaled up per particle
-
-  /**
-   * The white master glow (built once). Its falloff mirrors the old flare/flash
-   * gradient exactly — solid core, half-alpha midpoint, transparent rim — so
-   * blitting it under 'lighter' reproduces the previous look. Returns null where
-   * there is no canvas (the Node test runner), signalling a gradient fallback.
-   */
-  private glowMaster(): HTMLCanvasElement | null {
-    if (this.m_glow || this.m_glowNA) return this.m_glow;
-    if (typeof document === 'undefined') {
-      this.m_glowNA = true;
-      return null;
-    }
-    const R = CParticleSystem.GLOW_SRC;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = R * 2;
-    const g = cv.getContext('2d');
-    if (!g) {
-      this.m_glowNA = true;
-      return null;
-    }
+  // The master glow's falloff mirrors the old flare/flash gradient exactly — solid core,
+  // half-alpha midpoint, transparent rim — so blitting it under 'lighter' reproduces the look.
+  // Tinting quantises to 4 bits/channel (see TintedSpriteCache): a preset's jittered tints
+  // (e.g. an eOrange cluster) fold to a handful of buckets while distinct weapon colours stay
+  // apart — invisible on a soft additive glow, and it keeps the count under the cache cap.
+  private readonly m_glowCache = new TintedSpriteCache(CParticleSystem.GLOW_SRC, (g, R) => {
     const grad = g.createRadialGradient(R, R, 0, R, R, R);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
     grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
     grad.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = grad;
     g.fillRect(0, 0, R * 2, R * 2);
-    this.m_glow = cv;
-    return cv;
-  }
-
-  /**
-   * The master glow tinted to (r,g,b), cached by colour. `source-in` keeps the
-   * glow's alpha shape and swaps in the solid colour.
-   *
-   * Quantise to 4 bits/channel: a preset's jittered tints (e.g. a cluster of
-   * eOrange flares spans ~300 distinct 5-bit buckets) collapse to a handful, while
-   * genuinely different weapon colours stay apart — the coarser step is invisible
-   * on a soft additive glow. At 5 bits the count blew past the cache cap and, with
-   * the old clear()-on-overflow, every colour then MISSED and rebuilt a glow canvas
-   * every frame (a ~55ms/frame rebuild storm on a Porcupine cluster).
-   */
-  private tintedGlow(r: number, g: number, b: number): HTMLCanvasElement | null {
-    const master = this.glowMaster();
-    if (!master) return null;
-    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-    const hit = this.m_tints.get(key);
-    if (hit) return hit;
-    const R = CParticleSystem.GLOW_SRC;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = R * 2;
-    const c = cv.getContext('2d')!;
-    c.drawImage(master, 0, 0);
-    c.globalCompositeOperation = 'source-in';
-    c.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
-    c.fillRect(0, 0, R * 2, R * 2);
-    // Evict the OLDEST entry (Map preserves insertion order), NOT the whole cache:
-    // a full clear() turns an overflow into a per-frame rebuild storm. 4-bit keys
-    // top out at 4096 buckets but real scenes use far fewer, so this rarely fires.
-    if (this.m_tints.size >= 512) this.m_tints.delete(this.m_tints.keys().next().value as number);
-    this.m_tints.set(key, cv);
-    return cv;
-  }
+  });
 
   /**
    * Blit the tinted glow centred at (x,y) with the given radius and alpha, under whatever
@@ -365,7 +313,7 @@ export class CParticleSystem {
     b: number,
     alpha: number,
   ): void {
-    const t = this.tintedGlow(r, g, b);
+    const t = this.m_glowCache.tint(r, g, b);
     if (t) {
       const d = radius * 2;
       ctx.globalAlpha = alpha;
@@ -389,61 +337,20 @@ export class CParticleSystem {
   // gui/rocket plume.bmp hot→cool STRIP by particle age. This is the trail's real look —
   // distinct from the fuzzy crater cloud (gui/smoke.bmp) — so exhaust reads as overlapping
   // round puffs that widen with age into a thick, soft ribbon.
-  private m_puff: HTMLCanvasElement | null = null;
-  private m_puffNA = false;
-  private m_puffTints = new Map<number, HTMLCanvasElement>(); // quantised colour → tinted puff
   private m_plumeImg: ImageData | null = null; // gui/rocket plume.bmp as a 2-D (age × height) table
   private static readonly PUFF_SRC = 32;
-
-  /** White master puff: a SOLID-ish core with a soft edge (a cotton ball), vs the glow's diffuse
-   *  falloff. Built once; tinted per colour by `tintedPuff`. Null when there's no canvas (tests). */
-  private puffMaster(): HTMLCanvasElement | null {
-    if (this.m_puff || this.m_puffNA) return this.m_puff;
-    if (typeof document === 'undefined') {
-      this.m_puffNA = true;
-      return null;
-    }
-    const R = CParticleSystem.PUFF_SRC;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = R * 2;
-    const g = cv.getContext('2d');
-    if (!g) {
-      this.m_puffNA = true;
-      return null;
-    }
+  // White master puff: a SOLID-ish core with a soft edge (a cotton ball), vs the glow's diffuse
+  // falloff — a SOFT falloff (no hard core/edge) so overlapping puffs blur together into a smooth
+  // fluffy cloud rather than crisp distinct circles. Same 4-bit tint cache as the glow.
+  private readonly m_puffCache = new TintedSpriteCache(CParticleSystem.PUFF_SRC, (g, R) => {
     const grad = g.createRadialGradient(R, R, 0, R, R, R);
-    // A SOFT falloff (no hard core/edge) so overlapping puffs blur together into a smooth fluffy
-    // cloud rather than reading as crisp distinct circles.
     grad.addColorStop(0, 'rgba(255,255,255,0.9)');
     grad.addColorStop(0.4, 'rgba(255,255,255,0.6)');
     grad.addColorStop(0.75, 'rgba(255,255,255,0.22)');
     grad.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = grad;
     g.fillRect(0, 0, R * 2, R * 2);
-    this.m_puff = cv;
-    return cv;
-  }
-
-  /** The master puff recoloured to (r,g,b), cached (4-bit/channel key, like `tintedGlow`). */
-  private tintedPuff(r: number, g: number, b: number): HTMLCanvasElement | null {
-    const master = this.puffMaster();
-    if (!master) return null;
-    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-    const hit = this.m_puffTints.get(key);
-    if (hit) return hit;
-    const R = CParticleSystem.PUFF_SRC;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = R * 2;
-    const c = cv.getContext('2d')!;
-    c.drawImage(master, 0, 0);
-    c.globalCompositeOperation = 'source-in';
-    c.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
-    c.fillRect(0, 0, R * 2, R * 2);
-    if (this.m_puffTints.size >= 512)
-      this.m_puffTints.delete(this.m_puffTints.keys().next().value as number);
-    this.m_puffTints.set(key, cv);
-    return cv;
-  }
+  });
 
   // Downward acceleration (px/s^2). Sparks and debris arc and fall; flares and
   // the flash are short-lived enough that gravity barely moves them.
@@ -1225,7 +1132,7 @@ export class CParticleSystem {
         const gs = t < 0.72 ? 0.5 + 2.9 * (t / 0.72) : 3.4 * (1 - (t - 0.72) / 0.28);
         const de = p.size * gs * 2;
         const ea = Math.min(1, t / 0.1) * (t > 0.72 ? (1 - t) / 0.28 : 1) * p.op;
-        const puff = this.tintedPuff(cr, cg, cb);
+        const puff = this.m_puffCache.tint(cr, cg, cb);
         if (puff) {
           g.globalAlpha = ea;
           g.drawImage(puff, p.x - de / 2, p.y - de / 2, de, de);
