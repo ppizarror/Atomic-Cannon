@@ -11,6 +11,7 @@
 import {computed, signal} from '@preact/signals';
 import {loadJSON, saveJSON} from '../util/storage';
 import {en} from './en';
+import {es} from './es';
 import type {LocaleCode, LocaleInfo, Strings} from './types';
 
 export type {
@@ -24,14 +25,17 @@ export type {
   HelpItem,
 } from './types';
 
-const CATALOG: Record<LocaleCode, Strings> = {en};
+const CATALOG: Record<LocaleCode, Strings> = {en, es};
 const KEY = 'atomic.locale';
 
 /** The default / fallback locale — used when nothing else resolves. */
 export const DEFAULT_LOCALE: LocaleCode = 'en';
 
 /** Shipped locales in picker order, each with its endonym (name in its own language). */
-export const LOCALES: readonly LocaleInfo[] = [{code: 'en', name: 'English'}];
+export const LOCALES: readonly LocaleInfo[] = [
+  {code: 'en', name: 'English'},
+  {code: 'es', name: 'Español'},
+];
 
 /** Locale codes the build ships with (catalog keys) — the language picker's options. */
 export const availableLocales = LOCALES.map(l => l.code);

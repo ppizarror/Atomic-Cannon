@@ -653,4 +653,4 @@ export interface LocaleInfo {
 }
 
 /** Codes of the locales that ship with the game. Extend as tables are added. */
-export type LocaleCode = 'en';
+export type LocaleCode = 'en' | 'es';
