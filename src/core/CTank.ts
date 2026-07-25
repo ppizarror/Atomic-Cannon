@@ -1056,7 +1056,7 @@ export class CTank {
   getTurretPivot(): Vec2 {
     const groundX = this.m_vPos.x;
     const groundY = this.m_vPos.y + tankHeight(); // ground-contact line
-    const up = turretHgt(); // turret height above ground
+    const up = turretHgt(this.m_sTankType); // turret height above ground (per-hull)
     const s = Math.sin(this.m_fAngle),
       c = Math.cos(this.m_fAngle);
     return new Vec2(groundX + up * s, groundY - up * c); // (0,-up) rotated by body tilt
@@ -1391,7 +1391,16 @@ const hullDrawWidth = (sprite: {width: number}) =>
 const tankRadius = () => TSZ_R * GameConfig.tankSizeScale;
 const tankHeight = () => TSZ_H * GameConfig.tankSizeScale;
 const turretLen = () => TSZ_TLEN * GameConfig.tankSizeScale;
-const turretHgt = () => TSZ_THGT * GameConfig.tankSizeScale;
+// Turret pivot height above the ground line. Default TSZ_THGT nests the pivot inside every hull
+// EXCEPT the short "Atomic Cannon" one (drawn body-top ≈ 13px < 15), where it floats — so that hull
+// gets a lower pivot that seats the barrel back on it. Taller hulls keep the default, so they're
+// unchanged. Keyed on tank type (the muzzle/aim path has no sprite handy, so this is a static fact
+// about the art, not read from the bitmap each call).
+const TURRET_HGT_BY_TYPE: Record<string, number> = {
+  'Atomic Cannon': 11,
+};
+const turretHgt = (type: string) =>
+  (TURRET_HGT_BY_TYPE[type] ?? TSZ_THGT) * GameConfig.tankSizeScale;
 const tankWidth = () => TSZ_W * GameConfig.tankSizeScale;
 const TANK_GRAVITY = 400; // Fall acceleration when unsupported (px/s^2)
 const TANK_DRIVE_SPEED = 70; // Ground-drive crawl speed (px/s) — climbs ANY terrain, no steepness gate
