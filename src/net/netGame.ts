@@ -50,6 +50,7 @@ export class NetGame {
   // a late `turnBegin` can never interrupt an in-flight shot.
   private m_pendingTurn: number | null = null;
   private m_pendingHandoff = false; // the queued turn's hand-off flag (crate roll + per-turn income)
+  private m_intermissionTimer: ReturnType<typeof setTimeout> | null = null; // between-battle advance
   private m_pendingRoundWrapped = false; // the queued turn's round-wrap flag (per-round income)
   // True once we've begun playing turns in lockstep (first turnBegin). While FALSE we have no
   // independent simulation to trust (fresh boot / reconnect), so a keyframe is a BOOTSTRAP we adopt;
@@ -244,7 +245,9 @@ export class NetGame {
    * BattleEnd as "busy") until the advance completes, then drained here.
    */
   private onNextBattle(seed: number): void {
-    setTimeout(() => {
+    if (this.m_intermissionTimer !== null) clearTimeout(this.m_intermissionTimer);
+    this.m_intermissionTimer = setTimeout(() => {
+      this.m_intermissionTimer = null;
       const gc = this.host.controller;
       if (!gc.isNetBattleActive()) return; // left the match during the intermission
       gc.netNextBattle(seed);
@@ -254,5 +257,15 @@ export class NetGame {
         this.applyTurn(idx, this.m_pendingHandoff, this.m_pendingRoundWrapped);
       }
     }, NET_BATTLE_INTERMISSION_MS);
+  }
+
+  /** Tear down — cancel the pending intermission timer so it can't advance a battle on an orphaned
+   *  NetGame after the user has left the match (the controller's m_netMode stays true, so its own
+   *  guard wouldn't stop it). Call before dropping the reference. */
+  dispose(): void {
+    if (this.m_intermissionTimer !== null) {
+      clearTimeout(this.m_intermissionTimer);
+      this.m_intermissionTimer = null;
+    }
   }
 }

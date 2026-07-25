@@ -1019,7 +1019,8 @@ describe('network battle-end', () => {
     expect(gc.isNetBattleOver()).toBe(false); // both alive
 
     const snap = gc.getNetSnapshot();
-    snap.tanks[1].life = 0; // kill the opponent's tank
+    snap.tanks[1].life = 0; // kill the opponent's tank…
+    snap.tanks[1].alive = false; // …and clear the explicit alive flag (life alone doesn't kill in Rounds)
     gc.applyNetSnapshot(snap);
     expect(gc.isNetBattleOver()).toBe(true);
   });
@@ -1070,6 +1071,7 @@ describe('network battle-end', () => {
     // Wipe the opponent, then resolve the turn.
     const snap = gc.getNetSnapshot();
     snap.tanks[1].life = 0;
+    snap.tanks[1].alive = false; // life alone doesn't kill (Rounds); clear the explicit flag
     gc.applyNetSnapshot(snap);
     (gc as unknown as {m_onNetTurnEnd: () => void}).m_onNetTurnEnd();
 

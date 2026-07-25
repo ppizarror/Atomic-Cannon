@@ -84,6 +84,9 @@ export interface ShotResult {
     readonly armor: number;
     readonly hazmat: number;
     readonly credits: number;
+    /** Explicit alive flag — Rounds/Points tanks sit at 0 life yet ALIVE, so a bootstrapping client
+     *  must adopt this rather than re-deriving alive from life. */
+    readonly alive: boolean;
   }>;
   /** Full terrain heightmap (per-column surface Y). */
   readonly heights: readonly number[];
@@ -251,7 +254,8 @@ export function isValidShotResult(r: unknown, tankCount: number): r is ShotResul
       !isFiniteNum(tk.shield) ||
       !isFiniteNum(tk.armor) ||
       !isFiniteNum(tk.hazmat) ||
-      !isFiniteNum(tk.credits)
+      !isFiniteNum(tk.credits) ||
+      typeof tk.alive !== 'boolean'
     ) {
       return false;
     }

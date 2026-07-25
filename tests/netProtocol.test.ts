@@ -6,7 +6,16 @@
 import {describe, it, expect} from 'vitest';
 import {isValidShotResult, isValidGameCommand} from '../src/net/protocol';
 
-const goodTank = () => ({x: 1, y: 2, life: 1000, shield: 0, armor: 0, hazmat: 0, credits: 3000});
+const goodTank = () => ({
+  x: 1,
+  y: 2,
+  life: 1000,
+  shield: 0,
+  armor: 0,
+  hazmat: 0,
+  credits: 3000,
+  alive: true,
+});
 const goodResult = (n: number) => ({
   tanks: Array.from({length: n}, goodTank),
   heights: [100, 101, 102],
@@ -31,6 +40,12 @@ describe('isValidShotResult', () => {
     const withNaN = goodResult(2);
     withNaN.tanks[0].x = NaN;
     expect(isValidShotResult(withNaN, 2)).toBe(false);
+  });
+
+  it('requires an explicit boolean alive flag (0-life tanks are alive in Rounds)', () => {
+    const noAlive = goodResult(1);
+    delete (noAlive.tanks[0] as {alive?: boolean}).alive;
+    expect(isValidShotResult(noAlive, 1)).toBe(false);
   });
 
   it('rejects a missing/degenerate heightmap, wind, or rngState', () => {

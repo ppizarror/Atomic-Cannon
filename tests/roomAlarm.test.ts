@@ -24,8 +24,9 @@ const msgs = (ws: FakeSocket): Record<string, unknown>[] =>
   ws.sent.map(s => JSON.parse(s) as Record<string, unknown>);
 
 /** Deliver a client message through the DO's handler (the FakeSocket stands in for a WebSocket). */
+type WsParam = Parameters<Room['webSocketMessage']>[0];
 const deliver = (room: Room, ws: FakeSocket, obj: unknown): Promise<void> =>
-  room.webSocketMessage(ws as unknown as WebSocket, JSON.stringify(obj));
+  room.webSocketMessage(ws as unknown as WsParam, JSON.stringify(obj));
 
 function makeRoom(state: Record<string, unknown>, sockets: FakeSocket[]) {
   const store = new Map<string, unknown>([['room', state]]);
@@ -174,10 +175,7 @@ describe('Room message validation (net robustness)', () => {
     const host = makeSocket(1); // hostId = 1
     const {room, stored} = makeRoom(playingState({seed: 999}), [host]);
 
-    await room.webSocketMessage(
-      host,
-      JSON.stringify({t: 'start', viewW: 1280, viewH: 720, config: {}}),
-    );
+    await deliver(room, host, {t: 'start', viewW: 1280, viewH: 720, config: {}});
 
     expect(stored().seed).toBe(999); // seed NOT re-rolled — clients not yanked into a new world
     expect(msgs(host).some(m => m.t === 'error' && m.code === 'game_in_progress')).toBe(true);

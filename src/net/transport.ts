@@ -34,6 +34,10 @@ export interface WebSocketTransportOptions {
 }
 
 /** A WebSocket-backed transport with buffered send and exponential-backoff reconnect. */
+/** How long a socket must stay open before its connection counts as "stable" and the reconnect
+ *  backoff resets — long enough that an accept-then-drop server can't reset the backoff each cycle. */
+const STABLE_CONN_MS = 5000;
+
 export class WebSocketTransport implements NetTransport {
   private m_ws: WebSocket | null = null;
   private m_status: ConnStatus = 'idle';
@@ -41,6 +45,7 @@ export class WebSocketTransport implements NetTransport {
   private m_closedByUs = false;
   private m_outbox: string[] = [];
   private m_reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private m_stableTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly m_msgSubs = new Set<(m: ServerMessage) => void>();
   private readonly m_statusSubs = new Set<(s: ConnStatus) => void>();
   private readonly m_WS: typeof WebSocket;
@@ -66,8 +71,15 @@ export class WebSocketTransport implements NetTransport {
     this.m_ws = ws;
 
     ws.onopen = () => {
-      this.m_attempts = 0;
       this.setStatus('open');
+      // Reset the backoff ONLY after the connection proves STABLE (stays open a few seconds). A server
+      // (or edge) that accepts then immediately drops would otherwise reset m_attempts every cycle,
+      // defeating the exponential backoff → a tight ~0.4 s reconnect storm. Cleared on close below.
+      if (this.m_stableTimer) clearTimeout(this.m_stableTimer);
+      this.m_stableTimer = setTimeout(() => {
+        this.m_attempts = 0;
+        this.m_stableTimer = null;
+      }, STABLE_CONN_MS);
       // Flush anything queued while offline.
       const pending = this.m_outbox;
       this.m_outbox = [];
@@ -82,6 +94,11 @@ export class WebSocketTransport implements NetTransport {
 
     ws.onclose = () => {
       this.m_ws = null;
+      // The connection didn't survive to "stable" — keep the backoff growing (don't reset attempts).
+      if (this.m_stableTimer) {
+        clearTimeout(this.m_stableTimer);
+        this.m_stableTimer = null;
+      }
       if (this.m_closedByUs) {
         this.setStatus('closed');
         return;
@@ -138,6 +155,10 @@ export class WebSocketTransport implements NetTransport {
     if (this.m_reconnectTimer) {
       clearTimeout(this.m_reconnectTimer);
       this.m_reconnectTimer = null;
+    }
+    if (this.m_stableTimer) {
+      clearTimeout(this.m_stableTimer);
+      this.m_stableTimer = null;
     }
     this.m_ws?.close();
     this.m_ws = null;

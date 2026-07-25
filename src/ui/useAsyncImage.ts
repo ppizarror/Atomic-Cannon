@@ -11,9 +11,13 @@ export function useAsyncImage(load: () => Promise<string | null>, deps: unknown[
   const [src, setSrc] = useState('');
   useEffect(() => {
     let ok = true;
-    load().then(u => {
-      if (ok && u) setSrc(u);
-    });
+    // Some loaders (e.g. the tank-preview recolor) REJECT on a missing/corrupt image rather than
+    // resolving null — swallow it so a bad asset is a blank preview, not an uncaught rejection.
+    load()
+      .then(u => {
+        if (ok && u) setSrc(u);
+      })
+      .catch(() => {});
     return () => {
       ok = false;
     };

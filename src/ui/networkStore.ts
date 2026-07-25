@@ -183,6 +183,7 @@ export const updateMatchConfig = (patch: Partial<MatchConfig>): void => {
 export function leaveRoom(): void {
   client?.leave();
   client = null;
+  netGame?.dispose(); // cancel the pending between-battle intermission timer
   netGame = null;
   netState.value = initialState;
 }
@@ -191,6 +192,7 @@ export function leaveRoom(): void {
 export function resetNet(): void {
   client?.close();
   client = null;
+  netGame?.dispose(); // cancel the pending between-battle intermission timer
   netGame = null;
   netState.value = initialState;
 }
