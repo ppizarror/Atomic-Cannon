@@ -102,10 +102,10 @@ async function main(): Promise<void> {
   // after — honours them (difficulty, wind, land shape, credits, …).
   applyGameSettings(gameController);
 
-  // Initialise a battle up front (land + tanks) so the sim is ready, then open the
-  // main menu over it — Play starts a fresh round.
-  gameController.startGame(2);
-
+  // Do NOT build a battle at boot. The main menu is an opaque title screen, so generating
+  // terrain, spawning tanks and warming the combat SFX/music behind it is pure waste — and
+  // the sim/render/HUD loops all short-circuit on `isStarted()` until a match begins. Play /
+  // Quick Play (and the dev URL flags below) call startGame(), which builds the world then.
   setController(gameController);
   render(<App />, uiRoot);
   goToMenu();
@@ -131,6 +131,7 @@ async function main(): Promise<void> {
       q.get('battle') === '1' ||
       q.get('depot') === '1' ||
       q.get('pause') === '1' ||
+      q.get('crate') !== null || // a crate needs a tank to drop onto (no boot battle exists anymore)
       weaponTest ||
       weaponSel !== null
     )

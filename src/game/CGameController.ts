@@ -515,6 +515,7 @@ export class CGameController implements ShotWorld {
    *  squad sharing that player's colour), capped at 16 tanks total. The first
    *  `m_humanCount` teams are human. */
   startGame(nPlayers: number = 2): void {
+    this.m_started = true; // a battle now exists — the per-frame sim/render/HUD work is live
     // A plain startGame (solo / Play) is never a network match — clear any net state
     // left from a previous online game. startNetworkGame sets m_bootingNet to keep its
     // own config through this reset.
@@ -782,8 +783,10 @@ export class CGameController implements ShotWorld {
     this.m_assets.loadImage('fx:flares/01.bmp', '/assets/flares/01.bmp');
     this.m_particles.setAssets(this.m_assets);
 
-    // Pick a landscape (background + depth-layered terrain textures + weather).
-    this.loadLandscape();
+    // Pick a landscape (background + depth-layered terrain textures + weather). Keep the
+    // promise so the UI can hold a loading screen until the sky/terrain are textured
+    // (see assetsReady) instead of flashing the gradient-sky / untextured fallback.
+    this.m_loadPromise = this.loadLandscape();
 
     // Randomize wind
     this.updateWind();
@@ -896,6 +899,7 @@ export class CGameController implements ShotWorld {
    * bypass this and call {@link update} with an explicit dt.
    */
   advance(realDt: number): void {
+    if (!this.m_started) return; // no battle yet (main menu at boot) — nothing to simulate
     // Clamp the accumulator (never DROP steps mid-loop): a dropped step makes a hitching
     // client run fewer steps for a shot than a smooth one → the sims diverge (a keyframe
     // then has to resync, leaving a visible dirt patch). A frame hitch (e.g. a big blast)
@@ -1030,6 +1034,7 @@ export class CGameController implements ShotWorld {
    * upload are gated here. Returns true whenever something changed or is moving.
    */
   shouldRedraw(): boolean {
+    if (!this.m_started) return false; // no battle yet (main menu at boot) — skip the scene redraw
     return this.m_renderGate.shouldRedraw(this.m_paused, this.isAnimating(), performance.now());
   }
 
@@ -1340,6 +1345,7 @@ export class CGameController implements ShotWorld {
    * Render frame to canvas - called every frame
    */
   draw(): void {
+    if (!this.m_started) return; // no battle yet (main menu at boot) — nothing to render
     const ctx = this.m_ctx;
 
     // The scene canvas IS the logical world (m_viewW × m_viewH); the compositor stretches it
@@ -1499,6 +1505,7 @@ export class CGameController implements ShotWorld {
    * + camera transform as draw() so it stays pixel-aligned with the world.
    */
   drawOverlay(octx: CanvasRenderingContext2D): void {
+    if (!this.m_started) return; // no battle yet (main menu at boot) — nothing to overlay
     // Caller pre-scales octx from logical → screen (the fx overlay spans the whole
     // window, but the world maps only to the container region above the HUD, so the
     // scale must use the container size — done in the caller, not here).
@@ -6051,6 +6058,34 @@ export class CGameController implements ShotWorld {
     return this.m_gameState;
   }
 
+  /** True once the first battle has been started. While false (fresh boot → main menu) there
+   *  is no land/tanks/combat audio and the sim/render/HUD-sync work all short-circuit. */
+  isStarted(): boolean {
+    return this.m_started;
+  }
+
+  /**
+   * Resolve once THIS match's visuals are loaded: the landscape background (sky) + the
+   * depth-layered terrain textures have loaded and been handed to CLand, and every other
+   * sprite queued by startGame (tanks, weapon/FX art) has settled. The UI holds a loading
+   * screen on this so the battle is revealed fully textured instead of flashing the
+   * gradient-sky / untextured-terrain fallback. Resolves after at most `maxWaitMs` even if
+   * an asset hangs, so the loading screen can never trap the player.
+   */
+  async assetsReady(maxWaitMs = 10000): Promise<void> {
+    await this.m_loadPromise; // sky + terrain layers loaded and applied to CLand
+    // Then poll until every other queued sprite (tanks, weapon/FX art) has settled, capped so a
+    // hung asset can never trap the loading screen.
+    const deadline = performance.now() + maxWaitMs;
+    await new Promise<void>(resolve => {
+      const poll = (): void => {
+        if (this.m_assets.isReady() || performance.now() >= deadline) resolve();
+        else setTimeout(poll, 16);
+      };
+      poll();
+    });
+  }
+
   /** True while the human is jet-flying (Flying state). */
   isFlying(): boolean {
     return this.m_gameState === EGameState.Flying;
@@ -6381,6 +6416,14 @@ export class CGameController implements ShotWorld {
 
   // Game state machine
   private m_gameState: EGameState = EGameState.Battle;
+  // False until the first startGame(): no land is generated, no tanks spawned, and no
+  // combat assets/music are loaded while we sit on the main menu. The per-frame sim +
+  // render + HUD-sync work all short-circuit on this, so the menu does zero battle work
+  // until the player actually starts a match (Play / Quick Play / a dev URL flag).
+  private m_started = false;
+  // The in-flight landscape load for the current match (bg + terrain layers). assetsReady()
+  // awaits it so the loading screen lifts only once the world is textured.
+  private m_loadPromise: Promise<void> = Promise.resolve();
   private m_currentPlayerIndex: number = 0;
 
   // Firing controls

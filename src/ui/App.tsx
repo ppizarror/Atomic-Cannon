@@ -21,6 +21,7 @@ import {
   showFrameCount,
   frameCount,
   warStandings,
+  loading,
 } from './store';
 import {hexToRgb} from '../math/color';
 import {strings, fmt} from '../i18n';
@@ -31,6 +32,7 @@ import {TauntLayer} from './TauntLayer';
 import {PauseMenu} from './PauseMenu';
 import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
+import {LoadingScreen} from './LoadingScreen';
 import {About} from './About';
 import {Manual} from './Manual';
 import {HighScores} from './HighScores';
@@ -271,6 +273,7 @@ export function App() {
       <FrameCountHud />
       <ScreenFlash />
       <HudWave />
+      {loading.value && <LoadingScreen />}
       <TooSmallOverlay />
     </>
   );

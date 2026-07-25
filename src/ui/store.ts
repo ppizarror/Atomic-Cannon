@@ -25,6 +25,15 @@ export type Screen =
 
 export const screen = signal<Screen>('battle');
 
+// Loading screen: true while a freshly-launched match loads its landscape textures. A
+// menu-styled overlay (title backdrop + animated dots) covers the still-untextured world
+// and the battle is revealed only once assetsReady() resolves — so the player never sees
+// the gradient-sky / untextured-terrain fallback. See enterBattle + LoadingScreen.
+export const loading = signal(false);
+// Generation counter: each launch bumps it so a stale assetsReady() resolution (e.g. a rapid
+// second Play) can't reveal a superseded match.
+let launchToken = 0;
+
 // Weapons Depot overlay — buy/sell screen shown above the battle HUD.
 export const showDepot = signal(false);
 // Economy state, mirrored from the controller on demand (not every frame — it only
@@ -334,6 +343,7 @@ export function initRouter(): void {
 
 /** One level up — the shared action behind ESC and the on-screen Back / Done buttons. */
 export function escapeBack(): void {
+  if (loading.value) return; // navigation is locked while a match's textures load
   if (screen.value === 'battle') {
     if (showHelp.value) closeHelp();
     else if (showDepot.value) closeDepot();
@@ -357,10 +367,25 @@ function enterBattle(players: number, humans: number, tanksPerTeam: number): voi
   game().setHumanCount(humans);
   game().setTanksPerTeam(tanksPerTeam);
   game().getAudio()?.startGameSound(); // the "chunk" as the battle launches
-  game().startGame(players); // also starts the battle music
+  game().startGame(players); // builds land + tanks, kicks off the texture load + battle music
   screen.value = 'battle';
-  unfreezeSim();
   pushRoute();
+  // Cover the still-untextured world with a menu-styled loading screen (at --z-modal, above the
+  // now-mounted HUD) and keep the sim frozen so its shot-timer can't drain behind it. Reveal the
+  // textured battle only once the sky + terrain textures have loaded, so the player never sees the
+  // gradient-sky fallback. See LoadingScreen.
+  const token = ++launchToken;
+  loading.value = true;
+  freezeSim();
+  void game()
+    .assetsReady()
+    .then(() => {
+      if (token !== launchToken) return; // a newer launch superseded this one — drop the reveal
+      loading.value = false;
+      // Resume the sim unless something opened an overlay over the battle while it loaded (a dev
+      // URL flag such as ?pause / ?depot), which owns the freeze until it closes.
+      if (!showPause.value && !showDepot.value && !showHelp.value) unfreezeSim();
+    });
 }
 
 /** Start a battle from the current (persisted) Play setup — the Start Game button.
@@ -627,6 +652,9 @@ export function uiMenuBack(): void {
 export function syncHud(): void {
   const c = controller;
   if (!c) return;
+  // No battle yet (fresh boot → main menu): there is no current tank / economy / status to
+  // mirror, so skip the whole per-frame HUD sync until the first match starts.
+  if (!c.isStarted()) return;
   // Safety net: if the depot is open but buying is no longer allowed (the turn moved on — e.g. a
   // server turn hand-off in a net match), close it so a stale depot can't buy/sell for another tank.
   if (showDepot.value && !c.canOpenDepot()) closeDepot();

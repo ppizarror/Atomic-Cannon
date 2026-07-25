@@ -214,6 +214,8 @@ export interface Strings {
     tooSmallEnlarge: string;
     /** `{w}` x `{h}` current. */
     tooSmallCurrent: string;
+    /** Loading screen caption shown while a match's textures load (animated dots are appended). */
+    loading: string;
   };
 
   // ── Pause menu ────────────────────────────────────────────────────────────

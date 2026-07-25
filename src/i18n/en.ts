@@ -300,6 +300,7 @@ export const en: Strings = {
     tooSmallSize: '{w} x {h} pixels to play.',
     tooSmallEnlarge: 'Enlarge the window to continue.',
     tooSmallCurrent: 'Current:  {w} x {h}',
+    loading: 'Loading',
   },
 
   pause: {
