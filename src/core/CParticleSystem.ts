@@ -505,6 +505,12 @@ export class CParticleSystem {
    *             dirt shower / radiation specks in CLand).
    * `presetName` (particles.json) drives the fireball's colour/density/speed/spread.
    */
+  /** The generic coloured fireball ring — `count` flares on a fixed speed/life/size/colour tail.
+   *  Shared by the dirt-deposit blast and the fiery non-preset blast so the magic tail can't drift. */
+  private emitFireballRing(x: number, y: number, r: number, count: number, c: RGB): void {
+    this.emitRadial(x, y, count, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
+  }
+
   blast(
     x: number,
     y: number,
@@ -560,7 +566,7 @@ export class CParticleSystem {
     // original's blast over the small crater they cut) but skip the heavy fire/ejecta of a fiery bomb.
     if (deposit) {
       if (preset) this.emitPreset(x, y, r, preset);
-      else this.emitRadial(x, y, Math.round(r * 1.2) + 22, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare'); // prettier-ignore
+      else this.emitFireballRing(x, y, r, Math.round(r * 1.2) + 22, c);
       this.ventCrater(x, y, r);
       return;
     }
@@ -585,7 +591,7 @@ export class CParticleSystem {
       } else {
         const ring = Math.round(r * 1.2) + (nuclear ? 70 : 22);
         const n = big ? ring : Math.round(ring * 0.35);
-        this.emitRadial(x, y, n, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
+        this.emitFireballRing(x, y, r, n, c);
         if (big) this.emitRadial(x, y, ring * 2, 25, 110, 0.5, 1.1, r * 0.11 + 2, c, 'flare');
       }
       if (big) {

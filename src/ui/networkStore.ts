@@ -5,7 +5,7 @@
  * messages is wired in a later phase (`onGameMessage` below).
  */
 import {signal} from '@preact/signals';
-import {RoomClient, type RoomClientState} from '../net/roomClient';
+import {RoomClient, DEFAULT_SETTINGS, type RoomClientState} from '../net/roomClient';
 import type {MatchConfig} from '../net/protocol';
 import {NetGame} from '../net/netGame';
 import {normalizeRoomCode, isValidRoomCode} from '../net/roomCode';
@@ -20,15 +20,7 @@ const initialState: RoomClientState = {
   code: '',
   youId: null,
   players: [],
-  settings: {
-    maxPlayers: 6,
-    minPlayers: 2,
-    battles: 2,
-    wind: 1,
-    mapSize: 2,
-    tanksPerTeam: 1,
-    alternateTurns: false,
-  },
+  settings: {...DEFAULT_SETTINGS},
   config: null,
   isHost: false,
   lastError: null,

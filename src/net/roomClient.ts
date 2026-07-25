@@ -56,7 +56,7 @@ export interface RoomClientOptions {
   onGameMessage?: (msg: ServerMessage) => void;
 }
 
-const DEFAULT_SETTINGS: RoomSettings = {
+export const DEFAULT_SETTINGS: RoomSettings = {
   maxPlayers: 6,
   minPlayers: 2,
   battles: 2,

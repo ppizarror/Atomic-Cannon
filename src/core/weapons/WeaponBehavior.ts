@@ -100,9 +100,14 @@ export type FlyAction = 'continue' | 'detonate' | 'consumed';
 
 /** First live tank whose hit radius contains (x, y), or null. Point test — the swept walk in
  *  weaponFlyStep calls it per sub-step so a fast shot can't step clean over a tank between frames. */
-function tankAt(world: ShotWorld, x: number, y: number): CTank | null {
+function tankAt(shot: CShot, world: ShotWorld, x: number, y: number): CTank | null {
+  const owner = shot.getOwner();
   for (const t of world.tanks) {
-    if (t.isAlive() && t.distanceTo(x, y) < t.getHitRadius()) return t;
+    if (!t.isAlive() || t.distanceTo(x, y) >= t.getHitRadius()) continue;
+    // A shot can't detonate on its OWN tank until it has cleared the muzzle (see CShot arming) — else
+    // a low-power / down-slope shot self-detonates the instant it fires. Other tanks are always fair.
+    if (t === owner && !shot.hasLeftOwner()) continue;
+    return t;
   }
   return null;
 }
@@ -142,12 +147,14 @@ export function weaponFlyStep(
   // Every ext detonates on a tank hit (mine/sentry deploy only when they instead meet ground first),
   // so snapping is always followed by detonate/deploy — never a mutated position that keeps flying.
   let hit: CTank | null = null;
+  let hitK = 0; // the sub-step index of the tank contact (for tank-vs-terrain ordering in the default case)
   for (let k = 1; k <= subs && !hit; k++) {
     const sx = prev.x + (segX * k) / subs;
     const sy = prev.y + (segY * k) / subs;
-    const t = tankAt(world, sx, sy);
+    const t = tankAt(shot, world, sx, sy);
     if (t) {
       hit = t;
+      hitK = k;
       shot.setPosition(sx, sy);
       p = shot.getPosition();
     }
@@ -240,20 +247,32 @@ export function weaponFlyStep(
       }
       return hit ? 'detonate' : 'continue';
 
-    default:
-      // Ballistic (Shell/Bomb/Rocket/Dirt/Cleaner/NUKE/DOT/Organic/Missile/Tracer/Death).
-      if (hit) return 'detonate';
-      // Swept terrain: detonate at the FIRST sub-point the path crosses below the surface (snap the
-      // crater onto it), so a fast shot neither tunnels over a thin ridge nor detonates buried deep.
+    default: {
+      // Ballistic (Shell/Bomb/Rocket/Dirt/Cleaner/NUKE/DOT/Organic/Missile/Tracer/Death). Detonate at
+      // the EARLIER of the tank contact and the first terrain crossing along the swept segment — a fast
+      // shot must not tunnel through a ridge to hit a tank sitting behind it. Snap the crater onto it.
+      let terrK = -1;
+      let terrX = 0;
+      let terrY = 0;
       for (let k = 1; k <= subs; k++) {
         const sx = prev.x + (segX * k) / subs;
         const sy = prev.y + (segY * k) / subs;
         if (sy >= land.getHeightAt(Math.floor(sx)) - 4) {
-          shot.setPosition(sx, sy);
-          return 'detonate';
+          terrK = k;
+          terrX = sx;
+          terrY = sy;
+          break;
         }
       }
+      // Tank first (or tied): the sweep already snapped the shot to the tank contact. Terrain first
+      // (or the only contact): re-snap the crater onto the ridge/ground it hit.
+      if (hit && (terrK < 0 || hitK <= terrK)) return 'detonate';
+      if (terrK >= 0) {
+        shot.setPosition(terrX, terrY);
+        return 'detonate';
+      }
       return 'continue';
+    }
   }
 }
 
@@ -440,6 +459,17 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   const fodder = weapon.getFodder();
   const crackle = weapon.getCrackle();
 
+  // Burnt-rim scorch scaled by `crackle` (skipped when it's 0); `craterR` differs per branch.
+  const scorchRim = (craterR: number) => {
+    if (crackle > 0) {
+      land.scorch(
+        Math.floor(pos.x),
+        Math.floor(surfaceY),
+        Math.round(craterR * (0.4 + crackle * 0.85)),
+      );
+    }
+  };
+
   // Terrain effect.
   const earth = weapon.getEarth();
   if (earth > 0) {
@@ -470,13 +500,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // `radius`, vs the narrow `size` bore) and let its overburden cave in.
     const craterR = Math.round(radiusPx);
     land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), craterR);
-    if (crackle > 0) {
-      land.scorch(
-        Math.floor(pos.x),
-        Math.floor(surfaceY),
-        Math.round(craterR * (0.4 + crackle * 0.85)),
-      );
-    }
+    scorchRim(craterR);
     // Cosmetic dirt spray only (deposit=false): a BURIED digger blast displaces its dirt into
     // its own cave-in crater, it doesn't fountain depositing earth onto the surface. Depositing
     // chunks here landed on the still-caving crater/trench columns and stranded as "floating dirt".
@@ -499,13 +523,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     land.carveDiscCollapse(Math.floor(pos.x), Math.floor(pos.y), craterR, true, false, true);
     // SCORCH is driven by the weapon's `crackle` (burnt-rim intensity) — a Shell (crackle 0)
     // leaves no burn; a nuke (0.7) scorches wide. Scaled by crackle, skipped when it's 0.
-    if (crackle > 0) {
-      land.scorch(
-        Math.floor(pos.x),
-        Math.floor(surfaceY),
-        Math.round(craterR * (0.4 + crackle * 0.85)),
-      );
-    }
+    scorchRim(craterR);
     // DEBRIS/ejecta count is driven by the weapon's `fodder` (how much dirt it kicks up) — a
     // Shell (fodder 0) throws almost none, a nuke (0.5) throws a huge spray. The chunks fly out and
     // settle, each RAISING its landing column → rim mounds (the smoothing pass rounds them).

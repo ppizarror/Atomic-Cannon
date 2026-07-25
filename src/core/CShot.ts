@@ -173,6 +173,20 @@ export class CShot {
     this.m_prevY = this.m_pos.y;
     this.m_prevX = this.m_pos.x;
 
+    // Arm against the OWNER: a shot may not detonate on the tank that fired it until it has cleared
+    // that tank's hit radius. Checked on the START-of-frame position (before advancing) so the frame
+    // it crosses OUT still can't self-hit near the barrel — the swept collision runs after this and
+    // samples from the muzzle outward. Without it a low-power / down-slope shot self-detonates the
+    // instant it fires (the muzzle sits inside the owner's 16px radius). A rebounder that comes back
+    // can still hit the owner (already armed); a Death round's blast still catches the firer.
+    if (
+      !this.m_leftOwner &&
+      this.m_owner &&
+      this.m_owner.distanceTo(this.m_pos.x, this.m_pos.y) >= this.m_owner.getHitRadius()
+    ) {
+      this.m_leftOwner = true;
+    }
+
     // Gravity + wind scale with the world (√worldScale) exactly like the launch speed, so the
     // whole trajectory is one uniform physics zoom — a full-power shot keeps its reach and arc
     // shape on big maps instead of falling short. Flight time stays constant (speed & gravity
@@ -212,6 +226,12 @@ export class CShot {
 
   isAntiGrav(): boolean {
     return this.m_antiGrav;
+  }
+
+  /** True once the shot has cleared its owner's hit radius — before this it can't detonate on the
+   *  firing tank (prevents a muzzle-adjacent self-detonation; the swept collision consults it). */
+  hasLeftOwner(): boolean {
+    return this.m_leftOwner;
   }
 
   /** Rebounder state: true once the shot has jetted up out of terrain and is falling back down. */
@@ -415,6 +435,7 @@ export class CShot {
   private m_generation: number = 0;
   private m_antiGrav: boolean = false;
   private m_rebounded: boolean = false;
+  private m_leftOwner: boolean = false; // has the shot cleared its owner's hit radius (armed vs owner)?
   private m_prevY: number = 0;
   private m_prevX: number = 0;
   private m_movingDown: boolean = false;

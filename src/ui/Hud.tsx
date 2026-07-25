@@ -321,7 +321,7 @@ function WindReadout() {
 // position in the (possibly filtered) displayed list, so selection and highlight
 // stay correct regardless of how the list is scoped.
 function WeaponPreview() {
-  const wp = weapons.value.find(w => w.index === weaponIndex.value) ?? weapons.value[0];
+  const wp = currentWeapon();
   return (
     <div class="ov weapon-preview" style={pos(R.wicon)}>
       {wp && <WeaponIcon name={wp.icon} size={32} cls="wbig" />}

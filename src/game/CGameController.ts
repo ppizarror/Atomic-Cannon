@@ -1270,10 +1270,7 @@ export class CGameController implements ShotWorld {
     // (debris slumping, a knocked-up tank still falling) instead of easing toward the shooter early; and
     // it does NOT hold during a Move drive (that's Battle state), so the camera follows the driving tank.
     // Once the turn hands off, state is Battle and we follow the new current tank — no crater smoke lag.
-    if (
-      this.m_gameState === EGameState.ShotFlying ||
-      this.m_gameState === EGameState.Explosion
-    ) {
+    if (this.m_gameState === EGameState.ShotFlying || this.m_gameState === EGameState.Explosion) {
       return this.m_lastImpactX;
     }
     return this.getCurrentTank().getPosition().x;
@@ -1910,6 +1907,7 @@ export class CGameController implements ShotWorld {
    */
   private drawMoveArea(ctx: CanvasRenderingContext2D): void {
     if (this.m_gameState !== EGameState.Battle) return;
+    if (this.m_moveResolving) return; // a placed move is resolving → never flash the band back
     const tank = this.getCurrentTank();
     if (!tank.isAlive() || !tank.isHuman()) return;
     if (tank.isMoving()) return; // the drive has started (spot clicked) → hide the band + hint
@@ -3340,6 +3338,7 @@ export class CGameController implements ShotWorld {
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
     this.m_movePlacing = false; // a fresh turn is never mid-placement
+    this.m_moveResolving = false; // fresh turn: no committed move drive in flight
     this.m_turnForfeited = false; // fresh turn: the passive-death forfeit latch is re-armed
     // Disown any aim drag held from the PREVIOUS turn. A shot-clock forfeit ends the turn with no user
     // action, so a pointer still held would otherwise keep aiming the NEW current tank: the world drag
@@ -4551,6 +4550,7 @@ export class CGameController implements ShotWorld {
     // its first action, adopt a snapshot it should detect). endTurn clears it once waitForRest
     // settles — the same seam fire() uses. Covers placeMove, the peer replay (commandMoveTo) and bots.
     if (this.m_netMode) this.m_netShotResolving = true;
+    this.m_moveResolving = true; // committed drive → keep the green move-area hidden until turn-begin
     tank.startDrive(clamped);
     this.m_gameState = EGameState.Battle;
     this.waitForRest(tank, tank.getPosition().x, 0);
@@ -6151,6 +6151,10 @@ export class CGameController implements ShotWorld {
   // Move utility: FIRE arms "click-to-place" mode — the move band brightens, the cursor turns to a
   // hand, and the next click in the band drives the tank there (placeMove). Reset on weapon/turn change.
   private m_movePlacing = false;
+  // A committed Move drive is resolving (tank driving to its placed spot, turn about to end). Keeps the
+  // green move-AREA hidden through the gap between the drive stopping and endTurn firing — otherwise the
+  // band flashes back for a frame or two (up to one waitForRest poll). Cleared on turn-begin.
+  private m_moveResolving = false;
   // Last known mouse position in world coords (for hover-detail on tank badges).
   private m_mouse: {x: number; y: number} = {x: -1, y: -1};
 

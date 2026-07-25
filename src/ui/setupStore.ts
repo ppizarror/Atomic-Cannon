@@ -6,6 +6,7 @@
  * (Game Type / Battles / Rounds / Land Size / Difficulty / Wind) live in settingsStore.
  */
 import {createPersistedSignal} from './persistedSignal';
+import {clamp} from '../math/num';
 import {ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 
 const KEY = 'atomic.setup';
@@ -33,7 +34,7 @@ export interface Setup {
 // from an older schema (or any bad input) never yields NaN.
 const clampInt = (v: unknown, min: number, max: number, dflt: number): number => {
   const n = Math.round(Number(v));
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : dflt;
+  return Number.isFinite(n) ? clamp(n, min, max) : dflt;
 };
 
 const clampSetup = (s: Partial<Setup>): Setup => ({

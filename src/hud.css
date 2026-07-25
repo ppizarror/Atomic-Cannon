@@ -35,6 +35,9 @@
   --bg-base: #10141a;
   --steel-plate: var(--bg-base) url('/assets/panels/steel.webp') center / cover no-repeat;
   --title-plate: var(--bg-base) url('/assets/panels/title.webp') top center / cover no-repeat;
+  /* Title plate darkened with a flat black wash (Settings / Network screens read text over it). */
+  --title-plate-dim:
+    linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
 
   /* Text inks — dark label on metal (buttons/selected rows), light text on dark panels. */
   --ink-metal: #14171a;
@@ -128,7 +131,9 @@ canvas {
 .mainmenu,
 .settings-screen,
 .editor-screen,
-.war-standings {
+.war-standings,
+.highscores,
+.net-screen {
   position: fixed;
   inset: 0;
   z-index: var(--z-screen);
@@ -1263,13 +1268,8 @@ canvas {
 /* A full steel-plate screen (like War Standings, but standalone): title, Top-10
    board, medal footer. Click anywhere to return to the menu. */
 .highscores {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-screen);
+  /* full-screen scaffold shared above; only the unique backdrop + layout below */
   background: var(--steel-plate);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: flex-start;
   gap: 8px;
   padding: 5vh 2vw calc(var(--hud-h) + 3vh);
@@ -1340,8 +1340,10 @@ canvas {
   image-rendering: pixelated;
 }
 
-/* Click-to-return prompt on the bottom black HUD bar (mirrors the war-standings prompt). */
-.hs-prompt {
+/* Click-to-return prompt on the bottom black HUD strip — shared by the High Scores and
+   War Standings screens (identical rules). */
+.hs-prompt,
+.war-prompt {
   position: absolute;
   left: 0;
   right: 0;
@@ -1564,7 +1566,7 @@ canvas {
   /* Same title backdrop as the main menu (the chrome "ATOMIC CANNON" logo is baked
      in), darkened with a flat black wash so the white-outlined options read clearly.
      The brushed-steel plate is reserved for the deeper editor sub-screens. */
-  background: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
+  background: var(--title-plate-dim);
   /* Reserve the bottom band for the absolute subtitle so the scroll host stops above it. */
   padding: 2vh 0 9vh;
 }
@@ -1699,20 +1701,6 @@ canvas {
   margin-top: 2px;
   text-transform: uppercase;
 }
-/* "Click anywhere to play next battle." — pinned to the bottom black HUD strip
-   (the hidden control panel's area), centred within it, like the legacy screen. */
-.war-prompt {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--hud-h);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.9;
-}
-
 /* ==================== Game Content enable-list editors (steel) ==================== */
 .editor-screen {
   background: var(--steel-plate);
@@ -1903,13 +1891,8 @@ canvas {
    underneath, and (being an opaque covering layer) captures pointer input so a
    drag can't aim/fire the battle behind it. Same darkened title plate as Settings. */
 .net-screen {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-screen);
-  background: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  /* full-screen scaffold shared above; only the unique backdrop + layout below */
+  background: var(--title-plate-dim);
   justify-content: flex-start;
   overflow-y: auto;
 }

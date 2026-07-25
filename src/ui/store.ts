@@ -42,6 +42,20 @@ function refreshEconomy(): void {
   mapName.value = c.getMapName();
 }
 
+/** Freeze the battle sim behind a modal overlay (depot / pause / help): halt the shot-timer AND
+ *  suspend the AudioContext. Paired with {@link unfreezeSim}. (goToMenu deliberately does NOT use
+ *  these — it unpauses audio while keeping the render loop frozen; see there.) */
+function freezeSim(): void {
+  game().setPaused(true);
+  paused.value = true;
+}
+
+/** Resume the sim after a {@link freezeSim}: run update() again and un-suspend audio. */
+function unfreezeSim(): void {
+  game().setPaused(false);
+  paused.value = false;
+}
+
 /** Open/close the depot (refreshes the economy snapshot on open). Gated by Economy → Buy
  *  Time: no-op when the current player isn't allowed to buy right now. Reads the live
  *  controller (not the once-per-frame `canBuyNow` signal, which may be stale at open time). */
@@ -51,16 +65,14 @@ export function openDepot(): void {
   // Freeze the sim while shopping (as Help does) so the shot-timer can't drain — and, more
   // importantly, can't FORFEIT the turn out from under the open depot, which would then leave it
   // buying/selling against whoever's turn it became (credits are per-tank).
-  game().setPaused(true);
-  paused.value = true;
+  freezeSim();
   showDepot.value = true;
   uiOpen();
 }
 
 export function closeDepot(): void {
   showDepot.value = false;
-  game().setPaused(false);
-  paused.value = false;
+  unfreezeSim();
   uiClose();
 }
 
@@ -71,8 +83,7 @@ export const showPause = signal(false);
 export function openPauseMenu(): void {
   if (screen.value !== 'battle') return;
   showDepot.value = false; // never leave the depot open behind the pause menu
-  game().setPaused(true);
-  paused.value = true;
+  freezeSim();
   showPause.value = true;
   uiOpen();
 }
@@ -80,8 +91,7 @@ export function openPauseMenu(): void {
 /** Resume: close the pause menu and unfreeze the sim. */
 export function resumeGame(): void {
   showPause.value = false;
-  game().setPaused(false);
-  paused.value = false;
+  unfreezeSim();
   uiClose();
 }
 
@@ -92,8 +102,7 @@ export const showHelp = signal(false);
 /** Open the Help overlay and freeze the sim. */
 export function openHelp(): void {
   if (screen.value !== 'battle') return;
-  game().setPaused(true);
-  paused.value = true;
+  freezeSim();
   showHelp.value = true;
   uiOpen();
 }
@@ -101,8 +110,7 @@ export function openHelp(): void {
 /** Close Help and unfreeze the sim. */
 export function closeHelp(): void {
   showHelp.value = false;
-  game().setPaused(false);
-  paused.value = false;
+  unfreezeSim();
   uiClose();
 }
 
@@ -177,8 +185,7 @@ function enterBattle(players: number, humans: number, tanksPerTeam: number): voi
   game().getAudio()?.startGameSound(); // the "chunk" as the battle launches
   game().startGame(players); // also starts the battle music
   screen.value = 'battle';
-  game().setPaused(false);
-  paused.value = false;
+  unfreezeSim();
 }
 
 /** Start a battle from the current (persisted) Play setup — the Start Game button.
