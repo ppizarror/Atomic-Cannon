@@ -1245,10 +1245,18 @@ export class CParticleSystem {
       this.blitGlow(ctx, p.x, p.y, glow, p.r, p.g, p.b, alpha);
     }
 
-    // Beam flashes — a soft coloured halo line under a thin white-hot core. The
-    // bolt SHOOTS OUT from the muzzle: the tip races to the target over the first
-    // ~35% of the life, then the full line holds and fades (a fired beam, not an
-    // instant pop). A bright head rides the advancing tip while it's extending.
+    this.drawBeams(ctx);
+
+    ctx.globalCompositeOperation = prev;
+  }
+
+  /**
+   * Beam flashes — a soft coloured halo line under a thin white-hot core. The bolt SHOOTS OUT
+   * from the muzzle: the tip races to the target over the first ~35% of the life, then the full
+   * line holds and fades (a fired beam, not an instant pop). A bright head rides the advancing
+   * tip while it's extending.
+   */
+  private drawBeams(ctx: CanvasRenderingContext2D): void {
     for (const b of this.m_beams) {
       const t = b.age / b.life;
       if (t >= 1) continue;
@@ -1310,8 +1318,6 @@ export class CParticleSystem {
         ctx.fill();
       }
     }
-
-    ctx.globalCompositeOperation = prev;
   }
 
   hasActiveExplosions(): boolean {

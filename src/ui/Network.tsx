@@ -7,6 +7,7 @@
 import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
+import {BigButton} from './BigButton';
 import {Modal} from './Modal';
 import {goToMenu, uiMenuBack} from './store';
 import {formatRoomCode, formatCodeInput} from '../net/roomCode';
@@ -23,22 +24,6 @@ import {
   leaveRoom,
   resetNet,
 } from './networkStore';
-
-function BigButton({
-  label,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button class="settings-row srow-done menu-btn" disabled={disabled} onClick={onClick}>
-      <BmpText font="bazouk-28" text={label} />
-    </button>
-  );
-}
 
 function toMenu(): void {
   resetNet();
@@ -370,9 +355,7 @@ function MatchSettingsDialog({onClose}: {onClose: () => void}) {
         )}
       </div>
 
-      <button class="settings-row srow-done menu-btn" onClick={onClose}>
-        <BmpText font="bazouk-28" text={host ? mi.done : mi.close} />
-      </button>
+      <BigButton label={host ? mi.done : mi.close} onClick={onClose} />
     </Modal>
   );
 }
@@ -427,9 +410,7 @@ function Lobby() {
       </button>
       {showInfo && <MatchSettingsDialog onClose={() => setShowInfo(false)} />}
 
-      <button class="settings-row srow-done menu-btn" onClick={() => setReady(!you?.ready)}>
-        <BmpText font="bazouk-28" text={you?.ready ? n.notReady : n.ready} />
-      </button>
+      <BigButton label={you?.ready ? n.notReady : n.ready} onClick={() => setReady(!you?.ready)} />
 
       {s.isHost ? (
         <BigButton label={n.start} onClick={startMatch} disabled={!canStart} />

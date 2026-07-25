@@ -521,6 +521,7 @@ export class CGameController implements ShotWorld {
       // (currentRound===1) would never fire. (The net path sets currentBattle itself; see startNetworkGame.)
       this.m_currentBattle = 1;
       this.m_currentRound = 1;
+      this.m_shotsFired = 0; // "Shot N" HUD counter — solo-only reset (net keeps it across a reconnect)
     }
 
     // Fix the LOGICAL world/view size for this match. Everything (heightmap length, tank
@@ -565,7 +566,8 @@ export class CGameController implements ShotWorld {
     // `at` is already in the past would otherwise all fire at once on this match's first update().
     this.m_timers = [];
     this.m_netAimDirty = false;
-    this.m_shotsFired = 0; // the "Shot N" HUD counter — reset per match (it was leaking all session)
+    this.m_lastImpactX = 0; // fresh camera focus (no stale prior-match impact)
+    this.m_camDwell = 0; // no Cinematic dwell carried across matches
     // Fresh per-match stat tally.
     this.m_stats = {
       weaponsFired: 0,
@@ -1283,6 +1285,12 @@ export class CGameController implements ShotWorld {
       this.m_camDwell > 0
     ) {
       return this.m_lastImpactX;
+    }
+    // Battle over: frame the VICTOR (their flag-raise + fireworks play out here), not whoever happened
+    // to act last — on a multi-viewport map the winning tank can be across the map. Draw → fall through.
+    if (this.m_gameState === EGameState.BattleEnd) {
+      const winner = this.getWinnerTank();
+      if (winner) return winner.getPosition().x;
     }
     return this.getCurrentTank().getPosition().x;
   }
@@ -3789,8 +3797,13 @@ export class CGameController implements ShotWorld {
     // ammo (from ITS own inventory): spectators just simulate the exact weapon the actor
     // relays below, so they must NOT gate on their (empty) copy of the actor's stock. Charging
     // is done BEFORE the relay so peers are told the FINAL weapon (post-staple-fallback).
+    // A Sentry reports isBot() (it isn't human), but it does NOT draw from an inventory — it fires the
+    // fixed weapon executeSentryTurn selected (Turret→Shell, Minigun→Machine Gun). Charging ammo would
+    // run ensureStocked, find no Machine-Gun rounds in the sentry's empty economy, and SWAP it back to
+    // the staple Shell — so the Minigun sentry fired a plain Shell. Exclude sentries from the ammo path.
     const chargeAmmo =
       !GameConfig.demo &&
+      !tank.isSentry() &&
       (tank.isHuman() || tank.isBot()) &&
       (!this.m_netMode || this.isLocalNetTurn());
     if (chargeAmmo) this.ensureStocked(tank);

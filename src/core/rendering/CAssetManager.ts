@@ -7,7 +7,7 @@
  */
 
 import type {Sprite, ISpriteSource} from './sprites';
-import {knockoutWhere} from '../../util/canvas';
+import {knockoutWhere, makeCanvas2d} from '../../util/canvas';
 
 type RGB = [number, number, number];
 
@@ -70,11 +70,7 @@ export class CAssetManager implements ISpriteSource {
 
   /** Draw the image to an offscreen canvas and zero the alpha of key pixels. */
   private applyColorKey(img: HTMLImageElement, key: RGB): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
-
-    const g = canvas.getContext('2d')!;
+    const {cv: canvas, ctx: g} = makeCanvas2d(img.width, img.height);
     g.drawImage(img, 0, 0);
 
     const image = g.getImageData(0, 0, canvas.width, canvas.height);

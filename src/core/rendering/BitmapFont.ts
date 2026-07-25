@@ -5,7 +5,7 @@
  * This reads those markers to slice glyphs, then colorkeys cyan+magenta away.
  */
 
-import {knockoutWhere} from '../../util/canvas';
+import {knockoutWhere, makeCanvas2d} from '../../util/canvas';
 
 const isMagenta = (px: Uint8ClampedArray, i: number) =>
   px[i] > 170 && px[i + 1] < 90 && px[i + 2] > 170;
@@ -101,10 +101,7 @@ export class BitmapFont {
   }
 
   private parse(img: HTMLImageElement): void {
-    const src = document.createElement('canvas');
-    src.width = img.width;
-    src.height = img.height;
-    const sg = src.getContext('2d', {willReadFrequently: true})!;
+    const {cv: src, ctx: sg} = makeCanvas2d(img.width, img.height, {willReadFrequently: true});
     sg.drawImage(img, 0, 0);
     const W = img.width,
       H = img.height;
@@ -122,10 +119,7 @@ export class BitmapFont {
     // Build the glyph atlas from rows 1..H-1 (drop the marker row), with the
     // cyan background and any stray magenta keyed out to transparent.
     const gh = H - 1;
-    const atlas = document.createElement('canvas');
-    atlas.width = W;
-    atlas.height = gh;
-    const ag = atlas.getContext('2d', {willReadFrequently: true})!;
+    const {cv: atlas, ctx: ag} = makeCanvas2d(W, gh, {willReadFrequently: true});
     ag.drawImage(src, 0, 1, W, gh, 0, 0, W, gh);
     const aim = ag.getImageData(0, 0, W, gh);
     const apx = aim.data;
@@ -183,10 +177,7 @@ export class BitmapFont {
     // No atlas yet (still loading, or the `.bmp` failed) → the catalog HTML fallback,
     // so callers always get a real sized canvas and never invent their own font.
     if (!this.ready || !src) return this.renderFallback(text);
-    const out = document.createElement('canvas');
-    out.width = this.measure(text, spacing);
-    out.height = this.height || 1;
-    const g = out.getContext('2d')!;
+    const {cv: out, ctx: g} = makeCanvas2d(this.measure(text, spacing), this.height || 1);
     let cx = 0;
     for (const c of text) {
       if (c === ' ') {

@@ -11,7 +11,7 @@
 import {useEffect, useState} from 'preact/hooks';
 import {strings} from '../i18n';
 import {settingsPageBack} from './store';
-import {BmpText} from './BmpText';
+import {BigButton} from './BigButton';
 import {SettingsScreen} from './SettingsScreen';
 import {getSettingsPage} from './settingsPages';
 import {WidgetRow} from './WidgetRow';
@@ -39,14 +39,12 @@ export function SettingsPage({id}: {id: string}) {
           {page.rows.map((w, i) => (
             <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
           ))}
-          <button
-            class="settings-row srow-done menu-btn"
-            onMouseEnter={() => setSub(strings.value.settings.pageDoneSub)}
-            onMouseLeave={() => setSub(null)}
+          <BigButton
+            label={strings.value.settings.pageDone}
+            onEnter={() => setSub(strings.value.settings.pageDoneSub)}
+            onLeave={() => setSub(null)}
             onClick={settingsPageBack}
-          >
-            <BmpText font="bazouk-28" text={strings.value.settings.pageDone} />
-          </button>
+          />
         </div>
       </ClassicScrollbar>
     </SettingsScreen>

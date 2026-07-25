@@ -12,7 +12,7 @@
 import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import type {RowCopy} from '../i18n';
-import {BmpText} from './BmpText';
+import {BigButton} from './BigButton';
 import {SettingsScreen} from './SettingsScreen';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
@@ -70,28 +70,24 @@ export function PlaySetup() {
       spacing={-1}
     >
       <div class="menu-list settings-rows">
-        <button
-          class="settings-row srow-done menu-btn"
+        <BigButton
+          label={p.startGame}
           disabled={!canStart}
-          onMouseEnter={() => setSub(p.startHint)}
-          onMouseLeave={() => setSub(null)}
+          onEnter={() => setSub(p.startHint)}
+          onLeave={() => setSub(null)}
           onClick={startBattle}
-        >
-          <BmpText font="bazouk-28" text={p.startGame} />
-        </button>
+        />
 
         {rows.map((w, i) => (
           <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
         ))}
 
-        <button
-          class="settings-row srow-done menu-btn"
-          onMouseEnter={() => setSub(p.cancelHint)}
-          onMouseLeave={() => setSub(null)}
+        <BigButton
+          label={p.cancel}
+          onEnter={() => setSub(p.cancelHint)}
+          onLeave={() => setSub(null)}
           onClick={backToMenu}
-        >
-          <BmpText font="bazouk-28" text={p.cancel} />
-        </button>
+        />
       </div>
     </SettingsScreen>
   );

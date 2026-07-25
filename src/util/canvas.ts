@@ -12,3 +12,22 @@ export function knockoutWhere(
     if (matches(px, i)) px[i + 3] = 0;
   }
 }
+
+/**
+ * Create a sized 2D canvas and its context in one call — the `createElement('canvas')` +
+ * set width/height + `getContext('2d')` boilerplate that recurs across the renderers.
+ * `willReadFrequently` keeps the backing store CPU-side for `getImageData`-heavy canvases.
+ * Asserts the context is non-null (always true in a browser); headless code paths that must
+ * tolerate a missing 2D context keep their own explicit null-guarded form.
+ */
+export function makeCanvas2d(
+  w: number,
+  h: number,
+  opts?: CanvasRenderingContext2DSettings,
+): {cv: HTMLCanvasElement; ctx: CanvasRenderingContext2D} {
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext('2d', opts)!;
+  return {cv, ctx};
+}

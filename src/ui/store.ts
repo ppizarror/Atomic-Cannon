@@ -18,7 +18,7 @@ import {setup, playersOf} from './setupStore';
 import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
 import {postGameStats} from '../net/stats';
 import {wrapIndex} from '../math/num';
-import {knockoutWhere} from '../util/canvas';
+import {knockoutWhere, makeCanvas2d} from '../util/canvas';
 
 export type Screen =
   'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'setup' | 'highscores' | 'network';
@@ -581,10 +581,7 @@ function loadColorKeyedBmp(
   const p = new Promise<string | null>(resolve => {
     const img = new Image();
     img.onload = () => {
-      const cv = document.createElement('canvas');
-      cv.width = img.width;
-      cv.height = img.height;
-      const g = cv.getContext('2d')!;
+      const {cv, ctx: g} = makeCanvas2d(img.width, img.height);
       g.drawImage(img, 0, 0);
       const im = g.getImageData(0, 0, cv.width, cv.height);
       const px = im.data;

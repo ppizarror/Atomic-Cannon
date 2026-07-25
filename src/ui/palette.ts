@@ -4,6 +4,7 @@
  * and recolour a tank sprite to a chosen colour for the live preview (the same
  * luminance-modulated recolour the engine applies to hulls).
  */
+import {makeCanvas2d} from '../util/canvas';
 
 const PALETTE_URL = '/assets/gui/color pallette.bmp';
 
@@ -28,10 +29,7 @@ export function loadPalette(): Promise<ImageData | null> {
   if (paletteLoading) return paletteLoading;
   paletteLoading = loadImage(PALETTE_URL)
     .then(img => {
-      const cv = document.createElement('canvas');
-      cv.width = img.width;
-      cv.height = img.height;
-      const g = cv.getContext('2d', {willReadFrequently: true})!;
+      const {cv, ctx: g} = makeCanvas2d(img.width, img.height, {willReadFrequently: true});
       g.imageSmoothingEnabled = false;
       g.drawImage(img, 0, 0);
       paletteData = g.getImageData(0, 0, cv.width, cv.height);
@@ -92,10 +90,7 @@ const KEY_TOLERANCE = 24;
 // background to transparency so the preview has no box. Shared by hull + turret.
 async function recolorToCanvas(url: string, hex: string): Promise<HTMLCanvasElement> {
   const img = await loadImage(url);
-  const cv = document.createElement('canvas');
-  cv.width = img.width;
-  cv.height = img.height;
-  const g = cv.getContext('2d', {willReadFrequently: true})!;
+  const {cv, ctx: g} = makeCanvas2d(img.width, img.height, {willReadFrequently: true});
   g.imageSmoothingEnabled = false;
   g.drawImage(img, 0, 0);
   const im = g.getImageData(0, 0, cv.width, cv.height);
@@ -151,10 +146,7 @@ export async function recolorTankPreview(model: string, hex: string): Promise<st
   const tl = turLen * S;
   const tt = (turret.height / turret.width) * tl;
 
-  const cv = document.createElement('canvas');
-  cv.width = 150;
-  cv.height = 110;
-  const g = cv.getContext('2d')!;
+  const {cv, ctx: g} = makeCanvas2d(150, 110);
   g.imageSmoothingEnabled = false;
   const cx = cv.width / 2;
   const groundY = cv.height - 6;
