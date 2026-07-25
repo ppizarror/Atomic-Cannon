@@ -24,13 +24,16 @@ rooms hibernate, so cost is ~$0 for normal play (see `MULTIPLAYER.md` §7).
 ## Deploy
 
 ```bash
-pnpm build          # produce dist/ (the client the Worker serves)
-pnpm deploy:net     # wrangler deploy
+./scripts/deploy.sh     # auth-check → build → deploy (recommended)
+# — or the raw steps —
+pnpm build              # produce dist/ (the client the Worker serves)
+pnpm deploy:net         # wrangler deploy
 ```
 
 The first deploy automatically applies the Durable Object migration (`v1`,
-`new_sqlite_classes: ["Room"]`) — no manual step. Wrangler prints the live URL,
-`https://atomic-cannon-net.<your-subdomain>.workers.dev`.
+`new_sqlite_classes: ["Room"]`) — no manual step. By default the Worker serves from a
+`*.workers.dev` URL, which wrangler prints at the end; to serve from your own domain
+instead, see "Custom domain" below.
 
 Verify: open that URL, **Network Game → Create**, copy the code, open the URL in a
 second window/browser, **Join** with the code. You should land in the same lobby and,
@@ -47,17 +50,38 @@ after **Start**, play a synced match.
 Server-side guards already in place: version check on join, per-room `maxPlayers`,
 turn-ownership validation, a 128 KB frame-size cap, and the room-creation rate limit.
 
-## Custom domain (optional)
+## Custom domain
 
-If the domain is on this Cloudflare account, uncomment in `wrangler.jsonc`:
+`wrangler.jsonc` is intentionally **domain-agnostic** so the public repo reveals no
+hostname — out of the box the Worker serves from `*.workers.dev`. To serve from your own
+domain, keep the hostname in a local, gitignored file instead of committing it:
+
+```bash
+cp scripts/deploy.env.example scripts/deploy.env
+# edit scripts/deploy.env → DEPLOY_HOSTNAME=atomic.example.com
+./scripts/deploy.sh
+```
+
+When `DEPLOY_HOSTNAME` is set (env var or `scripts/deploy.env`), `deploy.sh` injects a
+`custom_domain` route into a throwaway config copy and deploys that:
 
 ```jsonc
-"routes": [{"pattern": "atomic.example.com", "custom_domain": true}],
+"routes": [{"pattern": "<your-host>", "custom_domain": true}],
 "workers_dev": false,
 ```
 
-then `pnpm deploy:net` again. (`workers_dev: false` turns off the `*.workers.dev` URL
-once your domain is live.)
+Requirements & effects:
+
+- The domain's **zone must be active on the same Cloudflare account** you deploy with
+  (its nameservers pointed at Cloudflare).
+- `custom_domain: true` auto-provisions the DNS record + TLS cert on first deploy — no
+  manual DNS step (the cert can take a minute to go green).
+- `workers_dev: false` turns off the `*.workers.dev` URL, so the game is reachable **only**
+  at your domain.
+
+`scripts/deploy.env` and the generated `.wrangler.deploy.jsonc` are gitignored, so the
+hostname never lands in git. `wrangler dev` / `pnpm dev:net` ignore all of this and run
+locally as before.
 
 ## Cost & monitoring
 

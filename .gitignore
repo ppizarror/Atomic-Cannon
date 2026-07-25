@@ -11,5 +11,9 @@ dist/
 node_modules
 scripts/
 
+# Deploy: local hostname + the throwaway config deploy.sh generates from it
+scripts/deploy.env
+.wrangler.deploy.jsonc
+
 # Public assets
 public/

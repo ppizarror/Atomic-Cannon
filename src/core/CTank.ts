@@ -440,29 +440,6 @@ export class CTank {
   }
 
   /**
-   * Move tank along terrain surface
-   */
-  move(pLand: CLand, vDirection: Vec2, fSpeed: number): void {
-    if (!this.m_bIsAlive) return;
-
-    // Calculate new position
-    const nNewX = this.m_vPos.x + vDirection.x * fSpeed;
-
-    // Get terrain height at new x position
-    const nTerrainHeight = pLand.getHeightAt(Math.floor(nNewX));
-
-    // Tank should be on terrain surface
-    this.m_vPos.x = nNewX;
-    this.m_vPos.y = nTerrainHeight - tankHeight();
-
-    this.m_bIsMoving = true;
-
-    // Set body angle to slope of terrain at position
-    const normal = pLand.getNormal(Math.floor(nNewX));
-    this.m_fAngle = Math.atan2(normal.x, -normal.y);
-  }
-
-  /**
    * Stop tank movement
    */
   stopMoving(): void {
@@ -1025,13 +1002,6 @@ export class CTank {
   // ========================================================================
 
   /**
-   * Get current turret rotation angle
-   */
-  getTurretAngle(): number {
-    return this.m_fTurretAngle;
-  }
-
-  /**
    * Aim the turret from a UI angle in degrees measured counter-clockwise from
    * horizontal-right: 0 = right, 90 = straight up, 180 = left, and NEGATIVE
    * values point below the horizon (e.g. -45 = down-right). Stored directly as
@@ -1093,17 +1063,6 @@ export class CTank {
     const aim = new Vec2(Math.cos(r), -Math.sin(r));
     const pivot = this.getTurretPivot();
     return new Vec2(pivot.x + aim.x * turretLen(), pivot.y + aim.y * turretLen());
-  }
-
-  /**
-   * Set turret aim direction (called from player input or AI)
-   */
-  setRelativeTurret(fDelta: number): void {
-    this.m_fLastTurretAngle = this.m_fTurretAngle;
-    this.m_fTurretAngle += fDelta;
-
-    // Clamp to valid range
-    this.m_fTurretAngle = clamp(this.m_fTurretAngle, -Math.PI / 2, Math.PI / 2);
   }
 
   // ========================================================================

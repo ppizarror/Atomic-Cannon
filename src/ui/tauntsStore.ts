@@ -76,11 +76,6 @@ export function tauntLines(cat: TauntCategory): string[] {
   return overrides.value[cat] ?? DEFAULTS(cat);
 }
 
-/** The verbatim shipped defaults (for the "Reset to defaults" action). */
-export function defaultTaunts(cat: TauntCategory): string[] {
-  return DEFAULTS(cat);
-}
-
 /** Replace a category's list (the raw editor draft — blanks are kept for editing but
  *  filtered before they reach gameplay). Persisted + pushed to the engine at once. */
 export function setTauntLines(cat: TauntCategory, lines: string[]): void {

@@ -12,6 +12,3 @@ export const between = (a: number, b: number): number => a + (b - a) * Math.rand
 
 /** Symmetric jitter: uniform in [-x, x]. */
 export const plusMinus = (x: number): number => (Math.random() * 2 - 1) * x;
-
-/** Random sign, -1 or +1 with equal probability. */
-export const randSign = (): number => (Math.random() < 0.5 ? -1 : 1);

@@ -702,6 +702,9 @@ export class CLand {
     this.m_terrainDirty = true;
   }
 
+  /** Column span touched since the last render. NOTE: the min/max region is currently only read
+   *  here — the renderer redraws on the `m_terrainDirty` boolean — so the span tracking (this +
+   *  `preBlast`'s args) is a dormant partial-redraw hook. Kept wired for that future optimisation. */
   getDirtyRegion(): {min: number; max: number} {
     return {min: this.m_dirtyMin, max: this.m_dirtyMax};
   }
@@ -1410,10 +1413,6 @@ export class CLand {
     const h1 = this.m_arrHeights[ix + 1];
 
     return Math.floor(h0 + (h1 - h0) * frac);
-  }
-
-  isUnderground(x: number, y: number): boolean {
-    return y >= this.getHeightAt(x);
   }
 
   getNormal(x: number): Vec2 {

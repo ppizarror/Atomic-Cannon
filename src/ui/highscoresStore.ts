@@ -92,8 +92,3 @@ export function recordBattleOutcome(won: boolean): void {
   const d = heroData.value;
   persist(won ? {...d, won: d.won + 1} : {...d, lost: d.lost + 1});
 }
-
-/** Wipe both boards and the win/loss tally (a future "clear" affordance). */
-export function resetBattleHeroes(): void {
-  persist({score: [], kills: [], won: 0, lost: 0});
-}

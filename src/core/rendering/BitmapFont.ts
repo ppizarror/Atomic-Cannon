@@ -31,15 +31,32 @@ const ASCII_FOLD: Record<string, string> = {
   '”': '"', // right double quote
   ' ': ' ', // non-breaking space
   // Spanish stuff
-  'Á': 'A', 'á': 'a',
-  'É': 'E', 'é': 'e',
-  'Í': 'I', 'í': 'i',
-  'Ó': 'O', 'ó': 'o',
-  'Ú': 'U', 'ú': 'u',
-  'Ñ': 'N', 'ñ': 'n',
+  Á: 'A',
+  á: 'a',
+  É: 'E',
+  é: 'e',
+  Í: 'I',
+  í: 'i',
+  Ó: 'O',
+  ó: 'o',
+  Ú: 'U',
+  ú: 'u',
+  Ñ: 'N',
+  ñ: 'n',
+  Ü: 'U',
+  ü: 'u', // diéresis (pingüino)
+  '¿': '?', // inverted question → upright ASCII
+  '¡': '!', // inverted exclamation → upright ASCII
 };
-export const asciiFold = (text: string): string =>
-  text.replace(/[‒-―…·‘’“” ]/g, m => ASCII_FOLD[m] ?? m);
+// Build the match set FROM the map keys so the two can never drift — add an ASCII_FOLD entry and it is
+// folded automatically. Keys are accented letters / punctuation; escape the class metacharacters (]\^-).
+const FOLD_RE = new RegExp(
+  `[${Object.keys(ASCII_FOLD)
+    .join('')
+    .replace(/[\]\\^-]/g, '\\$&')}]`,
+  'g',
+);
+export const asciiFold = (text: string): string => text.replace(FOLD_RE, m => ASCII_FOLD[m] ?? m);
 
 // Cap the per-string label caches (oldest-evicted). Fonts live for the whole page session, and
 // numeric readouts ("Credits: 12345", "Life: 87") mint a fresh entry per distinct value — over a

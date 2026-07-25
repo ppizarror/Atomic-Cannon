@@ -544,31 +544,6 @@ canvas {
   }
 }
 
-/* ---- full-screen overlays (menu / settings / depot) — layout from .overlay ---- */
-.screen-overlay {
-  z-index: var(--z-overlay);
-  background: var(--overlay-scrim);
-}
-
-.screen-card {
-  background: var(--metal-grad-deep);
-  border: 2px solid #3a3f45;
-  border-radius: 10px;
-  padding: 30px 44px;
-  text-align: center;
-  color: var(--ink-metal);
-  box-shadow: var(--shadow-card);
-}
-
-.screen-card h1 {
-  margin-bottom: 8px;
-}
-
-.screen-card p {
-  margin-bottom: 18px;
-  color: #2a2f34;
-}
-
 /* FPS counter (Show Framerate) — top-right corner, outlined bitmap font. */
 #fps-hud {
   position: fixed;
@@ -1964,13 +1939,6 @@ canvas {
   text-transform: uppercase;
   font-size: 18px;
 }
-.net-actions {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  justify-content: center;
-  flex-wrap: wrap;
-}
 .net-divider {
   width: 100%;
   height: 1px;
@@ -2033,18 +2001,6 @@ canvas {
 }
 
 /* Host lobby match settings (wind / map size). */
-.net-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--green-line);
-}
-.net-set-title {
-  opacity: 0.75;
-}
 .net-set-row {
   display: flex;
   align-items: center;
@@ -2118,18 +2074,6 @@ canvas {
   overflow-y: auto;
   min-height: 0;
   flex: 1 1 auto;
-}
-.net-info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 5px 10px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--green-line);
-}
-.net-info-k {
-  opacity: 0.85;
 }
 .net-info-v {
   color: var(--green-focus);

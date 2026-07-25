@@ -14,9 +14,6 @@ export const clamp = (v: number, lo: number, hi: number): number => Math.max(lo,
 /** Clamp `v` into [0, 1]. */
 export const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-/** Linear interpolate from `a` to `b` by `t` (t is NOT clamped). */
-export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-
 /** Degrees → radians. */
 export const deg2rad = (deg: number): number => deg * DEG;
 

@@ -36,11 +36,13 @@
     {"name": "STATS_LIMIT", "namespace_id": "2", "simple": {"limit": 20, "period": 60}},
   ],
 
-  // ── Custom domain (optional) ──────────────────────────────────────────────
-  // To serve from your own domain instead of *.workers.dev, add the domain to this
-  // Cloudflare account, then uncomment (the zone must be on Cloudflare):
-  //   "routes": [{"pattern": "atomic.example.com", "custom_domain": true}],
-  //   "workers_dev": false,
+  // ── Custom domain (injected at deploy time — NOT stored here) ──────────────
+  // This file is intentionally domain-agnostic so the public repo reveals no hostname:
+  // by default the Worker serves from *.workers.dev. When DEPLOY_HOSTNAME is set (via
+  // scripts/deploy.env, gitignored), scripts/deploy.sh replaces the anchor line below
+  // with a `routes` custom_domain + `workers_dev:false` in a throwaway config copy and
+  // deploys that. `wrangler dev` ignores it. See DEPLOY.md § "Custom domain".
+  //>>> DEPLOY_ROUTES <<< (deploy.sh injection anchor — do not remove or edit)
 
   "observability": {"enabled": true},
 }

@@ -508,6 +508,14 @@ export class CGameController implements ShotWorld {
       this.m_terrainSeed = null;
       this.m_netRoster = null;
       this.m_onNetTurnEnd = null;
+      this.m_onNetCommand = null; // clear the solo→net relay too (sibling of m_onNetTurnEnd)
+      // Restart the battle-progress counters for a fresh SOLO war. nextBattle maintains them WITHIN a
+      // war, but a NEW match must reset them — else the 2nd+ war in a session inherits the previous
+      // war's end values: a Deathmatch would end after one battle (getWarOver: currentBattle>=total),
+      // a Rounds match after one round (endTurn: currentRound>total), and the round-1 forced bot aim
+      // (currentRound===1) would never fire. (The net path sets currentBattle itself; see startNetworkGame.)
+      this.m_currentBattle = 1;
+      this.m_currentRound = 1;
     }
 
     // Fix the LOGICAL world/view size for this match. Everything (heightmap length, tank
@@ -552,6 +560,7 @@ export class CGameController implements ShotWorld {
     // `at` is already in the past would otherwise all fire at once on this match's first update().
     this.m_timers = [];
     this.m_netAimDirty = false;
+    this.m_shotsFired = 0; // the "Shot N" HUD counter — reset per match (it was leaking all session)
     // Fresh per-match stat tally.
     this.m_stats = {
       weaponsFired: 0,
@@ -1038,10 +1047,6 @@ export class CGameController implements ShotWorld {
     else void this.m_audio?.resume();
   }
 
-  isPaused(): boolean {
-    return this.m_paused;
-  }
-
   /**
    * Drive the looping `tank moving.wav` from tank motion state: start the named
    * loop while a unit moves, stop it when none do, repan to the mover. Idempotent
@@ -1238,10 +1243,6 @@ export class CGameController implements ShotWorld {
     return this.m_camX;
   }
 
-  getWorldWidth(): number {
-    return this.m_worldWidth;
-  }
-
   /**
    * What the camera centres on this frame:
    *  1. the latched active shot while it's in the air (a single, stable target — not
@@ -1262,11 +1263,19 @@ export class CGameController implements ShotWorld {
         return first.getPosition().x;
       }
     }
-    // Hold on the impact only while the BLAST itself animates — NOT the ~8s of cosmetic crater smoke
-    // (hasActiveExplosions counts that). The turn hands off on the same hasActiveBlast() gate (see the
-    // shot-settle check), so using hasActiveExplosions here parked the camera on the PREVIOUS crater
-    // for seconds into the next turn, undoing beginTurn's snap onto the new current tank.
-    if (this.m_particles.hasActiveBlast()) return this.m_lastImpactX;
+    // Hold on the impact for the WHOLE shot-resolution window — a live shot is handled above, so this
+    // covers the between-salvos gap (ShotFlying) and the blast+settle (Explosion), right up to the turn
+    // hand-off (endTurn only leaves Explosion once the blast, terrain settle and any flung tank all come
+    // to rest). Keying on the STATE — not hasActiveBlast() — holds through the post-blast settle tail
+    // (debris slumping, a knocked-up tank still falling) instead of easing toward the shooter early; and
+    // it does NOT hold during a Move drive (that's Battle state), so the camera follows the driving tank.
+    // Once the turn hands off, state is Battle and we follow the new current tank — no crater smoke lag.
+    if (
+      this.m_gameState === EGameState.ShotFlying ||
+      this.m_gameState === EGameState.Explosion
+    ) {
+      return this.m_lastImpactX;
+    }
     return this.getCurrentTank().getPosition().x;
   }
 
@@ -5450,10 +5459,6 @@ export class CGameController implements ShotWorld {
   /** Match type — kill credit is only paid in Deathmatch. */
   setGameType(t: EGameType): void {
     this.m_gameType = t;
-  }
-
-  getGameType(): EGameType {
-    return this.m_gameType;
   }
 
   /** Game-speed multiplier (1 = normal), live. */

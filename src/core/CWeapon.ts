@@ -96,9 +96,6 @@ interface ParticleDef {
 const RAW = weaponsRaw as unknown as RawWeapon[];
 const PARTICLES = particlesRaw as unknown as Record<string, ParticleDef>;
 
-// Types that add/remove terrain rather than just damage.
-const DIGGING_TYPES = new Set<WeaponType>(['Digger', 'Dirt', 'Cleaner', 'Roller']);
-
 /** A weapon's on-screen tint, from its blast (else trail) particle effect. */
 function weaponColor(w: RawWeapon): string {
   const p = PARTICLES[w.blast] || PARTICLES[w.trail];
@@ -158,10 +155,6 @@ export class CWeapon {
         : defOrIndex;
   }
 
-  getDef(): WeaponDef {
-    return this.m_def;
-  }
-
   /** Stable, never-localised match key (data/weapons.json `id`). */
   getId(): string {
     return this.m_def.id;
@@ -206,10 +199,6 @@ export class CWeapon {
     return this.m_def.color;
   }
 
-  getDescription(): string {
-    return weaponDesc(this.m_def);
-  }
-
   isNuclear(): boolean {
     return this.m_def.type === 'NUKE';
   }
@@ -234,10 +223,6 @@ export class CWeapon {
 
   isRadioactive(): boolean {
     return (this.m_def.iradiate || 0) > 0 || this.isNuclear();
-  }
-
-  digsTerrain(): boolean {
-    return DIGGING_TYPES.has(this.m_def.type);
   }
 
   // --- projectile mechanics for CShot ----------------------------------------

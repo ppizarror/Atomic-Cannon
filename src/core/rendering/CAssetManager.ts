@@ -55,30 +55,6 @@ export class CAssetManager implements ISpriteSource {
     this.m_pending--;
   }
 
-  /**
-   * Load a sprite, keying out whatever colour occupies the top-left corner.
-   * Weapon/projectile bitmaps use different transparency colours per sprite
-   * (magenta, red, green…), so the corner pixel is the reliable key.
-   */
-  async loadSpriteAutoKey(name: string, path: string): Promise<void> {
-    this.m_pending++;
-    const img = await this.fetchImage(path);
-    if (img) {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const g = canvas.getContext('2d')!;
-      g.drawImage(img, 0, 0);
-      const data = g.getImageData(0, 0, canvas.width, canvas.height);
-      const px = data.data;
-      const key: RGB = [px[0], px[1], px[2]];
-      this.keyOut(px, key);
-      g.putImageData(data, 0, 0);
-      this.m_sprites.set(name, {bitmap: canvas, width: canvas.width, height: canvas.height});
-    }
-    this.m_pending--;
-  }
-
   private fetchImage(path: string): Promise<HTMLImageElement | null> {
     return new Promise(resolve => {
       const img = new Image();

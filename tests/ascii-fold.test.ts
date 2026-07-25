@@ -16,8 +16,14 @@ describe('asciiFold', () => {
     expect(asciiFold('a b')).toBe('a b'); // non-breaking space → normal space
   });
 
+  it('folds Spanish accents, diéresis and inverted marks', () => {
+    expect(asciiFold('¿Cómo estás?')).toBe('?Como estas?');
+    expect(asciiFold('¡Español!')).toBe('!Espanol!');
+    expect(asciiFold('pingüino ÁÉÍÓÚÜÑ áéíóúüñ')).toBe('pinguino AEIOUUN aeiouun');
+  });
+
   it('leaves plain ASCII untouched', () => {
-    const s = "Buy - Sell / Auto Buy (200 credits) 100%";
+    const s = 'Buy - Sell / Auto Buy (200 credits) 100%';
     expect(asciiFold(s)).toBe(s);
   });
 });
