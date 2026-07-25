@@ -1053,11 +1053,11 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Pause/resume the whole game. This is a DEBUG freeze: the sim clock (update)
-   * stops in the loop, audio is suspended, and all player input is rejected (the
-   * fire/aim/angle/power/weapon handlers below early-out) so nothing at all moves
-   * while paused. (A future player-facing pause with an overlay menu will relax
-   * the input + audio parts.)
+   * Pause/resume the whole game. The sim clock (update) stops in the loop, the gameplay-SFX audio
+   * context is suspended (in-flight explosions and drive/jet loops FREEZE and resume in sync on
+   * unpause — while music and UI sounds keep playing, so the depot / pause menu aren't silent), and
+   * all player input is rejected (the fire/aim/angle/power/weapon handlers below early-out) so
+   * nothing at all moves while paused.
    */
   setPaused(paused: boolean): void {
     if (paused === this.m_paused) return;

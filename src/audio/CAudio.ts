@@ -74,12 +74,22 @@ const COMBAT_PRELOAD = [
 ];
 
 export class CAudio {
-  private readonly m_ctx: AudioContext;
-  private readonly m_master: GainNode;
-  private readonly m_sfx: CSoundManager;
+  // Two audio contexts so a game pause can FREEZE gameplay sound without touching music/UI:
+  //  • m_ctxMain — music + UI/chrome SFX (clicks, panels, menu blips, buy/sell). Resumed once at
+  //    unlock and left running; a pause never suspends it, so music plays and UI stays responsive.
+  //  • m_ctxGame — gameplay SFX (weapon fire, hits, explosions, drive/jet loops). SUSPENDED on
+  //    pause: suspending the context stops its render clock, so an in-flight nuke boom or a drive
+  //    loop FREEZES in place and resumes exactly where it left off — in sync with the animation
+  //    that also resumes. (A single shared context would have to freeze the music too.)
+  private readonly m_ctxMain: AudioContext;
+  private readonly m_ctxGame: AudioContext;
+  private readonly m_masterMain: GainNode;
+  private readonly m_masterGame: GainNode;
+  private readonly m_gameSfx: CSoundManager; // fire / hit / explosions / drive+jet loops
+  private readonly m_uiSfx: CSoundManager; // clicks / panels / menu blips / buy-sell (never frozen)
   private readonly m_music: CMusicPlayer;
   private m_unlocked = false;
-  private m_suspended = false; // suspended by a game pause (distinct from the autoplay lock)
+  private m_paused = false; // intended pause state driving the gameplay-context suspend
   // Menu navigation blips (hover / forward / back) — a non-legacy nicety, OFF by default.
   private m_menuSfxOn = false;
 
@@ -91,25 +101,22 @@ export class CAudio {
           webkitAudioContext: typeof AudioContext;
         }
       ).webkitAudioContext;
-    this.m_ctx = new Ctor();
-    this.m_master = this.m_ctx.createGain();
-    this.m_master.gain.value = 1;
-    this.m_master.connect(this.m_ctx.destination);
-    this.m_sfx = new CSoundManager(this.m_ctx, this.m_master);
-    this.m_music = new CMusicPlayer(this.m_ctx, this.m_master);
+    this.m_ctxMain = new Ctor();
+    this.m_ctxGame = new Ctor();
+    this.m_masterMain = this.m_ctxMain.createGain();
+    this.m_masterMain.gain.value = 1;
+    this.m_masterMain.connect(this.m_ctxMain.destination);
+    this.m_masterGame = this.m_ctxGame.createGain();
+    this.m_masterGame.gain.value = 1;
+    this.m_masterGame.connect(this.m_ctxGame.destination);
+    this.m_music = new CMusicPlayer(this.m_ctxMain, this.m_masterMain);
+    this.m_uiSfx = new CSoundManager(this.m_ctxMain, this.m_masterMain);
+    this.m_gameSfx = new CSoundManager(this.m_ctxGame, this.m_masterGame);
   }
 
-  get sfx(): CSoundManager {
-    return this.m_sfx;
-  }
-
-  get music(): CMusicPlayer {
-    return this.m_music;
-  }
-
-  /** The pan axis — world width in pixels. */
+  /** The pan axis — world width in pixels. Only gameplay SFX are panned. */
   setWorldWidth(w: number): void {
-    this.m_sfx.setWorldWidth(w);
+    this.m_gameSfx.setWorldWidth(w);
   }
 
   // ── Autoplay unlock ────────────────────────────────────────────────────────
@@ -127,184 +134,191 @@ export class CAudio {
   async unlock(): Promise<void> {
     if (this.m_unlocked) return;
     this.m_unlocked = true;
-    // Don't wake the context if the game is paused (e.g. the very first gesture is
-    // the pause key) — resume() is the only thing that clears a game suspend.
-    if (!this.m_suspended && this.m_ctx.state === 'suspended') {
+    // Wake both contexts on the first gesture (clears the autoplay lock). The main context (music +
+    // UI) always wakes. The gameplay context wakes only if we're NOT currently paused — a pause
+    // keeps it suspended so any in-flight effect stays frozen until resume() lifts it.
+    await CAudio.resumeCtx(this.m_ctxMain);
+    if (!this.m_paused) await CAudio.resumeCtx(this.m_ctxGame);
+    // A track requested before this gesture (menu music at boot) was posted to a
+    // suspended context and won't reliably auto-start on resume — replay it now.
+    this.m_music.replay();
+  }
+
+  private static async resumeCtx(ctx: AudioContext): Promise<void> {
+    if (ctx.state === 'suspended') {
       try {
-        await this.m_ctx.resume();
+        await ctx.resume();
       } catch {
         /* ignore */
       }
     }
-    // A track requested before this gesture (menu music at boot) was posted to a
-    // suspended context and won't reliably auto-start on resume — replay it now.
-    this.m_music.replay();
   }
 
   isUnlocked(): boolean {
     return this.m_unlocked;
   }
 
-  // ── Pause (freeze/restore all audio through the shared context) ──────────────
+  // ── Pause (freeze/restore gameplay audio for a modal game freeze) ─────────────
 
   /**
-   * Freeze all audio for a game pause. Suspending the shared AudioContext halts
-   * every SFX voice, looping sounds AND the music worklet in one shot (the graph
-   * clock stops), so nothing needs to know it was paused to come back cleanly.
+   * Freeze gameplay audio for a game pause (depot / pause menu / help): suspend the gameplay-SFX
+   * context so every in-flight weapon boom, explosion tail and drive/jet loop stops advancing and
+   * later resumes in sync with the animation that also resumes. Music and UI sounds live on the
+   * separate always-on context and keep playing — so the depot isn't silent, but a nuke caught
+   * mid-blast doesn't play on (and then fall silent) behind a frozen screen.
    */
-  async suspend(): Promise<void> {
-    this.m_suspended = true;
-    await this.applyAudioState();
+  suspend(): void {
+    this.m_paused = true;
+    void this.applyGameCtx();
   }
 
-  /** Resume audio after a game pause (no-op until the autoplay lock is cleared). */
-  async resume(): Promise<void> {
-    this.m_suspended = false;
-    await this.applyAudioState();
+  /** Resume gameplay audio after a game pause: un-suspend the gameplay-SFX context (frozen effects
+   *  and loops pick up where they left off). */
+  resume(): void {
+    this.m_paused = false;
+    void this.applyGameCtx();
   }
 
   /**
-   * Drive the AudioContext to the latest INTENDED state (`m_suspended`). `ctx.suspend()`/`resume()`
-   * resolve a render-quantum later, and a rapid pause↔unpause (e.g. opening then closing the depot)
-   * can flip the intent mid-await — the naive `if (state === 'running')` check then misses and the
-   * context is left stuck-suspended while the game runs. So loop: re-read the intent each pass and
-   * converge, guarded against re-entrancy (a concurrent call just lets the in-flight loop re-check).
+   * Drive the gameplay context to the latest INTENDED state (`m_paused`). `ctx.suspend()`/`resume()`
+   * resolve a render-quantum later, and a rapid pause↔unpause (open then close the depot) can flip
+   * the intent mid-await — a naive one-shot check would then miss and leave the context stuck. So
+   * apply twice, re-reading the intent each pass, guarded against re-entrancy.
    */
-  private m_applyingAudio = false;
-  private async applyAudioState(): Promise<void> {
-    if (this.m_applyingAudio) return; // an apply is running; it re-reads m_suspended after each await
-    this.m_applyingAudio = true;
+  private m_applyingGameCtx = false;
+  private async applyGameCtx(): Promise<void> {
+    if (this.m_applyingGameCtx) return; // an apply is running; it re-reads m_paused after each await
+    this.m_applyingGameCtx = true;
     try {
-      // Apply the intent, then apply ONCE MORE: a rapid pause↔unpause can flip `m_suspended` during
-      // the first await, which the naive one-shot check would miss (leaving the context stuck). Two
-      // passes cover that realistic race; each pass re-reads the latest intent.
-      await this.stepAudioState();
-      await this.stepAudioState();
+      await this.stepGameCtx();
+      await this.stepGameCtx();
     } finally {
-      this.m_applyingAudio = false;
+      this.m_applyingGameCtx = false;
     }
   }
 
-  /** One convergence step: drive the context toward the current intended `m_suspended` state. */
-  private async stepAudioState(): Promise<void> {
+  /** One convergence step: drive the gameplay context toward the current intended `m_paused` state. */
+  private async stepGameCtx(): Promise<void> {
     if (!this.m_unlocked) return; // can't touch the context until the autoplay lock clears
-    if (this.m_suspended && this.m_ctx.state === 'running') {
-      await this.m_ctx.suspend().catch(() => {});
-    } else if (!this.m_suspended && this.m_ctx.state === 'suspended') {
-      await this.m_ctx.resume().catch(() => {});
+    if (this.m_paused && this.m_ctxGame.state === 'running') {
+      await this.m_ctxGame.suspend().catch(() => {});
+    } else if (!this.m_paused && this.m_ctxGame.state === 'suspended') {
+      await this.m_ctxGame.resume().catch(() => {});
     }
   }
 
   /** Preload the combat effect set (fire-and-forget). */
   preloadCombat(): void {
-    void this.m_sfx.preload(COMBAT_PRELOAD);
+    void this.m_gameSfx.preload(COMBAT_PRELOAD);
   }
 
   /** Preload the front-end menu effect set (fire-and-forget) so the first hover /
    *  navigation isn't a silent cache miss. Idempotent — buffers are cached. */
   preloadMenu(): void {
-    void this.m_sfx.preload([SFX.MENU_HOVER, SFX.MENU_FORWARD, SFX.MENU_BACK, SFX.CLICK]);
+    void this.m_uiSfx.preload([SFX.MENU_HOVER, SFX.MENU_FORWARD, SFX.MENU_BACK, SFX.CLICK]);
   }
 
   // ── Semantic game events (the play funnel) ──────────────────────────────────
+  // Gameplay effects go through m_gameSfx (frozen by a pause); UI/chrome through m_uiSfx (never frozen).
 
   /** Weapon fire — the weapon's `soundFire` string, panned to the muzzle. */
   fire(soundFire: string, worldX: number): void {
-    this.m_sfx.play(soundFire, worldX);
+    this.m_gameSfx.play(soundFire, worldX);
   }
 
   /** Projectile impact — the weapon's `soundHit` string, panned to the blast. */
   hit(soundHit: string, worldX: number): void {
-    this.m_sfx.play(soundHit, worldX);
+    this.m_gameSfx.play(soundHit, worldX);
   }
 
   tankExplode(worldX: number): void {
-    this.m_sfx.play(SFX.TANK_EXPLODE, worldX, {throttle: false});
+    this.m_gameSfx.play(SFX.TANK_EXPLODE, worldX, {throttle: false});
   }
 
   /** A victory-fireworks burst — one of the two thunder claps at random, panned to
    *  the burst's WORLD column (the pan axis is world width, like every other SFX). */
   firework(worldX: number): void {
     const s = SFX.FIREWORK[Math.random() < 0.5 ? 0 : 1];
-    this.m_sfx.play(s, worldX, {throttle: false});
+    this.m_gameSfx.play(s, worldX, {throttle: false});
   }
 
   /** A supply-crate pickup chime, panned to the crate. */
   crate(worldX: number): void {
-    this.m_sfx.play('RobotLimb5.wav', worldX, {throttle: false});
+    this.m_gameSfx.play('RobotLimb5.wav', worldX, {throttle: false});
   }
 
   startTankMove(worldX?: number): void {
-    this.m_sfx.startLoop(SFX.TANK_MOVING, worldX);
+    this.m_gameSfx.startLoop(SFX.TANK_MOVING, worldX);
   }
 
   updateTankMove(worldX: number): void {
-    this.m_sfx.setLoopPan(SFX.TANK_MOVING, worldX);
+    this.m_gameSfx.setLoopPan(SFX.TANK_MOVING, worldX);
   }
 
   stopTankMove(): void {
-    this.m_sfx.stopLoop(SFX.TANK_MOVING);
+    this.m_gameSfx.stopLoop(SFX.TANK_MOVING);
   }
 
   startJet(worldX?: number): void {
-    this.m_sfx.startLoop(SFX.JET, worldX);
+    this.m_gameSfx.startLoop(SFX.JET, worldX);
   }
 
   updateJet(worldX: number): void {
-    this.m_sfx.setLoopPan(SFX.JET, worldX);
+    this.m_gameSfx.setLoopPan(SFX.JET, worldX);
   }
 
   stopJet(): void {
-    this.m_sfx.stopLoop(SFX.JET);
+    this.m_gameSfx.stopLoop(SFX.JET);
   }
 
   uiClick(): void {
-    this.m_sfx.play(SFX.CLICK);
+    this.m_uiSfx.play(SFX.CLICK);
   }
 
   /** A screen / dialog panel opening (menu, settings, depot, pause, help). */
   uiOpen(): void {
-    this.m_sfx.play(SFX.PANEL_OPEN);
+    this.m_uiSfx.play(SFX.PANEL_OPEN);
   }
 
   /** …and the same panel closing. */
   uiClose(): void {
-    this.m_sfx.play(SFX.PANEL_CLOSE);
+    this.m_uiSfx.play(SFX.PANEL_CLOSE);
   }
 
   /** Weapons Depot buy / sell confirmation. The original reused Panel1.wav for both
-   *  the successful buy and sell, not the generic click. */
+   *  the successful buy and sell, not the generic click. On the UI context so it plays
+   *  even though the depot has the gameplay context suspended. */
   depotTransaction(): void {
-    this.m_sfx.play(SFX.PANEL_OPEN);
+    this.m_uiSfx.play(SFX.PANEL_OPEN);
   }
 
   /** The Start Game "chunk" as a battle launches. */
   startGameSound(): void {
-    this.m_sfx.play(SFX.START_GAME);
+    this.m_uiSfx.play(SFX.START_GAME);
   }
 
   /** Blip as the highlighted main-menu item changes (throttled, so a fast sweep
    *  across items doesn't machine-gun). Gated by the Menu Sounds toggle (OFF by default). */
   menuHover(): void {
     if (!this.m_menuSfxOn) return;
-    this.m_sfx.play(SFX.MENU_HOVER);
+    this.m_uiSfx.play(SFX.MENU_HOVER);
   }
 
   /** Mechanical whirr when navigating INTO a menu screen from the main menu. */
   menuForward(): void {
     if (!this.m_menuSfxOn) return;
-    this.m_sfx.play(SFX.MENU_FORWARD);
+    this.m_uiSfx.play(SFX.MENU_FORWARD);
   }
 
   /** …and its counterpart when stepping Back to the main menu. */
   menuBack(): void {
     if (!this.m_menuSfxOn) return;
-    this.m_sfx.play(SFX.MENU_BACK);
+    this.m_uiSfx.play(SFX.MENU_BACK);
   }
 
   /** A keystroke while typing a name (Customize Players). */
   typingSound(): void {
-    this.m_sfx.play(SFX.TYPING);
+    this.m_uiSfx.play(SFX.TYPING);
   }
 
   // ── Music ────────────────────────────────────────────────────────────────
@@ -328,12 +342,12 @@ export class CAudio {
   }
 
   battleWon(): void {
-    this.m_sfx.play(SFX.BATTLE_WON, undefined, {throttle: false});
+    this.m_uiSfx.play(SFX.BATTLE_WON, undefined, {throttle: false});
     void this.m_music.play(VICTORY_MUSIC, false);
   }
 
   battleLost(): void {
-    this.m_sfx.play(SFX.BATTLE_LOST, undefined, {throttle: false});
+    this.m_uiSfx.play(SFX.BATTLE_LOST, undefined, {throttle: false});
     void this.m_music.play(DEFEAT_MUSIC, false);
   }
 
@@ -343,8 +357,14 @@ export class CAudio {
 
   // ── Settings (options menu: SFX vol / music vol / on-off toggles) ───────────
 
+  /** The gameplay + UI SFX buses share one set of options (volume / enabled / stereo). */
+  private eachSfx(fn: (m: CSoundManager) => void): void {
+    fn(this.m_gameSfx);
+    fn(this.m_uiSfx);
+  }
+
   setSfxVolume(v: number): void {
-    this.m_sfx.setVolume(v);
+    this.eachSfx(m => m.setVolume(v));
     this.saveSettings();
   }
 
@@ -354,7 +374,7 @@ export class CAudio {
   }
 
   setSfxEnabled(on: boolean): void {
-    this.m_sfx.setEnabled(on);
+    this.eachSfx(m => m.setEnabled(on));
     this.saveSettings();
   }
 
@@ -375,11 +395,11 @@ export class CAudio {
 
   /** Audio → Stereo: SFX pan across the field when on, all-centre (mono) when off. */
   setStereo(on: boolean): void {
-    this.m_sfx.setStereo(on);
+    this.eachSfx(m => m.setStereo(on));
     this.saveSettings();
   }
   isStereo(): boolean {
-    return this.m_sfx.isStereo();
+    return this.m_gameSfx.isStereo();
   }
 
   /** Audio → Menu Sounds: the non-legacy menu navigation blips (hover / forward / back). */
@@ -393,7 +413,7 @@ export class CAudio {
   }
 
   getSfxVolume(): number {
-    return this.m_sfx.getVolume();
+    return this.m_gameSfx.getVolume();
   }
 
   getMusicVolume(): number {
@@ -401,7 +421,7 @@ export class CAudio {
   }
 
   isSfxEnabled(): boolean {
-    return this.m_sfx.isEnabled();
+    return this.m_gameSfx.isEnabled();
   }
 
   isMusicEnabled(): boolean {
@@ -413,21 +433,30 @@ export class CAudio {
   /** Apply saved volume/enable settings (call once, after construction). */
   loadSettings(): void {
     const s = loadJSON<Partial<AudioSettings>>(SETTINGS_KEY, {});
-    if (typeof s.sfxVol === 'number') this.m_sfx.setVolume(s.sfxVol);
+    if (typeof s.sfxVol === 'number') {
+      const v = s.sfxVol;
+      this.eachSfx(m => m.setVolume(v));
+    }
     if (typeof s.musicVol === 'number') this.m_music.setVolume(s.musicVol);
-    if (typeof s.sfxOn === 'boolean') this.m_sfx.setEnabled(s.sfxOn);
+    if (typeof s.sfxOn === 'boolean') {
+      const on = s.sfxOn;
+      this.eachSfx(m => m.setEnabled(on));
+    }
     if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
-    if (typeof s.stereoOn === 'boolean') this.m_sfx.setStereo(s.stereoOn);
+    if (typeof s.stereoOn === 'boolean') {
+      const on = s.stereoOn;
+      this.eachSfx(m => m.setStereo(on));
+    }
     if (typeof s.menuSfxOn === 'boolean') this.m_menuSfxOn = s.menuSfxOn;
   }
 
   private saveSettings(): void {
     saveJSON(SETTINGS_KEY, {
-      sfxVol: this.m_sfx.getVolume(),
+      sfxVol: this.m_gameSfx.getVolume(),
       musicVol: this.m_music.getVolume(),
-      sfxOn: this.m_sfx.isEnabled(),
+      sfxOn: this.m_gameSfx.isEnabled(),
       musicOn: this.m_music.isEnabled(),
-      stereoOn: this.m_sfx.isStereo(),
+      stereoOn: this.m_gameSfx.isStereo(),
       menuSfxOn: this.m_menuSfxOn,
     } satisfies AudioSettings);
   }

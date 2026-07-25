@@ -1,6 +1,6 @@
 {
   "name": "atomic-cannon",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "Atomic Cannon - Web port of classic turn-based tank combat game",
   "type": "module",
   "homepage": "https://github.com/ppizarror/Atomic-Cannon",

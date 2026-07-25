@@ -43,14 +43,15 @@ function refreshEconomy(): void {
 }
 
 /** Freeze the battle sim behind a modal overlay (depot / pause / help): halt the shot-timer AND
- *  suspend the AudioContext. Paired with {@link unfreezeSim}. (goToMenu deliberately does NOT use
- *  these — it unpauses audio while keeping the render loop frozen; see there.) */
+ *  suspend the gameplay-SFX audio context (in-flight effects/loops freeze and resume in sync; music
+ *  and UI sounds keep playing). Paired with {@link unfreezeSim}. (goToMenu deliberately does NOT use
+ *  these — it freezes only the render loop; see there.) */
 function freezeSim(): void {
   game().setPaused(true);
   paused.value = true;
 }
 
-/** Resume the sim after a {@link freezeSim}: run update() again and un-suspend audio. */
+/** Resume the sim after a {@link freezeSim}: run update() again and un-suspend gameplay audio. */
 function unfreezeSim(): void {
   game().setPaused(false);
   paused.value = false;
@@ -158,16 +159,17 @@ export function closeSettings(): void {
   }
 }
 
-/** Enter the main menu: freeze the battle behind it and play menu music. We freeze
- * the render loop via the `paused` signal (which skips the sim update) rather than
- * `setPaused`, because `setPaused` SUSPENDS the AudioContext — that would gag the
- * menu music. `setPaused(false)` clears any prior game-pause suspend first. */
+/** Enter the main menu: freeze the battle behind it and play menu music. We freeze only the RENDER
+ * loop via the `paused` signal (which skips the sim update). We call `setPaused(false)` rather than
+ * `freezeSim` so the gameplay-SFX context is left RUNNING, not suspended — otherwise an effect
+ * frozen when the pause menu opened would stay frozen and then bleed into the NEXT battle when it
+ * resumes. Menu music and UI sounds live on the always-on context, so they play regardless. */
 export function goToMenu(): void {
   showPause.value = false;
   screen.value = 'menu';
   // Stop the tank-drive / jet loops BEFORE freezing the sim: paused.value below skips update() (the
-  // only thing that stops those loops), while setPaused(false) resumes the AudioContext — so a drive
-  // interrupted by pause→Quit would otherwise drone on under the menu music until the next battle.
+  // only thing that stops those loops), and setPaused(false) resumes the gameplay context — so a
+  // drive/jet loop interrupted by pause→Quit can't drone on under the menu music.
   game().stopMovementAudio();
   game().setPaused(false);
   paused.value = true;

@@ -52,11 +52,16 @@ export const TEAM_COLORS: Record<number, string> = {
  *  wherever an unresolved team index is mapped to a colour. */
 export const DEFAULT_TEAM_COLOR = TEAM_COLORS[0];
 
-// --- per-tank body recolour: modulate the chosen colour by each pixel's luminance
-// so the sprite's shading is preserved and the brightest pixel shows the exact colour
-// (darker pixels become proportional shades). Reproduces any RGB the player picks.
-// Cached per sprite+colour. ----------
+// --- per-tank body recolour: BLEND the chosen colour over each pixel rather than replacing it,
+// so the original sprite's own texture/hue still reads through and the team colour is only a tint.
+// The tint target is the chosen colour modulated by the pixel's luminance (shading preserved); we
+// then mix that with the untouched original pixel by TINT_STRENGTH. A full replace (strength 1)
+// washed the texture out — the metallic detail vanished under a flat colour. Cached per sprite+colour.
 const tintCache = new Map<string, HTMLCanvasElement>();
+
+// How strongly the team colour tints the hull (0 = original sprite, 1 = full monochrome recolour).
+// ~0.4 keeps the sprite's own texture clearly visible while still reading as the team's colour.
+const TINT_STRENGTH = 0.4;
 
 // Cap the sprite-derivation caches (oldest-evicted). Keyed by (hull|colour); the Players editor's
 // custom-colour picker can mint arbitrary keys, so bound them like the BitmapFont / particle caches.
@@ -96,13 +101,15 @@ function tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElemen
     const l = lumaOf(px[i], px[i + 1], px[i + 2]);
     if (l > maxL) maxL = l;
   }
-  // Pass 2: scale the target colour by each pixel's relative luminance.
+  // Pass 2: tint = target colour scaled by each pixel's relative luminance (shading preserved),
+  // then blended over the ORIGINAL pixel by TINT_STRENGTH so the sprite's texture stays visible.
+  const s = TINT_STRENGTH;
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] === 0) continue; // keep transparency
     const f = Math.min(1, lumaOf(px[i], px[i + 1], px[i + 2]) / maxL);
-    px[i] = Math.round(tr * f);
-    px[i + 1] = Math.round(tg * f);
-    px[i + 2] = Math.round(tb * f);
+    px[i] = Math.round(px[i] * (1 - s) + tr * f * s);
+    px[i + 1] = Math.round(px[i + 1] * (1 - s) + tg * f * s);
+    px[i + 2] = Math.round(px[i + 2] * (1 - s) + tb * f * s);
   }
   g.putImageData(im, 0, 0);
   capSpriteCache(tintCache, key, cv);
