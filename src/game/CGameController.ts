@@ -40,14 +40,26 @@ import {
 } from '../core/CEconomy';
 import {
   AI_DEFAULT_LEVEL,
+  AI_LEVEL_ULTRA,
   aimProbability,
   angleError,
   bestAim,
+  BOT_UTILITY_EXT,
   chooseBotWeapon,
   isBotSelfBuff,
+  moveWeaponIndices,
   pickMoveWeapon,
   pickTarget,
 } from '../core/CBotAI';
+import {
+  planUltraTurn,
+  rangePowerCorrection,
+  ULTRA_PERSONALITIES,
+  ULTRA_PERSONALITY_NAMES,
+  type UltraCtx,
+  type UltraWeapon,
+  type UltraWeights,
+} from '../core/CBotUltraAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
@@ -60,6 +72,7 @@ import {
   isBeamExt,
   type ExtType,
   type ShotWorld,
+  firedIntoTerrain,
   weaponDetonate,
   weaponFlyStep,
 } from '../core/weapons/WeaponBehavior';
@@ -138,6 +151,16 @@ const CONTROL_WEAPON: string | null = null;
 // falls/settles over the following ~second). Keep it just under the beam's on-screen
 // life so the ground drops as the ray fades — "beam holds → earth falls".
 const BEAM_COLLAPSE_DELAY = 1;
+
+// Minimum rocket motor burn (seconds from launch). Fume/flare emit for max(this, time-to-apex):
+// arced shots keep the authentic apex cutoff, but downward/flat shots — which never ascend — still
+// get an initial exhaust plume instead of nothing.
+const ROCKET_MIN_BURN = 0.7;
+
+// Gravity (px/s²) a deployed mine falls under when the ground beneath it is carved away — so a mine
+// left floating over a fresh hole drops onto the new surface instead of hanging in mid-air. Mirrors
+// the tank fall in CTank.update().
+const MINE_GRAVITY = 400;
 
 // Safety ceiling on live tracer ranging pins (they clear on the next shot; this only
 // bounds a single turn's repeated tracer volleys). Well above any one volley's count.
@@ -393,6 +416,9 @@ export interface NetSnapshot {
     armor: number;
     hazmat: number;
     credits: number;
+    /** Explicit alive flag — a Rounds/Points tank sits at 0 life yet ALIVE, so a bootstrapping
+     *  client must NOT re-derive alive from life (that would wrongly kill 0-life tanks). */
+    alive: boolean;
   }[];
   /** Full terrain heightmap (per-column surface Y). */
   heights: number[];
@@ -632,6 +658,9 @@ export class CGameController implements ShotWorld {
     this.m_economy.bindCredits(ownTank);
     this.m_economy.reset(this.m_startCredits * perTeam); // squad-scaled purse (see per-tank seed above)
     this.m_botEconomy.clear(); // fresh bot inventories for the new match (re-created on first bot turn)
+    this.m_ultraShot.clear(); // fresh Ultra ranging memory
+    this.m_ultraPersonality.clear(); // re-draw Ultra personalities for the new match
+    this.m_ultraLastLife.clear();
     for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
     // Randomize Turns (Gameplay): shuffle the turn queue once per battle. Never in a net
     // match — the server owns the order, and shuffle uses Math.random() (would desync).
@@ -1909,6 +1938,10 @@ export class CGameController implements ShotWorld {
     const budget = this.moveRange(weapon);
     const tx = tank.getPosition().x;
     const destX = clamp(worldX, tx - budget, tx + budget);
+    // NET: relay the destination so peers drive the tank to the SAME X (deterministic — the drive
+    // settles at destX). Without this, the tank only moves on the actor's client; peers keep it at the
+    // old X, and the turn-end snapshot (detect-only once simulating) then flags a permanent desync.
+    if (this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'move', destX});
     this.m_turnTimerRunning = false;
     this.m_manualScroll = false;
     this.m_firedThisTurn = false; // a move isn't a shot → no post-fire gloat
@@ -2538,8 +2571,11 @@ export class CGameController implements ShotWorld {
    */
   private updateShotInFlight(dt: number): void {
     // Tanks keep falling/settling while the shot resolves — a crater carved this frame
-    // must drop its tank next frame, not wait for the shot/explosion to finish.
+    // must drop its tank next frame, not wait for the shot/explosion to finish. Mines settle
+    // the same way (gravity only — detonation stays in updateMines) so one over a fresh hole
+    // drops in step with the ground being carved, rather than floating until play resumes.
     this.updateTanks(dt);
+    this.settleMines(dt);
     const activeShots = this.m_shots.filter(s => !s.isDead());
 
     if (activeShots.length === 0) {
@@ -2554,21 +2590,33 @@ export class CGameController implements ShotWorld {
     }
 
     for (const shot of activeShots) {
-      shot.update(dt, this.m_effWind, this.m_windGroundAt);
-
       // Per-frame behaviour dispatch (extType): roller/digger/airburst/beam/…
       const weapon = getWeapon(
         shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex,
       );
+
+      // Fired from inside solid terrain (a buried tank whose muzzle sits below the piled-up
+      // surface): detonate right at the muzzle, blasting the dirt around the tank, BEFORE the
+      // first integration step — otherwise the fast shot clears the thin dirt column on frame 1
+      // and flies the normal arc without ever touching the ground. Only on the spawn frame.
+      if (shot.getAge() === 0 && firedIntoTerrain(shot, weapon, this)) {
+        weaponDetonate(shot, weapon, this);
+        continue;
+      }
+
+      shot.update(dt, this.m_effWind, this.m_windGroundAt);
+
       const sp = shot.getPosition();
       const sv = shot.getVelocity();
-      // The SMOKE trail is emitted the WHOLE flight (up AND down) so it builds into a
-      // continuous ribbon that lengthens as the shot arcs — matching the original, which
-      // emits ~1 trail puff per frame for the entire flight. Only the hot nose FIRE and the
-      // bright projectile flare are gated to the ascent (the motor burning to apex); on the
-      // way down the shot coasts, smoking but no longer burning.
+      // Rocket exhaust burns while the motor is running, then the shot coasts with no fume.
+      // The original gates this purely on ascent (fume stops at apex), which means a shot fired
+      // DOWNWARD — descending from frame 1 — never smokes at all. We keep the authentic apex
+      // behaviour for arced shots but floor the burn at ROCKET_MIN_BURN seconds from launch, so
+      // the motor emits for max(MIN_BURN, time-to-apex): downward and flat shots still get a
+      // proper exhaust plume for the initial burn. Both the fume trail and the thrust flare are
+      // gated on this same "motor burning" window.
       const isTracer = weapon.getExtType() === EXT.TRACER;
-      const ascending = !shot.isMovingDown();
+      const motorBurning = !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
       if (isTracer) {
         // Tracer: NO exhaust, NO smoke, NO nose flare — just a thin white streak.
         // Stationary white puffs planted along the whole path (it emits rising AND
@@ -2577,7 +2625,7 @@ export class CGameController implements ShotWorld {
       } else {
         // Per-weapon trail (trailType 0 = none, 1 = basic, 2+ = rocket plume). Emitted
         // from the missile's REAR (exhaust), offset back along the heading so smoke pours
-        // from the tail. `ascending` gates the hot fire component within the trail.
+        // from the tail. `motorBurning` gates the rocket exhaust plume.
         const ex = shot.getExhaustPoint(weapon.getSize());
         this.m_particles.trail(
           ex.x,
@@ -2588,13 +2636,13 @@ export class CGameController implements ShotWorld {
           weapon.getTrailType(),
           weapon.getTrailLength(),
           dt,
-          ascending,
+          motorBurning,
         );
         // In-flight thrust flare (rockets: flareType/flareBmp) — only while the motor burns. Emitted
         // at the EXHAUST point (the rear tip `ex`), NOT the projectile centre, so the glow sits behind
         // the rocket at its nozzle instead of overlapping the middle of the sprite.
         const iff = weapon.getInFlightFlare();
-        if (ascending && iff)
+        if (motorBurning && iff)
           this.m_particles.inflightFlare(
             ex.x,
             ex.y,
@@ -2603,8 +2651,20 @@ export class CGameController implements ShotWorld {
           );
       }
       const action = weaponFlyStep(shot, weapon, this, dt);
-      if (action === 'detonate') weaponDetonate(shot, weapon, this);
-      else if (action === 'consumed') shot.kill();
+      if (action === 'detonate') {
+        // Complete the shooter's ranging record: where its OWN primary round (generation 0) landed on
+        // the GROUND — the empirical over/undershoot the next shot corrects for (the AI can't foresee
+        // wind drift on a long flight). Only the FIRST ground landing after firing fills it (landedX
+        // still unset), so the landing always pairs with the power that was actually fired — no in-air
+        // airburst/apex detonation and no stale cross-shot data corrupt the read.
+        const owner = shot.getOwner();
+        const rec = owner && this.m_ultraShot.get(owner);
+        if (rec && rec.landedX === undefined && shot.getGeneration() === 0) {
+          const p = shot.getPosition();
+          if (p.y >= this.m_land.getHeightAt(Math.floor(p.x)) - 4) rec.landedX = p.x;
+        }
+        weaponDetonate(shot, weapon, this);
+      } else if (action === 'consumed') shot.kill();
     }
 
     // Include submunitions spawned this frame (so a cluster keeps the round in
@@ -2755,7 +2815,7 @@ export class CGameController implements ShotWorld {
 
   deployMine(x: number, y: number, owner: CTank | null, weaponIndex: number): void {
     // Arms after a short delay so it doesn't trigger on the tank that laid it.
-    this.m_mines.push({x, y, owner, weaponIndex, armed: 0.6});
+    this.m_mines.push({x, y, vy: 0, owner, weaponIndex, armed: 0.6});
     this.markDirty();
   }
 
@@ -2793,7 +2853,36 @@ export class CGameController implements ShotWorld {
   }
 
   /** Mines detonate when a living tank rolls over them (after they arm). */
+  /**
+   * Keep deployed mines glued to the terrain: when the ground under a mine is carved away (an
+   * explosion or cleaner digs a hole), the mine falls under gravity onto the new surface instead of
+   * floating where it was laid — mirroring how a tank re-settles in CTank.update(). Called every
+   * frame the mines are live, including during shot resolution so a mine drops in step with the
+   * hole being dug (alongside the tank settling in updateShotInFlight).
+   */
+  private settleMines(dt: number): void {
+    for (const m of this.m_mines) {
+      const surf = this.m_land.getHeightAt(Math.floor(m.x));
+      if (m.y < surf - 0.5) {
+        // Airborne over a fresh hole — fall onto the new surface.
+        m.vy += MINE_GRAVITY * dt;
+        m.y += m.vy * dt;
+        if (m.vy >= 0 && m.y >= surf) {
+          m.y = surf;
+          m.vy = 0;
+        }
+        this.markDirty();
+      } else {
+        // Resting on the surface — stay glued to it as the terrain deforms.
+        if (m.y !== surf) this.markDirty();
+        m.y = surf;
+        m.vy = 0;
+      }
+    }
+  }
+
   private updateMines(dt: number): void {
+    this.settleMines(dt);
     for (let i = this.m_mines.length - 1; i >= 0; i--) {
       const m = this.m_mines[i];
       if (m.armed > 0) {
@@ -2987,6 +3076,17 @@ export class CGameController implements ShotWorld {
     }
   }
 
+  /** Re-sync every same-team tank to the ACTIVE economy's balance after a buy/sell/autobuy. The
+   *  depot debits ONE economy (a human squad shares the depot bound to its lead tank; a bot has its
+   *  own), but squad-mates hold display COPIES of the balance. Without this re-sync a squad-mate's
+   *  later earn would pool its STALE, undebited balance back over the banker — refunding the purchase
+   *  (the credits-vs-inventory pooling bug). Solo (one tank per team) is a self-sync no-op. */
+  private poolActiveCredits(): void {
+    const bal = this.activeEconomy().getCredits();
+    const team = this.getCurrentTank().getTeamId();
+    for (const t of this.m_tanks) if (t.getTeamId() === team) t.setCredits(bal);
+  }
+
   /** Group the roster into teams (by team id / colour), keeping only tanks that pass
    *  `include`. The get-or-create-array idiom, in one place. */
   private groupTanksByTeam(include: (t: CTank) => boolean): Map<number, CTank[]> {
@@ -3022,9 +3122,13 @@ export class CGameController implements ShotWorld {
   private awardSurvivorCredit(perTank: number): void {
     if (perTank <= 0) return;
     const teams = this.groupTanksByTeam(t => t.isAlive());
-    for (const members of teams.values()) {
+    for (const [teamId, members] of teams) {
       const shared = members[0].getCredits() + perTank * members.length;
-      for (const m of members) m.setCredits(shared);
+      // Sync EVERY same-team tank (alive AND dead) to the new shared balance — not just the alive
+      // members. A dead squad tank may still back the shared depot economy (the human depot binds to
+      // its lead tank), so leaving its silo stale would strand a survivor's income (ECON-2). Dead
+      // tanks are only SYNCED here, never PAID (the payout is perTank × alive members).
+      for (const t of this.m_tanks) if (t.getTeamId() === teamId) t.setCredits(shared);
     }
   }
 
@@ -3111,13 +3215,26 @@ export class CGameController implements ShotWorld {
     return this.m_tanks.map((_, pos) => this.turnTankAt(pos));
   }
 
+  /** Number of SQUAD (non-sentry) tanks — the size of the alternate-turns interleave grid. Squad
+   *  tanks occupy a contiguous prefix `[0, grid)` (created at battle start); a deployed Sentry is
+   *  APPENDED past them, so it must be kept OUT of the interleave (which assumes a clean
+   *  players × squad-size grid) — otherwise the map stops being a bijection and a squad tank fires
+   *  twice while the sentry never gets a turn. Sentries take identity positions at the tail instead. */
+  private squadGridSize(): number {
+    let n = 0;
+    for (const t of this.m_tanks) if (!t.isSentry()) n++;
+    return n;
+  }
+
   /** The tank index whose turn it is at turn-order POSITION `pos`. Default = identity (contiguous
    *  squads: A1,A2,B1,B2). Alternate Turns interleaves by player-slot so squads take turns one
-   *  tank at a time (A1,B1,A2,B2). Assumes uniform squad size (m_tanksPerTeam). */
+   *  tank at a time (A1,B1,A2,B2). Deployed sentries (index ≥ the squad grid) take identity positions
+   *  at the tail so they don't corrupt the interleave. */
   private turnTankAt(pos: number): number {
     if (!GameConfig.alternateTurns) return pos;
     const per = Math.max(1, this.m_tanksPerTeam);
-    const players = Math.max(1, Math.floor(this.m_tanks.length / per));
+    const players = Math.max(1, Math.floor(this.squadGridSize() / per));
+    if (pos >= players * per) return pos; // appended sentries — identity at the tail
     return (pos % players) * per + Math.floor(pos / players);
   }
 
@@ -3125,7 +3242,8 @@ export class CGameController implements ShotWorld {
   private turnPosOf(tankIdx: number): number {
     if (!GameConfig.alternateTurns) return tankIdx;
     const per = Math.max(1, this.m_tanksPerTeam);
-    const players = Math.max(1, Math.floor(this.m_tanks.length / per));
+    const players = Math.max(1, Math.floor(this.squadGridSize() / per));
+    if (tankIdx >= players * per) return tankIdx; // sentries — identity at the tail
     return (tankIdx % per) * players + Math.floor(tankIdx / per);
   }
 
@@ -3231,6 +3349,7 @@ export class CGameController implements ShotWorld {
   nextBattle(): void {
     if (this.getWarOver()) return;
     this.m_currentBattle++;
+    this.m_currentRound = 1; // the round counter resets each battle (round-1 forced-aim keys off it)
     this.m_shots = [];
     this.m_mines = [];
     this.m_aimMarkers = [];
@@ -3288,6 +3407,9 @@ export class CGameController implements ShotWorld {
    *   • Rounds/Points never ends early on eliminations; it plays the full round count and
    *     scores by points. A total wipeout (no team left) still ends any mode. */
   private endTurn(): void {
+    // The battle is already over — a stale scheduled closure (a settled Move poll, a bot/sentry with
+    // no target) must not re-enter finishBattle and restart the winner animation / replay the jingle.
+    if (this.m_gameState === EGameState.BattleEnd) return;
     this.m_turnTimerRunning = false; // the clock never outlives its turn
 
     // Network match: the server arbitrates turns. The local simulation has settled — clear the
@@ -3351,6 +3473,12 @@ export class CGameController implements ShotWorld {
   /** Hand off to the BattleEnd state and declare the winner (mode-aware). */
   private finishBattle(): void {
     this.m_gameState = EGameState.BattleEnd;
+    // Cancel every pending turn-scoped timer (a queued bot/sentry fire, a waitForRest move poll, an
+    // endTurn). A battle can end mid-delay when the last enemy dies PASSIVELY (radiation DOT, a mine)
+    // during a bot's pre-fire delay; without this the stale fire() would launch a live shot onto the
+    // finished battle (clearing the standings), and stale endTurn/poll closures would re-enter here.
+    // Any timer finishBattle itself needs (explodeLosingTeams below) is scheduled AFTER this clear.
+    this.m_timers = [];
     this.m_battleEndTime = 0; // restart the winner-flag animation
     // Victory-only sky fireworks (war end, the human's team leads the final standings).
     this.m_showFireworks = this.isHumanWarVictory();
@@ -3493,6 +3621,10 @@ export class CGameController implements ShotWorld {
    */
   fire(): void {
     if (this.m_paused) return; // debug freeze rejects all input
+    // The battle is over (standings showing) — a bot/sentry fire() queued before the last enemy died
+    // passively must not launch a live shot onto the finished battle. Human input is already gated by
+    // canAct() (Battle-only); this closes the scheduled-closure path that bypasses it.
+    if (this.m_gameState === EGameState.BattleEnd) return;
     const tank = this.getCurrentTank();
     if (!tank.isAlive()) return;
     if (tank.isMoving()) return; // can't act while a move is under way
@@ -3989,7 +4121,153 @@ export class CGameController implements ShotWorld {
     if (L > 7 && !this.botOwnsExt(econ, 12)) this.botBuyOneOfExt(econ, 12, 2.5);
     if (L > 4 && !this.botOwnsExt(econ, 16)) this.botBuyOneOfExt(econ, 16, 2.5);
     if (L > 3 && !this.botOwnsExt(econ, 3)) this.botBuyOneOfExt(econ, 3, 2.5);
-    econ.autoBuy({conserve: L > 6}); // offensive drain — offensive-type filter + high-level conserve
+    // Offensive drain: high-level bots conserve (buy cheap filler), but ULTRA does NOT — it stocks a
+    // strong, varied arsenal so its expected-value planner actually has heavy/area/gas rounds to fire.
+    econ.autoBuy({conserve: L > 6 && L < AI_LEVEL_ULTRA});
+    // Re-sync the bot's SQUAD to its debited balance (each bot spends its own economy) — else a
+    // squad-mate's later earn would pool its stale, undebited balance back and refund the restock.
+    // No-op for a 1-tank team (the common case). Mirrors buyWeapon's poolActiveCredits (ECON-1).
+    this.poolTeamCredits(tank);
+  }
+
+  // ── ULTRA economy: buy the LEVERAGE weapons (nuke / beam / gas) and spend down, not hoard ────────
+  private static readonly ULTRA_CREDIT_RESERVE = 150; // small reserve; the rest gets spent on firepower
+  private static readonly ULTRA_OFFENSE_STOCK = 6; // keep this many offensive rounds on hand
+  private static readonly ULTRA_SURROUND_RADIUS = 260; // "surrounded" if ≥2 enemies within this (kamikaze)
+
+  /** A true NUKE — an expensive BALLISTIC blast worth reserving/ranging (not a mid-tier round like
+   *  Hercules/Roller, and not a beam/death/utility). Only these are ever measured with a Shell first. */
+  private isNukeWeapon(i: number): boolean {
+    const w = getWeapon(i);
+    const ext = WEAPON_DATABASE[i].extType ?? 0;
+    if (BOT_UTILITY_EXT.has(ext) || isBeamExt(w.getExtType())) return false; // not death/mine/utility/beam
+    return w.isNukeClass() || (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE;
+  }
+  private isBeamWeapon(i: number): boolean {
+    return isBeamExt(getWeapon(i).getExtType());
+  }
+  /** A sub-premium RADIATION/gas round (lays a fallout zone) — area denial that forces the foe to move. */
+  private isRadWeapon(i: number): boolean {
+    return getWeapon(i).getRadiation().dmg > 0 && !this.isNukeWeapon(i);
+  }
+  private botOwnsMatching(econ: CEconomy, pred: (i: number) => boolean): boolean {
+    for (let i = 0; i < WEAPON_DATABASE.length; i++)
+      if (!econ.isUnlimited(i) && econ.getOwned(i) > 0 && pred(i)) return true;
+    return false;
+  }
+
+  /**
+   * Ultra's per-turn economy. It SPENDS to win, not hoard: minimal reactive defence, then a real
+   * arsenal of LEVERAGE weapons — a NUKE (big damage to force the issue), a BEAM (fire while buried),
+   * a GAS/RADIATION round (area denial that makes the foe move) — then fill with strong varied rounds
+   * until stocked, draining down to a tiny reserve. This is what makes two Ultra bots actually finish
+   * a fight instead of chipping + healing forever.
+   */
+  private ultraManageEconomy(tank: CTank, econ: CEconomy): void {
+    const h = tank.getHealth();
+    const maxLife = tank.getMaxLife();
+    const onRad = this.m_land.radiationAt(Math.floor(tank.getPosition().x));
+    const R = CGameController.ULTRA_CREDIT_RESERVE;
+    // Minimal reactive defence — heal only when actually hurt; one armour; hazmat only if irradiated.
+    if (h.nLife < maxLife * 0.5 && !this.botOwnsExt(econ, 10)) this.botBuyOneOfExt(econ, 10, 1); // heal
+    if (h.nArmor <= 0 && !this.botOwnsExt(econ, 11)) this.botBuyOneOfExt(econ, 11, 1); // armor
+    if (onRad && h.nHazmat <= 0 && !this.botOwnsExt(econ, 14)) this.botBuyOneOfExt(econ, 14, 1); // hazmat
+
+    // Leverage weapons — buy the strongest NUKE, then a BEAM, then a GAS round (one of each if missing).
+    if (econ.getCredits() > R && !this.ultraOwnsPremium(econ))
+      this.ultraBuyMatching(econ, i => this.isNukeWeapon(i), true);
+    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isBeamWeapon(i)))
+      this.ultraBuyMatching(econ, i => this.isBeamWeapon(i), false);
+    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isRadWeapon(i)))
+      this.ultraBuyMatching(econ, i => this.isRadWeapon(i), false);
+    // A MINE for area denial (cheapest); one is enough.
+    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16))
+      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16, false);
+    // A DEATH (kamikaze) round ONLY when SURROUNDED — 2+ enemies close, so dying takes them with it.
+    // Pointless when they're spread out, so it isn't bought then.
+    if (
+      econ.getCredits() > R &&
+      this.ultraEnemiesWithin(tank, CGameController.ULTRA_SURROUND_RADIUS) >= 2 &&
+      !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12)
+    )
+      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12, true);
+
+    // Fill with strong varied rounds until stocked, spending most of the balance (maxCost = credits, so
+    // a second nuke is fair game). Keeps the planner's hands full of real firepower.
+    let guard = 0;
+    while (
+      this.ultraFiniteOffense(econ) < CGameController.ULTRA_OFFENSE_STOCK &&
+      econ.getCredits() > R &&
+      guard++ < 24
+    ) {
+      if (!this.ultraBuyBestOffense(econ, econ.getCredits())) break;
+    }
+    // Re-sync the squad to the debited balance (see aiRestock) so a teammate's earn can't refund this.
+    this.poolTeamCredits(tank);
+  }
+
+  /** Count of finite (non-Shell) OFFENSIVE rounds a bot holds — the "do I have real firepower?" gauge. */
+  private ultraFiniteOffense(econ: CEconomy): number {
+    let n = 0;
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      if (econ.isUnlimited(i) || econ.getOwned(i) <= 0) continue;
+      const w = WEAPON_DATABASE[i];
+      if ((w.damage ?? 0) > 0 && !BOT_UTILITY_EXT.has(w.extType ?? 0)) n += econ.getOwned(i);
+    }
+    return n;
+  }
+
+  /** Does the bot already hold a premium (nuke-class / pricey) round? */
+  private ultraOwnsPremium(econ: CEconomy): boolean {
+    return this.botOwnsMatching(econ, i => this.isNukeWeapon(i));
+  }
+
+  /** Buy the best affordable weapon matching `pred` — the strongest (highest damage) if `strongest`,
+   *  else the cheapest. Used to guarantee a specific class (nuke / beam / gas) actually gets bought,
+   *  unlike the weighted-random fill. Returns whether it bought. */
+  private ultraBuyMatching(econ: CEconomy, pred: (i: number) => boolean, strongest: boolean): boolean {
+    const cands: number[] = [];
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      const w = WEAPON_DATABASE[i];
+      const cost = w.cost ?? 0;
+      if (cost <= 0 || cost > econ.getCredits() || !weaponEnabled(i)) continue;
+      if (pred(i)) cands.push(i);
+    }
+    if (!cands.length) return false;
+    cands.sort((a, b) =>
+      strongest
+        ? (WEAPON_DATABASE[b].damage ?? 0) - (WEAPON_DATABASE[a].damage ?? 0)
+        : (WEAPON_DATABASE[a].cost ?? 0) - (WEAPON_DATABASE[b].cost ?? 0),
+    );
+    return econ.buy(cands[0]);
+  }
+
+  /** Buy an affordable OFFENSIVE weapon costing ≤ maxCost, picked at RANDOM but weighted toward higher
+   *  damage — so Ultra stocks a VARIED arsenal (not four of the single strongest round) and its firing
+   *  actually differs turn to turn. Skips utilities/self-buffs. Returns whether it bought. */
+  private ultraBuyBestOffense(econ: CEconomy, maxCost: number): boolean {
+    const cands: number[] = [];
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      const w = WEAPON_DATABASE[i];
+      const cost = w.cost ?? 0;
+      if (cost <= 0 || cost > maxCost || cost > econ.getCredits()) continue;
+      if (!weaponEnabled(i) || (w.damage ?? 0) <= 0 || BOT_UTILITY_EXT.has(w.extType ?? 0))
+        continue;
+      cands.push(i);
+    }
+    if (!cands.length) return false;
+    // Weight ∝ damage² so heavy rounds are favoured, but lighter ones still get bought — a real mix.
+    const weights = cands.map(i => Math.pow(WEAPON_DATABASE[i].damage ?? 1, 2));
+    let r = this.m_rng.float() * weights.reduce((a, b) => a + b, 0);
+    let pick = cands[cands.length - 1];
+    for (let k = 0; k < cands.length; k++) {
+      r -= weights[k];
+      if (r <= 0) {
+        pick = cands[k];
+        break;
+      }
+    }
+    return econ.buy(pick);
   }
 
   /** Owned weapon indices for a tank's inventory (the Shell staple always included). */
@@ -4056,12 +4334,21 @@ export class CGameController implements ShotWorld {
       return;
     }
 
-    // Restock the bot's loadout when its finite stock has run low — a difficulty-scaled buy of
-    // defensive support + a varied offensive assortment (real bots only, not the Demo-driven human).
-    // Threshold is < 5 (the original's restock trigger), not < 4.
+    // Restock the bot's loadout. Levels 1-10: a difficulty-scaled buy only when finite stock runs low
+    // (the original's < 5 trigger). ULTRA: an every-turn economy pass that actually SPENDS its credits
+    // like a player — buy defense when a stat is low, keep strong offensive rounds in stock, and bank
+    // toward a nuke — instead of hoarding thousands while it fires the free Shell.
     if (botTank.isBot()) {
       const econ = this.economyFor(botTank);
-      if (this.botFiniteStock(econ) < 5) this.aiRestock(botTank, econ);
+      if (this.m_difficulty === AI_LEVEL_ULTRA) this.ultraManageEconomy(botTank, econ);
+      else if (this.botFiniteStock(econ) < 5) this.aiRestock(botTank, econ);
+    }
+
+    // ULTRA (level 11): a wholly different brain — score every possible action (best expected-value
+    // shot, crate grab, radiation flee, reposition, self-buff) and take the best. No random move.
+    if (this.m_difficulty === AI_LEVEL_ULTRA) {
+      this.executeUltraTurn(botTank);
+      return;
     }
 
     // A bot's turn is ONE action: MOVE or FIRE (mutually exclusive) — spending
@@ -4155,11 +4442,12 @@ export class CGameController implements ShotWorld {
     const tp = target.getPosition();
 
     // Whether the bot computes a FRESH firing solution this turn. Low-skill bots often don't
-    // (they fire with their stale aim); a first-round ranging shot is forced for any half-decent
-    // bot. `solutionFound` = the solved arc actually reaches the target (so the no-arc fallback
+    // (they fire with their stale aim); a ranging shot is forced in ROUND 1 of EVERY battle for any
+    // half-decent bot — keyed on the per-battle round counter (reset each battle), NOT the battle
+    // number. `solutionFound` = the solved arc actually reaches the target (so the no-arc fallback
     // in the weapon choice is skipped).
     const willAim =
-      Math.random() < aimProbability(level) || (this.getBattleNum() === 1 && level > 3);
+      Math.random() < aimProbability(level) || (this.m_currentRound === 1 && level > 3);
     let ballisticAngle: number;
     let ballisticPower: number;
     let solutionFound = false;
@@ -4231,6 +4519,258 @@ export class CGameController implements ShotWorld {
     // resolves (or immediately, for a self-buff utility).
     this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
   }
+
+  /**
+   * ULTRA turn: marshal the world into an {@link UltraCtx}, let the pure planner pick the single
+   * best action (fire / crate grab / radiation flee / reposition / self-buff), and execute it.
+   */
+  private executeUltraTurn(botTank: CTank): void {
+    if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
+    const enemies = this.m_tanks.filter(t => t.isAlive() && t.getTeamId() !== botTank.getTeamId());
+    if (enemies.length === 0) {
+      this.endTurn();
+      return;
+    }
+
+    const ctx = this.buildUltraCtx(botTank, enemies);
+    const plan = planUltraTurn(ctx);
+
+    if (plan.action === 'move') {
+      // Drive to the planned spot with a Move utility (grab a crate / flee radiation / reposition).
+      // Moving changes the firing geometry, so the old ranging memory is stale — drop it.
+      this.m_ultraShot.delete(botTank);
+      const moveWi = this.bestMoveWeaponIndex();
+      if (moveWi >= 0) this.setCurrentWeapon(botTank, moveWi);
+      this.startTankMove(botTank, plan.destX);
+      return;
+    }
+
+    if (plan.action === 'skip') {
+      this.endTurn();
+      return;
+    }
+
+    // fire | buff: select the weapon, commit the aim, fire after the "thinking" delay.
+    this.setCurrentWeapon(botTank, plan.weaponIndex);
+    if (plan.action === 'fire') {
+      // Range off the last shot's observed miss (drift the solver can't foresee): while still on the
+      // same target, KEEP the same weapon + angle and only walk the POWER, so the arc is consistent and
+      // converges (a different weapon or a fresh solver angle each turn would scatter the landing and it
+      // could never dial in). A new target starts fresh with the planner's explored pick. The record's
+      // landedX is unset so this shot's own landing pairs with the aim just fired.
+      const aim = this.ultraRangedAim(botTank, plan);
+      this.setCurrentWeapon(botTank, aim.weaponIndex);
+      this.m_ultraShot.set(botTank, {
+        targetX: plan.targetX,
+        weapon: aim.weaponIndex,
+        angle: aim.angleDeg,
+        power: aim.power,
+      });
+      this.commitAim(botTank, wrapIndex(Math.round(aim.angleDeg), 360), Math.round(aim.power));
+      this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
+      return;
+    }
+    if (plan.action === 'buff') {
+      // A self-buff applies to the bot itself — keep its current aim, just fire the utility.
+      this.commitAim(botTank, botTank.getAimAngle(), Math.round(botTank.getPower()));
+    }
+    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
+  }
+
+  // Ranging correction tuning.
+  private static readonly RANGE_TARGET_TOL = 60; // "same target" if the aim point moved < this (px)
+  private static readonly RANGE_HIT_TOL = 18; // a landing within this of the target counts as a hit
+  // Damped: the physics estimate (range ∝ power²) under-reads the true sensitivity at long range, so
+  // gain 0.9 over-corrected ~1.7× and the shots oscillated. Half-stepping converges instead of ringing.
+  private static readonly RANGE_GAIN = 0.5; // fraction of the physics-estimated correction to apply
+
+  /**
+   * Correct a shot's power from the LAST shot's observed landing (Ultra ranging). The solver is
+   * drift-blind and returns the same power every turn, so a shot that overshoots would loop forever;
+   * here the bot walks it in like a human — overshoot ⇒ less power, undershoot ⇒ more. The correction
+   * is taken off the power ACTUALLY FIRED last turn (not the solver's fresh value), so it accumulates
+   * and converges (Newton-style: range ∝ power², so dPower ≈ power/(2·range) · missAlongRange).
+   */
+  private ultraRangedAim(
+    botTank: CTank,
+    plan: {targetX: number; weaponIndex: number; angleDeg: number; power: number},
+  ): {weaponIndex: number; angleDeg: number; power: number} {
+    const rec = this.m_ultraShot.get(botTank);
+    const sameTarget = rec && Math.abs(rec.targetX - plan.targetX) <= CGameController.RANGE_TARGET_TOL;
+
+    // Already fired at THIS target → COMMIT the planner's real pick (its strong weapon), reusing the
+    // measured angle and correcting the power toward the last landing (if it recorded; else hold). This
+    // is the key rule: after at most one shot the bot uses its BOLD weapon — it never keeps lobbing
+    // Shells at a stationary enemy. `plan.weaponIndex` is already the best-value round the bot owns.
+    if (rec && sameTarget) {
+      const power =
+        rec.landedX !== undefined
+          ? rangePowerCorrection({
+              selfX: botTank.getPosition().x,
+              targetX: plan.targetX,
+              lastPower: rec.power,
+              landedX: rec.landedX,
+              hitTol: CGameController.RANGE_HIT_TOL,
+              gain: CGameController.RANGE_GAIN,
+            })
+          : rec.power;
+      return {weaponIndex: plan.weaponIndex, angleDeg: rec.angle, power};
+    }
+
+    // FRESH target: normally throw the real weapon straight away (players want to SEE the big guns; a
+    // nuke's blast forgives the aim). Only a CAUTIOUS bot spends ONE Shell to measure a true nuke first,
+    // and never when all-in (scarce ammo). Everyone else — and every non-nuke round — fires directly.
+    const cautious = this.ultraWeightsFor(botTank).premiumWaste >= 5000;
+    const allIn = this.ultraFiniteOffense(this.economyFor(botTank)) <= 2;
+    const measureFirst = cautious && !allIn && this.isNukeWeapon(plan.weaponIndex);
+    const wi = measureFirst ? getDefaultWeaponIndex() : plan.weaponIndex;
+    return {weaponIndex: wi, angleDeg: plan.angleDeg, power: plan.power};
+  }
+
+  /** This Ultra bot's personality weights — drawn once per match from the seeded RNG (so it's stable
+   *  for the bot and deterministic for network play), making two Ultra bots play divergent games. */
+  private ultraWeightsFor(tank: CTank): UltraWeights {
+    let w = this.m_ultraPersonality.get(tank);
+    if (!w) {
+      const name = ULTRA_PERSONALITY_NAMES[this.m_rng.int(ULTRA_PERSONALITY_NAMES.length)];
+      w = ULTRA_PERSONALITIES[name];
+      this.m_ultraPersonality.set(tank, w);
+    }
+    return w;
+  }
+
+  /** True if this Ultra bot lost life since the START of its previous turn — an enemy shelled it, so
+   *  it now has our range. Updates the remembered life for next time. */
+  private ultraTookDamageSinceLastTurn(tank: CTank): boolean {
+    const life = tank.getHealth().nLife;
+    const prev = this.m_ultraLastLife.get(tank);
+    this.m_ultraLastLife.set(tank, life);
+    return prev !== undefined && life < prev - 1;
+  }
+
+  /** Number of living enemy tanks within `radius` of a tank — the "am I surrounded?" gauge that gates
+   *  buying a death (kamikaze) weapon. */
+  private ultraEnemiesWithin(tank: CTank, radius: number): number {
+    const p = tank.getPosition();
+    return this.m_tanks.filter(
+      t => t.isAlive() && t.getTeamId() !== tank.getTeamId() && t.distanceTo(p.x, p.y) <= radius,
+    ).length;
+  }
+
+  /** Longest-range Move utility index (for an Ultra reposition/crate drive), or -1 if none exist. */
+  private bestMoveWeaponIndex(): number {
+    let best = -1,
+      bestR = 0;
+    for (const i of moveWeaponIndices()) {
+      const r = this.moveRange(getWeapon(i));
+      if (r > bestR) {
+        bestR = r;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** Gather the acting bot's world into the pure planner's input. */
+  private buildUltraCtx(botTank: CTank, enemies: CTank[]): UltraCtx {
+    const econ = this.economyFor(botTank);
+    const pos = botTank.getPosition();
+    const h = botTank.getHealth();
+
+    // Owned weapons, pre-resolved to the fields the blast scorer needs (Explosion Size + resolution
+    // folded into `radius`, so the planner compares true footprints).
+    const weapons: UltraWeapon[] = [];
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      if (econ.getOwned(i) <= 0) continue;
+      const w = getWeapon(i);
+      const extNum = WEAPON_DATABASE[i].extType ?? 0;
+      const rad = w.getRadiation();
+      // Area reach from submunitions: a cluster's bomblets / an airburst's rain spread the damage
+      // wide, so give those a bigger effective footprint (why Ultra favours them vs a spread group).
+      const cluster = w.getClusterCount();
+      let spread = cluster > 1 ? Math.min(160, Math.max(40, cluster * 15)) : 0;
+      if (extNum === 13 /* AIRBURST */) spread = Math.max(spread, 120);
+      weapons.push({
+        index: i,
+        ext: extNum,
+        cost: WEAPON_DATABASE[i].cost ?? 0,
+        count: econ.isUnlimited(i) ? Infinity : econ.getOwned(i),
+        damage: w.getDamage(),
+        radius: w.getRadius() * GameConfig.explosionScale * this.blastScale,
+        innerR: 0.5 * w.getSize(),
+        spread,
+        dotValue: rad.dmg * rad.time, // total damage-over-time this round lays down (gas / radioactive)
+        earth: w.getEarth(),
+        piercing: w.isRadioactive(),
+        isBeam: isBeamExt(w.getExtType()),
+        isCleaner: w.isCleaner(), // earth-remover (no damage) — digs the tank out when buried
+        isMine: extNum === 16, // deploys a persistent mine on impact (area denial)
+        // Reserve nukes and other pricey ordnance for high-value shots.
+        isPremium:
+          w.isNukeClass() ||
+          (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE,
+        // Offensive = a damaging round the bot may fire AT a target (Shell + beams included; the
+        // utility/self-buff/death/mine/move/tracer/jet types are not).
+        offensive: w.getDamage() > 0 && !BOT_UTILITY_EXT.has(extNum),
+      });
+    }
+
+    // A buried tank can't drive (startDrive refuses), so it has NO move range this turn — it must dig
+    // out (cleaner), beam, or heal instead.
+    const buried = botTank.isBuried();
+    let moveMaxDist = 0;
+    if (!buried)
+      for (const i of moveWeaponIndices())
+        moveMaxDist = Math.max(moveMaxDist, this.moveRange(getWeapon(i)));
+
+    return {
+      self: {
+        x: pos.x,
+        y: pos.y,
+        life: h.nLife,
+        maxLife: botTank.getMaxLife(),
+        shield: h.nShield,
+        armor: h.nArmor,
+        hazmat: h.nHazmat,
+        credits: econ.getCredits(),
+        onRadiation: this.m_land.radiationAt(Math.floor(pos.x)),
+        buried,
+        threatened: this.ultraTookDamageSinceLastTurn(botTank),
+      },
+      enemies: enemies.map(e => {
+        const ep = e.getPosition();
+        const eh = e.getHealth();
+        return {
+          x: ep.x,
+          y: ep.y,
+          life: eh.nLife,
+          maxLife: e.getMaxLife(),
+          shield: eh.nShield,
+          hitRadius: e.getHitRadius(),
+          buried: e.isBuried(),
+        };
+      }),
+      weapons,
+      crates: this.m_crates.map(c => ({x: c.x, kind: c.kind, amount: c.amount, landed: c.landed})),
+      field: {
+        heightAt: (x: number) => this.m_land.getHeightAt(x),
+        width: this.m_land.width,
+        height: this.m_land.height,
+      },
+      wind: this.m_wind,
+      gustT0: this.m_gustT + CGameController.BOT_FIRE_DELAY,
+      muzzleFor: (deg: number) => botTank.muzzleForAngle(deg),
+      aimDegToward: (t: {x: number; y: number}) =>
+        this.aimDegToward(botTank.getTurretPivot(), new Vec2(t.x, t.y)),
+      moveMaxDist,
+      radiationAt: (x: number) => this.m_land.radiationAt(Math.floor(x)),
+      weights: this.ultraWeightsFor(botTank), // this bot's personality (ruthless / cautious / …)
+      rnd: Math.random,
+    };
+  }
+
+  // Weapon cost (credits) at/above which Ultra treats a round as premium ordnance to reserve.
+  private static readonly ULTRA_PREMIUM_COST_VALUE = 1200; // only genuinely pricey ordnance is "premium"
 
   // Computer-player difficulty (AI_LEVEL_MIN..AI_LEVEL_MAX; higher = sharper aim).
   getDifficulty(): number {
@@ -4537,6 +5077,7 @@ export class CGameController implements ShotWorld {
         armor: h.nArmor,
         hazmat: h.nHazmat,
         credits: t.getCredits(),
+        alive: t.isAlive(),
       };
     });
     return {
@@ -4586,8 +5127,11 @@ export class CGameController implements ShotWorld {
 
   /** Apply an authoritative snapshot from the acting client (spectator side). */
   applyNetSnapshot(s: NetSnapshot): void {
+    if (!s || !Array.isArray(s.tanks)) return; // defend against a malformed snapshot (see NET validation)
     this.m_ghostShots = []; // the shot resolved — clear any in-flight visual arc
-    s.tanks.forEach((st, i) => this.m_tanks[i]?.setNetState(st));
+    s.tanks.forEach((st, i) => {
+      if (st && typeof st === 'object') this.m_tanks[i]?.setNetState(st);
+    });
     // Reconcile terrain so remote craters/deposits render (not just collision heights).
     if (s.heights.length) this.m_land.setHeightmap(s.heights);
     this.m_wind.x = s.wind.x;
@@ -4861,12 +5405,14 @@ export class CGameController implements ShotWorld {
 
   buyWeapon(i: number): boolean {
     const ok = this.activeEconomy().buy(i);
+    if (ok) this.poolActiveCredits(); // re-sync squad copies to the debited balance (ECON-1)
     if (ok && this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'buy', index: i});
     return ok;
   }
 
   sellWeapon(i: number): boolean {
     const ok = this.activeEconomy().sell(i);
+    if (ok) this.poolActiveCredits(); // re-sync squad copies to the refunded balance (ECON-1)
     if (ok && this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'sell', index: i});
     return ok;
   }
@@ -4875,6 +5421,7 @@ export class CGameController implements ShotWorld {
     // Net: deterministic (index-order, no Math.random) so a relayed autobuy yields the SAME
     // loadout + credit spend on every client. Solo keeps the varied random assortment.
     this.activeEconomy().autoBuy({deterministic: this.m_netMode});
+    this.poolActiveCredits(); // re-sync squad copies to the drained balance (ECON-1)
     if (this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'autobuy'});
   }
 
@@ -5259,6 +5806,22 @@ export class CGameController implements ShotWorld {
   // at turn start and consume rounds as they fire, like the original AI. Lazily created, bound to
   // each bot tank's own credits; cleared per match.
   private readonly m_botEconomy = new Map<CTank, CEconomy>();
+  // Ultra ranging memory: where each tank's last primary shot LANDED, and the aim (target + power) it
+  // was fired with — so an Ultra bot corrects its next shot's power off the observed over/undershoot.
+  // Ultra ranging memory — ONE atomic record per bot: the last shot's aim (target + fired ANGLE +
+  // power) and, once that exact shot lands on the ground, where it landed. Kept together (not two
+  // maps) so the landing always belongs to the shot that produced it. The angle is held constant while
+  // walking a target so the power↔range relation stays monotonic (a fresh solver angle each turn would
+  // jump basins and the landing wouldn't track power) — only the power is corrected.
+  private readonly m_ultraShot = new Map<
+    CTank,
+    {targetX: number; weapon: number; angle: number; power: number; landedX?: number}
+  >();
+  // Each Ultra bot's personality (weights), drawn once per match so two Ultra bots play differently.
+  private readonly m_ultraPersonality = new Map<CTank, UltraWeights>();
+  // Each Ultra bot's life at the START of its previous turn — a drop means an enemy has its range
+  // (it was shelled during the opponent's turn), so it should seek cover.
+  private readonly m_ultraLastLife = new Map<CTank, number>();
   private m_mapName = ''; // set (localised) on each map load; '' pre-load, never surfaced
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
@@ -5272,6 +5835,7 @@ export class CGameController implements ShotWorld {
   private m_mines: {
     x: number;
     y: number;
+    vy: number; // vertical fall speed — non-zero only while dropping into a fresh hole
     owner: CTank | null;
     weaponIndex: number;
     armed: number;
