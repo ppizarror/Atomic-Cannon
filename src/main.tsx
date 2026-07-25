@@ -427,6 +427,22 @@ async function main(): Promise<void> {
     },
     true,
   );
+  // Losing the window mid-drag (Alt-Tab, an OS gesture, a native drag) may never deliver
+  // pointerup/pointercancel, which would leave `aiming`/`minimapDrag` stuck — subsequent BUTTONLESS
+  // moves would then keep re-aiming / panning until the next click. Cancel any drag on blur/hide, the
+  // same defence the thrust reset above applies to held keys.
+  const cancelPointerDrag = (): void => {
+    minimapDrag = false;
+    container.style.cursor = '';
+    if (aiming) {
+      aiming = false;
+      gameController.endAim(false);
+    }
+  };
+  window.addEventListener('blur', cancelPointerDrag);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) cancelPointerDrag();
+  });
 
   // Keep the canvas fitted to the container. A ResizeObserver fires after layout
   // for ANY size change (window resize, devtools open/close, HUD height change) —

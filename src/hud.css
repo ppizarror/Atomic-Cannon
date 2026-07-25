@@ -1817,6 +1817,46 @@ canvas {
   margin-left: 44px;
 }
 
+/* ---- Import / Export editor -------------------------------------------------- */
+/* A read-only description panel (no rows to click): the intro line then one caption per
+   action, spaced out and centered over the green plate. */
+.ie-list {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 28px;
+}
+.ie-intro {
+  margin-bottom: 10px;
+  text-align: center;
+}
+.ie-status-fail canvas {
+  filter: drop-shadow(0 0 2px rgba(220, 40, 40, 0.9));
+}
+
+/* Reset confirmation dialog (composed from <Modal> + <ModalButton>). */
+.confirm-card {
+  width: min(460px, 90vw);
+  padding: 22px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.confirm-title canvas {
+  display: block;
+}
+.confirm-body {
+  align-items: center;
+}
+.confirm-buttons {
+  display: flex;
+  gap: 14px;
+  margin-top: 4px;
+}
+
 /* ---- Customize Taunts editor ------------------------------------------------ */
 /* Category selector (Taunts / Post-Fire / Death); the active list is highlighted. */
 .taunt-tabs {

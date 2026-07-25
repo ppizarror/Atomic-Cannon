@@ -186,7 +186,15 @@ export function DepotPanel() {
   const selectRow = (i: number) => {
     uiClick();
     setSel(i);
-    game().selectWeapon(i);
+  };
+
+  // Equip the chosen weapon when the user closes the depot: without this you could buy a weapon, pick
+  // it, close, and still be holding your OLD weapon (the select-time equip was silently swallowed by
+  // the pause). Only the user-driven closes equip — the turn-change auto-close (syncHud) calls
+  // closeDepot directly, so a forfeit can't equip this tank's pick onto the next player's tank.
+  const closeAndEquip = () => {
+    closeDepot();
+    game().selectWeapon(sel);
   };
 
   const selW = WEAPON_DATABASE[sel];
@@ -194,7 +202,7 @@ export function DepotPanel() {
   const canSell = !!selW && owned[sel] !== UNLIMITED && (owned[sel] ?? 0) > 0;
 
   return (
-    <div class="overlay dep-overlay" onClick={closeDepot}>
+    <div class="overlay dep-overlay" onClick={closeAndEquip}>
       <div
         class={`dep-card${GameConfig.smallBuyFonts ? ' small-buy' : ''}`}
         onClick={e => e.stopPropagation()}
@@ -348,7 +356,7 @@ export function DepotPanel() {
                   setShowStats(s => !s);
                 }}
               />
-              <DepBtn label={d.close} onClick={closeDepot} />
+              <DepBtn label={d.close} onClick={closeAndEquip} />
             </div>
           </div>
         </div>

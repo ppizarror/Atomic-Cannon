@@ -20,6 +20,7 @@ import {WeaponsEditor, LandscapesEditor} from './EnableListEditor';
 import {ControlsEditor} from './ControlsEditor';
 import {PlayersEditor} from './PlayersEditor';
 import {TauntEditor} from './TauntEditor';
+import {ImportExportEditor} from './ImportExportEditor';
 
 interface Entry {
   label: string;
@@ -49,6 +50,7 @@ function categories(): Entry[] {
     item(c.controls, 'controls'),
     item(c.players, 'players'),
     item(c.taunts, 'taunts'),
+    item(c.importExport, 'importExport'),
   ];
 }
 
@@ -71,6 +73,7 @@ export function Settings() {
   if (p === 'controls') return <ControlsEditor />;
   if (p === 'players') return <PlayersEditor />;
   if (p === 'taunts') return <TauntEditor />;
+  if (p === 'importExport') return <ImportExportEditor />;
   if (p !== 'root') return <SettingsPage id={p} />;
   return <SettingsRoot />;
 }

@@ -312,6 +312,7 @@ export class CAudio {
   // Which looped bed is the CURRENT context — recorded even while music is DISABLED so a later
   // "enable music" re-arms the RIGHT track (menu music on the menu, not a battle track).
   private m_musicContext: 'menu' | 'battle' | null = null;
+  private m_battleTrack: string | null = null; // the battle bed picked for THIS battle (replayed on re-arm)
 
   menuMusic(): void {
     this.m_musicContext = 'menu';
@@ -322,8 +323,8 @@ export class CAudio {
   /** Start a battle: one random looped track. */
   battleMusic(): void {
     this.m_musicContext = 'battle';
-    const pick = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
-    void this.m_music.play(pick, true);
+    this.m_battleTrack = BATTLE_TRACKS[Math.floor(Math.random() * BATTLE_TRACKS.length)];
+    void this.m_music.play(this.m_battleTrack, true);
   }
 
   battleWon(): void {
@@ -362,8 +363,12 @@ export class CAudio {
     // Re-arm the CURRENT context's bed when unmuted (setEnabled(false) stopped it) — menu music on
     // the menu, battle music in a battle. A screen-unaware re-arm played a battle track over the menu.
     if (on && !this.m_music.currentTrack()) {
-      if (this.m_musicContext === 'battle') this.battleMusic();
-      else if (this.m_musicContext === 'menu') this.menuMusic();
+      // Replay the SAME battle bed that was muted (not a fresh random pick — that swapped the track
+      // on a mute/unmute toggle mid-battle). Fall back to a fresh pick if none was chosen yet.
+      if (this.m_musicContext === 'battle') {
+        if (this.m_battleTrack) void this.m_music.play(this.m_battleTrack, true);
+        else this.battleMusic();
+      } else if (this.m_musicContext === 'menu') this.menuMusic();
     }
     this.saveSettings();
   }

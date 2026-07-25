@@ -366,6 +366,7 @@ export interface Strings {
       controls: EntryCopy;
       players: EntryCopy;
       taunts: EntryCopy;
+      importExport: EntryCopy;
     };
     done: string;
     doneSubGame: string;
@@ -509,6 +510,31 @@ export interface Strings {
         postFire: EntryCopy;
         death: EntryCopy;
       };
+    };
+    importExport: {
+      title: string;
+      /** One-line description of the screen, shown in the body panel. */
+      intro: string;
+      /** Body rows describing each action. */
+      importDesc: string;
+      exportDesc: string;
+      resetDesc: string;
+      /** Action buttons. */
+      import: string;
+      export: string;
+      reset: string;
+      done: string;
+      /** Footer hint shown when idle. */
+      idle: string;
+      /** Status after a successful import — `{n}` is the number of setting groups restored. */
+      imported: string;
+      /** Status when the chosen file isn't a valid backup. */
+      importFailed: string;
+      /** Reset confirmation dialog. */
+      confirmTitle: string;
+      confirmBody: string;
+      confirmYes: string;
+      confirmNo: string;
     };
     enableList: {
       /** Row state when the item is on. */

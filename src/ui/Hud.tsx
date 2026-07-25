@@ -152,13 +152,24 @@ function MeterOverlay() {
   const emptyH = R.meter[3] * (1 - (p - POWER_MIN) / (POWER_MAX - POWER_MIN));
   const barRef = useRef<HTMLDivElement>(null);
 
+  const grabSeq = useRef(0);
   const powerFromEvent = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
     const rect = barRef.current?.getBoundingClientRect();
     if (!rect) return;
     const frac = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     game().setPower(Math.round(POWER_MAX - frac * (POWER_MAX - POWER_MIN)));
   };
-  const drag = usePointerDrag<HTMLDivElement>({onStart: powerFromEvent, onMove: powerFromEvent});
+  // Capture the turn on grab; stop applying if the turn changes mid-drag (a shot-clock forfeit hands
+  // off without a pointerup, and pointer-capture keeps delivering moves past the `blocked` CSS).
+  const drag = usePointerDrag<HTMLDivElement>({
+    onStart: e => {
+      grabSeq.current = game().turnSeq();
+      powerFromEvent(e);
+    },
+    onMove: e => {
+      if (game().turnSeq() === grabSeq.current) powerFromEvent(e);
+    },
+  });
 
   return (
     <>
@@ -270,14 +281,16 @@ function AngleReadout() {
 // press point so the needle doesn't jump; pointer capture keeps it tracking when
 // the cursor slips off the small dial.
 function DialGrab() {
-  const drag = useRef<{x: number; a: number} | null>(null);
+  const drag = useRef<{x: number; a: number; seq: number} | null>(null);
   const handlers = usePointerDrag<HTMLDivElement>({
     onStart: e => {
-      drag.current = {x: e.clientX, a: game().getAngle()};
+      drag.current = {x: e.clientX, a: game().getAngle(), seq: game().turnSeq()};
     },
     onMove: e => {
       const d = drag.current;
-      if (d) game().setAngle(wrapAngle(Math.round(d.a - (e.clientX - d.x) * ANGLE_PER_PX)));
+      // Stop applying if the turn changed mid-drag (forfeit hand-off past a captured pointer).
+      if (d && game().turnSeq() === d.seq)
+        game().setAngle(wrapAngle(Math.round(d.a - (e.clientX - d.x) * ANGLE_PER_PX)));
     },
   });
   return (

@@ -3323,6 +3323,11 @@ export class CGameController implements ShotWorld {
   private beginTurn(): void {
     this.m_movePlacing = false; // a fresh turn is never mid-placement
     this.m_turnForfeited = false; // fresh turn: the passive-death forfeit latch is re-armed
+    // Disown any aim drag held from the PREVIOUS turn. A shot-clock forfeit ends the turn with no user
+    // action, so a pointer still held would otherwise keep aiming the NEW current tank: the world drag
+    // bails once m_aim.active is false, and the HUD power/angle drags bail when m_turnSeq changes.
+    this.m_aim.active = false;
+    this.m_turnSeq++;
     const tank = this.getCurrentTank();
     // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it up
     // on the human's turn-begin from whatever credits are on hand (a no-op when broke). In net,
@@ -5133,6 +5138,12 @@ export class CGameController implements ShotWorld {
     return this.m_displayH;
   }
 
+  /** Monotonic turn counter (bumped each beginTurn). A held HUD aim drag captures it on grab and stops
+   *  applying once it changes — so a pointer held across a turn hand-off can't aim the next player. */
+  turnSeq(): number {
+    return this.m_turnSeq;
+  }
+
   /** True while it is the local player's turn in a network match (drives input/HUD). */
   isLocalNetTurn(): boolean {
     // The active TANK (m_currentPlayerIndex is a tank index) is mine when its owning player —
@@ -6243,6 +6254,9 @@ export class CGameController implements ShotWorld {
   // Latch so the acting-tank passive-death forfeit fires endTurn ONCE per turn (re-armed in beginTurn),
   // not every frame while awaiting the server's net turn hand-off. See the forfeit in updateBattle.
   private m_turnForfeited = false;
+  // Bumped every beginTurn. HUD aim drags (power meter / angle dial) capture it on grab and bail when
+  // it changes, so a drag held across a turn hand-off can't scrub the next player's aim. See turnSeq().
+  private m_turnSeq = 0;
 
   // Game state machine
   private m_gameState: EGameState = EGameState.Battle;
