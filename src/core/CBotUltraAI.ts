@@ -89,6 +89,7 @@ export interface UltraCtx {
   aimDegToward: (target: Pt) => number; // straight-line aim (for beams)
   moveMaxDist: number; // furthest the bot can drive this turn (0 → no Move utility owned)
   radiationAt: (x: number) => boolean; // is the fallout carpet under column x?
+  mines: number[]; // world-x of known mines — a drive must never roll the tank over one
   weights?: UltraWeights; // this bot's personality (defaults to ULTRA_WEIGHTS_DEFAULT when absent)
   rnd: () => number;
 }
@@ -112,13 +113,16 @@ const DIG_OUT_VALUE = 400;
 // Effective damage at/above which a premium (nuke) shot is worth firing even without a kill/multi-hit —
 // a big hit is leverage. Below it, a nuke on a graze is wasteful and stays banked.
 const PREMIUM_MIN_VALUE = 250;
-// Against a BURIED enemy: reward a beam (damages while keeping it pinned under the dirt) and penalise an
-// explosive round (its crater would FREE the enemy to move) — the pro "keep them buried" play.
-const BURIED_BEAM_BONUS = 300;
+// At/under this life fraction, a bot that CAN'T heal is desperate — it throws its premium ordnance with
+// no reservation (do-or-die). If it can heal, it heals instead (bestBuff's urgency curve wins).
+const DESPERATE_LIFE_FRAC = 0.3;
+// Against a BURIED enemy: penalise an explosive round — its crater (and a beam's carve) would FREE the
+// enemy to move. So the bot doesn't blast/beam a pinned enemy loose unless the shot outright kills.
 const UNBURY_PENALTY = 350;
 // Laying a mine in the enemy's zone (area denial). Modest — done when there's no strong attack, not
-// instead of one.
+// instead of one. Don't lay a second within MINE_SPACING of an existing one (redundant).
 const MINE_VALUE = 130;
+const MINE_SPACING = 90;
 // Relocating to cover when the enemy already has your range. Beats sitting still to be shelled, but a
 // real attack still outranks it.
 const COVER_VALUE = 175;
@@ -240,36 +244,38 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
   if (ctx.self.buried) firers = firers.filter(w => w.isBeam);
   if (!firers.length || !enemies.length) return null;
 
-  let best: ShotPlan | null = null;
+  // Desperate = near death AND can't heal → drop premium reservation and throw everything.
+  const canHeal = weapons.some(w => w.ext === 10 && w.count > 0);
+  const desperate = ctx.self.life < ctx.self.maxLife * DESPERATE_LIFE_FRAC && !canHeal;
+
   const cands: ShotPlan[] = [];
-  const consider = (p: ShotPlan) => {
-    cands.push(p);
-    if (
-      !best ||
-      p.value > best.value ||
-      // Tie-break: prefer the CHEAPER weapon (bank the pricey stuff) at equal value.
-      (p.value === best.value && weaponCost(weapons, p.weaponIndex) < weaponCost(weapons, best.weaponIndex))
-    )
-      best = p;
-  };
+  const consider = (p: ShotPlan) => cands.push(p);
+  // Higher value wins; at equal value the CHEAPER weapon does (bank the pricey stuff).
+  const better = (a: ShotPlan, b: ShotPlan): boolean =>
+    a.value > b.value ||
+    (a.value === b.value && weaponCost(weapons, a.weaponIndex) < weaponCost(weapons, b.weaponIndex));
 
   for (const e of enemies) {
-    // BEAMS are hitscan: aim straight at the enemy, no arc. Score the beam on the direct line.
-    for (const w of firers.filter(f => f.isBeam)) {
-      const s = scoreBlast(e.x, e.y, w, enemies, wt);
-      if (s.hits > 0)
-        consider({
-          weaponIndex: w.index,
-          angleDeg: ctx.aimDegToward({x: e.x, y: e.y}),
-          power: 1000,
-          targetX: e.x,
-          // A beam on a BURIED enemy is ideal — damages it AND keeps it pinned under the dirt.
-          value: adjustForPremium(w, s.value, s.kills, s.hits, wt) + (e.buried ? BURIED_BEAM_BONUS : 0),
-          kills: s.kills,
-          hits: s.hits,
-          note: `beam ${describe(s)}`,
-        });
-    }
+    // BEAMS are hitscan straight rays: only score them when the LINE from the muzzle to the enemy is
+    // CLEAR — a beam can't shoot through a mountain (scoring it as an always-hit is why it used to be
+    // over-picked and nukes never fired). Aim straight at the enemy, no arc.
+    const beamAngle = ctx.aimDegToward({x: e.x, y: e.y});
+    const beamClear = !beamBlocked(muzzleFor(beamAngle), {x: e.x, y: e.y}, field);
+    if (beamClear)
+      for (const w of firers.filter(f => f.isBeam)) {
+        const s = scoreBlast(e.x, e.y, w, enemies, wt);
+        if (s.hits > 0)
+          consider({
+            weaponIndex: w.index,
+            angleDeg: beamAngle,
+            power: 1000,
+            targetX: e.x,
+            value: adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate),
+            kills: s.kills,
+            hits: s.hits,
+            note: `beam ${describe(s)}`,
+          });
+      }
 
     // BALLISTIC: solve one arc to this enemy, then score every arced weapon at its impact.
     const arc = bestAim(muzzleFor, {x: e.x, y: e.y}, wind, field, gustT0);
@@ -287,7 +293,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     for (const w of firers.filter(f => !f.isBeam)) {
       const s = scoreBlast(cx, cy, w, enemies, wt);
       if (s.hits === 0) continue;
-      let value = adjustForPremium(w, s.value, s.kills, s.hits, wt);
+      let value = adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate);
       // Trap play: an earth (dirt-dumping) weapon on a weak, low target is worth a little extra even
       // when it barely damages — it buries them.
       if (w.earth > 0 && s.kills === 0 && enemyIsWeak(enemies, cx, cy)) value += wt.buryBonus;
@@ -306,7 +312,8 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
       });
     }
   }
-  if (!best) return null;
+  if (!cands.length) return null;
+  const best = cands.reduce((b, c) => (better(c, b) ? c : b));
   // A KILL is taken deterministically (the cheapest lethal shot — banks the pricey stuff). Otherwise
   // EXPLORE: pick at random among shots within the personality's band of the best value, so the bot
   // varies its weapon/target instead of firing the single top pick every turn.
@@ -366,8 +373,10 @@ function adjustForPremium(
   kills: number,
   hits: number,
   wt: UltraWeights,
+  desperate: boolean,
 ): number {
-  if (!w.isPremium || kills > 0 || hits >= 2 || value >= PREMIUM_MIN_VALUE) return value;
+  // DESPERATE (near death, can't heal): no reservation — throw everything, it's do-or-die.
+  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || value >= PREMIUM_MIN_VALUE) return value;
   return value - wt.premiumWaste;
 }
 
@@ -398,6 +407,7 @@ function bestCrateGrab(ctx: UltraCtx): {destX: number; value: number; note: stri
     if (Math.abs(c.x - self.x) > moveMaxDist) continue; // out of drive range
     if (c.kind === 'bomb') continue; // a trap — never a grab
     if (distToEnemies(c.x) < dNow - CRATE_CLOSE_TOL) continue; // don't close on the enemy for loot
+    if (unsafeMoveTo(ctx, c.x)) continue; // don't drive over a mine / into fallout for loot
     let value: number;
     if (c.kind === 'credits') value = c.amount * (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).creditValue;
     else if (c.kind === 'health') value = Math.min(c.amount, self.maxLife - self.life);
@@ -413,12 +423,23 @@ function bestCrateGrab(ctx: UltraCtx): {destX: number; value: number; note: stri
 function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note: string} | null {
   const {self, moveMaxDist, radiationAt, field} = ctx;
   if (!self.onRadiation || moveMaxDist <= 0) return null;
-  const step = 8;
-  for (let d = step; d <= moveMaxDist; d += step) {
+  const reachableCleanSafe = (x: number): boolean =>
+    x >= 20 && x <= field.width - 20 && !radiationAt(x) && !pathHitsMine(self.x, x, ctx.mines);
+  // Flee value scales with how dangerous the fallout is: modest while healthy (so the bot fires back and
+  // eats a little DOT instead of always running) → high near death (survival). This is what stops it
+  // fleeing every turn forever — once low it flees, otherwise it fights.
+  const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
+  const value = RAD_FLEE_VALUE * (0.35 + (1 - lifeFrac) * 1.25); // ~0.35× healthy → ~1.6× near 0
+  // Prefer escaping TOWARD a reachable crate on clean ground — ONE move both flees and grabs the loot.
+  const crate = ctx.crates.find(
+    c => c.landed && c.kind !== 'bomb' && Math.abs(c.x - self.x) <= moveMaxDist && reachableCleanSafe(c.x),
+  );
+  if (crate) return {destX: crate.x, value: value + 80, note: 'flee-to-crate'};
+  // Else hop to the nearest clean ground (fully off the carpet, so it's a ONE-turn escape).
+  for (let d = 8; d <= moveMaxDist; d += 8) {
     for (const dir of [-1, 1]) {
       const x = self.x + dir * d;
-      if (x < 20 || x > field.width - 20) continue;
-      if (!radiationAt(x)) return {destX: x, value: RAD_FLEE_VALUE, note: 'flee-radiation'};
+      if (reachableCleanSafe(x)) return {destX: x, value, note: 'flee-radiation'};
     }
   }
   return null;
@@ -435,6 +456,7 @@ function bestReposition(ctx: UltraCtx): {destX: number; value: number; note: str
   const dir = near.x >= self.x ? 1 : -1;
   const destX = clampX(self.x + dir * moveMaxDist, field);
   if (Math.abs(destX - self.x) < 4) return null; // already as close as we can get
+  if (unsafeMoveTo(ctx, destX)) return null; // don't drive over a mine / into fallout
   return {destX, value: REPOSITION_VALUE, note: 'reposition'};
 }
 
@@ -449,8 +471,33 @@ function coverScore(x: number, ex: number, field: AimField): number {
   return sx - ridge; // >0 when a ridge between us and the enemy stands taller than we do
 }
 
+/** True if terrain blocks the straight LINE from `a` to `b` — a beam can't pass through a hill. */
+function beamBlocked(a: Pt, b: Pt, field: AimField): boolean {
+  const steps = Math.max(2, Math.floor(Math.abs(b.x - a.x) / 12));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t; // the ray's height at column x
+    if (y >= field.heightAt(clampX(x, field))) return true; // ray at/below the ground → blocked
+  }
+  return false;
+}
+
+/** True if driving from `fromX` to `toX` would roll the tank over a mine / hazard — never do that. */
+function pathHitsMine(fromX: number, toX: number, mines: number[]): boolean {
+  const lo = Math.min(fromX, toX) - 12,
+    hi = Math.max(fromX, toX) + 12;
+  return mines.some(mx => mx >= lo && mx <= hi);
+}
+
+/** A destination is UNSAFE to drive to if the path crosses a mine or the spot sits on radiation. */
+function unsafeMoveTo(ctx: UltraCtx, destX: number): boolean {
+  return pathHitsMine(ctx.self.x, destX, ctx.mines) || ctx.radiationAt(destX);
+}
+
 /** Relocate to COVER when the enemy already has our range: scan drivable spots for the one best shielded
- *  by an intervening ridge (and lower-lying). Only moves if it's meaningfully safer than sitting still. */
+ *  by an intervening ridge (and lower-lying). Skips spots on radiation or paths over a mine. Only moves
+ *  if it's meaningfully safer than sitting still. */
 function bestCoverMove(ctx: UltraCtx): {destX: number; value: number; note: string} | null {
   const {self, moveMaxDist, field, enemies} = ctx;
   if (!self.threatened || self.buried || moveMaxDist <= 0 || !enemies.length) return null;
@@ -460,6 +507,7 @@ function bestCoverMove(ctx: UltraCtx): {destX: number; value: number; note: stri
   for (let d = 12; d <= moveMaxDist; d += 12) {
     for (const dir of [-1, 1]) {
       const x = clampX(self.x + dir * d, field);
+      if (unsafeMoveTo(ctx, x)) continue; // don't hide in fallout or drive over a mine
       const cover = coverScore(x, ex, field);
       if (cover > here + COVER_MARGIN && (!best || cover > best.cover)) best = {destX: x, cover};
     }
@@ -474,6 +522,8 @@ function bestMineLay(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
   const mine = ctx.weapons.find(w => w.isMine && w.count > 0);
   if (!mine || !ctx.enemies.length) return null;
   const e = nearestEnemy(ctx);
+  // Pointless to lay another mine where one already pins the enemy — one is enough.
+  if (ctx.mines.some(mx => Math.abs(mx - e.x) < MINE_SPACING)) return null;
   const arc = bestAim(ctx.muzzleFor, {x: e.x, y: e.y}, ctx.wind, ctx.field, ctx.gustT0);
   return {
     plan: {action: 'fire', weaponIndex: mine.index, angleDeg: arc.angleDeg, power: arc.power, targetX: e.x, note: 'mine'},
@@ -490,14 +540,16 @@ function bestBuff(ctx: UltraCtx): {weaponIndex: number; value: number; note: str
     if (w && value > 0 && (!best || value > best.value))
       best = {weaponIndex: w.index, value, note};
   };
-  // Heal (ext 10): only when genuinely hurt (personality threshold, capped so it can't turtle forever).
-  // Worth HALF the life it restores normally — so a strong attack (esp. a nuke) is taken over healing —
-  // but when CRITICALLY low (<25%) it's worth 1.3× (survival first). A guaranteed kill still short-
-  // circuits earlier, so a low bot with a lethal shot takes the kill rather than healing.
-  const healBelow = Math.min((ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).healBelow, 0.45);
-  if (self.life < self.maxLife * healBelow) {
-    const critical = self.life < self.maxLife * 0.25;
-    offer(own(10), (self.maxLife - self.life) * (critical ? 1.3 : 0.5), 'heal');
+  // Heal (ext 10): a DESPERATION curve. Below the personality's threshold the heal is worth only ~0.4×
+  // the life it restores (so near full a strong attack still wins — no turtling), but the value climbs
+  // steeply as life falls — up to ~1.6× near death — so a badly-hurt bot with a heal in stock USES it
+  // instead of trading chip damage. A guaranteed kill still short-circuits, so a low bot with a lethal
+  // shot takes the kill.
+  const healBelow = (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).healBelow;
+  const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
+  if (lifeFrac < healBelow) {
+    const urgency = 0.4 + Math.max(0, (healBelow - lifeFrac) / healBelow) * 1.2; // 0.4 → ~1.6 near 0
+    offer(own(10), (self.maxLife - self.life) * urgency, 'heal');
   }
   // Shield (ext 7): defensive stock when low and enemies are around.
   if (self.shield < 300) offer(own(7), (1000 - self.shield) * 0.25, 'shield');
@@ -545,30 +597,28 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   // A guaranteed KILL is never passed up for a crate/move/buff — take the shot.
   if (shot && shot.kills > 0) return firePlan();
   if (shot) cands.push({plan: firePlan(), value: shot.value, trick: false});
+  const canHit = !!shot && shot.hits > 0; // a shot that actually reaches an enemy
 
   // BURIED: dig out with a cleaner (no self-damage) — usually the best use of a stuck turn.
   const dig = bestCleanSelf(ctx);
   if (dig) cands.push({plan: dig.plan, value: dig.value, trick: false});
 
-  const crate = bestCrateGrab(ctx);
-  if (crate) cands.push({plan: {action: 'move', destX: crate.destX, note: crate.note}, value: crate.value, trick: true});
-
+  // SURVIVAL plays are always in the running (they can rightly override a mediocre shot): flee the
+  // fallout you're standing on, and self-buff/heal when hurt.
   const flee = bestRadiationEscape(ctx);
   if (flee) cands.push({plan: {action: 'move', destX: flee.destX, note: flee.note}, value: flee.value, trick: false});
-
   const buff = bestBuff(ctx);
   if (buff) cands.push({plan: {action: 'buff', weaponIndex: buff.weaponIndex, note: buff.note}, value: buff.value, trick: false});
 
-  // Lay a mine in the enemy's zone (area denial) — a low-key setup play.
-  const mine = bestMineLay(ctx);
-  if (mine) cands.push({plan: mine.plan, value: mine.value, trick: true});
-
-  // Relocate to COVER when the enemy already has our range (took damage since last turn).
-  const cover = bestCoverMove(ctx);
-  if (cover) cands.push({plan: {action: 'move', destX: cover.destX, note: cover.note}, value: cover.value, trick: true});
-
-  // Reposition only matters when no shot actually reaches an enemy (else firing is better).
-  if (!shot || shot.hits === 0) {
+  // POSITIONING / LOOT plays — ONLY when the bot can't actually hit an enemy this turn. Firing always
+  // comes first: a bot with a real shot shoots, it doesn't wander off for a crate or into cover.
+  if (!canHit) {
+    const crate = bestCrateGrab(ctx);
+    if (crate) cands.push({plan: {action: 'move', destX: crate.destX, note: crate.note}, value: crate.value, trick: true});
+    const cover = bestCoverMove(ctx);
+    if (cover) cands.push({plan: {action: 'move', destX: cover.destX, note: cover.note}, value: cover.value, trick: true});
+    const mine = bestMineLay(ctx);
+    if (mine) cands.push({plan: mine.plan, value: mine.value, trick: true});
     const repo = bestReposition(ctx);
     if (repo) cands.push({plan: {action: 'move', destX: repo.destX, note: repo.note}, value: repo.value, trick: true});
   }

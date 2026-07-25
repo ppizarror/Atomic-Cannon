@@ -45,6 +45,7 @@ function ctx(over: Partial<UltraCtx>): UltraCtx {
     aimDegToward: () => 0,
     moveMaxDist: 0,
     radiationAt: () => false,
+    mines: [],
     rnd: () => 0.99, // above TRICK_CHANCE → never take the random trick play (deterministic tests)
     ...over,
   };
@@ -185,7 +186,7 @@ describe('Ultra personalities — divergent play', () => {
 describe('Ultra when BURIED', () => {
   const buriedSelf = {
     x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0,
-    onRadiation: false, buried: true,
+    onRadiation: false, buried: true, threatened: false,
   };
   const beam = weapon({index: 5, isBeam: true, damage: 300, radius: 40});
   const cleaner = weapon({index: 7, isCleaner: true, damage: 0, offensive: false, count: 1});
@@ -270,6 +271,74 @@ describe('Ultra pro tactics — mines & cover', () => {
     );
     if (plan.action === 'move') expect(plan.note).not.toBe('cover');
   });
+
+  it('does NOT fire a beam THROUGH a hill (no line of sight)', () => {
+    const hill: AimField = {heightAt: x => (x >= 400 && x <= 450 ? 150 : GY), width: 1000, height: 620};
+    const beam = weapon({index: 5, isBeam: true, damage: 300, radius: 40});
+    const shot = bestOffensiveShot(
+      ctx({weapons: [beam], enemies: [enemy({x: 700, y: GY - 10})], field: hill, muzzleFor: () => ({x: 100, y: GY - 24})}),
+    );
+    expect(shot).toBeNull(); // the ridge blocks the ray → the beam is not a valid shot
+  });
+
+  it('does NOT lay a second mine when one already pins the enemy', () => {
+    const mine = weapon({index: 8, ext: 16, isMine: true, offensive: false, damage: 100, count: 1});
+    const plan = planUltraTurn(ctx({weapons: [mine], enemies: [enemy({x: 700})], mines: [710]}));
+    if (plan.action === 'fire') expect(plan.note).not.toBe('mine'); // a mine's already there
+  });
+
+  it('does NOT take cover on a radiation spot, nor drive over a mine to it', () => {
+    const ridge: AimField = {heightAt: x => (x >= 380 && x <= 420 ? 200 : 500), width: 1000, height: 620};
+    const plan = planUltraTurn(
+      ctx({
+        self: {x: 650, y: GY - 24, life: 800, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: true},
+        enemies: [enemy({x: 700})],
+        weapons: [],
+        field: ridge,
+        moveMaxDist: 400,
+        radiationAt: x => x < 380, // the only covered spots (behind the ridge) are irradiated
+      }),
+    );
+    if (plan.action === 'move') expect(plan.note).not.toBe('cover'); // won't hide in fallout
+  });
+
+  it('does NOT reposition across a mine', () => {
+    const plan = planUltraTurn(
+      ctx({
+        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+        enemies: [enemy({x: 900})], // far → would reposition toward it…
+        weapons: [],
+        moveMaxDist: 400,
+        mines: [300], // …but a mine sits on the path, so it won't
+      }),
+    );
+    expect(plan.action).not.toBe('move'); // the only move (reposition) crosses the mine → skipped
+  });
+});
+
+describe('Ultra desperation — low life', () => {
+  const hurt = (life: number) =>
+    ({x: 100, y: GY - 24, life, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false});
+
+  it('a badly hurt bot with a heal in stock HEALS instead of chipping', () => {
+    const heal = weapon({index: 5, ext: 10, damage: 0, offensive: false, count: 1});
+    const shell = weapon({index: 0, damage: 60, radius: 30});
+    const plan = planUltraTurn(ctx({weapons: [shell, heal], enemies: [enemy({x: 700, life: 1000})], self: hurt(200)}));
+    expect(plan.action).toBe('buff'); // the urgency curve makes healing beat a 60-dmg chip shot at 20% life
+  });
+
+  it('a desperate bot (low life, NO heal) throws a premium it would normally BANK', () => {
+    const shell = weapon({index: 0, damage: 60, radius: 30, cost: 0});
+    const premium = weapon({index: 9, damage: 200, radius: 40, cost: 800, isPremium: true}); // value 200 < 250 → normally banked
+    const enemies = [enemy({x: 700, life: 1000})]; // healthy — no kill
+
+    const calm = bestOffensiveShot(ctx({weapons: [shell, premium], enemies, self: hurt(1000)}));
+    expect(calm?.weaponIndex).toBe(0); // full life → premium reserved, cheap Shell fired
+
+    const plan = planUltraTurn(ctx({weapons: [shell, premium], enemies, self: hurt(200)}));
+    expect(plan.action).toBe('fire');
+    if (plan.action === 'fire') expect(plan.weaponIndex).toBe(9); // 20% life, no heal → do-or-die, throw it
+  });
 });
 
 describe('rangePowerCorrection — walking shots onto target', () => {
@@ -303,17 +372,47 @@ describe('rangePowerCorrection — walking shots onto target', () => {
 });
 
 describe('planUltraTurn — purposeful action selection', () => {
-  it('flees the fallout carpet when standing on it with no shot to take', () => {
+  it('flees the fallout carpet when HURT (survival) — one hop to clean ground', () => {
     const plan = planUltraTurn(
       ctx({
         weapons: [], // nothing to fire
-        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        self: {x: 100, y: GY - 24, life: 250, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
         moveMaxDist: 200,
         radiationAt: x => Math.abs(x - 100) < 50, // clean ground exists just off the carpet
       }),
     );
     expect(plan.action).toBe('move');
-    if (plan.action === 'move') expect(plan.note).toBe('flee-radiation');
+    if (plan.action === 'move') expect(plan.note).toBe('flee-radiation'); // low life → flight beats all
+  });
+
+  it('a HEALTHY bot on radiation FIRES back instead of fleeing (eats a little DOT)', () => {
+    const plan = planUltraTurn(
+      ctx({
+        weapons: [weapon({index: 0, damage: 150, radius: 40})], // a real shot
+        enemies: [enemy({x: 700})],
+        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        moveMaxDist: 200,
+        radiationAt: x => Math.abs(x - 100) < 50,
+      }),
+    );
+    expect(plan.action).toBe('fire'); // full life → the shot outvalues a weak flee; it doesn't run
+  });
+
+  it('escapes radiation TOWARD a reachable crate — one move both flees and grabs the loot', () => {
+    const plan = planUltraTurn(
+      ctx({
+        weapons: [],
+        self: {x: 100, y: GY - 24, life: 300, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        crates: [{x: 200, kind: 'credits', amount: 500, landed: true}], // clean ground + loot
+        moveMaxDist: 300,
+        radiationAt: x => Math.abs(x - 100) < 50, // x=200 is clean
+      }),
+    );
+    expect(plan.action).toBe('move');
+    if (plan.action === 'move') {
+      expect(plan.note).toBe('flee-to-crate');
+      expect(plan.destX).toBe(200); // heads to the box, off the carpet
+    }
   });
 
   it('drives to grab a valuable credits crate on the far side (away from the enemy)', () => {
