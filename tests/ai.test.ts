@@ -82,15 +82,28 @@ describe('Bot AI', () => {
       {x: 300, y: GY, healthFrac: 0.9}, // strong, near
       {x: 800, y: GY, healthFrac: 0.15}, // weak, far
     ];
-    // Deathmatch (deathmatch=true): high-level bots split weakest/nearest/random.
-    expect(pickTarget(enemies, 200, 10, true, () => 0.2)).toBe(1); // L>7, roll<0.4 → weakest
-    expect(pickTarget(enemies, 200, 10, true, () => 0.5)).toBe(0); // L>7, 0.4≤roll<0.8 → nearest
-    expect(pickTarget(enemies, 200, 5, true, () => 0.6)).toBe(1); // L≤7 always random; floor(0.6*2)=1
+    // Deathmatch (deathmatch=true): high-level bots split weakest/nearest/random. (botY = GY so the
+    // two same-row enemies rank by |dx|, keeping these cases about the mode/level gate.)
+    expect(pickTarget(enemies, 200, GY, 10, true, () => 0.2)).toBe(1); // L>7, roll<0.4 → weakest
+    expect(pickTarget(enemies, 200, GY, 10, true, () => 0.5)).toBe(0); // L>7, 0.4≤roll<0.8 → nearest
+    expect(pickTarget(enemies, 200, GY, 5, true, () => 0.6)).toBe(1); // L≤7 always random; floor(0.6*2)=1
 
     // Outside Deathmatch (Rounds/Points) the split is OFF even at max level → uniformly random.
     // roll 0.2 would have been "weakest" (idx 1) under the split; random branch → floor(0.2·2)=0.
-    expect(pickTarget(enemies, 200, 10, false, () => 0.2)).toBe(0); // random, not weakest
-    expect(pickTarget(enemies, 200, 10, false, () => 0.99)).toBe(1); // random → floor(0.99·2)=1
+    expect(pickTarget(enemies, 200, GY, 10, false, () => 0.2)).toBe(0); // random, not weakest
+    expect(pickTarget(enemies, 200, GY, 10, false, () => 0.99)).toBe(1); // random → floor(0.99·2)=1
+  });
+
+  it('nearest targeting uses EUCLIDEAN distance (dx²+dy²), not the horizontal gap', () => {
+    // A is closer in X but far below; B is farther in X but nearly level with the bot. A horizontal
+    // score would pick A; the real (Euclidean) nearest is B.
+    const bot = {x: 200, y: 100};
+    const enemies = [
+      {x: 250, y: 900, healthFrac: 0.5}, // dx 50, dy 800 → dist² = 642500 (X-nearest)
+      {x: 520, y: 120, healthFrac: 0.5}, // dx 320, dy 20 → dist² = 102800 (truly nearest)
+    ];
+    // roll in [0.4,0.8) → the "nearest" branch, at L>7 in Deathmatch.
+    expect(pickTarget(enemies, bot.x, bot.y, 10, true, () => 0.5)).toBe(1); // B, the Euclidean-nearest
   });
 
   it('weapon selection returns a valid ballistic weapon index', () => {

@@ -13,7 +13,7 @@ import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
 import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
-import {windProfile, isRealisticWind} from '../core/wind';
+import {windProfile, gustFactor} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
@@ -1287,7 +1287,6 @@ export class CGameController implements ShotWorld {
     if (this.m_gameState === EGameState.BattleEnd) {
       this.drawFireworks(ctx);
       this.drawWinnerFlag(ctx);
-      this.drawStandingsLabels(ctx); // per-tank standings label (points / life%) over each survivor
     }
 
     this.drawPlacedEntities(ctx);
@@ -1391,10 +1390,12 @@ export class CGameController implements ShotWorld {
 
     // Tank badges (name / life-shield-armour bars / hover stat lines), so a tank
     // low on screen shows its readouts over the HUD instead of being clipped.
-    for (const tank of this.m_tanks) {
-      if (tank.isAlive()) {
-        const hover = tank.isPointInside(this.m_mouse.x, this.m_mouse.y);
-        tank.paintBadge(octx, hover, this.m_assets);
+    if (this.m_gameState !== EGameState.BattleEnd) {
+      for (const tank of this.m_tanks) {
+        if (tank.isAlive()) {
+          const hover = tank.isPointInside(this.m_mouse.x, this.m_mouse.y);
+          tank.paintBadge(octx, hover, this.m_assets);
+        }
       }
     }
 
@@ -2019,7 +2020,11 @@ export class CGameController implements ShotWorld {
     if (!tank) return;
     const pos = tank.getPosition();
     const r = tank.getHitRadius();
-    const fx = pos.x + r + 22; // pole planted a little clear of the tank
+    // Plant on the side with screen room: if the tank sits on the RIGHT half of the view, put the
+    // pole to its LEFT (dir=-1) so the flag can't run off the right edge and hide; otherwise to its
+    // right. The cloth is mirrored by `dir` below so it always hangs AWAY from the hull.
+    const dir = pos.x - this.m_camX > this.m_viewW / 2 ? -1 : 1;
+    const fx = pos.x + dir * (r + 30); // pole a little clear of the hull, on the roomy side
     // Plant the pole ON the terrain (a hair below the surface so it doesn't float),
     // sampling the ground column right under the pole.
     const base = this.m_land.getHeightAt(fx) + 2;
@@ -2073,10 +2078,10 @@ export class CGameController implements ShotWorld {
       const l = 0.82 + 0.42 * shade; // brightness multiplier
       ctx.fillStyle = `rgb(${clamp255(224 * l)},${clamp255(34 * l)},${clamp255(34 * l)})`;
       ctx.beginPath();
-      ctx.moveTo(fx + fw * t0, flagTop + waveAt(t0));
-      ctx.lineTo(fx + fw * t1 + 0.5, flagTop + waveAt(t1)); // +0.5 overlap hides seams
-      ctx.lineTo(fx + fw * t1 + 0.5, flagTop + fh + waveAt(t1));
-      ctx.lineTo(fx + fw * t0, flagTop + fh + waveAt(t0));
+      ctx.moveTo(fx + dir * fw * t0, flagTop + waveAt(t0));
+      ctx.lineTo(fx + dir * (fw * t1 + 0.5), flagTop + waveAt(t1)); // +0.5 overlap hides seams
+      ctx.lineTo(fx + dir * (fw * t1 + 0.5), flagTop + fh + waveAt(t1));
+      ctx.lineTo(fx + dir * fw * t0, flagTop + fh + waveAt(t0));
       ctx.closePath();
       ctx.fill();
     }
@@ -2085,9 +2090,9 @@ export class CGameController implements ShotWorld {
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(fx, flagTop);
-    for (let i = 1; i <= N; i++) ctx.lineTo(fx + fw * (i / N), flagTop + waveAt(i / N));
+    for (let i = 1; i <= N; i++) ctx.lineTo(fx + dir * fw * (i / N), flagTop + waveAt(i / N));
     ctx.moveTo(fx, flagTop + fh);
-    for (let i = 1; i <= N; i++) ctx.lineTo(fx + fw * (i / N), flagTop + fh + waveAt(i / N));
+    for (let i = 1; i <= N; i++) ctx.lineTo(fx + dir * fw * (i / N), flagTop + fh + waveAt(i / N));
     ctx.stroke();
     ctx.restore();
   }
@@ -2141,7 +2146,7 @@ export class CGameController implements ShotWorld {
         life: FW_LIFE * (0.8 + Math.random() * 0.4),
       });
     }
-    this.m_audio?.firework(cx - this.m_camX); // Slapthunder1/2.wav (the boom), panned
+    this.m_audio?.firework(cx); // Slapthunder1/2.wav (the boom); pan spans the WORLD, so pass world-X
   }
 
   /** Tick the victory fireworks: launch on the interval, rise the rockets (trailing
@@ -2439,34 +2444,6 @@ export class CGameController implements ShotWorld {
     // A single green triangle bouncing over the tank's current position.
     const bob = Math.abs(Math.sin(this.m_time * 4)) * 8;
     drawTri(pos.x, pos.y - 26 - bob, 1);
-  }
-
-  /**
-   * Between-battles standings labels: a floating label over EVERY surviving tank on the standings
-   * screen (the original floats a per-tank label above each living tank there). Mode-aware, matching
-   * the original's two forms — Points mode shows "Name: N points", Deathmatch shows "Name: X% life".
-   * Sentries are excluded (they're off the scoreboard). Drawn in the outlined bitmap font so it reads
-   * over any terrain; the winner's taunt bubble (a DOM element) floats higher, so the two don't collide.
-   */
-  private drawStandingsLabels(ctx: CanvasRenderingContext2D): void {
-    for (const tank of this.m_tanks) {
-      if (!tank.isAlive() || tank.isSentry()) continue;
-      const pos = tank.getPosition();
-      this.drawBmpCentered(ctx, 'beijing-16-out', this.standingLabelFor(tank), pos.x, pos.y - 30);
-    }
-  }
-
-  /** The mode-aware standings label text for one tank, matching the original's two forms: Points
-   *  mode floats `Name: N points` (its net damage), Deathmatch floats `Name: X% life`. Separated
-   *  from the draw so the wording/mode logic is testable. */
-  private standingLabelFor(tank: CTank): string {
-    const g = strings.value.game;
-    const name = tank.getName() || g.noName;
-    if (this.m_gameType === EGameType.Rounds) {
-      return fmt(g.standingPoints, {name, n: Math.round(tank.getDamageDealt())});
-    }
-    const pct = Math.round(clamp01(tank.getHealth().nLife / tank.getMaxLife()) * 100);
-    return fmt(g.statusLife, {name, pct});
   }
 
   // ========================================================================
@@ -2975,6 +2952,10 @@ export class CGameController implements ShotWorld {
       tank,
     );
     drop.setWeaponIndex(idx);
+    // Same base-power seed as the live-fire Death path: a cooked-off drilling Death weapon (Six Under,
+    // Toxic Grave) drills at 0.5× the CORPSE's power, not the CShot default (which would fix it at a
+    // flat 0.5×50 = 25). Without this the posthumous drill mis-scales exactly as the live path did.
+    drop.setBasePower(tank.getPower());
     weaponDetonate(drop, weapon, this); // full effect at the corpse: blast + earth deposit + FX
   }
 
@@ -3637,6 +3618,11 @@ export class CGameController implements ShotWorld {
         tank,
       );
       drop.setWeaponIndex(this.m_currentWeaponIndex);
+      // A Death round drops at power 0, but its submunition DRILL (Six Under, Toxic Grave, …) launches
+      // at 0.5× the FIRER's power. initFromVelocity never sets the shot's power, so its base-power
+      // would fall back to the CShot default (→ a fixed 0.5×50 = 25 drill). Seed it with the firer's
+      // actual power so the drill scales with the shot the player set up.
+      drop.setBasePower(this.m_power);
       this.m_shots.push(drop);
       this.m_gameState = EGameState.ShotFlying;
       return;
@@ -4067,9 +4053,10 @@ export class CGameController implements ShotWorld {
 
     // Restock the bot's loadout when its finite stock has run low — a difficulty-scaled buy of
     // defensive support + a varied offensive assortment (real bots only, not the Demo-driven human).
+    // Threshold is < 5 (the original's restock trigger), not < 4.
     if (botTank.isBot()) {
       const econ = this.economyFor(botTank);
-      if (this.botFiniteStock(econ) < 4) this.aiRestock(botTank, econ);
+      if (this.botFiniteStock(econ) < 5) this.aiRestock(botTank, econ);
     }
 
     // A bot's turn is ONE action: MOVE or FIRE (mutually exclusive) — spending
@@ -4155,6 +4142,7 @@ export class CGameController implements ShotWorld {
         };
       }),
       botPos.x,
+      botPos.y,
       level,
       this.m_gameType === EGameType.Deathmatch,
     );
@@ -4181,6 +4169,10 @@ export class CGameController implements ShotWorld {
         {x: tp.x, y: tp.y},
         this.m_wind,
         field,
+        // Predict the gust phase AT LAUNCH: the shot fires after the fixed "thinking" delay, during
+        // which the gust clock keeps ticking. Passing the launch-time clock lets the bot lead the
+        // gusting Realistic wind instead of aiming at the mean (Linear → gustFactor is flat, no-op).
+        this.m_gustT + CGameController.BOT_FIRE_DELAY,
       );
       ballisticAngle = aim.angleDeg;
       ballisticPower = aim.power;
@@ -4232,7 +4224,7 @@ export class CGameController implements ShotWorld {
 
     // Execute fire after a brief "thinking" delay. The turn ends automatically once the shot
     // resolves (or immediately, for a self-buff utility).
-    this.schedule(0.8, () => this.fire());
+    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
   }
 
   // Computer-player difficulty (AI_LEVEL_MIN..AI_LEVEL_MAX; higher = sharper aim).
@@ -4672,8 +4664,9 @@ export class CGameController implements ShotWorld {
   // ========================================================================
 
   private static readonly MAX_WIND = 5;
-  // Peak gust swing as a fraction of the sustained wind (Realistic mode). 0.3 → wind breathes ±30%.
-  private static readonly GUST_FRAC = 0.3;
+  // Bot "thinking" delay between deciding a shot and firing it (seconds). The gust clock advances
+  // over this window, so the aim solver predicts the gust at (now + this) to match the launch.
+  private static readonly BOT_FIRE_DELAY = 0.8;
   // The vertical wind is 1/3 the horizontal max (matching the original's maxY = maxX·0.3333).
   private static readonly WIND_Y_RATIO = 1 / 3;
 
@@ -4696,20 +4689,11 @@ export class CGameController implements ShotWorld {
    */
   private updateEffectiveWind(dt: number): void {
     this.m_gustT += dt;
-    if (!isRealisticWind()) {
-      this.m_effWind = this.m_wind;
-      return;
-    }
-    const t = this.m_gustT;
-    // Two independent smooth envelopes in ~[-1,1] (superposed sines at incommensurate rates so the
-    // pattern never audibly repeats): gx breathes the along-wind strength, gy flutters the vertical.
-    const gx =
-      0.55 * Math.sin(t * 0.8) + 0.3 * Math.sin(t * 2.1 + 1.7) + 0.15 * Math.sin(t * 4.3 + 0.5);
-    const gy = 0.6 * Math.sin(t * 1.3 + 2.0) + 0.4 * Math.sin(t * 3.1 + 0.8);
-    this.m_effWind = new Vec2(
-      this.m_wind.x * (1 + gx * CGameController.GUST_FRAC),
-      this.m_wind.y * (1 + gy * CGameController.GUST_FRAC * 0.5),
-    );
+    // Realistic: fold the shared gust envelope (core/wind.ts) onto the sustained wind — the same
+    // function the aim AI predicts, so bot shots and real shots feel identical wind. Linear: the
+    // factor is a flat {1,1}, so m_effWind == m_wind (no gusts).
+    const g = gustFactor(this.m_gustT);
+    this.m_effWind = new Vec2(this.m_wind.x * g.x, this.m_wind.y * g.y);
   }
 
   /**

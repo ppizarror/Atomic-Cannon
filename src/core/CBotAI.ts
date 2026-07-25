@@ -14,7 +14,7 @@
  */
 import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_DRAG_K, launchSpeed} from './CShot';
 import {GameConfig} from './CGameConfig';
-import {windProfile, isRealisticWind} from './wind';
+import {windProfile, isRealisticWind, gustFactor} from './wind';
 import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
 import {clamp, deg2rad} from '../math/num';
@@ -108,7 +108,14 @@ export function angleError(level: number, rnd: () => number = Math.random): numb
  * Fly a virtual shot and return the closest distance it passes to `target`.
  * Uses the same semi-implicit Euler integrator as a real shot, so the aim it
  * finds transfers exactly. Stops on terrain contact or leaving the field.
+ *
+ * `gustT0` (Realistic wind) is the gust-clock time AT LAUNCH: each step re-samples the shared gust
+ * envelope at `gustT0 + i·dt` and scales the base `wind` by it, so the predicted arc rides the same
+ * breathing wind the real shot will — a bot then leads the gust instead of aiming at the mean.
+ * Omit it (or Linear mode) → the gust factor is a flat 1, i.e. the sustained wind as before.
  */
+const ONE_GUST = {x: 1, y: 1}; // neutral gust factor (Linear mode / gustT0 omitted)
+
 export function simulateMiss(
   origin: Pt,
   angleDeg: number,
@@ -116,6 +123,7 @@ export function simulateMiss(
   wind: Pt,
   field: AimField,
   target: Pt,
+  gustT0?: number,
 ): number {
   const r = deg2rad(angleDeg);
   // Match the REAL launch physics exactly (incl. the √worldScale zoom) so the solver's
@@ -135,8 +143,11 @@ export function simulateMiss(
     // Same wind altitude profile the real shot uses (uniform in Linear mode, boundary-layer
     // ramp in Realistic) so the predicted arc matches what actually flies.
     const wf = windProfile(field.heightAt(clamp(x, 0, field.width - 1)) - y);
-    vx += wind.x * SHOT_WIND_ACCEL * ws * wf * dt;
-    vy += wind.y * SHOT_WIND_ACCEL * ws * wf * dt;
+    // Gust: scale the base wind by the shared envelope at this flight instant (flat 1 in Linear /
+    // when gustT0 omitted), so the arc breathes exactly like the real shot's m_effWind.
+    const g = gustT0 === undefined ? ONE_GUST : gustFactor(gustT0 + i * dt);
+    vx += wind.x * g.x * SHOT_WIND_ACCEL * ws * wf * dt;
+    vy += wind.y * g.y * SHOT_WIND_ACCEL * ws * wf * dt;
     if (drag) {
       const loss = SHOT_DRAG_K * Math.hypot(vx, vy) * dt;
       vx -= vx * loss;
@@ -164,6 +175,7 @@ export function bestAim(
   target: Pt,
   wind: Pt,
   field: AimField,
+  gustT0?: number,
 ): AimResult {
   const up = muzzleFor(90);
   const aimRight = target.x >= up.x;
@@ -177,7 +189,7 @@ export function bestAim(
       const o = muzzleFor(a);
       for (let p = p0; p <= p1; p += pStep) {
         if (p < P_MIN || p > P_MAX) continue;
-        const d = simulateMiss(o, a, p, wind, field, target);
+        const d = simulateMiss(o, a, p, wind, field, target, gustT0);
         if (d < best.dist) best = {angleDeg: a, power: p, dist: d};
       }
     }
@@ -205,6 +217,7 @@ export function bestAim(
 export function pickTarget(
   enemies: {x: number; y: number; healthFrac: number}[],
   botX: number,
+  botY: number,
   level: number,
   deathmatch: boolean,
   rnd: () => number = Math.random,
@@ -222,11 +235,14 @@ export function pickTarget(
       return best;
     }
     if (r < 0.8) {
-      // nearest
+      // nearest — by EUCLIDEAN distance² (dx²+dy²), matching the original; a bot dug into a pit
+      // shouldn't read a tank across a valley as "nearest" just because their columns are close.
       let best = 0,
         bestD = Infinity;
       for (let i = 0; i < enemies.length; i++) {
-        const d = Math.abs(enemies[i].x - botX);
+        const dx = enemies[i].x - botX,
+          dy = enemies[i].y - botY;
+        const d = dx * dx + dy * dy;
         if (d < bestD) {
           bestD = d;
           best = i;
