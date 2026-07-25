@@ -958,12 +958,15 @@ export class CLand {
       s.phase = Math.random() * TWO_PI; // independent glow phase (no coherent wave/banding)
       s.pw = 3 + Math.random() * 4.5; // independent glow rate (each speck breathes at its own speed)
       s.rise = 0;
-      // Each grain's colour is randomised INDEPENDENTLY within the weapon's per-channel irRGB max, so
-      // the cloud ranges dark→bright — the original's natural fallout sparkle — instead of every speck
-      // carrying the same flat tint. Integer channels: the draw packs them into a colour key + rgb().
-      s.r = (Math.random() * (r + 1)) | 0;
-      s.g = (Math.random() * (g + 1)) | 0;
-      s.b = (Math.random() * (b + 1)) | 0;
+      // ONE shared brightness factor per grain: the cloud ranges dark→bright (the original's natural
+      // fallout sparkle) while KEEPING the weapon's HUE. Randomising each channel INDEPENDENTLY (the
+      // previous bug) scatters any multi-channel irRGB into a rainbow — plasma [128,0,128] read as
+      // random red/blue/magenta, defiled.pig [128,100,64] as red/yellow/green confetti. Integer
+      // channels: the draw packs them into a colour key + rgb().
+      const f = 0.3 + Math.random() * 0.7; // 0.3..1.0 — dark grains stay on-hue, never black
+      s.r = (r * f) | 0;
+      s.g = (g * f) | 0;
+      s.b = (b * f) | 0;
       this.m_radSpecks.push(s);
     }
     if (this.m_radSpecks.length > 17000)
