@@ -24,16 +24,17 @@ const flat: AimField = {heightAt: () => GY, width: 1000, height: 620};
 function weapon(over: Partial<UltraWeapon>): UltraWeapon {
   return {
     index: 0, ext: 0, cost: 0, count: Infinity, damage: 60, radius: 30, innerR: 5, spread: 0,
-    dotValue: 0, earth: 0, piercing: false, isBeam: false, isPremium: false, offensive: true, ...over,
+    dotValue: 0, earth: 0, piercing: false, isBeam: false, isCleaner: false, isMine: false,
+    isPremium: false, offensive: true, ...over,
   };
 }
 function enemy(over: Partial<UltraEnemy>): UltraEnemy {
-  return {x: 700, y: GY - 10, life: 1000, maxLife: 1000, shield: 0, hitRadius: 14, ...over};
+  return {x: 700, y: GY - 10, life: 1000, maxLife: 1000, shield: 0, hitRadius: 14, buried: false, ...over};
 }
 
 function ctx(over: Partial<UltraCtx>): UltraCtx {
   return {
-    self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false},
+    self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
     enemies: [enemy({})],
     weapons: [weapon({})],
     crates: [],
@@ -76,12 +77,20 @@ describe('bestOffensiveShot — expected value', () => {
     expect(shot?.hits).toBe(2); // …because it hits both
   });
 
-  it('BANKS a nuke on a low-value shot — fires the cheap Shell instead', () => {
-    const enemies = [enemy({x: 700, life: 1000})]; // lone, healthy → no kill available
+  it('BANKS a nuke when a cheap Shell already does the job (both kill → cheaper wins)', () => {
+    const enemies = [enemy({x: 700, life: 40})]; // a shell already finishes it
     const shell = weapon({index: 0, damage: 60, radius: 30, cost: 0});
     const nuke = weapon({index: 9, damage: 500, radius: 150, cost: 800, isPremium: true});
     const shot = bestOffensiveShot(ctx({enemies, weapons: [shell, nuke]}));
-    expect(shot?.weaponIndex).toBe(0); // premium reserved; cheap round chosen
+    expect(shot?.weaponIndex).toBe(0); // both kill → the cheap round wins, nuke banked
+  });
+
+  it('FIRES a nuke for BIG damage even without a kill (the leverage play)', () => {
+    const enemies = [enemy({x: 700, life: 1000})]; // healthy — no one-shot kill, but a huge hit
+    const shell = weapon({index: 0, damage: 60, radius: 30, cost: 0});
+    const nuke = weapon({index: 9, damage: 500, radius: 150, cost: 800, isPremium: true});
+    const shot = bestOffensiveShot(ctx({enemies, weapons: [shell, nuke]}));
+    expect(shot?.weaponIndex).toBe(9); // 500 dmg ≫ shell → worth throwing to force the fight
   });
 
   it('SPENDS the nuke when only it secures a kill', () => {
@@ -126,16 +135,43 @@ describe('Ultra personalities — divergent play', () => {
   const shell = weapon({index: 0, damage: 60, radius: 30});
   const heal = weapon({index: 5, ext: 10, damage: 0, offensive: false, count: 1});
 
-  it('cautious heals at 65% life where ruthless presses the attack', () => {
+  it('cautious heals at 42% life where ruthless presses the attack', () => {
     const base = {
       enemies: [enemy({x: 700, life: 1000})],
       weapons: [shell, heal],
-      self: {x: 100, y: GY - 24, life: 650, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false},
+      self: {x: 100, y: GY - 24, life: 420, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
     };
     const cautious = planUltraTurn(ctx({...base, weights: ULTRA_PERSONALITIES.cautious}));
     const ruthless = planUltraTurn(ctx({...base, weights: ULTRA_PERSONALITIES.ruthless}));
-    expect(cautious.action).toBe('buff'); // heals early (healBelow 0.78 → 65% counts as hurt)
-    expect(ruthless.action).toBe('fire'); // healBelow 0.40 → 65% is fine, so it shoots
+    expect(cautious.action).toBe('buff'); // heals when hurt (healBelow capped at 0.45 → 42% counts)
+    expect(ruthless.action).toBe('fire'); // healBelow 0.40 → 42% is fine, so it presses
+  });
+
+  it('explores among near-best NON-kill shots (varies the weapon, no single-round spam)', () => {
+    const enemies = [enemy({x: 700, life: 1000})]; // healthy → neither round kills
+    const a = weapon({index: 1, damage: 80, radius: 40});
+    const b = weapon({index: 2, damage: 90, radius: 40}); // slightly better, but close
+    const picks = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      const r = i / 40;
+      const shot = bestOffensiveShot(
+        ctx({enemies, weapons: [a, b], rnd: () => r, weights: {...ULTRA_PERSONALITIES.balanced, explore: 0.3}}),
+      );
+      if (shot) picks.add(shot.weaponIndex);
+    }
+    expect(picks.size).toBeGreaterThan(1); // both rounds see use — not always the top pick
+  });
+
+  it('a KILL is still taken deterministically (never explored away)', () => {
+    const enemies = [enemy({x: 700, life: 40})]; // a kill is available
+    const shell = weapon({index: 0, damage: 60, radius: 30});
+    const other = weapon({index: 1, damage: 90, radius: 40});
+    for (const r of [0.01, 0.5, 0.99]) {
+      const shot = bestOffensiveShot(
+        ctx({enemies, weapons: [shell, other], rnd: () => r, weights: {...ULTRA_PERSONALITIES.trickster, explore: 0.5}}),
+      );
+      expect(shot?.kills).toBe(1); // always a lethal shot regardless of the explore roll
+    }
   });
 
   it('the personality profiles are genuinely distinct', () => {
@@ -143,6 +179,96 @@ describe('Ultra personalities — divergent play', () => {
     expect(ruthless.premiumWaste).toBeLessThan(cautious.premiumWaste); // ruthless spends nukes freely
     expect(ruthless.healBelow).toBeLessThan(cautious.healBelow); // cautious heals earlier
     expect(trickster.trickChance).toBeGreaterThan(balanced.trickChance); // trickster loves setups
+  });
+});
+
+describe('Ultra when BURIED', () => {
+  const buriedSelf = {
+    x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0,
+    onRadiation: false, buried: true,
+  };
+  const beam = weapon({index: 5, isBeam: true, damage: 300, radius: 40});
+  const cleaner = weapon({index: 7, isCleaner: true, damage: 0, offensive: false, count: 1});
+  const shell = weapon({index: 0, damage: 60, radius: 30}); // normal ballistic → would self-damage
+
+  it('will NOT fire a normal ballistic round (it would detonate in the dirt and hurt itself)', () => {
+    const shot = bestOffensiveShot(ctx({self: buriedSelf, weapons: [shell]}));
+    expect(shot).toBeNull(); // no safe (beam) firer → no offensive shot
+  });
+
+  it('digs itself out with a cleaner when there is no safe attack', () => {
+    const plan = planUltraTurn(
+      ctx({self: buriedSelf, weapons: [shell, cleaner], enemies: [enemy({x: 700, life: 1000})], moveMaxDist: 0}),
+    );
+    expect(plan.action).toBe('fire');
+    if (plan.action === 'fire') {
+      expect(plan.note).toBe('clean-self');
+      expect(plan.weaponIndex).toBe(7); // the cleaner
+    }
+  });
+
+  it('SHOOTS a low-life enemy with a beam instead of cleaning itself', () => {
+    const plan = planUltraTurn(
+      ctx({self: buriedSelf, weapons: [beam, cleaner], enemies: [enemy({x: 700, life: 40})], moveMaxDist: 0}),
+    );
+    expect(plan.action).toBe('fire');
+    if (plan.action === 'fire') {
+      expect(plan.weaponIndex).toBe(5); // the beam kill beats digging out
+      expect(plan.note).not.toBe('clean-self');
+    }
+  });
+
+  it('attacks with a beam (never a ballistic) while buried', () => {
+    const shot = bestOffensiveShot(ctx({self: buriedSelf, weapons: [shell, beam], enemies: [enemy({x: 700})]}));
+    expect(shot?.weaponIndex).toBe(5); // only the beam is considered
+  });
+
+  it('against a BURIED ENEMY prefers a beam over a nuke (a nuke would free it)', () => {
+    const enemies = [enemy({x: 700, life: 1000, buried: true})];
+    const nuke = weapon({index: 9, damage: 500, radius: 150, cost: 800, isPremium: true});
+    const shot = bestOffensiveShot(ctx({weapons: [beam, nuke], enemies}));
+    expect(shot?.weaponIndex).toBe(5); // beam pins it under the dirt; the nuke's crater would dig it out
+  });
+});
+
+describe('Ultra pro tactics — mines & cover', () => {
+  it('lays a MINE (area denial) when it holds one and has no better attack', () => {
+    const mine = weapon({index: 8, ext: 16, isMine: true, offensive: false, damage: 100, count: 1});
+    const plan = planUltraTurn(ctx({weapons: [mine], enemies: [enemy({x: 700})]}));
+    expect(plan.action).toBe('fire');
+    if (plan.action === 'fire') expect(plan.note).toBe('mine');
+  });
+
+  it('moves to COVER behind a ridge when threatened (the enemy has its range)', () => {
+    const ridge: AimField = {heightAt: x => (x >= 380 && x <= 420 ? 200 : 500), width: 1000, height: 620};
+    const plan = planUltraTurn(
+      ctx({
+        self: {x: 650, y: GY - 24, life: 800, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: true},
+        enemies: [enemy({x: 700})],
+        weapons: [], // nothing to fire → cover is the play
+        field: ridge,
+        moveMaxDist: 400,
+      }),
+    );
+    expect(plan.action).toBe('move');
+    if (plan.action === 'move') {
+      expect(plan.note).toBe('cover');
+      expect(plan.destX).toBeLessThan(380); // slipped behind the ridge, away from the enemy's arcs
+    }
+  });
+
+  it('does NOT seek cover when not threatened', () => {
+    const ridge: AimField = {heightAt: x => (x >= 380 && x <= 420 ? 200 : 500), width: 1000, height: 620};
+    const plan = planUltraTurn(
+      ctx({
+        self: {x: 650, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
+        enemies: [enemy({x: 700})],
+        weapons: [],
+        field: ridge,
+        moveMaxDist: 400,
+      }),
+    );
+    if (plan.action === 'move') expect(plan.note).not.toBe('cover');
   });
 });
 
@@ -181,7 +307,7 @@ describe('planUltraTurn — purposeful action selection', () => {
     const plan = planUltraTurn(
       ctx({
         weapons: [], // nothing to fire
-        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true},
+        self: {x: 100, y: GY - 24, life: 1000, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
         moveMaxDist: 200,
         radiationAt: x => Math.abs(x - 100) < 50, // clean ground exists just off the carpet
       }),
@@ -250,7 +376,7 @@ describe('planUltraTurn — purposeful action selection', () => {
     const plan = planUltraTurn(
       ctx({
         weapons: [heal],
-        self: {x: 100, y: GY - 24, life: 200, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false},
+        self: {x: 100, y: GY - 24, life: 200, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: false, buried: false, threatened: false},
       }),
     );
     expect(plan.action).toBe('buff');
