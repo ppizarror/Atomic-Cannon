@@ -425,16 +425,18 @@ function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note
   if (!self.onRadiation || moveMaxDist <= 0) return null;
   const reachableCleanSafe = (x: number): boolean =>
     x >= 20 && x <= field.width - 20 && !radiationAt(x) && !pathHitsMine(self.x, x, ctx.mines);
-  // Flee value scales with how dangerous the fallout is: modest while healthy (so the bot fires back and
-  // eats a little DOT instead of always running) → high near death (survival). This is what stops it
-  // fleeing every turn forever — once low it flees, otherwise it fights.
+  // Flee value scales STEEPLY with damage taken: near-zero while healthy (so ANY real shot beats it and
+  // the bot fires back, eating a little DOT, rather than running) → high near death (survival). This is
+  // what stops it fleeing over firing — it only runs once genuinely hurt.
   const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
-  const value = RAD_FLEE_VALUE * (0.35 + (1 - lifeFrac) * 1.25); // ~0.35× healthy → ~1.6× near 0
-  // Prefer escaping TOWARD a reachable crate on clean ground — ONE move both flees and grabs the loot.
+  const value = RAD_FLEE_VALUE * Math.max(0.12, (1 - lifeFrac) * 1.4); // ~0.12× full → ~1.4× near 0
+  // When it DOES flee, prefer escaping TOWARD a reachable crate — ONE move both flees and grabs the
+  // loot. Same value as a plain flee (the crate is a free bonus of the destination, not a reason to run
+  // when healthy), so it never overrides a shot the low base wouldn't.
   const crate = ctx.crates.find(
     c => c.landed && c.kind !== 'bomb' && Math.abs(c.x - self.x) <= moveMaxDist && reachableCleanSafe(c.x),
   );
-  if (crate) return {destX: crate.x, value: value + 80, note: 'flee-to-crate'};
+  if (crate) return {destX: crate.x, value, note: 'flee-to-crate'};
   // Else hop to the nearest clean ground (fully off the carpet, so it's a ONE-turn escape).
   for (let d = 8; d <= moveMaxDist; d += 8) {
     for (const dir of [-1, 1]) {

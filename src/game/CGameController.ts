@@ -12,6 +12,7 @@ import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
 import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
+import type {StatsDelta} from '../net/stats';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
 import {windProfile, gustFactor} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
@@ -50,6 +51,7 @@ import {
   moveWeaponIndices,
   pickMoveWeapon,
   pickTarget,
+  simulateShot,
 } from '../core/CBotAI';
 import {
   planUltraTurn,
@@ -523,6 +525,9 @@ export class CGameController implements ShotWorld {
     // Reset state
     this.m_simAccum = 0; // fresh fixed-timestep accumulator
     this.m_netShotResolving = false;
+    this.m_pendingSalvos = 0; // a fresh match has no succession salvos queued (a burst interrupted by
+    // Quit→menu freezes the sim mid-count; without this reset the stale value would wedge the first
+    // ShotFlying-entering shot that doesn't reassign it — a Death round — in ShotFlying forever)
     this.m_tanks = [];
     this.m_shots = [];
     this.m_ghostShots = [];
@@ -541,6 +546,16 @@ export class CGameController implements ShotWorld {
     // `at` is already in the past would otherwise all fire at once on this match's first update().
     this.m_timers = [];
     this.m_netAimDirty = false;
+    // Fresh per-match stat tally.
+    this.m_stats = {
+      weaponsFired: 0,
+      shotsFired: 0,
+      nukesFired: 0,
+      tanksDestroyed: 0,
+      terrainCarved: 0,
+      creditsSpent: 0,
+    };
+    this.m_matchStartTime = this.m_time;
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
     // land + bounds if the size changed since the last match.
@@ -641,8 +656,13 @@ export class CGameController implements ShotWorld {
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
       // Starting purse scales with squad size: each tank begins with `perTeam × CreditStart`
       // (the original seeds every member this way, and team-pooling shares one balance, so a
-      // squad of N spends against N × CreditStart — not a flat CreditStart).
-      pTank.setCredits(this.m_startCredits * perTeam);
+      // squad of N spends against N × CreditStart — not a flat CreditStart). ULTRA CPU tanks get a
+      // bigger floor so they can actually afford a real nuke ($4000-8000) instead of only cheap rounds.
+      const ultraBot = !s.human && this.m_difficulty === AI_LEVEL_ULTRA;
+      const seed = ultraBot
+        ? Math.max(this.m_startCredits, CGameController.ULTRA_START_CREDITS)
+        : this.m_startCredits;
+      pTank.setCredits(seed * perTeam);
 
       this.m_tanks.push(pTank);
     }
@@ -1060,6 +1080,9 @@ export class CGameController implements ShotWorld {
     if (!tank.hasJetFuel() && !tank.isMoving() && !tank.isFalling()) {
       tank.setJetInput(false, false, false);
       this.m_gameState = EGameState.Battle;
+      // Flight's over and the human is aiming again — RESUME the shot clock (paused at ignite, not
+      // reset) so jetting can't grant unlimited time to line up the follow-up shot.
+      this.armShotClock(false);
     }
   }
 
@@ -2950,6 +2973,7 @@ export class CGameController implements ShotWorld {
     piercing = false,
     innerRadius = 0,
   ): void {
+    this.m_stats.terrainCarved++; // one area blast ≈ one crater (nerdy "terrain carved" counter)
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
       // Two-radius model (recovered from the blast routine): full damage within the inner
@@ -2994,6 +3018,7 @@ export class CGameController implements ShotWorld {
    * Handle tank destroyed event
    */
   private handleTankDestroyed(tank: CTank): void {
+    this.m_stats.tanksDestroyed++;
     const pos = tank.getPosition();
 
     // Standings: the victim earns a death; its killer (last damager) earns a kill for an ENEMY,
@@ -3294,14 +3319,9 @@ export class CGameController implements ShotWorld {
 
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
-    this.m_turnElapsed = 0;
-    // The shot clock only runs for the player actually in control here — in a network
-    // match that is solely the local player on their own turn (spectators never forfeit).
-    this.m_turnTimerRunning =
-      this.m_shotTime > 0 &&
-      tank.isHuman() &&
-      !this.m_weaponTest &&
-      (!this.m_netMode || this.isLocalNetTurn());
+    // Arm a FRESH shot clock for the new turn. It runs only for the player actually in control —
+    // in a network match solely the local player on their own turn (spectators never forfeit).
+    this.armShotClock(true);
 
     // A deployed Sentry takes its own turn: aim at the nearest enemy and fire in a direct
     // line. It never moves and never uses a normal bot solve, so route it separately.
@@ -3351,6 +3371,7 @@ export class CGameController implements ShotWorld {
     this.m_currentBattle++;
     this.m_currentRound = 1; // the round counter resets each battle (round-1 forced-aim keys off it)
     this.m_shots = [];
+    this.m_pendingSalvos = 0; // no salvos carry across a battle boundary (defensive; matches setupBattle)
     this.m_mines = [];
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
@@ -3583,6 +3604,24 @@ export class CGameController implements ShotWorld {
    * Only ticks while `m_turnTimerRunning`, so it's inert for bots, after firing,
    * and while a shot/explosion is resolving (those aren't the Battle state).
    */
+  /**
+   * (Re)arm the shot clock for the tank currently in control. `fresh` starts a new countdown (a new
+   * turn); otherwise it RESUMES from where it paused — control handed back to the human after a jet
+   * flight or a free utility. Those pause the clock rather than refunding it, so a turn still can't be
+   * stalled forever by jetting / spamming free utilities. The clock only runs for a human actually in
+   * control (not bots, not weapon-test), and in a net match only the local player on their own turn —
+   * a forfeit is driven solely by the acting client, so this never touches the deterministic sim.
+   */
+  private armShotClock(fresh: boolean): void {
+    const tank = this.getCurrentTank();
+    if (fresh) this.m_turnElapsed = 0;
+    this.m_turnTimerRunning =
+      this.m_shotTime > 0 &&
+      tank.isHuman() &&
+      !this.m_weaponTest &&
+      (!this.m_netMode || this.isLocalNetTurn());
+  }
+
   private updateTurnTimer(dt: number): void {
     if (!this.m_turnTimerRunning) return;
     this.m_turnElapsed += dt;
@@ -3676,6 +3715,11 @@ export class CGameController implements ShotWorld {
     const weapon = getWeapon(this.m_currentWeaponIndex);
     const ext = weapon.getExtType();
 
+    // Play stats: one fire action (nuke-class tracked separately). shotsFired (projectile count) is
+    // added at the salvo below. Every client tallies; only the uploader (host/solo) sends them.
+    this.m_stats.weaponsFired++;
+    if (weapon.isNuclear()) this.m_stats.nukesFired++;
+
     if (chargeAmmo) this.economyFor(tank).consume(this.m_currentWeaponIndex);
 
     // soundFire, panned to the firing tank.
@@ -3721,6 +3765,9 @@ export class CGameController implements ShotWorld {
         this.schedule(0.4, () => this.endTurn());
       } else {
         this.m_firedThisTurn = false; // a free utility isn't a shot → no post-fire gloat gating
+        // Control stays with the human → RESUME the shot clock (paused at fire, not reset), so a free
+        // utility spends turn time rather than refilling it and can't be used to dodge the deadline.
+        this.armShotClock(false);
         this.markDirty();
       }
       return;
@@ -3776,6 +3823,7 @@ export class CGameController implements ShotWorld {
     // Cannon (spawn 5) sprays 5 pellets, a Machine Gun (sucNum 11) rattles off
     // ~12, a Tomcat (spawn 3, spread 3) fans 3 rockets.
     const rounds = Math.max(1, weapon.getSpawnCount());
+    this.m_stats.shotsFired += rounds; // each fanned round is a projectile (beam or ballistic)
     const spacingRad = deg2rad(weapon.getFanSpacingDeg());
 
     // Beams are instantaneous hitscan: resolve the whole fan this frame (no flying
@@ -4141,9 +4189,8 @@ export class CGameController implements ShotWorld {
     const w = getWeapon(i);
     const ext = WEAPON_DATABASE[i].extType ?? 0;
     if (BOT_UTILITY_EXT.has(ext) || isBeamExt(w.getExtType())) return false; // not death/mine/utility/beam
-    return (
-      w.isNukeClass() || (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE
-    );
+    // By DAMAGE, not cost — a $1200 seeker (dmg 200) is NOT a nuke; a.bomb/hydrogen/plutonium/uranium are.
+    return w.isNukeClass() || w.getDamage() >= CGameController.ULTRA_NUKE_DAMAGE;
   }
   private isBeamWeapon(i: number): boolean {
     return isBeamExt(getWeapon(i).getExtType());
@@ -4200,10 +4247,12 @@ export class CGameController implements ShotWorld {
     )
       this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16, false);
 
-    // Fill with strong varied rounds until stocked, spending most of the balance (maxCost = credits, so
-    // a second nuke is fair game). Keeps the planner's hands full of real firepower.
+    // SAVE toward a nuke: if the bot doesn't hold a real nuke yet, STOP here — don't fritter credits on
+    // cheap fill; let the balance build up so it can buy a nuke ($4000+) in a turn or two. Only once a
+    // nuke is in the bag does it fill out with strong varied rounds (spending down to the small reserve).
     let guard = 0;
     while (
+      this.ultraOwnsPremium(econ) &&
       this.ultraFiniteOffense(econ) < CGameController.ULTRA_OFFENSE_STOCK &&
       econ.getCredits() > R &&
       guard++ < 24
@@ -4329,6 +4378,10 @@ export class CGameController implements ShotWorld {
    * Execute bot player's turn (AI calculation and firing)
    */
   private executeBotTurn(): void {
+    // A settled battle or an in-flight shot must not be restarted by a stale queued bot turn: botMove→
+    // startTankMove sets state back to Battle, so — unlike its siblings botAimAndFire/executeUltraTurn/
+    // executeSentryTurn, which all re-check — an unguarded executeBotTurn could un-finish a battle.
+    if (this.m_gameState !== EGameState.Battle) return;
     const botTank = this.getCurrentTank();
 
     // A Sentry drives its own turn (aim + direct-line fire), never the normal bot solve.
@@ -4398,6 +4451,13 @@ export class CGameController implements ShotWorld {
   /** Drive a tank to `destX` (a Move utility action), then end the turn once settled. */
   private startTankMove(tank: CTank, destX: number): void {
     const clamped = clamp(destX, 20, this.m_land.width - 20);
+    // Network: a Move is a turn-resolving action just like a shot — flag it busy so the next
+    // hand-off (and any keyframe that arrives mid-drive) HOLDS until the drive settles. Without
+    // this the drive is ungated: a peer whose sim is throttled (backgrounded tab) would reconcile
+    // an incoming turn-end snapshot against its not-yet-driven tank and flag a false desync (or, on
+    // its first action, adopt a snapshot it should detect). endTurn clears it once waitForRest
+    // settles — the same seam fire() uses. Covers placeMove, the peer replay (commandMoveTo) and bots.
+    if (this.m_netMode) this.m_netShotResolving = true;
     tank.startDrive(clamped);
     this.m_gameState = EGameState.Battle;
     this.waitForRest(tank, tank.getPosition().x, 0);
@@ -4590,9 +4650,9 @@ export class CGameController implements ShotWorld {
   }
 
   // Ranging correction tuning.
-  private static readonly RANGE_TARGET_TOL = 60; // "same target" if the aim point moved < this (px)
+  private static readonly RANGE_TARGET_TOL = 110; // "same target" if the aim point moved < this (px) — wide enough that a near-miss's kickback nudge doesn't reset the ranging
   private static readonly RANGE_HIT_TOL = 18; // a landing within this of the target counts as a hit
-  private static readonly RANGE_ANGLE_TOL = 4; // range-correct power only while the solver angle is stable (deg)
+  private static readonly RANGE_BLOCKED_TOL = 120; // locked arc falling >this SHORT of the target = wall in the way → re-solve
   // Damped: the physics estimate (range ∝ power²) under-reads the true sensitivity at long range, so
   // gain 0.9 over-corrected ~1.7× and the shots oscillated. Half-stepping converges instead of ringing.
   private static readonly RANGE_GAIN = 0.5; // fraction of the physics-estimated correction to apply
@@ -4616,18 +4676,14 @@ export class CGameController implements ShotWorld {
     const sameTarget =
       rec && Math.abs(rec.targetX - plan.targetX) <= CGameController.RANGE_TARGET_TOL;
 
-    // RANGE-CORRECT the power only when the situation is STABLE: same target, we have a landing, AND the
-    // fresh solver angle still matches the one we last fired. bestAim returns angle+power as a MATCHED
-    // pair, so we may only tweak the power while the angle is unchanged — walking the round in off the
-    // last landing (drift the solver can't foresee) with the BOLD weapon. If the angle has moved (a dirt
-    // wall grew, the target shifted), we fall through to bestAim's FRESH pair, which arcs over the new
-    // terrain — never firing a stale angle into a hill.
-    if (
-      rec &&
-      sameTarget &&
-      rec.landedX !== undefined &&
-      Math.abs(plan.angleDeg - rec.angle) < CGameController.RANGE_ANGLE_TOL
-    ) {
+    // WALK IT IN: same target + a recorded landing → LOCK the angle we last fired and correct only the
+    // POWER off the observed miss (overshoot ⇒ less, short ⇒ more). This is the empirical feedback the
+    // solver can't do (it re-solves blind each turn and repeats its systematic error). We keep the angle
+    // constant so the power↔range relation is consistent and converges — bestAim's own angle wobbles
+    // turn to turn on rough terrain, which is why gating on it never corrected. BUT first VERIFY the
+    // locked arc still reaches: if a wall has grown and it now falls way SHORT, drop to bestAim's fresh
+    // pair (which arcs over it) instead of ploughing into the hill.
+    if (rec && sameTarget && rec.landedX !== undefined) {
       const power = rangePowerCorrection({
         selfX: botTank.getPosition().x,
         targetX: plan.targetX,
@@ -4636,7 +4692,27 @@ export class CGameController implements ShotWorld {
         hitTol: CGameController.RANGE_HIT_TOL,
         gain: CGameController.RANGE_GAIN,
       });
-      return {weaponIndex: plan.weaponIndex, angleDeg: rec.angle, power};
+      const origin = botTank.muzzleForAngle(rec.angle);
+      const field = {
+        heightAt: (x: number) => this.m_land.getHeightAt(x),
+        width: this.m_land.width,
+        height: this.m_land.height,
+      };
+      const sim = simulateShot(
+        origin,
+        rec.angle,
+        power,
+        this.m_wind,
+        field,
+        {x: plan.targetX, y: origin.y},
+        this.m_gustT + CGameController.BOT_FIRE_DELAY,
+      );
+      const dir = Math.sign(plan.targetX - botTank.getPosition().x) || 1;
+      const shortfall = (plan.targetX - sim.hitX) * dir; // >0 = lands on the near side of the target
+      if (shortfall < CGameController.RANGE_BLOCKED_TOL)
+        // reaches (or overshoots — the correction fixes that)
+        return {weaponIndex: plan.weaponIndex, angleDeg: rec.angle, power};
+      // else the locked arc is blocked short → fall through to bestAim's fresh terrain-aware pair.
     }
 
     // FRESH pair (new target, changed terrain, or first shot): throw the real weapon with bestAim's own
@@ -4796,6 +4872,10 @@ export class CGameController implements ShotWorld {
 
   // Weapon cost (credits) at/above which Ultra treats a round as premium ordnance to reserve.
   private static readonly ULTRA_PREMIUM_COST_VALUE = 1200; // only genuinely pricey ordnance is "premium"
+  private static readonly ULTRA_NUKE_DAMAGE = 350; // damage at/above which a round counts as a NUKE (a.bomb+)
+  // Ultra bots field a bigger war chest so they can actually AFFORD a nuke (real ones cost $4000-8000;
+  // the 3000 default purse never stretches to one). The floor for an Ultra bot's starting credits.
+  private static readonly ULTRA_START_CREDITS = 9000;
 
   // Computer-player difficulty (AI_LEVEL_MIN..AI_LEVEL_MAX; higher = sharper aim).
   getDifficulty(): number {
@@ -4999,6 +5079,30 @@ export class CGameController implements ShotWorld {
    *  below 0). Such a client watches the deterministic sim and never owns a turn. */
   isNetSpectator(): boolean {
     return this.m_netMode && this.m_netLocalIndex < 0;
+  }
+
+  /** Whether THIS client should upload the match stats: always in a solo game, but in a net match
+   *  only the first player in the turn order (localIndex 0) — so N clients don't each count the same
+   *  game (spectators are localIndex < 0 and never upload). */
+  isStatsUploader(): boolean {
+    return !this.m_netMode || this.m_netLocalIndex === 0;
+  }
+
+  /** This match's play-stat delta for the global counters (uploaded once at match end). damageDealt
+   *  is summed from the tanks' cumulative net damage; the rest are live per-match tallies. */
+  getMatchStats(): StatsDelta {
+    const damageDealt = this.m_tanks.reduce((sum, t) => sum + Math.max(0, t.getDamageDealt()), 0);
+    return {
+      weaponsFired: this.m_stats.weaponsFired,
+      shotsFired: this.m_stats.shotsFired,
+      tanksDestroyed: this.m_stats.tanksDestroyed,
+      damageDealt: Math.round(damageDealt),
+      nukesFired: this.m_stats.nukesFired,
+      terrainCarved: this.m_stats.terrainCarved,
+      creditsSpent: this.m_stats.creditsSpent,
+      gameSec: Math.max(0, Math.round(this.m_time - this.m_matchStartTime)),
+      online: this.m_netMode,
+    };
   }
 
   /** True while a turn's action is still resolving (shot in flight / settling) OR while the
@@ -5430,7 +5534,10 @@ export class CGameController implements ShotWorld {
 
   buyWeapon(i: number): boolean {
     const ok = this.activeEconomy().buy(i);
-    if (ok) this.poolActiveCredits(); // re-sync squad copies to the debited balance (ECON-1)
+    if (ok) {
+      this.m_stats.creditsSpent += getWeapon(i).getCost(); // depot-spend stat
+      this.poolActiveCredits(); // re-sync squad copies to the debited balance (ECON-1)
+    }
     if (ok && this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'buy', index: i});
     return ok;
   }
@@ -5819,6 +5926,18 @@ export class CGameController implements ShotWorld {
   // Draw-only projectiles a spectator flies from a relayed fire — pure visual (the
   // authoritative snapshot does the real damage/terrain); never carve or hit.
   private m_ghostShots: CShot[] = [];
+
+  // Per-match play-stat tallies (uploaded once at match end for the global About counters). Reset in
+  // startGame; in a net match every client tallies (all simulate every shot) but only ONE uploads.
+  private m_stats = {
+    weaponsFired: 0, // fire actions committed
+    shotsFired: 0, // individual projectiles/rounds launched
+    nukesFired: 0, // super-weapon (NUKE-class) fires
+    tanksDestroyed: 0, // tank kills
+    terrainCarved: 0, // ground-carving blasts (craters)
+    creditsSpent: 0, // depot spend
+  };
+  private m_matchStartTime = 0; // m_time captured at startGame → this match's play seconds
   // The single GAMEPLAY random stream — seeded per match so a shot resolves identically
   // on every client (lockstep). Cosmetic randomness (particles/weather/taunts) stays on
   // Math.random and must NOT draw from here, or frame-rate differences would desync it.

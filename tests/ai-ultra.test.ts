@@ -398,6 +398,20 @@ describe('planUltraTurn — purposeful action selection', () => {
     expect(plan.action).toBe('fire'); // full life → the shot outvalues a weak flee; it doesn't run
   });
 
+  it('a mostly-healthy bot on radiation FIRES even with a crate reachable (fire beats flee-to-crate)', () => {
+    const plan = planUltraTurn(
+      ctx({
+        weapons: [weapon({index: 0, damage: 150, radius: 40})],
+        enemies: [enemy({x: 700})],
+        self: {x: 100, y: GY - 24, life: 700, maxLife: 1000, shield: 0, armor: 0, hazmat: 0, credits: 0, onRadiation: true, buried: false, threatened: false},
+        crates: [{x: 200, kind: 'credits', amount: 2000, landed: true}],
+        moveMaxDist: 300,
+        radiationAt: x => Math.abs(x - 100) < 50,
+      }),
+    );
+    expect(plan.action).toBe('fire'); // at 70% life the shot outvalues fleeing to loot — no running
+  });
+
   it('escapes radiation TOWARD a reachable crate — one move both flees and grabs the loot', () => {
     const plan = planUltraTurn(
       ctx({

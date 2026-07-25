@@ -613,6 +613,23 @@ describe('network match boot', () => {
     expect(move && move.t === 'move' && Number.isFinite(move.destX)).toBe(true);
   });
 
+  it('a Move drive marks the sim busy so keyframes queue until it settles', () => {
+    // A Move is turn-resolving like a shot: while the tank drives, isNetSimBusy() must be true so an
+    // incoming turn-end snapshot QUEUES instead of reconciling against the not-yet-driven position.
+    // Without the gate a throttled peer flags a false (sticky) desync. Covers placeMove; the peer
+    // replay (commandMoveTo) and bots share the same startTankMove choke point.
+    const gc = bootNetWithSink(0, () => {});
+    gc.netSetActivePlayer(0);
+    gc.setWeaponTest(true);
+    const moveIdx = WEAPON_DATABASE.findIndex((_, i) => getWeapon(i).getExtType() === EXT.MOVE);
+    gc.selectWeapon(moveIdx);
+    gc.fire(); // arms placement
+    expect(gc.isNetSimBusy()).toBe(false); // armed but not yet driving
+    const from = gc.getCurrentTank().getPosition().x;
+    gc.placeMove(from + 60); // commit → drive begins
+    expect(gc.isNetSimBusy()).toBe(true); // busy for the whole drive (cleared by endTurn on settle)
+  });
+
   it('a spectator applying a relayed jet command reproduces the thrust (tank rises)', () => {
     // The actor ignites and thrusts up; the spectator, fed the relayed `jet`, climbs the same way.
     // Without the relay the tank keeps its (empty) thrust and just idles/falls. Ignite the flying
