@@ -26,6 +26,14 @@ const WORKLET_URL = '/audio/chiptune3.worklet.js';
 const LOOP_FOREVER = -1;
 const PLAY_ONCE = 0;
 
+// Music makeup gain. libopenmpt renders these .it modules with a lot of headroom:
+// measured across all 6 tracks, mean levels sit near -33 dBFS and the LOUDEST peak
+// (Four Ages, the menu bed) is only -13.9 dBFS — roughly 20 dB below the WAV SFX,
+// which peak near 0 dB. At unity bus gain the music was drowned out (most audible on
+// the menu, where no SFX mask it). x4 (~+12 dB) lifts the loudest module's peak to
+// ~-1.9 dB — a big loudness gain with headroom to spare against clipping.
+const MUSIC_MAKEUP = 4.0;
+
 export class CMusicPlayer extends GainChannel {
   private m_node: AudioWorkletNode | null = null;
   private m_ready: Promise<void>;
@@ -57,7 +65,12 @@ export class CMusicPlayer extends GainChannel {
           interpolationFilter: 0,
         },
       });
-      node.connect(this.m_gain);
+      // Makeup gain to compensate libopenmpt's conservative render level (see MUSIC_MAKEUP),
+      // sitting before the channel's volume gain so the options slider still scales it.
+      const makeup = this.m_ctx.createGain();
+      makeup.gain.value = MUSIC_MAKEUP;
+      node.connect(makeup);
+      makeup.connect(this.m_gain);
       this.m_node = node;
     } catch (e) {
       console.warn('music worklet init failed — music disabled', e);

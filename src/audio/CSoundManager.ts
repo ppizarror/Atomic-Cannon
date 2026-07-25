@@ -33,6 +33,7 @@ export class CSoundManager extends GainChannel {
   private m_loading = new Map<string, Promise<AudioBuffer | null>>();
   private m_lastPlay = new Map<string, number>(); // throttle timestamps (ms)
   private m_loops = new Map<string, LoopHandle>(); // named looping sounds
+  private m_loopWanted = new Set<string>(); // loops requested but still loading (cancellable by stopLoop)
   private m_worldWidth = 1; // for world-X → pan
   private m_stereo = true; // Audio → Stereo: when off, everything plays centre (mono)
 
@@ -51,7 +52,9 @@ export class CSoundManager extends GainChannel {
 
   /** World width in pixels — the pan axis. Set once the scene size is known. */
   setWorldWidth(w: number): void {
-    this.m_worldWidth = Math.max(1, w);
+    // `Math.max(1, NaN)` is NaN — reject non-finite/≤0 explicitly so a bad width can't poison the pan
+    // of every panned SFX (each would then throw at `panner.pan.value =`).
+    this.m_worldWidth = Number.isFinite(w) && w > 0 ? w : 1;
   }
 
   /** Disabling the SFX channel also cuts any looping sounds (movement / jet). */
@@ -96,7 +99,10 @@ export class CSoundManager extends GainChannel {
   /** world-X → stereo pan in [-1, 1]. Centre-screen = 0. Always 0 when Stereo is off. */
   private panFor(worldX: number | undefined): number {
     if (worldX === undefined || !this.m_stereo) return 0;
-    return Math.max(-1, Math.min(1, (worldX / this.m_worldWidth) * 2 - 1));
+    const p = (worldX / this.m_worldWidth) * 2 - 1;
+    // A non-finite pan (NaN worldX, or a NaN worldWidth that slipped past setWorldWidth) would throw
+    // `TypeError` at `panner.pan.value = p` (AudioParam is a restricted float) — clamp it to centre.
+    return Number.isFinite(p) ? Math.max(-1, Math.min(1, p)) : 0;
   }
 
   /**
@@ -164,8 +170,14 @@ export class CSoundManager extends GainChannel {
 
     const buf = this.m_buffers.get(name);
     if (!buf) {
+      // Deferred start: the buffer is still decoding. Mark it WANTED so a stopLoop() that lands
+      // before the load resolves cancels it — otherwise the deferred beginLoop would start a loop
+      // with nothing left to stop it (an eternal jet/tank-move drone).
+      this.m_loopWanted.add(name);
       this.loadBuffer(name).then(b => {
-        if (b && !this.m_loops.has(name)) this.beginLoop(name, b, worldX);
+        if (b && this.m_loopWanted.has(name) && !this.m_loops.has(name)) {
+          this.beginLoop(name, b, worldX);
+        }
       });
       return;
     }
@@ -194,6 +206,7 @@ export class CSoundManager extends GainChannel {
 
   /** Stop a named loop (the movement machine's stop-named-sound). */
   stopLoop(name: string): void {
+    this.m_loopWanted.delete(name); // cancel a not-yet-started deferred loop (see startLoop)
     const h = this.m_loops.get(name);
     if (!h) return;
     try {

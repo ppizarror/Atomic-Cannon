@@ -154,24 +154,39 @@ export class CAudio {
    */
   async suspend(): Promise<void> {
     this.m_suspended = true;
-    if (this.m_ctx.state === 'running') {
-      try {
-        await this.m_ctx.suspend();
-      } catch {
-        /* ignore */
-      }
-    }
+    await this.applyAudioState();
   }
 
   /** Resume audio after a game pause (no-op until the autoplay lock is cleared). */
   async resume(): Promise<void> {
     this.m_suspended = false;
-    if (this.m_unlocked && this.m_ctx.state === 'suspended') {
-      try {
-        await this.m_ctx.resume();
-      } catch {
-        /* ignore */
+    await this.applyAudioState();
+  }
+
+  /**
+   * Drive the AudioContext to the latest INTENDED state (`m_suspended`). `ctx.suspend()`/`resume()`
+   * resolve a render-quantum later, and a rapid pause↔unpause (e.g. opening then closing the depot)
+   * can flip the intent mid-await — the naive `if (state === 'running')` check then misses and the
+   * context is left stuck-suspended while the game runs. So loop: re-read the intent each pass and
+   * converge, guarded against re-entrancy (a concurrent call just lets the in-flight loop re-check).
+   */
+  private m_applyingAudio = false;
+  private async applyAudioState(): Promise<void> {
+    if (this.m_applyingAudio) return; // an apply is running; it re-reads m_suspended after each await
+    this.m_applyingAudio = true;
+    try {
+      for (let i = 0; i < 4; i++) {
+        if (!this.m_unlocked) break; // can't touch the context until the autoplay lock clears
+        if (this.m_suspended && this.m_ctx.state === 'running') {
+          await this.m_ctx.suspend().catch(() => {});
+        } else if (!this.m_suspended && this.m_ctx.state === 'suspended') {
+          await this.m_ctx.resume().catch(() => {});
+        } else {
+          break; // context already matches the intent
+        }
       }
+    } finally {
+      this.m_applyingAudio = false;
     }
   }
 
