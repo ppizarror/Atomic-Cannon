@@ -7,15 +7,31 @@
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
+import {GameConfig} from '../src/core/CGameConfig';
+import type {CTank} from '../src/core/CTank';
 
 type Priv = {
   m_lastImpactX: number;
   m_activeShot: unknown;
   m_shots: unknown[];
   m_gameState: EGameState;
+  m_camDwell: number;
+  m_viewW: number;
+  m_camX: number;
+  m_currentPlayerIndex: number;
+  m_tanks: CTank[];
   cameraFollowX(): number;
+  beginTurn(): void;
   getCurrentTank(): {getPosition(): {x: number}};
+  getWinnerTank(): CTank | null;
 };
+
+function game(): {gc: CGameController; p: Priv} {
+  const gc = new CGameController(makeCanvas());
+  gc.setHumanCount(1);
+  gc.startGame(2);
+  return {gc, p: gc as unknown as Priv};
+}
 
 describe('camera follow target', () => {
   it('holds the impact during shot resolution, follows the tank once the turn is live', () => {
@@ -35,5 +51,45 @@ describe('camera follow target', () => {
 
     p.m_gameState = EGameState.Battle; // turn is live → follow the current tank, NOT the old crater
     expect(p.cameraFollowX()).toBe(p.getCurrentTank().getPosition().x);
+  });
+});
+
+describe('camera hand-off mode (Graphics → Camera)', () => {
+  function dwellForMode(mode: number): number {
+    const {p} = game();
+    p.m_viewW = 1; // force the current tank off-screen so the hand-off branch runs
+    p.m_camX = 0;
+    p.m_camDwell = 0;
+    const prev = GameConfig.cameraMode;
+    GameConfig.cameraMode = mode;
+    try {
+      p.beginTurn();
+      return p.m_camDwell;
+    } finally {
+      GameConfig.cameraMode = prev;
+    }
+  }
+
+  it('Cinematic lingers on the impact (sets a dwell); Smooth and Instant do not', () => {
+    expect(dwellForMode(2)).toBeGreaterThan(0); // Cinematic
+    expect(dwellForMode(0)).toBe(0); // Smooth — just eases, no dwell
+    expect(dwellForMode(1)).toBe(0); // Instant — snaps, no dwell
+  });
+});
+
+describe('battle-over camera', () => {
+  it('frames the winner, not whoever acted last', () => {
+    const {p} = game();
+    p.m_activeShot = null;
+    p.m_shots = [];
+    p.m_camDwell = 0;
+    const [a, b] = p.m_tanks;
+    (a as unknown as {addKill(): void}).addKill(); // a's team leads
+    (b as unknown as {hit(n: number): number}).hit(1e9); // the loser dies
+    p.m_currentPlayerIndex = p.m_tanks.indexOf(b); // the LAST actor is the loser
+    p.m_gameState = EGameState.BattleEnd;
+
+    expect(p.getWinnerTank()).toBe(a); // sanity: the survivor won
+    expect(p.cameraFollowX()).toBe(a.getPosition().x); // camera frames the winner, not the last actor (b)
   });
 });

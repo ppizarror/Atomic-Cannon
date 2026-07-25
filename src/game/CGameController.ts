@@ -521,8 +521,10 @@ export class CGameController implements ShotWorld {
       // (currentRound===1) would never fire. (The net path sets currentBattle itself; see startNetworkGame.)
       this.m_currentBattle = 1;
       this.m_currentRound = 1;
-      this.m_shotsFired = 0; // "Shot N" HUD counter — solo-only reset (net keeps it across a reconnect)
     }
+    // "Shot N" HUD counter: reset on a FRESH match (battle 1 — solo, or a brand-new net match), but NOT
+    // on a net reconnect resuming battle N>1, so it keeps counting in step with the peers who never left.
+    if (this.m_currentBattle <= 1) this.m_shotsFired = 0;
 
     // Fix the LOGICAL world/view size for this match. Everything (heightmap length, tank
     // sizes, physics) lives in these coordinates; the compositor presents the logical scene

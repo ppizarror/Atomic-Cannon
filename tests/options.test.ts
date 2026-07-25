@@ -167,8 +167,9 @@ describe('Formerly-no-op Settings options', () => {
     expect(iLo).toBeGreaterThan(iHi); // bought later → later in the list, despite its LOWER db index
   });
 
-  it('the camera snaps to the active tank at turn-begin when it is off-screen (large maps)', () => {
+  it('Instant camera snaps to the active tank at turn-begin when it is off-screen (large maps)', () => {
     GameConfig.landSize = 5; // wide world → the two tanks are off-screen from each other
+    GameConfig.cameraMode = 1; // Instant (Graphics → Camera): the off-screen snap is Instant-mode now
     const gc = humanGame(2);
     GameConfig.landSize = 3; // restore for other tests (world already built at 5)
     const p = gc as unknown as {
@@ -192,6 +193,7 @@ describe('Formerly-no-op Settings options', () => {
     const after = gc.getCameraX();
     expect(focusX).toBeGreaterThanOrEqual(after); // the once-off-screen tank is now visible
     expect(focusX).toBeLessThanOrEqual(after + p.m_viewW);
+    GameConfig.cameraMode = 0; // restore the Smooth default for other tests
   });
 
   it('a tank falls into a crater carved under it, and respects the Bury Tanks setting', () => {

@@ -29,6 +29,7 @@ type GCInternals = {
   m_land: CLand;
   executeSentryTurn(): void;
   endBattleIfDecided(): void;
+  fire(): void;
 };
 
 const priv = (gc: CGameController) => gc as unknown as GCInternals;
@@ -95,6 +96,23 @@ describe('Sentry turrets', () => {
     priv(gc).m_currentPlayerIndex = priv(gc).m_tanks.indexOf(sentry);
     priv(gc).executeSentryTurn();
     expect(sentry.getWeaponIndex()).toBe(MACHINE_GUN >= 0 ? MACHINE_GUN : SHELL);
+  });
+
+  it('Minigun sentry still holds the Machine Gun THROUGH fire() (not swapped to the staple Shell)', () => {
+    const {gc, a, b} = twoPlayerGame();
+    b.respawn(a.getPosition().x + 150, priv(gc).m_land);
+    gc.deploySentry(a.getPosition().x, 0, a, SENTRY_MINIGUN);
+    const sentry = priv(gc).m_tanks.at(-1)!;
+    priv(gc).m_currentPlayerIndex = priv(gc).m_tanks.indexOf(sentry);
+    priv(gc).m_gameState = EGameState.Battle;
+    priv(gc).executeSentryTurn();
+    expect(sentry.getWeaponIndex()).toBe(MACHINE_GUN); // selected the Machine Gun
+
+    // fire() is what the sentry's scheduled turn calls. A sentry reports isBot(), so before the fix it
+    // hit the ammo-charge path → ensureStocked found no MG rounds in its empty economy → swapped it
+    // back to the Shell. It must now keep the Machine Gun (sentries don't draw from an inventory).
+    priv(gc).fire();
+    expect(sentry.getWeaponIndex()).toBe(MACHINE_GUN);
   });
 
   it('a living sentry does not keep a decided battle alive (excluded from the win count)', () => {
