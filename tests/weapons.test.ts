@@ -238,7 +238,7 @@ describe('Weapon behaviour', () => {
     expect(world.spawned[0].getPower()).toBeCloseTo(100); // flat, not 50
   });
 
-  it('Rebound anti-grav LATCHES on first burial and stays on above the surface', () => {
+  it('Rebound jets out on burial, then drops anti-grav on emergence to arc back down', () => {
     const land = flatLand(300);
     const w = getWeapon(WEAPON_DATABASE.findIndex(x => x.extType === 9)); // Rebounder/Seeker
     const world = new MockWorld(land);
@@ -247,11 +247,12 @@ describe('Weapon behaviour', () => {
     shot.setWeaponIndex(w.getIndex());
 
     weaponFlyStep(shot, w, world, 1 / 60);
-    expect(shot.isAntiGrav()).toBe(true); // latched on while below the surface
+    expect(shot.isAntiGrav()).toBe(true); // latches while below the surface → jets up and out
 
     shot.setPosition(400, 250); // now well ABOVE the surface (300)
     weaponFlyStep(shot, w, world, 1 / 60);
-    expect(shot.isAntiGrav()).toBe(true); // stays latched (old code re-toggled it OFF here)
+    expect(shot.isAntiGrav()).toBe(false); // emerged → anti-grav cleared so gravity arcs it back down
+    expect(shot.hasRebounded()).toBe(true); // and it won't jet up again — next impact detonates
   });
 
   it('Dirt deposits earth (raises, removes nothing)', () => {

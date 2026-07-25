@@ -95,6 +95,15 @@ export interface ShotResult {
    *  restore it (the state hash mixes the cursor), or its sim runs out of phase with the room and
    *  false-flags a desync on the next shot. See CGameController.applyNetSnapshot. */
   readonly rngState: number;
+  /** Deployed mines, authoritative so a reconnecting/keyframe client reproduces them (position, arm
+   *  countdown, weapon, owner-BY-INDEX; -1 = ownerless). Optional for back-compat with older peers. */
+  readonly mines?: ReadonlyArray<{
+    readonly x: number;
+    readonly y: number;
+    readonly armed: number;
+    readonly weaponIndex: number;
+    readonly ownerIdx: number;
+  }>;
 }
 
 // ── Client → room ──────────────────────────────────────────────────────────
@@ -266,6 +275,23 @@ export function isValidShotResult(r: unknown, tankCount: number): r is ShotResul
   const w = o.wind as Record<string, unknown> | undefined;
   if (!w || typeof w !== 'object' || !isFiniteNum(w.x) || !isFiniteNum(w.y)) return false;
   if (!isFiniteNum(o.rngState)) return false;
+  // Mines are optional (older peers omit them); if present, every entry must be well-formed.
+  if (o.mines !== undefined) {
+    if (!Array.isArray(o.mines) || o.mines.length > 10_000) return false;
+    for (const m of o.mines) {
+      if (!m || typeof m !== 'object') return false;
+      const mk = m as Record<string, unknown>;
+      if (
+        !isFiniteNum(mk.x) ||
+        !isFiniteNum(mk.y) ||
+        !isFiniteNum(mk.armed) ||
+        !isFiniteNum(mk.weaponIndex) ||
+        !isFiniteNum(mk.ownerIdx)
+      ) {
+        return false;
+      }
+    }
+  }
   return true;
 }
 

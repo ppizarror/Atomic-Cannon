@@ -77,9 +77,10 @@ let worldPromise: Promise<WorldCountry[]> | null = null;
 export function loadWorldPaths(): Promise<WorldCountry[]> {
   worldPromise ??= fetch('/assets/world-110m.geojson')
     .then(r => (r.ok ? r.json() : Promise.reject(new Error('no world map'))))
-    .then((fc: {features: GeoFeature[]}) =>
-      fc.features.map(f => ({cc: f.properties.cc, d: featurePath(f.geometry)})),
-    )
+    .then(fc => {
+      const {features} = fc as {features: GeoFeature[]};
+      return features.map(f => ({cc: f.properties.cc, d: featurePath(f.geometry)}));
+    })
     .catch(() => [] as WorldCountry[]);
   return worldPromise;
 }

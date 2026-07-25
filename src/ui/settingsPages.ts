@@ -86,6 +86,15 @@ export const stepper = (
   ...bind(id),
 });
 
+/** A navigation row that opens another settings page (carries no stored value). */
+const navRow = (c: RowCopy, target: string): Widget => ({
+  label: c.label,
+  tip: c.tip,
+  kind: 'nav',
+  get: () => 0,
+  onClick: () => openSettingsPage(target),
+});
+
 // ── pages ────────────────────────────────────────────────────────────────────
 function economyRows(): Widget[] {
   const s = strings.value.settings.economy;
@@ -259,22 +268,7 @@ function audioRows(): Widget[] {
 function contentRows(): Widget[] {
   // Weapons / Landscapes open dedicated enable-list editors (over the steel plate).
   const s = strings.value.settings.content;
-  return [
-    {
-      label: s.weapons.label,
-      tip: s.weapons.tip,
-      kind: 'nav',
-      get: () => 0,
-      onClick: () => openSettingsPage('content.weapons'),
-    },
-    {
-      label: s.landscapes.label,
-      tip: s.landscapes.tip,
-      kind: 'nav',
-      get: () => 0,
-      onClick: () => openSettingsPage('content.landscapes'),
-    },
-  ];
+  return [navRow(s.weapons, 'content.weapons'), navRow(s.landscapes, 'content.landscapes')];
 }
 
 /** Max real options shown on one settings page. Anything longer auto-splits into sub-pages, each
@@ -289,13 +283,7 @@ function paginate(base: string, allRows: Widget[], pageIdx: number): Widget[] {
   const rows = allRows.slice(start, start + PAGE_SIZE);
   if (start + PAGE_SIZE < allRows.length) {
     const c = strings.value.settings.nextPage;
-    rows.push({
-      label: c.label,
-      tip: c.tip,
-      kind: 'nav',
-      get: () => 0,
-      onClick: () => openSettingsPage(`${base}~${pageIdx + 1}`),
-    });
+    rows.push(navRow(c, `${base}~${pageIdx + 1}`));
   }
   return rows;
 }

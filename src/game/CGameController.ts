@@ -430,6 +430,11 @@ export interface NetSnapshot {
    *  MUST restore it — otherwise it starts a fraction out of phase with the room and both desyncs
    *  its own next shot AND false-flags a lockstep divergence. Restored in {@link applyNetSnapshot}. */
   rngState: number;
+  /** Deployed mines — authoritative so a reconnecting/keyframe client reproduces them exactly:
+   *  position, arm countdown, weapon, and owner-BY-INDEX (a tank ref can't cross the wire; -1 = none)
+   *  for kill attribution. `stateHash` mixes them so mine drift is DETECTED. Optional for back-compat
+   *  with older snapshots (absent → mines left untouched). */
+  mines?: {x: number; y: number; armed: number; weaponIndex: number; ownerIdx: number}[];
 }
 
 /**
@@ -2943,7 +2948,7 @@ export class CGameController implements ShotWorld {
       this.m_mines.splice(i, 1);
       // Scale the mine blast by Explosion Size × resolution, exactly like a fired shot (a mine used
       // the raw weapon radius, so it ignored the setting and the resolution scale — now aligned).
-      const mineR = w.getRadius() * GameConfig.explosionScale * this.blastScale;
+      const mineR = this.scaledBlastRadius(w);
       this.explode(
         m.x,
         m.y,
@@ -3864,7 +3869,7 @@ export class CGameController implements ShotWorld {
     // succession count, so beams don't burst.)
     if (isBeam) {
       for (let i = 0; i < rounds; i++) {
-        const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
+        const fan = this.fanOffset(i, rounds, spacingRad);
         const jitter = varianceRad > 0 ? this.m_rng.plusMinus(varianceRad) : 0;
         this.fireBeam(muzzlePos, baseAngle + fan + jitter, weapon, tank);
       }
@@ -3886,7 +3891,7 @@ export class CGameController implements ShotWorld {
     // fire silently after the opener, so we skip their repeat flash+sound too.
     const fireSalvo = (withFx: boolean) => {
       for (let i = 0; i < rounds; i++) {
-        const fan = rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
+        const fan = this.fanOffset(i, rounds, spacingRad);
         const jitter = varianceRad > 0 ? this.m_rng.plusMinus(varianceRad) : 0;
         const pShot = new CShot();
         pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, dmg, rad, tank);
@@ -4126,6 +4131,22 @@ export class CGameController implements ShotWorld {
     tank.setTurretAngle(angleDeg);
     this.m_angle = angleDeg;
     this.m_power = power;
+  }
+
+  /** Living tanks on an enemy team of `tank` (never its own squad). */
+  private enemiesOf(tank: CTank): CTank[] {
+    return this.m_tanks.filter(t => t.isAlive() && t.getTeamId() !== tank.getTeamId());
+  }
+
+  /** Angular offset of round `i` within a `rounds`-wide fan spaced `spacingRad` apart
+   *  (centred: a lone round fires dead-centre, a 3-fan spreads −1,0,+1 × spacing). */
+  private fanOffset(i: number, rounds: number, spacingRad: number): number {
+    return rounds > 1 ? (i - (rounds - 1) / 2) * spacingRad : 0;
+  }
+
+  /** A weapon's on-screen blast radius: raw radius × Explosion-Size setting × resolution scale. */
+  private scaledBlastRadius(w: CWeapon): number {
+    return w.getRadius() * GameConfig.explosionScale * this.blastScale;
   }
 
   /** Select `tank`'s weapon and mirror it into the controller's current-weapon index. */
@@ -4518,7 +4539,7 @@ export class CGameController implements ShotWorld {
   private botAimAndFire(botTank: CTank): void {
     if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
     // Target only ENEMY teams — a squad bot must never aim at its own teammates.
-    const enemies = this.m_tanks.filter(t => t.isAlive() && t.getTeamId() !== botTank.getTeamId());
+    const enemies = this.enemiesOf(botTank);
     if (enemies.length === 0) {
       this.endTurn();
       return;
@@ -4631,7 +4652,7 @@ export class CGameController implements ShotWorld {
    */
   private executeUltraTurn(botTank: CTank): void {
     if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
-    const enemies = this.m_tanks.filter(t => t.isAlive() && t.getTeamId() !== botTank.getTeamId());
+    const enemies = this.enemiesOf(botTank);
     if (enemies.length === 0) {
       this.endTurn();
       return;
@@ -4783,9 +4804,7 @@ export class CGameController implements ShotWorld {
    *  buying a death (kamikaze) weapon. */
   private ultraEnemiesWithin(tank: CTank, radius: number): number {
     const p = tank.getPosition();
-    return this.m_tanks.filter(
-      t => t.isAlive() && t.getTeamId() !== tank.getTeamId() && t.distanceTo(p.x, p.y) <= radius,
-    ).length;
+    return this.enemiesOf(tank).filter(t => t.distanceTo(p.x, p.y) <= radius).length;
   }
 
   /** Longest-range Move utility index (for an Ultra reposition/crate drive), or -1 if none exist. */
@@ -4827,7 +4846,7 @@ export class CGameController implements ShotWorld {
         cost: WEAPON_DATABASE[i].cost ?? 0,
         count: econ.isUnlimited(i) ? Infinity : econ.getOwned(i),
         damage: w.getDamage(),
-        radius: w.getRadius() * GameConfig.explosionScale * this.blastScale,
+        radius: this.scaledBlastRadius(w),
         innerR: 0.5 * w.getSize(),
         spread,
         dotValue: rad.dmg * rad.time, // total damage-over-time this round lays down (gas / radioactive)
@@ -5215,6 +5234,16 @@ export class CGameController implements ShotWorld {
     }
     const heights = this.m_land.getHeights();
     for (let i = 0; i < heights.length; i++) mix(heights[i]);
+    // Mines: deploy order is deterministic (relayed fire → same order on every client), so hashing
+    // them in array order detects a mine that drifted, armed, or detonated on one client but not
+    // another (position + armed-state + weapon + count). Owner is attribution-only, not hashed.
+    for (const m of this.m_mines) {
+      mix(Math.round(m.x));
+      mix(Math.round(m.y));
+      mix(m.armed > 0 ? 1 : 0);
+      mix(m.weaponIndex);
+    }
+    mix(this.m_mines.length);
     mix(this.m_rng.getState());
     return h >>> 0;
   }
@@ -5247,6 +5276,14 @@ export class CGameController implements ShotWorld {
       heights: Array.from(this.m_land.getHeights()),
       wind: {x: this.m_wind.x, y: this.m_wind.y},
       rngState: this.m_rng.getState(), // capture the cursor so a bootstrap restores it exactly
+      // Owner as an INDEX (a CTank ref can't cross the wire); -1 = ownerless (an unattributed mine).
+      mines: this.m_mines.map(m => ({
+        x: m.x,
+        y: m.y,
+        armed: m.armed,
+        weaponIndex: m.weaponIndex,
+        ownerIdx: m.owner ? this.m_tanks.indexOf(m.owner) : -1,
+      })),
     };
   }
 
@@ -5303,6 +5340,18 @@ export class CGameController implements ShotWorld {
     // phase — desyncing its next shot and false-flagging a divergence. (Older snapshots without the
     // field leave the cursor untouched.) See {@link NetSnapshot.rngState}.
     if (typeof s.rngState === 'number') this.m_rng.setState(s.rngState);
+    // Reproduce deployed mines (position, arm countdown, owner-by-index). Absent on older snapshots →
+    // leave the local mines untouched. vy resets to 0 (settleMines re-derives it from the terrain).
+    if (Array.isArray(s.mines)) {
+      this.m_mines = s.mines.map(m => ({
+        x: m.x,
+        y: m.y,
+        vy: 0,
+        armed: m.armed,
+        weaponIndex: m.weaponIndex,
+        owner: m.ownerIdx >= 0 ? (this.m_tanks[m.ownerIdx] ?? null) : null,
+      }));
+    }
     this.markDirty();
   }
 

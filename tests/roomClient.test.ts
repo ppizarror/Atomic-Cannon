@@ -227,7 +227,8 @@ describe('RoomClient', () => {
     // Simulate a drop → the transport reopens and RoomClient re-identifies.
     t.setStatus('reconnecting');
     t.setStatus('open');
-    const lastHello = t.sent.filter(m => m.t === 'hello').at(-1);
+    const hellos = t.sent.filter(m => m.t === 'hello');
+    const lastHello = hellos.at(-1); // the most recent hello (re-identify after reconnect)
     expect(lastHello).toEqual({
       t: 'hello',
       v: 1,
