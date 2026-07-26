@@ -18,6 +18,7 @@ import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {MenuTargets} from './MenuTargets';
+import {SplashBadge} from './SplashBadge';
 import {useAsyncImage} from './useAsyncImage';
 import {useMenuNav} from './useMenuNav';
 
@@ -59,6 +60,7 @@ export function MainMenu() {
   return (
     <div class="mainmenu">
       <MenuTargets />
+      <SplashBadge />
       <div class="menu-list" ref={navRef}>
         <MenuButton label={strings.value.menu.play} onClick={openPlaySetup} />
         <MenuButton label={strings.value.menu.quickPlay} onClick={quickPlay} />

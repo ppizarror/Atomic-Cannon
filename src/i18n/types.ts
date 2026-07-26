@@ -70,6 +70,8 @@ export interface Strings {
     highScores: string;
     /** Corner link to the project's source repository. */
     repoLabel: string;
+    /** Minecraft-style splash taglines; one is picked at random each visit. */
+    splashes: string[];
   };
 
   // ── Network / multiplayer ─────────────────────────────────────────────────

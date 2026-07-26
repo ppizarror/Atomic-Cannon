@@ -14,6 +14,7 @@ import type {JSX} from 'preact';
 import {signal} from '@preact/signals';
 import {BmpText} from './BmpText';
 import {WeaponIcon} from './WeaponIcon';
+import {ClassicScrollbar} from './ClassicScrollbar';
 import {usePointerDrag} from './usePointerDrag';
 import {weaponName} from '../core/CWeapon';
 import {clamp} from '../math/num';
@@ -80,21 +81,9 @@ function Btn({
   );
 }
 
-// Per-player status square: green for the player whose turn it is, red for the
-// rest, dimmed when knocked out — the little green/red lights of the original bar.
-function StatusDots() {
-  return (
-    <div class="mstatus">
-      {battleStatus.value.lines.map((l, i) => (
-        <span key={i} class={`mdot${l.dead ? ' dead' : ''}${l.active ? ' on' : ''}`} />
-      ))}
-    </div>
-  );
-}
-
-// Thin shot-clock bar across the top of the strip. Reuses the same turnTimer state
-// as the desktop HUD: it drains green→yellow→red on a running Round Timer, flashes
-// on a charging shot, and shows an inert dark track otherwise.
+// Thin shot-clock bar. Reuses the same turnTimer state as the desktop HUD: it
+// drains green→yellow→red on a running Round Timer, flashes on a charging shot,
+// and shows an inert dark track otherwise.
 function MobileTimer() {
   const t = turnTimer.value;
   return (
@@ -113,6 +102,22 @@ function MobileTimer() {
   );
 }
 
+// The right-end cluster: a top row of per-player lights (green for whose turn it
+// is, red for the rest, dimmed when knocked out) over a wider shot-clock bar —
+// the little indicator stack of the original bar.
+function StatusCluster() {
+  return (
+    <div class="mstatus">
+      <div class="mdots">
+        {battleStatus.value.lines.map((l, i) => (
+          <span key={i} class={`mdot${l.dead ? ' dead' : ''}${l.active ? ' on' : ''}`} />
+        ))}
+      </div>
+      <MobileTimer />
+    </div>
+  );
+}
+
 function MobileBar() {
   const h = strings.value.hud;
   const off = blocked.value;
@@ -125,7 +130,6 @@ function MobileBar() {
   const open = (s: string) => (sheet.value === s ? ' open' : '');
   return (
     <div id="mhud">
-      <MobileTimer />
       <div class="mbar">
         <Btn
           cls={`mweapon${off ? ' blocked' : ''}${open('weapon')}`}
@@ -172,7 +176,7 @@ function MobileBar() {
           disabled={off}
         />
 
-        <StatusDots />
+        <StatusCluster />
 
         <Btn
           cls="mmenu"
@@ -272,7 +276,7 @@ function AngleSheet() {
 function WeaponSheet() {
   const idx = weaponIndex.value;
   return (
-    <div class="mwlist">
+    <ClassicScrollbar class="mwlist">
       {weapons.value.map((wp, i) => (
         <button
           key={wp.id}
@@ -287,7 +291,7 @@ function WeaponSheet() {
           <BmpText font="beijing-16-out" text={`${i + 1}. ${weaponName(wp)}`} spacing={-1} />
         </button>
       ))}
-    </div>
+    </ClassicScrollbar>
   );
 }
 

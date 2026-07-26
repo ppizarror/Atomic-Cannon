@@ -10,6 +10,7 @@
      Everything that stacks reads from here so the ordering is legible in one place. */
   --z-hud: 10; /* HUD bar, battle status, turn indicator */
   --z-hud-fx: 12; /* foreground FX canvas (particles/badges) — ABOVE the HUD bar */
+  --z-mhud: 14; /* mobile HUD bar + sheets — ABOVE the FX canvas so tank labels/badges don't bleed over the touch controls */
   --z-flight: 15; /* jet-flight indicator */
   --z-overlay: 20; /* generic full-screen overlays (placeholder) */
   --z-depot: 21; /* weapons depot */
@@ -1282,6 +1283,47 @@ canvas {
   opacity: 1;
 }
 
+/* Splash — an oscillating tagline pinned to the bottom-right of the "ATOMIC
+   CANNON" logo, flagging this as an unofficial fan recreation. The text itself is
+   a bitmap-font canvas (<SplashBadge> → <BmpText>), so this rule is layout only.
+   The title.webp backdrop is ~16:9 and top-anchored, so on widescreen it maps
+   ~1:1 and these top/left percentages track the logo's lower-right corner. The
+   wrapper owns the position + tilt; the inner <span> owns the scale pulse, so the
+   two transforms never clobber each other. Tune placement/angle via the var. */
+.mainmenu-splash {
+  --splash-tilt: -20deg; /* bump toward -45deg for a steeper lean */
+  position: absolute;
+  top: 11%;
+  left: 68%;
+  z-index: var(--z-screen);
+  pointer-events: none; /* purely decorative — never eats clicks meant for the nav */
+  transform: rotate(var(--splash-tilt));
+  transform-origin: center;
+  will-change: transform;
+}
+
+.mainmenu-splash-text {
+  display: inline-block;
+  animation: splash-pulse 0.62s ease-in-out infinite alternate;
+  transform-origin: center;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.55)); /* lifts the glyphs off the sky */
+}
+
+@keyframes splash-pulse {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.11);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mainmenu-splash-text {
+    animation: none;
+  }
+}
+
 /* ===================== BATTLE HEROES (High Scores) ======================= */
 /* A full steel-plate screen (like War Standings, but standalone): title, Top-10
    board, medal footer. Click anywhere to return to the menu. */
@@ -2351,11 +2393,12 @@ canvas {
    stamped by store watchViewport() on the same breakpoint the render switch uses.
    ============================================================================ */
 
-/* A thin strip like the original phone HUD: short height, a shot-clock bar across
-   the top, then a row of beveled GREEN buttons. Includes the iOS home-indicator
-   inset so the world (100vh − --hud-h) never hides behind it. */
+/* A thin strip like the original phone HUD: ~30px tall, a shot-clock bar across the
+   top, then a row of beveled GREEN buttons over the real `gui empty` metal filler
+   (clear grey). Includes the iOS home-indicator inset so the world (100vh − --hud-h)
+   never hides behind it. */
 .mobile {
-  --hud-h: calc(40px + env(safe-area-inset-bottom, 0px));
+  --hud-h: calc(30px + env(safe-area-inset-bottom, 0px));
 }
 
 #mhud {
@@ -2364,36 +2407,27 @@ canvas {
   right: 0;
   bottom: 0;
   height: var(--hud-h);
-  z-index: var(--z-hud);
+  /* above the FX overlay so tank labels/badges never bleed over the touch controls */
+  z-index: var(--z-mhud);
   display: flex;
   flex-direction: column;
-  /* dark bar — the metal lives on the button faces, not the strip behind them */
-  background: linear-gradient(#3a3d42, #202225);
-  border-top: 2px solid #4a4f55;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  /* the real HUD filler metal (clear grey), same as the desktop bar */
+  background: url('/assets/gui/gui empty.bmp') repeat-x;
+  background-size: auto 100%;
+  image-rendering: pixelated;
+  /* keep the iOS home-indicator clear below all HUD content */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   touch-action: none;
 }
 
-/* shot-clock bar along the top edge (green→yellow→red drain / charge flash). */
-.mtimer {
-  flex: 0 0 auto;
-  height: 3px;
-  background: #0a0f0a;
-}
-
-.mtimer-fill {
-  height: 100%;
-  transition: width 0.1s linear;
-}
-
-/* the button row fills the rest of the strip. */
+/* the button row fills the strip. */
 .mbar {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   align-items: stretch;
-  gap: 3px;
-  padding: 3px 4px calc(3px + env(safe-area-inset-bottom, 0px));
+  gap: 2px;
+  padding: 2px 3px;
 }
 
 /* Beveled green button (outset): light top/left edge, dark bottom/right. The
@@ -2404,15 +2438,16 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 0 6px;
-  background: linear-gradient(#5c7d3d, #3a5323);
+  gap: 4px;
+  padding: 0 5px;
+  /* legacy dark green ≈ rgb(0,28,0); a faint gradient gives the metal sheen */
+  background: linear-gradient(#01340a, #001400);
   border: 1px solid;
-  border-color: #7fa557 #223315 #1b280f #6b8f47; /* T R B L → raised */
+  border-color: #0c5a1e #000700 #000400 #0a5018; /* T R B L → raised */
   border-radius: 2px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    inset 0 1px 0 rgba(120, 220, 120, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
   cursor: pointer;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
@@ -2421,9 +2456,9 @@ canvas {
 /* pressed / open sheet → inset (swap the bevel and darken the face) */
 .mbtn:active,
 .mbtn.open {
-  background: linear-gradient(#33481f, #4c6832);
-  border-color: #1b280f #6b8f47 #7fa557 #223315;
-  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(#000e00, #012204);
+  border-color: #000400 #0a5018 #0c5a1e #000700;
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .mbtn.blocked,
@@ -2436,11 +2471,17 @@ canvas {
 .mbtn-txt {
   flex: 0 1 auto;
   min-width: 0;
+  /* the arial-14-out strip reserves descender space below the baseline (glyphs sit
+     ~1px from the top, ~5px from the bottom), so box-centering leaves the visible
+     caps/digits looking high next to the centered icon — nudge down to optically
+     centre them. */
+  transform: translateY(2px);
 }
 
-/* weapon button — a touch wider; icon + name, name clips on very long weapons */
+/* weapon button — the widest (highest priority); icon + name, name clips on very
+   long weapons. */
 .mweapon {
-  flex: 1.7 1 0;
+  flex: 2.6 1 0;
   justify-content: flex-start;
 }
 
@@ -2453,39 +2494,63 @@ canvas {
   border: 1px solid #4a4a4a;
 }
 
+/* power / angle — wide enough that a 4-digit "Power 1000" never shrinks or clips. */
 .mval {
-  flex: 1.15 1 0;
+  flex: 1.45 1 0;
 }
 
+/* $ and X are the narrowest — just enough for the glyph. */
 .mbuy {
-  flex: 0.5 1 0;
+  flex: 0.35 1 0;
 }
 
+/* FIRE needs no extra room — a short word, so keep it compact. */
 .mfire {
-  flex: 1.1 1 0;
+  flex: 0.7 1 0;
 }
 
 .mmenu {
-  flex: 0.5 1 0;
+  flex: 0.4 1 0;
 }
 
-/* the two little player squares at the right of the bar (team colour). */
+/* right-end cluster: a row of small green/red lights over a wider shot-clock bar. */
 .mstatus {
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 0 2px;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 3px;
+}
+
+.mdots {
+  display: flex;
+  gap: 2px;
 }
 
 .mdot {
-  width: 11px;
-  height: 11px;
+  width: 6px;
+  height: 6px;
   box-sizing: border-box;
   /* red by default (waiting players), bright green for whoever's turn it is */
-  background: #b83232;
+  background: #c43333;
   border: 1px solid #000;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+/* the shot-clock bar sits below the dots and is wider than them. */
+.mtimer {
+  width: 100%;
+  min-width: 30px;
+  height: 4px;
+  background: #0a0f0a;
+  border: 1px solid #000;
+  box-sizing: border-box;
+}
+
+.mtimer-fill {
+  height: 100%;
+  transition: width 0.1s linear;
 }
 
 .mdot.on {
@@ -2501,7 +2566,7 @@ canvas {
   position: fixed;
   inset: 0;
   bottom: var(--hud-h);
-  z-index: var(--z-hud);
+  z-index: var(--z-mhud);
 }
 
 .msheet {
@@ -2509,8 +2574,8 @@ canvas {
   left: 0;
   right: 0;
   bottom: var(--hud-h);
-  z-index: var(--z-hud);
-  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px) * 0);
+  z-index: var(--z-mhud);
+  padding: 7px 8px;
   background: linear-gradient(#2b3036, #1b1e22);
   border-top: 1px solid #4a4f55;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.45);
@@ -2520,15 +2585,15 @@ canvas {
 .msheet-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mstep {
   flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 30px;
   font:
-    700 22px/1 system-ui,
+    700 18px/1 system-ui,
     sans-serif;
   color: #e7ebef;
   background: linear-gradient(#3a4048, #23272c);
@@ -2546,8 +2611,8 @@ canvas {
 .mslider {
   position: relative;
   flex: 1 1 auto;
-  height: 42px;
-  border-radius: 6px;
+  height: 26px;
+  border-radius: 5px;
   background: #0d1013;
   border: 1px solid #000;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
@@ -2567,9 +2632,9 @@ canvas {
 .mslider-knob {
   position: absolute;
   top: 50%;
-  width: 10px;
-  height: 30px;
-  margin-left: -5px;
+  width: 9px;
+  height: 18px;
+  margin-left: -4.5px;
   transform: translateY(-50%);
   background: linear-gradient(#eef2f6, #b7bfc7);
   border: 1px solid #000;
@@ -2588,11 +2653,15 @@ canvas {
   padding: 0;
 }
 
+/* The list is a ClassicScrollbar host (the game's flat black track + white grip),
+   not a native scrollbar. The host needs an explicit height because its scrolling
+   .cscroll-view is absolutely positioned (inset:0). */
 .mwlist {
-  max-height: 46vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 6px;
+  height: min(46vh, 320px);
+}
+
+.mwlist .cscroll-view {
+  padding: 4px 12px 4px 4px; /* keep the base right-reserve for the 12px track */
 }
 
 .mwrow {

@@ -46,6 +46,14 @@ export const en: Strings = {
     about: 'About',
     highScores: 'High Scores',
     repoLabel: 'Source on GitHub',
+    splashes: [
+      'Open-Source!',
+      'Fan-Remade!',
+      'Not the original!',
+      'A loving recreation!',
+      'Unofficial!',
+      'Made by fans!',
+    ],
   },
 
   net: {

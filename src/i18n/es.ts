@@ -47,6 +47,14 @@ export const es: Strings = {
     about: 'Acerca de',
     highScores: 'Puntuaciones',
     repoLabel: 'Código en GitHub',
+    splashes: [
+      '¡Código abierto!',
+      '¡Recreación de fans!',
+      '¡No es el original!',
+      '¡Una recreación con cariño!',
+      '¡No oficial!',
+      '¡Hecho por fans!',
+    ],
   },
 
   net: {
