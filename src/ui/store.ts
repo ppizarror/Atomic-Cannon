@@ -228,6 +228,20 @@ let routerOn = false; // initRouter() flips this on in the browser; stays false 
 let routeDepth = 0; // in-app history depth (0 = the entry page): lets a back fall through to a parent
 let applyingRoute = false; // guards the popstate reconcile from re-pushing
 
+/** Is `path` inside the battle screen (`/battle`, `/battle/pause`, …)? */
+const isBattlePath = (p: string): boolean => p.replace(/^\/+/, '').split('/')[0] === 'battle';
+
+// Quit-confirmation modal — shown when the browser Back button would abandon a live battle (see the
+// popstate handler). The actual "quit" action lives in the QuitConfirm component (it decides solo →
+// menu vs net → leave-room, mirroring the pause menu's Quit); store only owns the flag + dismiss so
+// it never has to reach DOWN into networkStore. Cancel just hides it — the Back was already undone.
+export const showQuitConfirm = signal(false);
+
+/** Dismiss the quit confirmation and stay in the battle (the Back navigation was already undone). */
+export function cancelQuitBattle(): void {
+  showQuitConfirm.value = false;
+}
+
 const TOP_SCREEN: Partial<Record<string, Screen>> = {
   '': 'menu',
   play: 'setup',
@@ -328,6 +342,16 @@ function routeTo(path: string): void {
   const sub = parts[1] ? decodeURIComponent(parts[1]) : '';
 
   if (target === 'battle') {
+    // No live match to present — a stale `/battle` history entry reached via Back/Forward after the
+    // battle was torn down (or a cold link straight to `/battle`). Mounting the HUD over an empty,
+    // un-started sim is the "black screen" bug, so bounce to the menu and rewrite the URL to root.
+    if (!controller?.isStarted()) {
+      reconcileOverlay('');
+      if (screen.value !== 'menu') screen.value = 'menu';
+      routeDepth = 0;
+      window.history.replaceState({d: 0}, '', '/' + window.location.search + window.location.hash);
+      return;
+    }
     if (screen.value !== 'battle') screen.value = 'battle';
     reconcileOverlay(sub === 'pause' || sub === 'help' || sub === 'depot' ? sub : '');
     return;
@@ -347,10 +371,33 @@ export function initRouter(): void {
   routerOn = true;
   window.history.replaceState({d: 0}, '', navUrl());
   window.addEventListener('popstate', e => {
+    const path = window.location.pathname;
+    // Browser Back that would abandon a LIVE, overlay-free battle: don't tear the match down on a
+    // stray Back. Undo the navigation (re-push the battle entry so the URL returns to `/battle`) and
+    // ask for confirmation instead. An overlay-close Back (`/battle/pause` → `/battle`) has a battle
+    // TARGET, so it isn't caught here and falls through to the normal reconcile below.
+    if (
+      screen.value === 'battle' &&
+      controller?.isStarted() &&
+      !showPause.value &&
+      !showDepot.value &&
+      !showHelp.value &&
+      !isBattlePath(path)
+    ) {
+      applyingRoute = true;
+      try {
+        routeDepth = 0;
+        window.history.pushState({d: 0}, '', navUrl());
+      } finally {
+        applyingRoute = false;
+      }
+      showQuitConfirm.value = true;
+      return;
+    }
     routeDepth = (e.state as {d?: number} | null)?.d ?? 0;
     applyingRoute = true;
     try {
-      routeTo(window.location.pathname);
+      routeTo(path);
     } finally {
       applyingRoute = false;
     }
@@ -360,6 +407,10 @@ export function initRouter(): void {
 /** One level up — the shared action behind ESC and the on-screen Back / Done buttons. */
 export function escapeBack(): void {
   if (loading.value) return; // navigation is locked while a match's textures load
+  if (showQuitConfirm.value) {
+    cancelQuitBattle(); // the quit dialog owns Escape — dismiss it and stay in the battle
+    return;
+  }
   if (screen.value === 'battle') {
     if (showHelp.value) closeHelp();
     else if (showDepot.value) closeDepot();

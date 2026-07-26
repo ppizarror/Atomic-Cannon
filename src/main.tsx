@@ -116,9 +116,16 @@ async function main(): Promise<void> {
   if (import.meta.env.DEV) {
     // Expose the controller for headless review probes (screenshot/inspect the live sim).
     (window as unknown as {__gc: unknown}).__gc = gameController;
+    // Read the dev flags underscore-INSENSITIVELY so both the current spellings (`weapontest`,
+    // `weaponsel`, `flatland`, `skiptexture`, …) and the older underscored ones (`weapon_test`,
+    // `weapon_sel`, …) work — a renamed flag shouldn't silently break existing dev bookmarks. Only
+    // this lookup is normalised; `window.location.search` is untouched, so the router still
+    // preserves the raw query verbatim in the URL.
+    const rawQ = new URLSearchParams(location.search);
+    const q = new URLSearchParams();
+    for (const [k, v] of rawQ) q.set(k.replace(/_/g, ''), v);
     // `?battle=1` skips the menu into a battle; `?depot=1` / `?pause=1` do that and
     // then open the depot / pause menu; `?settings=1` opens the Settings screen.
-    const q = new URLSearchParams(location.search);
     const weaponTest = q.get('weapontest') === '1';
     const weaponSel = q.get('weaponsel'); // force a weapon by its 1-based id
     // `?flatland=1`: force a perfectly flat test surface (set BEFORE playNewGame generates
@@ -184,10 +191,6 @@ async function main(): Promise<void> {
   // dev affordances above so their `?flag` reads see the original query before the router rewrites
   // the path to the resting screen (e.g. `?settings=graphics` → `/settings/graphics`).
   initRouter();
-
-  // Pause lives in the shared `pausedSignal` (store) so the P-key freeze, the ESC
-  // pause menu, and the DOM FX all read one source. 'P' = a quiet screenshot freeze
-  // (no menu); ESC = the pause menu (Resume / Settings / Quit).
 
   // Jet-flight steering: held-key state (arrows / WASD), pushed to the controller
   // each event. Only acts while the game is in the Flying state.

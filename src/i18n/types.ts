@@ -226,6 +226,15 @@ export interface Strings {
     quit: string;
   };
 
+  // ── Quit-battle confirmation (browser Back guard) ─────────────────────────
+  quitConfirm: {
+    title: string;
+    line1: string;
+    line2: string;
+    confirm: string;
+    cancel: string;
+  };
+
   // ── Help overlay (battle controls) ────────────────────────────────────────
   help: {
     title: string;

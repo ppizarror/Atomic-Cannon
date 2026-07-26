@@ -217,16 +217,16 @@ export const es: Strings = {
         heading: 'Controles',
         body: [
           'Puedes jugar con el ratón, el teclado o ambos. En el panel de batalla: arrastra la barra alta para fijar la POTENCIA (10 abajo, 1000 arriba), arrastra el dial para fijar tu ÁNGULO y luego presiona DISPARAR. También puedes arrastrar cerca de tu propio tanque para fijar ángulo y potencia a la vez, y usar el botón Reiniciar para volver a tu último disparo.',
-          'Las teclas por defecto se listan abajo. Cada acción puede reasignarse en Ajustes > Personalizar Controles.',
+          'Tus teclas actuales se listan abajo. Cada acción puede reasignarse en Ajustes > Personalizar Controles.',
         ],
         bullets: [
-          'Disparar cañón: Espacio',
-          'Arma anterior: Q     Arma siguiente: A',
-          'Aumentar / disminuir potencia: flechas Arriba / Abajo',
-          'Apuntar torreta izquierda / derecha: flechas Izquierda / Derecha',
-          'Abrir el menú del juego: Escape',
-          'Provocación de chat: Enter',
-          'Alternar pantalla completa: F11',
+          'Disparar cañón: {fire}',
+          'Arma anterior: {prevWeapon}     Arma siguiente: {nextWeapon}',
+          'Aumentar / disminuir potencia: {powerUp} / {powerDown}',
+          'Apuntar torreta izquierda / derecha: {aimLeft} / {aimRight}',
+          'Abrir el menú del juego: {exit}',
+          'Provocación de chat: {taunt}',
+          'Alternar pantalla completa: {fullscreen}',
           'Ratón: arrastra la barra de potencia y el dial de puntería, o arrastra cerca de tu tanque para apuntar; la rueda del ratón en el depósito cambia de arma.',
         ],
       },
@@ -308,6 +308,14 @@ export const es: Strings = {
     resume: 'Reanudar',
     settings: 'Ajustes',
     quit: 'Salir',
+  },
+
+  quitConfirm: {
+    title: 'SALIR DE LA BATALLA?',
+    line1: 'Abandonar la batalla actual?',
+    line2: 'Perderas tu progreso.',
+    confirm: 'Salir',
+    cancel: 'Quedarse',
   },
 
   help: {

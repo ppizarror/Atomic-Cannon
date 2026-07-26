@@ -30,6 +30,7 @@ import {Hud} from './Hud';
 import {DepotPanel} from './DepotPanel';
 import {TauntLayer} from './TauntLayer';
 import {PauseMenu} from './PauseMenu';
+import {QuitConfirm} from './QuitConfirm';
 import {HelpOverlay} from './HelpOverlay';
 import {MainMenu} from './MainMenu';
 import {LoadingScreen} from './LoadingScreen';
@@ -266,6 +267,7 @@ export function App() {
       <NetChat />
       <TauntLayer />
       <PauseMenu />
+      <QuitConfirm />
       <HelpOverlay />
       <DepotPanel />
       <FlightHud />

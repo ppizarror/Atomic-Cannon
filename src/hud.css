@@ -1423,6 +1423,29 @@ canvas {
   color: #dfe6ec;
 }
 
+/* ===================== QUIT-BATTLE CONFIRMATION ===================== */
+/* A small centered <Modal> over the live battle (browser Back guard): title, two message
+   lines, then Quit / Stay. Layout/spacing only — colour comes from the bitmap fonts. */
+.quit-confirm {
+  width: min(420px, 92vw);
+  align-items: center;
+  padding: 18px 26px 20px;
+}
+
+.quit-confirm-title {
+  margin-bottom: 16px;
+}
+
+.quit-confirm-msg {
+  margin-top: 3px;
+}
+
+.quit-confirm-btns {
+  display: flex;
+  gap: 14px;
+  margin-top: 20px;
+}
+
 /* ============================ HELP MODAL ============================ */
 .help-card {
   width: min(620px, 94vw);

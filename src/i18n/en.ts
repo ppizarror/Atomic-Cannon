@@ -217,16 +217,16 @@ export const en: Strings = {
         heading: 'Controls',
         body: [
           'You can play with the mouse, the keyboard, or both. On the battle panel: drag the tall bar to set POWER (10 at the bottom, 1000 at the top), drag the dial to set your ANGLE, then press FIRE. You can also drag near your own tank to set angle and power at once, and use the Reset button to return to your last shot.',
-          'The default keys are listed below. Every action can be rebound under Settings > Customize Controls.',
+          'Your current keys are listed below. Every action can be rebound under Settings > Customize Controls.',
         ],
         bullets: [
-          'Fire cannon: Space',
-          'Previous weapon: Q     Next weapon: A',
-          'Increase / decrease power: Up / Down arrows',
-          'Aim turret left / right: Left / Right arrows',
-          'Open the game menu: Escape',
-          'Chat taunt: Enter',
-          'Toggle full screen: F11',
+          'Fire cannon: {fire}',
+          'Previous weapon: {prevWeapon}     Next weapon: {nextWeapon}',
+          'Increase / decrease power: {powerUp} / {powerDown}',
+          'Aim turret left / right: {aimLeft} / {aimRight}',
+          'Open the game menu: {exit}',
+          'Chat taunt: {taunt}',
+          'Toggle full screen: {fullscreen}',
           'Mouse: drag the power bar and aim dial, or drag near your tank to aim; the depot scroll wheel cycles weapons.',
         ],
       },
@@ -308,6 +308,14 @@ export const en: Strings = {
     resume: 'Resume',
     settings: 'Settings',
     quit: 'Quit',
+  },
+
+  quitConfirm: {
+    title: 'QUIT BATTLE?',
+    line1: 'Leave the current battle?',
+    line2: 'Your progress will be lost.',
+    confirm: 'Quit',
+    cancel: 'Stay',
   },
 
   help: {
