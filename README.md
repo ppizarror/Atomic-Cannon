@@ -11,6 +11,8 @@ None of the original game's assets are included here; this is an independent
 reimplementation. If you love this, go find and support the original (even though
 you cannot buy it).
 
+![Atomic Cannon in a battle](.github/screenshot.webp)
+
 ## Requirements
 
 - [Node.js](https://nodejs.org/) 18 or newer
