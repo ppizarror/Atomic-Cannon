@@ -2571,8 +2571,8 @@ export class CGameController implements ShotWorld {
       ctx.globalAlpha = alpha;
       ctx.imageSmoothingEnabled = false;
       if (sprite) {
-        const w = 20,
-          h = 20;
+        const w = 16,
+          h = 16;
         ctx.drawImage(sprite.bitmap, x - w / 2, y - h, w, h);
       } else {
         ctx.fillStyle = '#22e04a';
@@ -2591,7 +2591,7 @@ export class CGameController implements ShotWorld {
 
     // A single green triangle bouncing over the tank's current position.
     const bob = Math.abs(Math.sin(this.m_time * 4)) * 8;
-    drawTri(pos.x, pos.y - 26 - bob, 1);
+    drawTri(pos.x, pos.y - 5 - bob, 1);
   }
 
   // ========================================================================

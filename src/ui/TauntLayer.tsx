@@ -30,8 +30,8 @@ export function TauntLayer() {
             key={b.id}
             title={title}
             content={content}
-            anchorX={b.xPct * w}
-            anchorY={b.yPct * h}
+            anchorX={b.xPct * w + 4}
+            anchorY={b.yPct * h - 24}
             fade={b.alpha}
             tipPosition="down"
             animated
