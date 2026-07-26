@@ -650,11 +650,19 @@ export class Room {
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
       return;
     }
-    // Idempotency: drop a stale/duplicate result whose turn-generation isn't the live turn's. A resend
-    // (or a hostile repeat) would otherwise be re-consumed — the owner still owns the NEXT turn in a
-    // contiguous squad, so a duplicate tank-0 result would skip tank-1's turn and double the hand-off
-    // income, or (after over) advance the battle twice, skipping a battle. Silent drop — not an error.
-    if (typeof msg.turnGen === 'number' && msg.turnGen !== s.turnGen) return;
+    // Idempotency: turnGen is the ONLY duplicate signal we can trust. Every live client echoes the
+    // gen from the turnBegin that opened its turn (see NetGame), so require it — a result that omits
+    // it (a crafted bypass, since seq is fully client-controlled and unvalidated) is rejected rather
+    // than trusted. Then drop any result whose gen isn't the live turn's: a resend or hostile repeat
+    // carries a stale gen, and re-consuming it would let the owner (who still owns the NEXT turn in a
+    // contiguous squad) skip tank-1's turn and double the hand-off income, or advance the battle twice
+    // after `over`. Silent drop for a stale gen — not an error; a missing gen is a malformed message.
+    if (typeof msg.turnGen !== 'number') {
+      const ws = this.socketFor(pid);
+      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'missing turn generation'});
+      return;
+    }
+    if (msg.turnGen !== s.turnGen) return;
     // Validate the authoritative result STRUCTURALLY before persisting/broadcasting it. A malformed
     // result (null/short tank array, non-finite fields, bad heightmap) would otherwise be stored as
     // the room snapshot and crash — or NaN-corrupt — every client that later bootstraps from it (a

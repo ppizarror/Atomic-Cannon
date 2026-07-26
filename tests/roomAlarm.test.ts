@@ -296,4 +296,28 @@ describe('Room shotResult hardening', () => {
     expect(a.sent.length).toBeLessThan(400); // some frames were dropped by the rate cap
     expect(a.sent.length).toBeLessThanOrEqual(310); // ~SERVER_MAX_MSG_PER_SEC (300) in the 1s window
   });
+
+  it('rejects a shotResult that omits turnGen (idempotency bypass via crafted message)', async () => {
+    const a = makeSocket(1);
+    const b = makeSocket(2);
+    // tanksPerTeam=2 → player 1 owns turn positions 0 AND 1.
+    const {room, stored} = makeRoom(playingState({tanksPerTeam: 2, ...live()}), [a, b]);
+    const result = shotResultFor(4);
+
+    // First valid shotResult WITH gen (turnGen=5) — accepted; advances to tank-1.
+    await deliver(room, a, {t: 'shotResult', seq: 1, result, hash: 1, turnGen: 5});
+    expect(stored().turnIdx).toBe(1); // player 1's squad continues (pos 0→1)
+
+    // A RESEND of the now-stale gen=5 result — properly dropped by the gen guard (turn advanced).
+    await deliver(room, a, {t: 'shotResult', seq: 2, result, hash: 1, turnGen: 5});
+    expect(stored().turnIdx).toBe(1); // unchanged
+
+    // The real bypass: omit turnGen entirely and use a FRESH seq (seq is client-controlled, so a
+    // per-resend counter defeats any seq-equality dedup). The server must REJECT it — turnGen is the
+    // only trustworthy duplicate signal — so it can't double-consume tank-1's turn.
+    await deliver(room, a, {t: 'shotResult', seq: 99, result, hash: 1}); // no turnGen, novel seq
+    expect(stored().turnIdx).toBe(1); // unchanged — the turn is NOT double-consumed
+    // sender is told the message was malformed
+    expect(msgs(a).some(m => m.t === 'error' && m.code === 'bad_message')).toBe(true);
+  });
 });
