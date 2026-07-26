@@ -6,7 +6,7 @@
  * weapon under the cursor, and Buy / Sell / Auto Buy / Stats / Close controls
  * (the metal button art) over a Credits readout.
  */
-import {useMemo, useState, useEffect, useRef} from 'preact/hooks';
+import {useMemo, useState, useLayoutEffect, useRef} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Tooltip} from './Tooltip';
 import {ClassicScrollbar} from './ClassicScrollbar';
@@ -131,14 +131,23 @@ function DepBtn({
 }
 
 // ---- the modal --------------------------------------------------------------
+// `<DepotPanel />` lives permanently in the App tree, so the panel body is split into its own
+// component that is only rendered while the depot is OPEN — that way it genuinely mounts/unmounts
+// each time. Putting the hooks behind an early `return null` in ONE persistent instance meant the
+// instance never unmounted between opens, so the mount-only autoscroll effect fired only on the
+// first-ever open and `useState(weaponIndex)` kept a stale `sel` on every reopen.
 export function DepotPanel() {
   if (!showDepot.value) return null;
+  return <DepotBody />;
+}
 
+function DepotBody() {
   const [sel, setSel] = useState(weaponIndex.value);
-  // On OPEN, scroll the list so the currently-selected weapon is visible (centered) rather than
-  // always starting at the top — the depot opens on whatever weapon you had equipped. Mount-only.
+  // On OPEN, scroll the list so the currently-selected weapon is centered rather than starting at
+  // the top — the depot opens on whatever weapon you had equipped. Runs once per mount (i.e. per
+  // open); `useLayoutEffect` centers it BEFORE first paint so there's no top-then-jump flicker.
   const selRowRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     selRowRef.current?.scrollIntoView({block: 'center'});
   }, []);
   const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'cost', dir: 1});
