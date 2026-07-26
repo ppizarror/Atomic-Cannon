@@ -78,5 +78,20 @@ simple vector graphics and a gradient sky.
 ## Credits
 
 Original game **Atomic Cannon** by **Isotope 244**. This repository is an
-independent, non-commercial reinterpretation and is not affiliated with or
-endorsed by Isotope 244. Thank you for the game.
+independent, fan-made reinterpretation and is not affiliated with or endorsed by
+Isotope 244. Thank you for the game.
+
+## License
+
+This project is free software: it is licensed under the **GNU Affero General
+Public License v3.0 or later** (AGPL-3.0-or-later). See [LICENSE](LICENSE) for
+the full text.
+
+In short: you are free to use, study, share, and modify this code, but **any
+derivative — including a modified version run as a hosted website — must remain
+open source under the same license.** This keeps the project (and everything
+built from it) free and open, forever.
+
+This license covers only the source code in this repository. It grants no rights
+to *Atomic Cannon* itself — its name, design, and other intellectual property
+belong to Isotope 244.
