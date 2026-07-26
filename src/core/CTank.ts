@@ -13,16 +13,8 @@ import {GameConfig, isWargame} from './CGameConfig';
 
 // Wargame Detail preset — tanks drawn as flat tactical-map silhouettes in this pale blue.
 const WARGAME_TINT = '#8ed1ec';
-import {getFont, type FontId} from './rendering/BitmapFont';
+import {getFont} from './rendering/BitmapFont';
 import type {Sprite, ISpriteSource} from './rendering/sprites';
-
-// Tank-badge text font — small pixel font rendered at NATIVE size (10px) so it
-// stays crisp at a compact label size. The name (on its team-colour box) is the
-// plain white glyph; the free-floating stat lines use the OUTLINED variant so its
-// baked black outline keeps them legible on any terrain WITHOUT a dark backing box
-// (the original draws the stat block as plain outlined text, no box).
-const BADGE_FONT: FontId = 'silkscreen-8-white';
-const STAT_FONT: FontId = 'silkscreen-8-out';
 
 /** A drawable image plus its dimensions. */
 // Tank variants
@@ -909,7 +901,7 @@ export class CTank {
     // font carries its own black outline, so the text reads on any terrain — matching
     // the original, which draws the stat block as plain outlined text.
     const line = (text: string, y: number): number => {
-      const lab = getFont(STAT_FONT).renderCached(text, {spacing: -1}); // tighter letter spacing
+      const lab = getFont('silkscreen-8-out').renderCached(text, {spacing: -1});
       const lx = Math.round(cx - lab.width / 2),
         ly = Math.round(y);
       ctx.imageSmoothingEnabled = false;
@@ -953,13 +945,11 @@ export class CTank {
     // Gated by Graphics → Show Team Color. Native bitmap-font size. ---
     if (GameConfig.showTeamColor) {
       const name = this.m_sName || strings.value.game.noName;
-      const lab = getFont(BADGE_FONT).renderCached(name);
+      const font = getFont('silkscreen-8-out');
+      const lab = font.renderCached(name, {spacing: -1});
       const nameW = lab.width;
       const pad = [3, 2]; // Horizontal, Vertical
-      // Pad around the VISIBLE glyph ink, not the font strip (which carries blank
-      // rows top/bottom) — otherwise the vertical padding reads far bigger than the
-      // horizontal. `ink.top` is the blank offset to pull back when drawing.
-      const ink = getFont(BADGE_FONT).contentBounds(name);
+      const ink = font.contentBounds(name);
       const bw = Math.round(pad[0] * 2 + nameW);
       const bh = ink.height + pad[1] * 2;
       const bx = Math.round(cx - bw / 2),
