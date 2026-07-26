@@ -997,6 +997,22 @@ export class CGameController implements ShotWorld {
   }
 
   /**
+   * Tear the current battle down to the boot state. `isStarted()` → false, so the per-frame sim
+   * (`advance`), scene redraw (`shouldRedraw`/`draw`) and HUD overlay all short-circuit exactly as
+   * they do behind the opaque main menu at boot — nothing advances, animates or draws. Also clears
+   * the scene canvas so the frozen last frame doesn't linger under the menu. Called when quitting a
+   * battle to the main menu; idempotent (a no-op when no battle is running).
+   */
+  stopGame(): void {
+    if (!this.m_started) return;
+    this.m_started = false;
+    this.stopMovementAudio(); // kill any tank-drive / jet loop that was running
+    const c = this.m_ctx.canvas;
+    this.m_ctx.clearRect(0, 0, c.width, c.height); // blank the scene (presented once by the loop)
+    this.markDirty();
+  }
+
+  /**
    * Whether any GAMEPLAY motion is on screen this frame (as opposed to the purely
    * cosmetic turn-arrow bob / star twinkle, which the gate handles via its grace
    * window). Deliberately conservative: if anything here can move, we keep drawing.

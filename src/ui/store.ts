@@ -191,12 +191,12 @@ export function closeSettings(): void {
 export function goToMenu(): void {
   showPause.value = false;
   screen.value = 'menu';
-  // Stop the tank-drive / jet loops BEFORE freezing the sim: paused.value below skips update() (the
-  // only thing that stops those loops), and setPaused(false) resumes the gameplay context — so a
-  // drive/jet loop interrupted by pause→Quit can't drone on under the menu music.
-  game().stopMovementAudio();
-  game().setPaused(false);
-  paused.value = true;
+  // Tear the battle DOWN (not just freeze it): isStarted() → false, so the sim/redraw/HUD all
+  // short-circuit like the boot title screen — no tanks keep playing and the scene is cleared. Also
+  // stops any tank-drive / jet loop.
+  game().stopGame();
+  game().setPaused(false); // resume the gameplay audio context so the menu music can play
+  paused.value = true; // and skip the render-loop sim update (belt-and-suspenders with stopGame)
   game().getAudio()?.menuMusic();
   resetRoute(); // quitting a game is a fresh root — clear the in-app back stack
 }
@@ -369,7 +369,9 @@ function enterBattle(players: number, humans: number, tanksPerTeam: number): voi
   game().getAudio()?.startGameSound(); // the "chunk" as the battle launches
   game().startGame(players); // builds land + tanks, kicks off the texture load + battle music
   screen.value = 'battle';
-  pushRoute();
+  // A battle is a fresh ROOT, not a stack entry: browser Back can't wander back into /play (or the
+  // menu) while the sim is live — the only way out is Quit (goToMenu), which tears the battle down.
+  resetRoute();
   // Cover the still-untextured world with a menu-styled loading screen (at --z-modal, above the
   // now-mounted HUD) and keep the sim frozen so its shot-timer can't drain behind it. Reveal the
   // textured battle only once the sky + terrain textures have loaded, so the player never sees the

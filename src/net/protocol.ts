@@ -149,8 +149,9 @@ export type ClientMessage =
       /** The acting client detected the battle ended on this shot (one team left). */
       readonly over?: boolean;
       /** The turn-generation this result settles (from the turnBegin that opened it). The server
-       *  rejects a result whose gen isn't the live one, so a duplicate/stale result can't be
-       *  re-consumed. Optional for back-compat: an omitted gen skips the idempotency check. */
+       *  REQUIRES it (rejects a result that omits it) and drops any result whose gen isn't the live
+       *  one, so a duplicate/stale/crafted result can't be re-consumed. Typed optional only because
+       *  the wire is untrusted — the server validates presence rather than the type guaranteeing it. */
       readonly turnGen?: number;
     }
   | {readonly t: 'chat'; readonly text: string}

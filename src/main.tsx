@@ -487,6 +487,7 @@ async function main(): Promise<void> {
     fpsAccumMs = 0;
   let frameNum = 0; // raw monotonic frame index for the frame counter
   let sizePollMs = 0; // accumulates toward the periodic viewport self-heal check (below)
+  let wasStarted = false; // last frame's isStarted(): flip → false means a battle was just torn down
 
   // Max Framerate (More Graphics): cap the Pixi ticker so a high-refresh display doesn't
   // burn CPU running the loop at 120/144 Hz. maxFPS = 0 means uncapped (display rate).
@@ -525,14 +526,19 @@ async function main(): Promise<void> {
       scene.height = vh;
       compositor.setSceneSize();
     }
-    // advance() runs the sim in fixed timesteps (deterministic; frame-rate-independent).
+    // advance() runs the sim in fixed timesteps (deterministic; frame-rate-independent). It also
+    // no-ops when no battle is started, so a torn-down match (Quit → menu) can't keep simulating.
     if (!pausedSignal.value) gameController.advance(dt);
     // Present-on-demand: the loop always ticks (so the sim keeps advancing), but the
     // full 2D redraw + GPU texture upload are skipped on frames where nothing visible
     // changed. The shockwave still advances every call (it warps the already-uploaded
     // texture on the GPU), so it animates over a static scene without a re-upload.
-    const redraw = gameController.shouldRedraw();
-    if (redraw) gameController.draw();
+    const started = gameController.isStarted();
+    // Present ONE frame when a battle tears down (started flips false), so stopGame()'s cleared
+    // scene reaches the GPU — otherwise shouldRedraw() stays false and the last battle frame lingers.
+    const redraw = gameController.shouldRedraw() || (wasStarted && !started);
+    wasStarted = started;
+    if (redraw) gameController.draw(); // no-ops when !started; the canvas holds stopGame's clear
     compositor.update(pausedSignal.value ? 0 : dt, redraw);
     // Repaint the foreground FX overlay in lockstep with the world (same redraw
     // gate), clearing first so it's transparent everywhere except its own content.
