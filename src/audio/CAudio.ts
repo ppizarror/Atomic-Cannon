@@ -90,6 +90,7 @@ export class CAudio {
   private readonly m_music: CMusicPlayer;
   private m_unlocked = false;
   private m_paused = false; // intended pause state driving the gameplay-context suspend
+  private m_debugSilenced = false; // dev debug freeze (Ctrl+P): also suspend the main context (music + UI)
   // Menu navigation blips (hover / forward / back) — a non-legacy nicety, OFF by default.
   private m_menuSfxOn = false;
 
@@ -134,14 +135,18 @@ export class CAudio {
   async unlock(): Promise<void> {
     if (this.m_unlocked) return;
     this.m_unlocked = true;
+    // Was the music context autoplay-BLOCKED before this gesture? Capture it before we resume.
+    const mainWasSuspended = this.m_ctxMain.state === 'suspended';
     // Wake both contexts on the first gesture (clears the autoplay lock). The main context (music +
     // UI) always wakes. The gameplay context wakes only if we're NOT currently paused — a pause
     // keeps it suspended so any in-flight effect stays frozen until resume() lifts it.
-    await CAudio.resumeCtx(this.m_ctxMain);
-    if (!this.m_paused) await CAudio.resumeCtx(this.m_ctxGame);
-    // A track requested before this gesture (menu music at boot) was posted to a
-    // suspended context and won't reliably auto-start on resume — replay it now.
-    this.m_music.replay();
+    if (!this.m_debugSilenced) await CAudio.resumeCtx(this.m_ctxMain);
+    if (!this.m_paused && !this.m_debugSilenced) await CAudio.resumeCtx(this.m_ctxGame);
+    // If the boot track (menu music) was posted to a SUSPENDED context it never started, and won't
+    // reliably auto-start on resume — so replay it. But if the context was ALREADY running (a reload
+    // where the browser allowed audio), the track is already playing; replaying would restart it from
+    // the top on the first click — the reported "music reboots".
+    if (mainWasSuspended) this.m_music.replay();
   }
 
   private static async resumeCtx(ctx: AudioContext): Promise<void> {
@@ -200,10 +205,45 @@ export class CAudio {
   /** One convergence step: drive the gameplay context toward the current intended `m_paused` state. */
   private async stepGameCtx(): Promise<void> {
     if (!this.m_unlocked) return; // can't touch the context until the autoplay lock clears
-    if (this.m_paused && this.m_ctxGame.state === 'running') {
+    // The debug freeze also silences gameplay — keep it suspended until BOTH intents clear.
+    const suspended = this.m_paused || this.m_debugSilenced;
+    if (suspended && this.m_ctxGame.state === 'running') {
       await this.m_ctxGame.suspend().catch(() => {});
-    } else if (!this.m_paused && this.m_ctxGame.state === 'suspended') {
+    } else if (!suspended && this.m_ctxGame.state === 'suspended') {
       await this.m_ctxGame.resume().catch(() => {});
+    }
+  }
+
+  /**
+   * The dev debug freeze (Ctrl/Cmd+P) — a silent screenshot pause. Unlike a normal game pause (which
+   * keeps music + UI playing on the main context), this suspends EVERYTHING: the main context too, so
+   * music and UI sounds also stop. Resuming restores both contexts to their non-frozen intents.
+   */
+  setDebugSilenced(on: boolean): void {
+    this.m_debugSilenced = on;
+    void this.applyMainCtx();
+    void this.applyGameCtx(); // re-evaluate the game context (its suspend now also honours this flag)
+  }
+
+  /** Converge the main context (music + UI) toward the `m_debugSilenced` intent (see applyGameCtx). */
+  private m_applyingMainCtx = false;
+  private async applyMainCtx(): Promise<void> {
+    if (this.m_applyingMainCtx) return;
+    this.m_applyingMainCtx = true;
+    try {
+      await this.stepMainCtx();
+      await this.stepMainCtx();
+    } finally {
+      this.m_applyingMainCtx = false;
+    }
+  }
+
+  private async stepMainCtx(): Promise<void> {
+    if (!this.m_unlocked) return;
+    if (this.m_debugSilenced && this.m_ctxMain.state === 'running') {
+      await this.m_ctxMain.suspend().catch(() => {});
+    } else if (!this.m_debugSilenced && this.m_ctxMain.state === 'suspended') {
+      await this.m_ctxMain.resume().catch(() => {});
     }
   }
 
