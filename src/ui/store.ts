@@ -25,6 +25,27 @@ export type Screen =
 
 export const screen = signal<Screen>('battle');
 
+// Below this viewport width the raster gui.bmp control panel gets cropped, so the
+// HUD swaps to a compact touch layout (MobileHud). The panel is a fixed 736px wide
+// (the 640x120 gui.bmp scaled to the bar's 138px height) and needs ~756px to show
+// without clipping its rightmost box — so 768 is the point where it starts to crop,
+// NOT phone-only; narrow desktop windows and tablets also get the touch HUD.
+// `isMobile` mirrors the live viewport; watchViewport() keeps it in sync and stamps
+// a `.mobile` class on <html> so the CSS (shorter --hud-h, etc.) tracks the same
+// single breakpoint. Only sizes under the App gate (320x240) are refused outright.
+export const MOBILE_W = 768;
+export const isMobile = signal(typeof window !== 'undefined' && window.innerWidth < MOBILE_W);
+
+export function watchViewport(): void {
+  const sync = () => {
+    const m = window.innerWidth < MOBILE_W;
+    isMobile.value = m;
+    document.documentElement.classList.toggle('mobile', m);
+  };
+  sync();
+  window.addEventListener('resize', sync);
+}
+
 // Loading screen: true while a freshly-launched match loads its landscape textures. A
 // menu-styled overlay (title backdrop + animated dots) covers the still-untextured world
 // and the battle is revealed only once assetsReady() resolves — so the player never sees
@@ -896,10 +917,10 @@ export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string
 // --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
 const iconCache = new Map<string, Promise<string | null>>();
 
-/** Load a weapon icon at the given native pixel size (16 | 32). Only magenta
+/** Load a weapon icon at the given native pixel size (12 | 16 | 32). Only magenta
  *  keys out — the grey (128,128,128) tile is the icon's intended background. Icon
  *  files are lowercase; Vite serves public assets case-sensitively. */
-export function loadWeaponIcon(name: string, size: 16 | 32 = 32): Promise<string | null> {
+export function loadWeaponIcon(name: string, size: 12 | 16 | 32 = 32): Promise<string | null> {
   return loadColorKeyedBmp(
     iconCache,
     `${size}/${name}`,

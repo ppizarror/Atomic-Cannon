@@ -33,6 +33,7 @@ import {
   openSettingsPage,
   openPlaySetup,
   initRouter,
+  watchViewport,
   escapeBack,
   showFramerate,
   fps,
@@ -51,6 +52,14 @@ async function main(): Promise<void> {
     console.error('Missing mount points');
     return;
   }
+
+  // Decide mobile-vs-desktop HUD and stamp the <html>.mobile class FIRST, so the
+  // mobile --hud-h (a much shorter bar) is in effect before we read the container
+  // height below. The scene buffer + controller capture the world's render
+  // resolution from that height at boot; if the class stamped later, the world
+  // would be sized for the tall desktop bar and then stretched into the shorter
+  // mobile container — a permanent vertical blur until the next resize/reload.
+  watchViewport();
 
   // Offscreen buffer sized to the WORLD area (above the HUD), not the viewport,
   // so the game renders above the HUD rather than behind it.

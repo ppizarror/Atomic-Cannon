@@ -45,7 +45,9 @@ import {
   windAccY,
   canMoveNow,
   loadUiBmp,
+  isMobile,
 } from './store';
+import {MobileHud} from './MobileHud';
 import {weaponPower, weaponDamagePerArea, weaponName, weaponTypeName} from '../core/CWeapon';
 import {strings} from '../i18n';
 import {clamp, wrapIndex} from '../math/num';
@@ -608,13 +610,17 @@ export function Hud() {
   return (
     <>
       <BattleStatus />
-      <div id="hud">
-        <WeaponDetails2 />
-        <WeaponDetails1 />
-        <ControlPanel />
-        <PlayerStats />
-        <WindMeasurements />
-      </div>
+      {isMobile.value ? (
+        <MobileHud />
+      ) : (
+        <div id="hud">
+          <WeaponDetails2 />
+          <WeaponDetails1 />
+          <ControlPanel />
+          <PlayerStats />
+          <WindMeasurements />
+        </div>
+      )}
     </>
   );
 }

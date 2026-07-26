@@ -7,7 +7,7 @@
 import {useAsyncImage} from './useAsyncImage';
 import {loadWeaponIcon} from './store';
 
-export function WeaponIcon({name, size, cls}: {name: string; size: 16 | 32; cls: string}) {
+export function WeaponIcon({name, size, cls}: {name: string; size: 12 | 16 | 32; cls: string}) {
   const src = useAsyncImage(() => loadWeaponIcon(name, size), [name, size]);
   return src ? <img class={cls} src={src} alt="" /> : <span class={cls} />;
 }

@@ -2343,3 +2343,285 @@ canvas {
   max-height: 66px;
   image-rendering: pixelated;
 }
+
+/* ============================================================================
+   Mobile / narrow-viewport HUD (rendered by MobileHud.tsx below store MOBILE_W).
+   A single compact strip of tap targets replaces the raster gui.bmp panel, which
+   would otherwise be wider than the screen and crop. The <html>.mobile class is
+   stamped by store watchViewport() on the same breakpoint the render switch uses.
+   ============================================================================ */
+
+/* A thin strip like the original phone HUD: short height, a shot-clock bar across
+   the top, then a row of beveled GREEN buttons. Includes the iOS home-indicator
+   inset so the world (100vh − --hud-h) never hides behind it. */
+.mobile {
+  --hud-h: calc(40px + env(safe-area-inset-bottom, 0px));
+}
+
+#mhud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--hud-h);
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  /* dark bar — the metal lives on the button faces, not the strip behind them */
+  background: linear-gradient(#3a3d42, #202225);
+  border-top: 2px solid #4a4f55;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  touch-action: none;
+}
+
+/* shot-clock bar along the top edge (green→yellow→red drain / charge flash). */
+.mtimer {
+  flex: 0 0 auto;
+  height: 3px;
+  background: #0a0f0a;
+}
+
+.mtimer-fill {
+  height: 100%;
+  transition: width 0.1s linear;
+}
+
+/* the button row fills the rest of the strip. */
+.mbar {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding: 3px 4px calc(3px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Beveled green button (outset): light top/left edge, dark bottom/right. The
+   `arial-14-out` bitmap text is white-on-black-outline, so it reads on the green. */
+.mbtn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+  background: linear-gradient(#5c7d3d, #3a5323);
+  border: 1px solid;
+  border-color: #7fa557 #223315 #1b280f #6b8f47; /* T R B L → raised */
+  border-radius: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* pressed / open sheet → inset (swap the bevel and darken the face) */
+.mbtn:active,
+.mbtn.open {
+  background: linear-gradient(#33481f, #4c6832);
+  border-color: #1b280f #6b8f47 #7fa557 #223315;
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.mbtn.blocked,
+.mbtn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* let long labels clip rather than force the row wider */
+.mbtn-txt {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* weapon button — a touch wider; icon + name, name clips on very long weapons */
+.mweapon {
+  flex: 1.7 1 0;
+  justify-content: flex-start;
+}
+
+.mweapon .micon {
+  width: 12px;
+  height: 12px;
+  box-sizing: content-box;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
+  border: 1px solid #4a4a4a;
+}
+
+.mval {
+  flex: 1.15 1 0;
+}
+
+.mbuy {
+  flex: 0.5 1 0;
+}
+
+.mfire {
+  flex: 1.1 1 0;
+}
+
+.mmenu {
+  flex: 0.5 1 0;
+}
+
+/* the two little player squares at the right of the bar (team colour). */
+.mstatus {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 2px;
+}
+
+.mdot {
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
+  /* red by default (waiting players), bright green for whoever's turn it is */
+  background: #b83232;
+  border: 1px solid #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.mdot.on {
+  background: #3fcf3f;
+}
+
+.mdot.dead {
+  opacity: 0.3;
+}
+
+/* ---- bottom sheet (slides up over the bar to edit power/angle/weapon) ---- */
+.msheet-scrim {
+  position: fixed;
+  inset: 0;
+  bottom: var(--hud-h);
+  z-index: var(--z-hud);
+}
+
+.msheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--hud-h);
+  z-index: var(--z-hud);
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px) * 0);
+  background: linear-gradient(#2b3036, #1b1e22);
+  border-top: 1px solid #4a4f55;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.45);
+  touch-action: none;
+}
+
+.msheet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mstep {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  font:
+    700 22px/1 system-ui,
+    sans-serif;
+  color: #e7ebef;
+  background: linear-gradient(#3a4048, #23272c);
+  border: 1px solid #10131600;
+  border-top-color: rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mstep:active {
+  background: linear-gradient(#23272c, #3a4048);
+}
+
+.mslider {
+  position: relative;
+  flex: 1 1 auto;
+  height: 42px;
+  border-radius: 6px;
+  background: #0d1013;
+  border: 1px solid #000;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.mslider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(#2f7a34, #1d5220);
+}
+
+.mslider-knob {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 30px;
+  margin-left: -5px;
+  transform: translateY(-50%);
+  background: linear-gradient(#eef2f6, #b7bfc7);
+  border: 1px solid #000;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.msheet-val {
+  flex: 0 0 auto;
+  min-width: 54px;
+  text-align: right;
+}
+
+/* weapon picker: a scrollable list that fills most of the screen above the bar. */
+.msheet-weapon {
+  padding: 0;
+}
+
+.mwlist {
+  max-height: 46vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px;
+}
+
+.mwrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 8px;
+  color: #e7ebef;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mwrow .micon {
+  width: 12px;
+  height: 12px;
+  box-sizing: content-box;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
+  border: 1px solid #757575;
+}
+
+.mwrow.active {
+  background: rgba(60, 170, 70, 0.18);
+  outline: 1px solid #46cc46;
+  outline-offset: -1px;
+}

@@ -188,11 +188,12 @@ function FlightHud() {
   );
 }
 
-// Minimum playable window. Below this the layout is too cramped to use, so we cover
-// everything with a brushed-steel notice asking the player to enlarge the window
-// rather than let the HUD/controls collapse.
-const MIN_W = 768;
-const MIN_H = 432;
+// Absolute floor below which even the compact mobile HUD can't be laid out — we
+// cover everything with a brushed-steel notice asking the player to enlarge the
+// window. Real phones clear this comfortably; narrow desktop windows and phones
+// below MOBILE_W get the mobile HUD (see store MOBILE_W), not this gate.
+const MIN_W = 320;
+const MIN_H = 240;
 
 // Full-screen "resolution too small" gate. Watches the viewport and, while it's under
 // the minimum, covers the game (above every other layer) with a steel-plate notice.
