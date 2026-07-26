@@ -184,7 +184,11 @@ export class NetGame {
       return;
     }
     // True lockstep: our deterministic sim is the truth for us. Never overwrite it with the acting
-    // client's snapshot (the old cheat vector). A hash mismatch → cheat or genuine desync: flag it.
+    // client's snapshot (the old cheat vector) — EXCEPT supply crates. Crate physics free-runs on
+    // wall-clock fixed-steps outside the lockstep shot window, so an airborne crate drifts a few px
+    // between clients; it's excluded from stateHash and pinned from the authoritative keyframe here
+    // (otherwise an honest client false-flags divergence whenever a crate is mid-descent).
+    gc.reconcileNetCrates(result);
     const localHash = gc.stateHash();
     if (localHash !== hash) this.host.onDivergence?.({localHash, keyframeHash: hash});
   }

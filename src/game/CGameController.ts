@@ -440,8 +440,9 @@ export interface NetSnapshot {
    *  for kill attribution. `stateHash` mixes them so mine drift is DETECTED. Optional for back-compat
    *  with older snapshots (absent → mines left untouched). */
   mines?: {x: number; y: number; armed: number; weaponIndex: number; ownerIdx: number}[];
-  /** Supply crates on the field — authoritative so a reconnecting/keyframe client reproduces them
-   *  (a missed crate then diverges the hash on a health-crate pickup). Optional for back-compat. */
+  /** Supply crates on the field — authoritative so a client reproduces them exactly. Crate physics
+   *  free-runs on wall-clock frames outside the lockstep shot window, so crates are NOT in `stateHash`;
+   *  instead every keyframe re-pins them (see reconcileNetCrates). Optional for back-compat. */
   crates?: {
     x: number;
     y: number;
@@ -5378,15 +5379,13 @@ export class CGameController implements ShotWorld {
       mix(m.weaponIndex);
     }
     mix(this.m_mines.length);
-    // Crates: spawned in deterministic (seeded) order, so hashing in array order detects one that
-    // landed/drifted/was collected on one client but not another (position + landed + weapon + count).
-    for (const c of this.m_crates) {
-      mix(Math.round(c.x));
-      mix(Math.round(c.y));
-      mix(c.landed ? 1 : 0);
-      mix(c.weaponIndex);
-    }
-    mix(this.m_crates.length);
+    // Crates are deliberately NOT hashed. Their physics (updateCrates) free-runs every frame on the
+    // wall-clock fixed-step count OUTSIDE the lockstep shot window — during the aim/watch phase, which
+    // isn't step-synchronised across clients — so an airborne crate is a latency-worth of descent steps
+    // ahead on one client vs another. A landed crate settles deterministically, but a mid-descent one
+    // would diverge a few px and flip this FNV hash, false-flagging an honest spectator. Crates are
+    // authoritative-by-adoption instead: pinned from every keyframe (see NetGame.reconcileKeyframe →
+    // reconcileNetCrates) rather than self-simulated-and-compared.
     mix(this.m_rng.getState());
     return h >>> 0;
   }
@@ -5507,21 +5506,31 @@ export class CGameController implements ShotWorld {
         owner: m.ownerIdx >= 0 ? (this.m_tanks[m.ownerIdx] ?? null) : null,
       }));
     }
-    // Reproduce supply crates (fresh local id + wobble phase — those are cosmetic/tracking only).
-    if (Array.isArray(s.crates)) {
-      this.m_crates = s.crates.map(c => ({
-        x: c.x,
-        y: c.y,
-        vy: c.vy,
-        kind: c.kind as CrateKind, // one of the 4 kinds (server-validated); an unknown kind is inert on pickup
-        amount: c.amount,
-        weaponIndex: c.weaponIndex,
-        landed: c.landed,
-        phase: 0,
-        id: ++this.m_crateSeq,
-      }));
-    }
+    this.reconcileNetCrates(s); // pin supply crates from the authoritative snapshot
     this.markDirty();
+  }
+
+  /**
+   * Adopt the supply crates from an authoritative snapshot (fresh local id + wobble phase — those are
+   * cosmetic/tracking only). Unlike the rest of `applyNetSnapshot`, this runs on EVERY keyframe, not
+   * just bootstrap: crate physics free-runs on the wall-clock fixed-step count outside the lockstep
+   * shot window, so a spectator's crates drift from the actor's and are excluded from `stateHash`.
+   * Pinning them here keeps the field correct (a health-crate pickup still lands) without the drift
+   * false-flagging divergence. Absent on older snapshots → leave the local crates untouched.
+   */
+  reconcileNetCrates(s: NetSnapshot): void {
+    if (!Array.isArray(s.crates)) return;
+    this.m_crates = s.crates.map(c => ({
+      x: c.x,
+      y: c.y,
+      vy: c.vy,
+      kind: c.kind as CrateKind, // one of the 4 kinds (server-validated); an unknown kind is inert on pickup
+      amount: c.amount,
+      weaponIndex: c.weaponIndex,
+      landed: c.landed,
+      phase: 0,
+      id: ++this.m_crateSeq,
+    }));
   }
 
   /** Depot sell-back refund fraction (0..1), live. */

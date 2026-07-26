@@ -289,6 +289,31 @@ describe('network match boot', () => {
     expect(c.stateHash()).not.toBe(a.stateHash());
   });
 
+  it('stateHash excludes crates: an airborne crate that drifted between clients does not diverge it', () => {
+    // Crate physics free-runs on the wall-clock fixed-step count OUTSIDE the lockstep shot window, so
+    // an airborne crate is a network-latency-worth of descent steps ahead on one client vs another.
+    // If that fed the hash, an honest spectator would false-flag divergence whenever a crate is mid-air.
+    const a = netController(0);
+    const b = netController(1);
+    expect(a.stateHash()).toBe(b.stateHash()); // identical boot
+
+    // Drop a crate on both. Same RNG draws (roll + amount) keep the seeded cursor — which IS hashed —
+    // in phase; the crate lands in each client's own human column (X differs, but crates aren't hashed).
+    a.devDropCrate('health');
+    b.devDropCrate('health');
+    expect(a.stateHash()).toBe(b.stateHash());
+
+    // Now simulate the free-running drift: advance ONLY a's crate physics. updateCrates never touches
+    // the RNG, so the only state that changes is the (unhashed) crate position.
+    for (let i = 0; i < 20; i++)
+      (a as unknown as {updateCrates(dt: number): void}).updateCrates(1 / 60);
+
+    const ca = a.getNetSnapshot().crates!;
+    const cb = b.getNetSnapshot().crates!;
+    expect(ca[0].y).not.toBeCloseTo(cb[0].y); // the crate really did drift (a fell ~30px, b didn't)
+    expect(a.stateHash()).toBe(b.stateHash()); // ...yet the hash still agrees — crates are excluded
+  });
+
   it('two clients simulate the same shot to an identical stateHash (lockstep)', () => {
     const FIXED = 1 / 60;
     const shotClient = (seed: number): CGameController => {
@@ -1042,6 +1067,29 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
     expect(gc.getNetSnapshot().tanks[1].life).toBeGreaterThan(0); // NOT overwritten (was applied pre-Option-A)
     expect(divergences).toHaveLength(1);
     expect(divergences[0].keyframeHash).toBe(999999);
+  });
+
+  it('crates are pinned from a keyframe (not self-simulated): a crate-only delta reconciles, no flag', () => {
+    const {gc, ng, divergences} = bridge(1);
+    ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // our turn
+    (gc as unknown as {m_onNetTurnEnd?: () => void}).m_onNetTurnEnd?.(); // settle → m_hasSimulated
+    const inSync = gc.stateHash(); // crates are NOT in this hash
+
+    // A keyframe whose ONLY difference is a supply crate the actor has that we don't (ours drifted /
+    // hasn't spawned locally). Pre-fix this flipped the hash and false-flagged; now crates are excluded
+    // from the hash AND re-pinned from the keyframe even though we trust our own sim for everything else.
+    const snap = gc.getNetSnapshot();
+    snap.crates = [
+      {x: 123, y: 45, vy: 0, kind: 'health', amount: 300, weaponIndex: -1, landed: false},
+    ];
+
+    ng.handle({t: 'stateUpdate', from: 1, seq: 1, result: snap, hash: inSync});
+
+    expect(divergences).toHaveLength(0); // crate-only delta must NOT false-flag divergence
+    const crates = gc.getNetSnapshot().crates!;
+    expect(crates).toHaveLength(1); // adopted from the authoritative keyframe...
+    expect(crates[0].x).toBe(123); // ...at the actor's position
+    expect(crates[0].y).toBe(45);
   });
 
   it('bootstrap: a snapshot before the first turnBegin (reconnect catch-up) IS adopted', () => {
