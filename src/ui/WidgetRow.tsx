@@ -60,10 +60,32 @@ export function WidgetRow({
     bump();
   };
 
+  // Keyboard nav (useMenuNav) parks focus on the row <div>; Left/Right change the value
+  // — the same left-half/right-half the mouse clicks. Enter/Space advance it (a value
+  // row has no single "activate", so it mirrors the right half). A toggle flips either
+  // way. onFocus/onBlur mirror the hover subtitle so the bottom hint follows the
+  // keyboard highlight too.
+  const onRowKey = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      change(-1);
+    } else if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      change(1);
+    }
+  };
+
   // A toggle row: label left, ON/OFF right, no arrows — either side flips it.
   if (w.kind === 'toggle') {
     return (
-      <div class="settings-row menu-btn" onMouseEnter={enter} onMouseLeave={leave}>
+      <div
+        class="settings-row menu-btn"
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+        onFocus={enter}
+        onBlur={leave}
+        onKeyDown={onRowKey}
+      >
         <button class="srow-half srow-left" onClick={() => change(1)}>
           <BmpText font={ROW_FONT} text={w.label} />
         </button>
@@ -81,7 +103,14 @@ export function WidgetRow({
   const valueText =
     w.kind === 'enum' ? (w.options![val] ?? String(val)) : w.fmt ? w.fmt(val) : String(val);
   return (
-    <div class="settings-row menu-btn" onMouseEnter={enter} onMouseLeave={leave}>
+    <div
+      class="settings-row menu-btn"
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+      onFocus={enter}
+      onBlur={leave}
+      onKeyDown={onRowKey}
+    >
       <button class="srow-half srow-left" onClick={() => change(-1)}>
         <span class="srow-arrow">
           <BmpText font={ROW_FONT} text="<" />

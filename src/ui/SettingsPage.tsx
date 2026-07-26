@@ -16,11 +16,13 @@ import {SettingsScreen} from './SettingsScreen';
 import {getSettingsPage} from './settingsPages';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
+import {useMenuNav} from './useMenuNav';
 import {ClassicScrollbar} from './ClassicScrollbar';
 
 export function SettingsPage({id}: {id: string}) {
   const bump = useForceRender();
   const [sub, setSub] = useState<string | null>(null);
+  const navRef = useMenuNav(`settings:${id}`);
 
   // Re-render when fullscreen changes (e.g. Esc leaves it) so the Full Screen toggle
   // reflects the live state even without a click.
@@ -35,7 +37,7 @@ export function SettingsPage({id}: {id: string}) {
   return (
     <SettingsScreen subtitle={sub ?? page.header}>
       <ClassicScrollbar class="settings-scroll">
-        <div class="menu-list settings-rows">
+        <div class="menu-list settings-rows" ref={navRef}>
           {page.rows.map((w, i) => (
             <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
           ))}

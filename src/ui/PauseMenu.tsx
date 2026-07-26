@@ -8,10 +8,14 @@ import {showPause, resumeGame, quitToMenu, openSettings} from './store';
 import {netState, leaveMatch} from './networkStore';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
+import {useMenuNav} from './useMenuNav';
 import {strings} from '../i18n';
 
-export function PauseMenu() {
-  if (!showPause.value) return null;
+// PauseMenu is always mounted (it renders null when hidden), so the keyboard-nav hook
+// lives in this inner component — it mounts/unmounts with the overlay, which is what
+// registers/unregisters the listener at the right time.
+function PauseMenuBody() {
+  const navRef = useMenuNav('pause');
   const p = strings.value.pause;
   // Quitting a networked battle must also leave the room (so the other player isn't
   // left waiting on a ghost); a solo battle just drops to the menu.
@@ -27,11 +31,16 @@ export function PauseMenu() {
       <div class="pause-title">
         <BmpText font="beijing-16-out" text={p.title} />
       </div>
-      <div class="menu-list">
+      <div class="menu-list" ref={navRef}>
         <MenuButton label={p.resume} onClick={resumeGame} />
         <MenuButton label={p.settings} onClick={() => openSettings('pause')} />
         <MenuButton label={inNetMatch ? strings.value.net.endMatch : p.quit} onClick={onQuit} />
       </div>
     </div>
   );
+}
+
+export function PauseMenu() {
+  if (!showPause.value) return null;
+  return <PauseMenuBody />;
 }

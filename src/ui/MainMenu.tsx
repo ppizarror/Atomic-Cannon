@@ -19,6 +19,7 @@ import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
 import {MenuTargets} from './MenuTargets';
 import {useAsyncImage} from './useAsyncImage';
+import {useMenuNav} from './useMenuNav';
 
 // The atom logo bitmap has a black background; knock it out (alpha = luminance) so
 // the metallic atom sits transparently in the corner.
@@ -52,12 +53,13 @@ function AtomLogo() {
 }
 
 export function MainMenu() {
+  const navRef = useMenuNav('mainmenu');
   // The `title.webp` intro image already carries the chrome "ATOMIC CANNON" logo,
   // so we don't render our own title over it — just the nav list.
   return (
     <div class="mainmenu">
       <MenuTargets />
-      <div class="menu-list">
+      <div class="menu-list" ref={navRef}>
         <MenuButton label={strings.value.menu.play} onClick={openPlaySetup} />
         <MenuButton label={strings.value.menu.quickPlay} onClick={quickPlay} />
         <MenuButton label={strings.value.menu.network} onClick={openNetworkGame} />

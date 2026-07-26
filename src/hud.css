@@ -993,9 +993,19 @@ canvas {
   transition: background 0.08s ease;
 }
 
-.menu-btn:hover {
+/* Keyboard selection mirrors the mouse hover box. `:focus-visible` (not `:focus`)
+   paints only when focus came from the keyboard, so the game keeps "assuming the
+   mouse" — a pointer click never leaves a highlight parked on the item. Stays on
+   background/box-shadow only: transform/filter would break the invert-rect backdrop
+   (see the note above .menu-btn). */
+.menu-btn:hover,
+.menu-btn:focus-visible {
   background: linear-gradient(rgba(233, 224, 199, 0.34), rgba(198, 187, 160, 0.2));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+
+.menu-btn:focus-visible {
+  outline: none;
 }
 
 .menu-btn:active {

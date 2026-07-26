@@ -13,6 +13,7 @@ import {useState} from 'preact/hooks';
 import {strings} from '../i18n';
 import {closeSettings, settingsOrigin, settingsPage, openSettingsPage} from './store';
 import {MenuButton} from './MenuButton';
+import {useMenuNav} from './useMenuNav';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {SettingsScreen} from './SettingsScreen';
 import {SettingsPage} from './SettingsPage';
@@ -80,6 +81,7 @@ export function Settings() {
 
 function SettingsRoot() {
   const [sub, setSub] = useState('');
+  const navRef = useMenuNav('settings-root');
   // Done closes Settings. The default subtitle is "Return to the main menu"; when we
   // reached Settings from the in-game pause it returns to the game instead, so the
   // hint follows where Done actually goes.
@@ -92,7 +94,7 @@ function SettingsRoot() {
   return (
     <SettingsScreen subtitle={sub}>
       <ClassicScrollbar class="settings-scroll">
-        <div class="menu-list settings-list">
+        <div class="menu-list settings-list" ref={navRef}>
           {categories().map(e => (
             <SettingsItem key={e.label} entry={e} onHover={setSub} />
           ))}

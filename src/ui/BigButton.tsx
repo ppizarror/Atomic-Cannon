@@ -25,6 +25,8 @@ export function BigButton({
       disabled={disabled}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
+      onFocus={onEnter}
+      onBlur={onLeave}
       onClick={onClick}
     >
       <BmpText font="bazouk-28" text={label} />

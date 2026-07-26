@@ -16,6 +16,7 @@ import {BigButton} from './BigButton';
 import {SettingsScreen} from './SettingsScreen';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
+import {useMenuNav} from './useMenuNav';
 import {backToMenu, startBattle, MIN_PLAYERS} from './store';
 import {type Widget, stepper, enumW} from './settingsPages';
 import {
@@ -47,6 +48,7 @@ const countRow = (
 export function PlaySetup() {
   const bump = useForceRender();
   const [sub, setSub] = useState<string | null>(null);
+  const navRef = useMenuNav('play');
 
   const p = strings.value.play;
   const s = setup.value; // subscribe so the Start Game guard updates as counts change
@@ -69,7 +71,7 @@ export function PlaySetup() {
       subtitle={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))}
       spacing={-1}
     >
-      <div class="menu-list settings-rows">
+      <div class="menu-list settings-rows" ref={navRef}>
         <BigButton
           label={p.startGame}
           disabled={!canStart}
