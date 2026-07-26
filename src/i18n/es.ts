@@ -307,6 +307,8 @@ export const es: Strings = {
     tooSmallSize: '{w} x {h} píxeles para jugar.',
     tooSmallEnlarge: 'Agranda la ventana para continuar.',
     tooSmallCurrent: 'Actual:  {w} x {h}',
+    rotateTitle: 'GIRA TU DISPOSITIVO',
+    rotateHint: 'Atomic Cannon se juega en horizontal.',
     loading: 'Cargando',
   },
 

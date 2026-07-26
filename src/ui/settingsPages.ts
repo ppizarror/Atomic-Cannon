@@ -14,7 +14,7 @@ import {strings, fmt, locale, setLocale, availableLocales, localeName} from '../
 import type {RowCopy} from '../i18n';
 import {getVal, setVal} from './settingsStore';
 import {type SettingId} from './settingsCatalog';
-import {game, openSettingsPage} from './store';
+import {game, openSettingsPage, isMobile} from './store';
 import {applyGameSettings} from './applySettings';
 
 export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';
@@ -274,16 +274,18 @@ function contentRows(): Widget[] {
 }
 
 /** Max real options shown on one settings page. Anything longer auto-splits into sub-pages, each
- *  ending in a free "More Options" nav (the nav itself does NOT count toward the cap). */
-const PAGE_SIZE = 10;
+ *  ending in a free "More Options" nav (the nav itself does NOT count toward the cap). The mobile
+ *  HUD's compact rows fit fewer per screen, so it paginates sooner. */
+const pageSize = (): number => (isMobile.value ? 6 : 10);
 
 /** Slice a category's full row list to the requested sub-page, appending a "next page" nav to every
  *  page but the last. The sub-page index rides in the route id as `<base>~<n>` (page 0 = bare id),
  *  and back always returns to root — matching the flat nav the manual "More …" rows used before. */
 function paginate(base: string, allRows: Widget[], pageIdx: number): Widget[] {
-  const start = pageIdx * PAGE_SIZE;
-  const rows = allRows.slice(start, start + PAGE_SIZE);
-  if (start + PAGE_SIZE < allRows.length) {
+  const size = pageSize();
+  const start = pageIdx * size;
+  const rows = allRows.slice(start, start + size);
+  if (start + size < allRows.length) {
     const c = strings.value.settings.nextPage;
     rows.push(navRow(c, `${base}~${pageIdx + 1}`));
   }

@@ -216,6 +216,9 @@ export interface Strings {
     tooSmallEnlarge: string;
     /** `{w}` x `{h}` current. */
     tooSmallCurrent: string;
+    /** Portrait-orientation nudge on phones (the battlefield is landscape). */
+    rotateTitle: string;
+    rotateHint: string;
     /** Loading screen caption shown while a match's textures load (animated dots are appended). */
     loading: string;
   };

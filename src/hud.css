@@ -150,6 +150,10 @@ canvas {
   left: 0;
   right: 0;
   height: calc(100vh - var(--hud-h));
+  /* dvh = dynamic viewport height: on mobile browsers (esp. iOS Safari) the URL/nav
+     bar eats part of 100vh, so use the live visible height instead — reclaims that
+     ~15% band. Falls back to the vh line above where dvh is unsupported. */
+  height: calc(100dvh - var(--hud-h));
 }
 
 /* Foreground FX overlay canvas — FULL viewport, layered above the HUD bar so tank
@@ -976,6 +980,43 @@ canvas {
   grid-column: 1 / -1;
 }
 
+/* --- Mobile: a taller, tighter depot so more of the arsenal fits at once, like the
+   original's dense phone layout. The list is flex:1, so a taller card + trimmed
+   chrome padding turns straight into more visible rows. --- */
+.mobile .dep-card {
+  width: min(700px, 97vw);
+  height: 96vh;
+  padding: 8px 9px;
+  border-radius: 4px;
+}
+
+.mobile .dep-head {
+  margin-bottom: 3px;
+}
+
+.mobile .dep-cols {
+  padding: 0 6px 2px;
+  margin-bottom: 2px;
+}
+
+.mobile .dep-row {
+  padding: 1px 6px;
+}
+
+.mobile .dep-foot {
+  margin-top: 6px;
+  gap: 8px;
+}
+
+.mobile .dep-btns,
+.mobile .dep-btn-col {
+  gap: 5px;
+}
+
+.mobile .dep-btn {
+  height: 28px;
+}
+
 /* ======================= SHARED MENU BUTTON (.menu-btn) ==================== */
 /* One highlight treatment for every menu list — main menu, the "Game Menu" pause
    list, the Settings root, and the option rows. HOVER paints a light box behind the
@@ -1286,18 +1327,28 @@ canvas {
 /* Splash — an oscillating tagline pinned to the bottom-right of the "ATOMIC
    CANNON" logo, flagging this as an unofficial fan recreation. The text itself is
    a bitmap-font canvas (<SplashBadge> → <BmpText>), so this rule is layout only.
-   The title.webp backdrop is ~16:9 and top-anchored, so on widescreen it maps
-   ~1:1 and these top/left percentages track the logo's lower-right corner. The
-   wrapper owns the position + tilt; the inner <span> owns the scale pulse, so the
-   two transforms never clobber each other. Tune placement/angle via the var. */
+
+   The title.webp backdrop (1600×893) is drawn `top center / cover`, so a fixed
+   percentage would drift into the letters as the window widens (the logo scales
+   with width, not the viewport). Instead we reproduce the cover math: --disp-w /
+   --disp-h are the image's ACTUAL rendered size, and the logo's bottom-right
+   corner — measured at 84.3% × 15.2% of the source image — is projected back into
+   viewport space. The badge then straddles that corner via translate().
+   The wrapper owns the position + tilt; the inner <span> owns the scale pulse, so
+   the two transforms never clobber each other. Tune angle via the var. */
 .mainmenu-splash {
   --splash-tilt: -20deg; /* bump toward -45deg for a steeper lean */
+  /* Rendered size of the cover-scaled backdrop (scale = max(vw/1600, vh/893)). */
+  --disp-w: max(100vw, calc(100vh * 1600 / 893));
+  --disp-h: max(100vh, calc(100vw * 893 / 1600));
   position: absolute;
-  top: 11%;
-  left: 68%;
+  /* Logo bottom-right corner, top-center anchored: x = 50vw + (0.843-0.5)·disp-w. */
+  left: calc(50vw + 0.343 * var(--disp-w));
+  top: calc(0.152 * var(--disp-h));
   z-index: var(--z-screen);
   pointer-events: none; /* purely decorative — never eats clicks meant for the nav */
-  transform: rotate(var(--splash-tilt));
+  /* Sit just below-right of the corner so the badge clears the glyphs. */
+  transform: translate(-45%, 15%) rotate(var(--splash-tilt));
   transform-origin: center;
   will-change: transform;
 }
@@ -1449,6 +1500,74 @@ canvas {
 .too-small-size {
   margin-top: 14px;
   opacity: 0.8;
+}
+
+/* ---- Rotate-to-landscape gate (phones held in portrait) --------------------
+   The battlefield is landscape, so on a portrait phone we cover everything with the
+   steel plate + an animated phone that tips to its side. Visibility is a pure
+   orientation media query, so it flips the instant the device turns (no JS). Scoped
+   to coarse pointers so a narrow desktop window is never nagged. */
+.rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-gate);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--steel-plate);
+  padding: 16px;
+}
+
+@media (orientation: portrait) and (max-width: 767px) and (pointer: coarse) {
+  .rotate-gate {
+    display: flex;
+  }
+}
+
+.rotate-card {
+  max-width: min(460px, 92vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 26px 30px 28px;
+}
+
+/* single-line bitmap-font canvases can't wrap — scale them down to fit narrow phones. */
+.rotate-card canvas {
+  max-width: 84vw;
+  height: auto;
+}
+
+.rotate-title {
+  margin: 20px 0 8px;
+}
+
+/* a phone outline that tips from portrait to landscape and back */
+.rotate-phone {
+  width: 40px;
+  height: 66px;
+  border: 3px solid #cfd5db;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.4);
+  animation: rotate-hint 2s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%,
+  35% {
+    transform: rotate(0);
+  }
+  65%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-phone {
+    animation: none;
+    transform: rotate(-90deg);
+  }
 }
 
 /* ============================ MODALS (dialog.bmp) ============================ */
@@ -2693,4 +2812,57 @@ canvas {
   background: rgba(60, 170, 70, 0.18);
   outline: 1px solid #46cc46;
   outline-offset: -1px;
+}
+
+/* ============================================================================
+   Mobile menus — on a narrow/short viewport the title screen's big bitmap-font
+   button list overlaps the baked title. Use the SAME dimmed full-desert backdrop
+   as the settings screen (the wash keeps the white buttons legible over the baked
+   "ATOMIC CANNON" logo) and just compact the shared, still-centered button list.
+   ============================================================================ */
+.mobile .mainmenu {
+  background: var(--title-plate-dim);
+}
+
+/* zoom shrinks the list's layout AND its glyph canvases together, so the centered
+   column actually gets shorter (a transform would only scale it visually) and clears
+   the baked title above it. Kept mild so the buttons stay finger-sized. */
+.mobile .menu-list {
+  zoom: 0.8;
+}
+
+/* generous vertical padding so each row is a comfortable touch target even though
+   the glyphs are smaller. */
+.mobile .menu-item {
+  padding: 7px 0;
+}
+
+/* on a very short viewport (small landscape window) 7 finger-sized rows + the big
+   title don't both fit, so compact the list a touch to keep it clear of the title. */
+@media (max-height: 380px) {
+  .mobile .menu-list {
+    zoom: 0.7;
+  }
+  .mobile .menu-item {
+    padding: 4px 0;
+  }
+}
+
+/* keep the diagonal "unofficial" splash up in the title's top-right corner (above
+   the centered menu) and scaled down so it neither clips the edge nor overlaps the
+   buttons on narrow viewports. */
+.mobile .mainmenu-splash {
+  top: 11%;
+  left: 75%;
+  transform: rotate(var(--splash-tilt)) scale(0.62);
+}
+
+/* Hide the bottom option-description legend on mobile (it overlaps the last row on
+   short screens) and reclaim the band it reserved so the option list has more room. */
+.mobile .settings-subtitle {
+  display: none;
+}
+
+.mobile .settings-screen {
+  padding-bottom: 3vh;
 }

@@ -307,6 +307,8 @@ export const en: Strings = {
     tooSmallSize: '{w} x {h} pixels to play.',
     tooSmallEnlarge: 'Enlarge the window to continue.',
     tooSmallCurrent: 'Current:  {w} x {h}',
+    rotateTitle: 'ROTATE YOUR DEVICE',
+    rotateHint: 'Atomic Cannon plays in landscape.',
     loading: 'Loading',
   },
 

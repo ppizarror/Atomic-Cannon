@@ -236,6 +236,27 @@ function TooSmallOverlay() {
   );
 }
 
+// Portrait-orientation nudge: the battlefield is landscape, so on a phone held
+// upright we cover everything with a steel plate + an animated "rotate" phone.
+// Visibility is pure CSS (an orientation media query on `.rotate-gate`), so it flips
+// the instant the device turns — no JS/resize listener, and it's always in the DOM.
+function RotateOverlay() {
+  const a = strings.value.app;
+  return (
+    <div class="rotate-gate">
+      <div class="rotate-card dialog-frame">
+        <div class="rotate-phone" aria-hidden="true" />
+        <div class="rotate-title">
+          <BmpText font="bazouk-28" text={a.rotateTitle} />
+        </div>
+        <div class="rotate-msg">
+          <BmpText font="beijing-16-out" text={a.rotateHint} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CurrentScreen() {
   switch (screen.value) {
     case 'battle':
@@ -277,6 +298,7 @@ export function App() {
       <ScreenFlash />
       <HudWave />
       {loading.value && <LoadingScreen />}
+      <RotateOverlay />
       <TooSmallOverlay />
     </>
   );

@@ -21,7 +21,7 @@ export function SplashBadge() {
   return (
     <div class="mainmenu-splash" aria-hidden="true">
       <span class="mainmenu-splash-text">
-        <BmpText font="arial-black-16-out" text={text} scale={2} />
+        <BmpText font="arial-black-16-out" text={text} scale={1.25} />
       </span>
     </div>
   );

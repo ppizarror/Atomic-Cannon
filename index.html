@@ -1,19 +1,28 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <!-- Favicon: authentic radioactive icon extracted from the original atomic.exe (2007) -->
-  <link rel="icon" href="/favicon.ico" sizes="any" />
-  <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <title>Atomic Cannon</title>
-</head>
-<body>
-  <!-- Pixi mounts its canvas here -->
-  <div id="game-container"></div>
-  <!-- Preact renders the HUD / screens here (overlays the canvas) -->
-  <div id="ui-root"></div>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <!-- Run full-screen (no browser chrome) when added to the home screen; on iOS the
+       black-translucent status bar lets the game fill under it (with safe-area insets). -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Atomic Cannon" />
+    <!-- Favicon: authentic radioactive icon extracted from the original atomic.exe (2007) -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Atomic Cannon</title>
+  </head>
+  <body>
+    <!-- Pixi mounts its canvas here -->
+    <div id="game-container"></div>
+    <!-- Preact renders the HUD / screens here (overlays the canvas) -->
+    <div id="ui-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
