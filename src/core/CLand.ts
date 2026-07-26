@@ -277,6 +277,16 @@ export class CLand {
     const Ymin = Math.floor(this.m_nHeight * 0.3); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
 
+    // Horizontal smoothing scale. The walk's step size is fixed in pixels, so on a SHORT
+    // view (mobile / small window) it crosses the smaller height band in few columns and
+    // clamps hard against it — steep, aggressive cliffs. Widening the smoothing window on
+    // short views spreads those transitions over more columns (gentle rolling slopes)
+    // WITHOUT lowering the terrain (the peaks still reach the band). `hs` < 1 on short
+    // views → a larger blur radius below. Net play uses a fixed 720px view, so all peers
+    // share the same radius and stay deterministic.
+    const hs = clamp(this.m_nHeight / 780, 0.5, 1.25);
+    const smoothRadius = Math.max(6, Math.round(W / (180 * hs)));
+
     if (mode === 0) {
       // Flat + uncorrelated ±15 noise (jagged plateau).
       this.rand(); // one throwaway draw
@@ -288,7 +298,7 @@ export class CLand {
         this.m_arrHeights[x] = y;
       }
       // Box-blur the profile into soft rolling curves.
-      this.smoothProfile(Math.max(6, Math.round(W / 180)), 2);
+      this.smoothProfile(smoothRadius, 2);
       this.computeDirtyRegion();
       return;
     }
@@ -355,8 +365,8 @@ export class CLand {
       this.m_arrHeights[x] = Math.round(prev);
     }
 
-    // Box-blur the profile into soft rolling curves.
-    this.smoothProfile(Math.max(6, Math.round(W / 180)), 2);
+    // Box-blur the profile into soft rolling curves (wider window on short views).
+    this.smoothProfile(smoothRadius, 2);
     this.computeDirtyRegion();
   }
 

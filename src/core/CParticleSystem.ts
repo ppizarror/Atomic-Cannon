@@ -1284,9 +1284,20 @@ export class CParticleSystem {
         ctx.translate(b.x0, b.y0);
         ctx.rotate(ang);
         ctx.imageSmoothingEnabled = false; // crisp tiles, no seam bleed
+        // Snap each tile's dest edges to whole pixels so consecutive tiles ABUT on the
+        // same column (tile N ends exactly where N+1 begins). At a fractional boundary the
+        // rasteriser hard-cuts each tile independently (smoothing off) and can skip the
+        // straddling column, opening a thin gap — and under 'lighter' that gap shows as a
+        // dark sky line THROUGH the beam. Rounding both edges closes it with no overlap
+        // (an overlap would instead double-add into a bright seam).
         for (let d = 0; d < len; d += tileW) {
-          const w = Math.min(tileW, len - d); // clip the final partial tile
-          ctx.drawImage(spr.bitmap, 0, 0, (w / tileW) * nw, nh, d, -b.width / 2, w, b.width);
+          const end = Math.min(d + tileW, len); // far edge (clip the final partial tile)
+          const x0 = Math.round(d),
+            x1 = Math.round(end);
+          const w = x1 - x0;
+          if (w <= 0) continue;
+          const srcW = ((end - d) / tileW) * nw; // sprite fraction shown (full tile → nw)
+          ctx.drawImage(spr.bitmap, 0, 0, srcW, nh, x0, -b.width / 2, w, b.width);
         }
         ctx.restore();
         ctx.globalAlpha = 1;
