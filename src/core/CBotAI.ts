@@ -224,7 +224,6 @@ export function bestAim(
   const hiA = aimRight ? 82 : 172;
 
   let best: AimResult = {angleDeg: aimRight ? 45 : 135, power: 500, dist: Infinity};
-
   const scan = (a0: number, a1: number, aStep: number, p0: number, p1: number, pStep: number) => {
     for (let a = a0; a <= a1; a += aStep) {
       const o = muzzleFor(a);

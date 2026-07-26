@@ -121,7 +121,6 @@ export class CShot {
     this.m_damage = damage;
     this.m_radius = radius;
     this.m_power = power;
-
     const speed = launchSpeed(power);
 
     // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
@@ -210,7 +209,6 @@ export class CShot {
     }
 
     this.m_pos = new Vec2(this.m_pos.x + this.m_vel.x * dt, this.m_pos.y + this.m_vel.y * dt);
-
     this.m_movingDown = this.m_prevY < this.m_pos.y;
     this.m_age += dt;
 
@@ -344,9 +342,6 @@ export class CShot {
     size = 12,
   ): void {
     if (this.m_bIsDead) return;
-
-    // No procedural streak — the trail is entirely sprite-based particles now
-    // (per-weapon trailType), so trailType-0 weapons (nukes/beams) fly cleanly.
 
     // Real projectile sprite, rotated to point along its velocity. Each round blits
     // so its LONGEST side spans `weapon.size × scale` px, aspect preserved, pivoted

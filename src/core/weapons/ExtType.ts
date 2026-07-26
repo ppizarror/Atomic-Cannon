@@ -25,25 +25,25 @@ import {makeNominalEnum} from './nominalEnum';
  */
 const EXT_CODES = {
   // -- projectile behaviours --
-  BALLISTIC: 0, //  Shell / Bomb / Rocket / Dirt / Cleaner / NUKE / DOT / Organic / Missile (default)
-  DIGGER: 1, //     Digger, Excavator — tunnels then detonates buried
-  ROLLER: 2, //     Roller, Big Wheel, Mighty Roller — rolls downhill on contact
-  MOVE: 3, //       Move Near / Mid / Far — relocate the firing tank
-  TRACER: 4, //     Tracer 3/5 — plants a persistent aim marker on impact
-  BEAM: 5, //       Magma / Blue / Wave / Grate Beam — instant ray, carves a slice
-  BEAM_ALT: 6, //   (unused — no weapon carries it; kept so 6 is never treated as ballistic)
-  SHIELD: 7, //     Light / Heavy Shield (utility)
-  ESCAPE: 8, //     Escaper, Breakout — carves upward, keeps flying while rising
-  REBOUND: 9, //    Rebounder, Seeker — bounces off / jets under the surface
-  HEAL: 10, //      Repairs, Medkit, Medical Supply (utility)
-  ARMOR: 11, //     Light / Heavy Armor (utility)
-  DEATH: 12, //     Six Under, Burial Mound, Cremation, Ashes, Toxic Grave — drops on the firer
-  AIRBURST: 13, //  Sky Bomb, Glowing Rain, Shrapnel, Sky Cluster — detonates at apex
-  HAZMAT: 14, //    Light / Heavy Hazmat — sets piercing-resist (utility)
+  BALLISTIC: 0, //    Shell / Bomb / Rocket / Dirt / Cleaner / NUKE / DOT / Organic / Missile (default)
+  DIGGER: 1, //       Digger, Excavator — tunnels then detonates buried
+  ROLLER: 2, //       Roller, Big Wheel, Mighty Roller — rolls downhill on contact
+  MOVE: 3, //         Move Near / Mid / Far — relocate the firing tank
+  TRACER: 4, //       Tracer 3/5 — plants a persistent aim marker on impact
+  BEAM: 5, //         Magma / Blue / Wave / Grate Beam — instant ray, carves a slice
+  BEAM_ALT: 6, //     (unused — no weapon carries it; kept so 6 is never treated as ballistic)
+  SHIELD: 7, //       Light / Heavy Shield (utility)
+  ESCAPE: 8, //       Escaper, Breakout — carves upward, keeps flying while rising
+  REBOUND: 9, //      Rebounder, Seeker — bounces off / jets under the surface
+  HEAL: 10, //        Repairs, Medkit, Medical Supply (utility)
+  ARMOR: 11, //       Light / Heavy Armor (utility)
+  DEATH: 12, //       Six Under, Burial Mound, Cremation, Ashes, Toxic Grave — drops on the firer
+  AIRBURST: 13, //    Sky Bomb, Glowing Rain, Shrapnel, Sky Cluster — detonates at apex
+  HAZMAT: 14, //      Light / Heavy Hazmat — sets piercing-resist (utility)
   BUNKER_WALL: 15, // Bunker, Wall — terrain tool: builds a flat-topped dirt platform (utility)
-  MINE: 16, //      Mine, Minefield, Super Mine — plants a persistent mine
-  JET: 17, //       Booster Jet, Jump Jet — tank flight (utility)
-  SENTRY: 18, //    Sentry Turret, Sentry Minigun — deploys an auto-firing turret
+  MINE: 16, //        Mine, Minefield, Super Mine — plants a persistent mine
+  JET: 17, //         Booster Jet, Jump Jet — tank flight (utility)
+  SENTRY: 18, //      Sentry Turret, Sentry Minigun — deploys an auto-firing turret
 } as const;
 
 declare const EXT_BRAND: unique symbol;

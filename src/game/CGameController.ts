@@ -509,9 +509,6 @@ export class CGameController implements ShotWorld {
     this.m_power = 500;
   }
 
-  /**
-   * Start new game with specified number of players
-   */
   /** Start a match with `nPlayers` teams; each team fields `m_tanksPerTeam` tanks (a
    *  squad sharing that player's colour), capped at 16 tanks total. The first
    *  `m_humanCount` teams are human. */
@@ -890,9 +887,6 @@ export class CGameController implements ShotWorld {
   // GAME LOOP & UPDATE
   // ========================================================================
 
-  /**
-   * Main update tick - called every frame via requestAnimationFrame
-   */
   /**
    * Drive the sim from real (wall-clock) time. Accumulates elapsed time (scaled by the
    * game-speed setting) and runs the sim in FIXED_DT slices — so the same shot resolves
@@ -1364,9 +1358,7 @@ export class CGameController implements ShotWorld {
     this.m_camX = this.m_camTargetX;
   }
 
-  /**
-   * Render frame to canvas - called every frame
-   */
+  /** Render frame to canvas - called every frame. */
   draw(): void {
     if (!this.m_started) return; // no battle yet (main menu at boot) — nothing to render
     const ctx = this.m_ctx;
@@ -1486,10 +1478,6 @@ export class CGameController implements ShotWorld {
       g.draw(ctx, gw.getColor(), sprite?.bitmap ?? null, gw.getSize());
     }
 
-    // NOTE: tank badges (life bars / stats) and damage numbers are NOT drawn here —
-    // they're normal-blended, so they move to the fx overlay (drawOverlay) to render
-    // OVER the HUD instead of being clipped at the world's bottom edge.
-
     ctx.restore(); // end world-space camera transform → back to screen space
 
     // Ambient Lighting (Graphics → Ambient Lighting): a subtle soft-light wash of the map's own
@@ -1537,11 +1525,6 @@ export class CGameController implements ShotWorld {
     octx.translate(shake.x, shake.y);
     octx.save();
     octx.translate(-this.m_camX, 0);
-
-    // Only NORMAL-blended readouts live here. Particles/projectile trails use
-    // additive ('lighter') blending, which needs the opaque world backdrop to
-    // compose correctly — on a transparent overlay their black-background sprites
-    // turn into opaque black boxes — so those stay in the world scene (draw()).
 
     // Tank badges (name / life-shield-armour bars / hover stat lines), so a tank
     // low on screen shows its readouts over the HUD instead of being clipped.
@@ -2152,9 +2135,7 @@ export class CGameController implements ShotWorld {
     if (!this.m_aim.active) cross(this.aimPoint(this.m_angle, this.m_power), 1);
   }
 
-  /**
-   * Background stars for atmosphere
-   */
+  /** Background stars for atmosphere. */
   private drawStars(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = '#ffffff';
 
@@ -2528,7 +2509,7 @@ export class CGameController implements ShotWorld {
         color = '#bfe9b0';
         break;
     }
-    this.m_audio?.crate(c.x); // RobotLimb5.wav
+    this.m_audio?.crate(c.x);
     if (tank.isHuman() && msg) {
       const p = tank.getPosition();
       this.m_floatTexts.push({x: p.x, y: p.y - 42, text: msg, color, age: 0});
@@ -2617,9 +2598,7 @@ export class CGameController implements ShotWorld {
   // BATTLE FLOW
   // ========================================================================
 
-  /**
-   * Update during battle state (waiting for player input)
-   */
+  /** Update during battle state (waiting for player input). */
   private updateBattle(dt: number): void {
     this.updateTurnTimer(dt);
     this.updateFireCharge(dt);
@@ -3012,7 +2991,6 @@ export class CGameController implements ShotWorld {
     this.markDirty();
   }
 
-  /** Mines detonate when a living tank rolls over them (after they arm). */
   /**
    * Keep deployed mines glued to the terrain: when the ground under a mine is carved away (an
    * explosion or cleaner digs a hole), the mine falls under gravity onto the new surface instead of
@@ -3132,7 +3110,6 @@ export class CGameController implements ShotWorld {
       const removed = tank.hit(dmg, piercing); // shield → hazmat(if piercing) → armor → life
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
       this.spawnDamageNumber(tank, removed); // Show Points: floating damage text
-
       this.kickTank(tank, pos.x, removed, radius); // Tank → Kickback; up-and-away, scaled by blast size
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
@@ -3147,9 +3124,7 @@ export class CGameController implements ShotWorld {
     }
   }
 
-  /**
-   * Handle tank destroyed event
-   */
+  /** Handle tank destroyed event. */
   private handleTankDestroyed(tank: CTank): void {
     this.m_stats.tanksDestroyed++;
     const pos = tank.getPosition();
@@ -3310,9 +3285,6 @@ export class CGameController implements ShotWorld {
     this.poolTeamCredits(shooter);
   }
 
-  /**
-   * Advance to next living player's turn
-   */
   /** Randomize Turns (Gameplay): reorder the turn queue with 2N random transpositions —
    *  the original's repeated random pair-swaps (not a clean shuffle). The queue IS the
    *  m_tanks array; positions/teams/economy bind by reference, so only the sequence changes. */
@@ -3770,12 +3742,6 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Advance the shot-time countdown during a human's turn. When the clock runs
-   * out the turn is forfeited (no shot) — the panel bar has already gone red.
-   * Only ticks while `m_turnTimerRunning`, so it's inert for bots, after firing,
-   * and while a shot/explosion is resolving (those aren't the Battle state).
-   */
-  /**
    * (Re)arm the shot clock for the tank currently in control. `fresh` starts a new countdown (a new
    * turn); otherwise it RESUMES from where it paused — control handed back to the human after a jet
    * flight or a free utility. Those pause the clock rather than refunding it, so a turn still can't be
@@ -3793,6 +3759,12 @@ export class CGameController implements ShotWorld {
       (!this.m_netMode || this.isLocalNetTurn());
   }
 
+  /**
+   * Advance the shot-time countdown during a human's turn. When the clock runs
+   * out the turn is forfeited (no shot) — the panel bar has already gone red.
+   * Only ticks while `m_turnTimerRunning`, so it's inert for bots, after firing,
+   * and while a shot/explosion is resolving (those aren't the Battle state).
+   */
   private updateTurnTimer(dt: number): void {
     if (!this.m_turnTimerRunning) return;
     this.m_turnElapsed += dt;
@@ -3897,9 +3869,7 @@ export class CGameController implements ShotWorld {
     );
   }
 
-  /**
-   * Get current player's tank
-   */
+  /** Get current player's tank. */
   getCurrentTank(): CTank {
     return this.m_tanks[this.m_currentPlayerIndex];
   }
@@ -3908,9 +3878,7 @@ export class CGameController implements ShotWorld {
   // FIRING SEQUENCE
   // ========================================================================
 
-  /**
-   * Fire currently selected weapon from current player
-   */
+  /** Fire currently selected weapon from current player. */
   fire(): void {
     if (this.m_paused) return; // debug freeze rejects all input
     // The battle is over (standings showing) — a bot/sentry fire() queued before the last enemy died
@@ -4649,9 +4617,7 @@ export class CGameController implements ShotWorld {
   // BOT AI (CPU PLAYER)
   // ========================================================================
 
-  /**
-   * Execute bot player's turn (AI calculation and firing)
-   */
+  /** Execute bot player's turn (AI calculation and firing). */
   private executeBotTurn(): void {
     // A settled battle or an in-flight shot must not be restarted by a stale queued bot turn: botMove→
     // startTankMove sets state back to Battle, so — unlike its siblings botAimAndFire/executeUltraTurn/

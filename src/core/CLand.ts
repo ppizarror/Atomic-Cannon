@@ -1,5 +1,5 @@
 /**
- * CLand - Terrain Management Class
+ * CLand - Terrain Management Class.
  */
 
 import {Vec2} from '../math/Vec2';
@@ -16,9 +16,9 @@ const DEBRIS_WIND_ACCEL = 12;
 // ground, so specks still land on/near their radiation zone (the damage area itself never moves).
 const FALLOUT_WIND_ACCEL = 26;
 
-// ============================================================================
+// ==========================================================================
 // INTERFACES & TYPES
-// ============================================================================
+// ==========================================================================
 
 interface LandParticle {
   x: number;
@@ -92,9 +92,9 @@ interface Fall {
   mats: Uint8Array; // material tag per captured pixel (kept in sync so the block isn't stale in debug)
 }
 
-// ============================================================================
+// ==========================================================================
 // CLand CLASS
-// ============================================================================
+// ==========================================================================
 
 /** Dirt debris count = `earth × radius × this`. Factoring radius in makes the PEAK scale with
  *  `earth` (Mountain, earth 90, piles biggest) while WIDTH tracks radius (Dirty Boy r15 broader than
@@ -378,7 +378,7 @@ export class CLand {
 
   // ========================================================================
   // TERRAIN DEFORMATION
-  // =====================================================================
+  // ========================================================================
 
   /**
    * Slice-carve at a column: remove only the part of the [y-half, y+half] band that
@@ -689,13 +689,6 @@ export class CLand {
     }
   }
 
-  /**
-   * Register a column to sink by `drop` px under gravity (a beam-slice collapse): the
-   * surface stays put, then `update()` accelerates it downward until it has fallen
-   * `drop` px, so the capped overburden visibly FALLS into the void instead of snapping.
-   * Accumulates if the column is already collapsing.
-   */
-
   private preBlast(nX1: number, nX2: number): void {
     this.m_dirtyMin = Math.max(0, nX1);
     this.m_dirtyMax = Math.min(this.m_nWidth - 1, nX2);
@@ -898,11 +891,6 @@ export class CLand {
       b,
     });
 
-    // Radiation makes NO terrain change (faithful to the original: the fallout routine only
-    // spawns glowing specks — it never raises the heightmap or bares/recolours the ground).
-    // In the unified terrain model a bomb REMOVES earth and Dirt weapons DEPOSIT it; radiation
-    // does neither — it's a temporary glow that fades over irTime, leaving the ground as it was.
-
     // Visual: a cloud of glowing specks. They fall, settle on the surface as a thin glowing
     // carpet tinted by irRGB, and fade over irTime — no deposit, they just coat the ground.
     // Count scales with the blast RADIUS (the original's fallout count ∝ radius; the exact
@@ -984,8 +972,7 @@ export class CLand {
   /**
    * One erosion pass over [x0,x1]: where two adjacent columns differ by more
    * than the angle of repose, move 1px of dirt from the taller column to the
-   * lower one. Repeated,
-   * this melts the thin spikes debris stacks up into smooth mounds.
+   * lower one. Repeated, this melts the thin spikes debris stacks up into smooth mounds.
    */
   private slump(x0: number, x1: number): void {
     const h = this.m_arrHeights;
@@ -1013,12 +1000,6 @@ export class CLand {
     if (b >= a) this.preBlast(a, b + 1);
   }
 
-  /**
-   * Throw dirt chunks from a blast — launched radially, they arc up, fall, and
-   * settle back into the terrain (raising the column where they land, so mounds
-   * are emergent). Chunk colour is procedurally-generated brown (R=v, G≈v/2, B=0,
-   * v∈[30,129]), not sampled from the ground.
-   */
   /** Dirt-chunk colour string cached by brightness v (0..139) so a 6500-chunk nuke
    *  doesn't allocate 6500 `rgb()` strings per blast (GC churn → fire-time hitch). */
   private dirtColor(v: number): string {
@@ -1101,7 +1082,6 @@ export class CLand {
     const foutY = realistic ? wind!.y * FALLOUT_WIND_ACCEL : 0;
 
     this.m_radPulseT += dt; // drives the sinusoidal glow shimmer on the radiation specks
-
     this.stepFalls(dt); // advance any beam/digger overburden falling under gravity
 
     // Compact-forward removal (a write index), NOT splice(i,1): a nuke flings
@@ -1401,20 +1381,16 @@ export class CLand {
 
   // ========================================================================
   // COLLISION & QUERIES
-  // =====================================================================
+  // ========================================================================
 
   getHeightAt(x: number): number {
     if (!this.m_arrHeights) return this.m_nHeight;
-
     const ix = Math.floor(x);
-
     if (ix < 0) return this.m_arrHeights[0];
     if (ix >= this.m_nWidth - 1) return this.m_arrHeights[this.m_nWidth - 1];
-
     const frac = x - ix;
     const h0 = this.m_arrHeights[ix];
     const h1 = this.m_arrHeights[ix + 1];
-
     return Math.floor(h0 + (h1 - h0) * frac);
   }
 
@@ -1438,7 +1414,7 @@ export class CLand {
 
   // ========================================================================
   // RENDERING
-  // =====================================================================
+  // ========================================================================
 
   /**
    * Set the depth-sorted texture layers: the smallest depth is
@@ -1875,9 +1851,6 @@ export class CLand {
       }
     }
 
-    // (Radiation makes no terrain change — the visible glow is the specks below, not a band
-    // painted over a deposit. The old deposit-glow passes were removed with the invented refill.)
-
     // Radiation specks — the original draws each as a 5-pixel ADDITIVE CROSS (centre + 4
     // orthogonal neighbours) tinted by irRGB, fading LINEARLY to black over its life. Where
     // many overlap they stack brighter (saturating add) → the dense red band coating the
@@ -1959,7 +1932,7 @@ export class CLand {
 
   // ========================================================================
   // MEMBER VARIABLES
-  // =====================================================================
+  // ========================================================================
 
   private m_nWidth: number = 800;
   private m_nHeight: number = 600;

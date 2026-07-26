@@ -31,20 +31,20 @@ const ASCII_FOLD: Record<string, string> = {
   '”': '"', // right double quote
   ' ': ' ', // non-breaking space
   // Spanish stuff
-  Á: 'A',
-  á: 'a',
-  É: 'E',
-  é: 'e',
-  Í: 'I',
-  í: 'i',
-  Ó: 'O',
-  ó: 'o',
-  Ú: 'U',
-  ú: 'u',
-  Ñ: 'N',
-  ñ: 'n',
-  Ü: 'U',
-  ü: 'u', // diéresis (pingüino)
+  'Á': 'A',
+  'á': 'a',
+  'É': 'E',
+  'é': 'e',
+  'Í': 'I',
+  'í': 'i',
+  'Ó': 'O',
+  'ó': 'o',
+  'Ú': 'U',
+  'ú': 'u',
+  'Ñ': 'N',
+  'ñ': 'n',
+  'Ü': 'U',
+  'ü': 'u', // diéresis (pingüino)
   '¿': '?', // inverted question → upright ASCII
   '¡': '!', // inverted exclamation → upright ASCII
 };

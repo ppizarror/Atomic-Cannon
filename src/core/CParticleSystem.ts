@@ -493,6 +493,12 @@ export class CParticleSystem {
 
   // ---------------------------------------------------------------- profiles
 
+  /** The generic coloured fireball ring — `count` flares on a fixed speed/life/size/colour tail.
+   *  Shared by the dirt-deposit blast and the fiery non-preset blast so the magic tail can't drift. */
+  private emitFireballRing(x: number, y: number, r: number, count: number, c: RGB): void {
+    this.emitRadial(x, y, count, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
+  }
+
   /**
    * Weapon detonation, staged as a multi-phase explosion sequence:
    *   Stage 1 — a brief central fireball (the weapon's own `expBitmap` flare) + a
@@ -505,12 +511,6 @@ export class CParticleSystem {
    *             dirt shower / radiation specks in CLand).
    * `presetName` (particles.json) drives the fireball's colour/density/speed/spread.
    */
-  /** The generic coloured fireball ring — `count` flares on a fixed speed/life/size/colour tail.
-   *  Shared by the dirt-deposit blast and the fiery non-preset blast so the magic tail can't drift. */
-  private emitFireballRing(x: number, y: number, r: number, count: number, c: RGB): void {
-    this.emitRadial(x, y, count, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
-  }
-
   blast(
     x: number,
     y: number,
@@ -1246,7 +1246,6 @@ export class CParticleSystem {
     }
 
     this.drawBeams(ctx);
-
     ctx.globalCompositeOperation = prev;
   }
 

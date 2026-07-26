@@ -40,9 +40,6 @@ export const GameConfig = {
   // startGame from the game type; read by CTank.hit()/applyRadiationDamage.
   lethalDamage: true,
 
-  // (Blast SIZE scale is a DERIVED render value — `CGameController.blastScale`, off the live canvas —
-  // NOT a setting, so it does not live here. `worldScale` above IS a setting input: shot PHYSICS read it.)
-
   // ── settings mirror ── these fields are OVERWRITTEN by ui/applySettings (applyGameConfig) from
   // settingsCatalog, the sole source of every default; the TYPE_* placeholders are inert (never read
   // as a default). Grouped and ordered to match the catalog (Economy · Tank · Gameplay · Graphics).

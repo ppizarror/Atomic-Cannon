@@ -13,7 +13,7 @@
 import {Application, Sprite, Texture} from 'pixi.js';
 import {ShockwaveFilter} from 'pixi-filters';
 
-const WAVE_LIFETIME = 1.4; // seconds a shockwave stays active
+const WAVE_LIFETIME = 1.5; // seconds a shockwave stays active
 
 export class CPixiCompositor {
   private readonly m_app: Application;
@@ -88,11 +88,6 @@ export class CPixiCompositor {
   }
 
   /**
-   * Fit the presentation to the current viewport. Explicitly resizes the Pixi
-   * renderer to the live element size (Pixi's own `resizeTo` throttles and can
-   * miss a fast resize, e.g. toggling devtools) and then fits the scene sprite.
-   */
-  /**
    * The scene render target was resized externally (a window resize re-renders the world at
    * native pixels). Rebuild the GPU texture from the (already-resized) scene canvas and re-fit.
    * This is the NATIVE pixel size and is independent of the logical world→screen mapping, which
@@ -115,6 +110,11 @@ export class CPixiCompositor {
     this.m_worldH = h;
   }
 
+  /**
+   * Fit the presentation to the current viewport. Explicitly resizes the Pixi
+   * renderer to the live element size (Pixi's own `resizeTo` throttles and can
+   * miss a fast resize, e.g. toggling devtools) and then fits the scene sprite.
+   */
   resize(): void {
     const el = this.m_resizeTo;
     const w = el instanceof Window ? window.innerWidth : el.clientWidth;
@@ -158,7 +158,6 @@ export class CPixiCompositor {
   update(dt: number, sceneChanged: boolean = true): void {
     // Re-upload the 2D scene into the GPU texture only when it actually changed.
     if (sceneChanged) this.m_sceneTexture.source.update();
-
     if (this.m_shockwave.enabled) {
       this.m_waveAge += dt;
       this.m_shockwave.time += dt;

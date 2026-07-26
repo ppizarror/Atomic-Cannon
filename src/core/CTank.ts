@@ -1,5 +1,5 @@
 /**
- * CTank - Tank Entity Class
+ * CTank - Tank Entity Class.
  *
  * Handles tank state, movement on terrain, damage, rendering
  */
@@ -179,9 +179,7 @@ export class CTank {
     this.m_bExploded = false;
   }
 
-  /**
-   * Initialize tank at position with given player data
-   */
+  /** Initialize tank at position with given player data. */
   init(x: number, pLand: CLand): void {
     this.m_vPos = new Vec2(x, 0);
     // Snap tank onto the terrain surface at its spawn column
@@ -291,9 +289,7 @@ export class CTank {
     return tankRadius();
   }
 
-  /**
-   * Compute tank's Y position based on terrain surface (called each frame)
-   */
+  /** Compute tank's Y position based on terrain surface (called each frame). */
   computePosition(pLand: CLand): void {
     if (!pLand) return;
 
@@ -332,9 +328,7 @@ export class CTank {
   // PHYSICS & MOVEMENT
   // ========================================================================
 
-  /**
-   * Main update tick - called every frame during battle
-   */
+  /** Main update tick - called every frame during battle. */
   update(pLand: CLand, dt: number): void {
     if (!pLand) return;
 
@@ -435,9 +429,7 @@ export class CTank {
     this.m_fLastTurretAngle = this.m_fTurretAngle;
   }
 
-  /**
-   * Check if tank can move to new position
-   */
+  /** Check if tank can move to new position. */
   canMove(pLand: CLand): boolean {
     const nX = Math.floor(this.m_vPos.x);
 
@@ -452,9 +444,7 @@ export class CTank {
     return Math.floor(this.m_vPos.y) <= pLand.getHeightAt(nX);
   }
 
-  /**
-   * Stop tank movement
-   */
+  /** Stop tank movement. */
   stopMoving(): void {
     this.m_bIsMoving = false;
     this.m_vVel = new Vec2(0, 0);
@@ -556,9 +546,7 @@ export class CTank {
     return this.m_bFalling;
   }
 
-  /**
-   * Apply knockback to tank (from explosions)
-   */
+  /** Apply knockback to tank (from explosions). */
   kick(dir: Vec2, fForce: number): void {
     // Apply impulse velocity from kick direction
     this.m_vVel.x += dir.x * fForce;
@@ -572,9 +560,6 @@ export class CTank {
   // COMBAT & DAMAGE
   // ========================================================================
 
-  /**
-   * Apply damage to tank (called from hit detection)
-   */
   /** Apply damage. Returns the LIFE actually removed (post shield/hazmat/armor), which is
    *  what the earning economy credits — absorbed damage counts as 0. Pipeline (matches the
    *  original): SHIELD → HAZMAT (piercing weapons only) → ARMOR → LIFE.
@@ -1056,9 +1041,7 @@ export class CTank {
     return new Vec2(groundX + up * s, groundY - up * c); // (0,-up) rotated by body tilt
   }
 
-  /**
-   * World position of the barrel tip, where a shot should spawn.
-   */
+  /** World position of the barrel tip, where a shot should spawn. */
   getMuzzlePosition(): Vec2 {
     const pivot = this.getTurretPivot();
     const aim = this.aimUnit();
@@ -1366,9 +1349,9 @@ export class CTank {
   public m_bExploded: boolean = false;
 }
 
-// ============================================================================
+// ==========================================================================
 // CONSTANTS
-// ============================================================================
+// ==========================================================================
 
 // Base tank geometry (px). Player Size (Settings → Tank) scales all of it uniformly
 // via GameConfig at read time, so a Small/Large tank draws, sits and collides at the
