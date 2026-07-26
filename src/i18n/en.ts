@@ -630,6 +630,10 @@ export const en: Strings = {
       },
       demo: {label: 'Demo Mode', tip: 'Game automatically plays itself'},
       ambientLight: {label: 'Ambient Lighting', tip: "Tint the scene toward each map's mood"},
+      hideSplash: {
+        label: 'Hide Title Splash',
+        tip: 'Hide the tilted tagline on the main-menu title',
+      },
     },
     audio: {
       header: 'Adjust sound and music settings',

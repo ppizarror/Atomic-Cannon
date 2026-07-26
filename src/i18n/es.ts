@@ -675,6 +675,10 @@ export const es: Strings = {
       },
       demo: {label: 'Modo Demo', tip: 'El juego se juega solo automáticamente'},
       ambientLight: {label: 'Luz Ambiental', tip: 'Tiñe la escena según el ambiente de cada mapa'},
+      hideSplash: {
+        label: 'Ocultar Splash del Título',
+        tip: 'Oculta la frase inclinada en el título del menú principal',
+      },
     },
     audio: {
       header: 'Ajusta la configuración de sonido y música',

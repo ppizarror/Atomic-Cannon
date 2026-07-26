@@ -70,7 +70,7 @@ export interface Strings {
     highScores: string;
     /** Corner link to the project's source repository. */
     repoLabel: string;
-    /** Minecraft-style splash taglines; one is picked at random each visit. */
+    /** Splash taglines for the title badge; one is picked at random each visit. */
     splashes: string[];
   };
 
@@ -462,6 +462,7 @@ export interface Strings {
       fpsCap: RowCopy;
       demo: RowCopy;
       ambientLight: RowCopy;
+      hideSplash: RowCopy;
     };
     audio: {
       header: string;

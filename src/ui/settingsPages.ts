@@ -204,6 +204,7 @@ function graphicsRows(): Widget[] {
     toggle(s.demo, 'gfx.demo'),
     toggle(s.ambientLight, 'gfx.ambientLight'),
     toggle(s.explodeLosers, 'gfx.explodeLosers'),
+    toggle(s.hideSplash, 'gfx.hideSplash'),
   ];
 }
 

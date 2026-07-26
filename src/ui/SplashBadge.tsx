@@ -11,12 +11,16 @@
 import {useState} from 'preact/hooks';
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
+import {getVal} from './settingsStore';
 
 export function SplashBadge() {
   const list = strings.value.menu.splashes;
   // Pick once per mount; the initializer runs a single time so the tagline is
   // stable while this menu is shown but re-randomises on the next visit.
   const [text] = useState(() => list[Math.floor(Math.random() * list.length)] ?? '');
+  // Opt-out toggle (Settings → Graphics). getVal reads the settings signal, so
+  // flipping it re-renders and the badge appears/disappears live.
+  if (getVal('gfx.hideSplash')) return null;
   if (!text) return null;
   return (
     <div class="mainmenu-splash" aria-hidden="true">

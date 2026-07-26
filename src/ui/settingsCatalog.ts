@@ -89,6 +89,7 @@ const CATALOG = {
   'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144]},
   'gfx.demo': {default: false},
   'gfx.ambientLight': {default: true},
+  'gfx.hideSplash': {default: false}, // hide the tilted "fan recreation" splash on the title screen
 
   // ── Audio ── (Sound/Music/volumes/Stereo all bind live to CAudio, not stored here)
 } satisfies Record<string, SettingMeta>;
