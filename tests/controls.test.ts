@@ -11,7 +11,7 @@ import {bindings, rebind, unassign, resetDefaults} from '../src/ui/controlsStore
 describe('Customize Controls', () => {
   it('default bindings match the registered actions', () => {
     const b = defaultBindings();
-    expect(ACTIONS).toHaveLength(13);
+    expect(ACTIONS).toHaveLength(9);
     expect(b.fire).toBe('Space');
     expect(b.prevWeapon).toBe('KeyQ');
     expect(b.nextWeapon).toBe('KeyA');

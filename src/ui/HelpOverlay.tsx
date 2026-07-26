@@ -4,11 +4,13 @@
  * the game's `atomic/dialog.bmp` panel with the game's bitmap fonts. Freezes the
  * sim while open (see openHelp).
  *
- * Text is ASCII-only and one line per field: the bitmap fonts cover ASCII 33..126
- * (no arrows / en-dash / middle-dot) and BmpText does not wrap.
+ * Text is ASCII-only: the bitmap fonts cover ASCII 33..126 (no arrows / en-dash /
+ * middle-dot). The name is a single BmpText; the description uses BmpParagraph so a
+ * long line wraps to the column instead of overflowing the panel.
  */
 import {showHelp, closeHelp} from './store';
 import {BmpText} from './BmpText';
+import {BmpParagraph} from './BmpParagraph';
 import {Modal} from './Modal';
 import {ModalButton} from './ModalButton';
 import {strings} from '../i18n';
@@ -56,7 +58,7 @@ export function HelpOverlay() {
               <BmpText font="beijing-16-out" text={c.name} spacing={-1} />
             </div>
             <div class="help-desc">
-              <BmpText font="arial-14-out" text={c.desc} />
+              <BmpParagraph font="arial-14-out" text={c.desc} />
             </div>
           </div>
         ))}

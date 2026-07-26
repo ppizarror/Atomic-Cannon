@@ -1468,9 +1468,15 @@ canvas {
   display: grid;
   grid-template-columns: 128px 1fr;
   gap: 10px;
-  align-items: center;
+  align-items: start; /* the description may wrap to several lines — top-align it with the name */
   padding-bottom: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Let the description column shrink below its content's intrinsic width so a long line WRAPS
+   (BmpParagraph re-flows to this width) instead of forcing the grid wider and overflowing. */
+.help-desc {
+  min-width: 0;
 }
 
 /* Layout only — the Close button's look comes from <Button>/.btn. */

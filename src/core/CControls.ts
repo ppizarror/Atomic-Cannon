@@ -9,10 +9,9 @@
  * — the same "compare the pressed key against each stored binding" approach the
  * engine's input dispatch uses.
  *
- * The full action list is shown and rebindable in the editor. Only the artillery
- * actions (fire / aim / power / weapon cycle / exit) are wired into gameplay input;
- * the rest (screenshot, tutorial, full screen, taunt, minimize) are surfaced for
- * completeness but handled by the browser/app shell, so binding them is cosmetic.
+ * The full action list is shown and rebindable in the editor. Every listed action — the
+ * artillery controls (fire / aim / power / weapon cycle / exit) and the Chat Taunt key —
+ * is wired into the input loop. (Full Screen lives in Settings, not as a keybind.)
  */
 
 export type ActionId =
@@ -24,10 +23,6 @@ export type ActionId =
   | 'aimRight'
   | 'powerDown'
   | 'exit'
-  | 'minimize'
-  | 'screenshot'
-  | 'tutorial'
-  | 'fullscreen'
   | 'taunt';
 
 export interface ActionDef {
@@ -49,10 +44,6 @@ export const ACTIONS: ActionDef[] = [
   {id: 'aimRight', defaultCode: 'ArrowRight', gameplay: true},
   {id: 'powerDown', defaultCode: 'ArrowDown', gameplay: true},
   {id: 'exit', defaultCode: 'Escape', gameplay: true},
-  {id: 'minimize', defaultCode: 'NumpadSubtract', gameplay: false},
-  {id: 'screenshot', defaultCode: 'F9', gameplay: false},
-  {id: 'tutorial', defaultCode: 'F1', gameplay: false},
-  {id: 'fullscreen', defaultCode: 'F11', gameplay: false},
   {id: 'taunt', defaultCode: 'Enter', gameplay: false},
 ];
 
