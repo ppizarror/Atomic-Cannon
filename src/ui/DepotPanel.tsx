@@ -92,18 +92,19 @@ function Header({
   );
 }
 
-// Green weapon tooltip — the shared <Tooltip> (zeon frame + tail), title = weapon
-// name, content = its description, floating ABOVE the cursor with its tail aimed down.
+// Green weapon tooltip — the shared <Tooltip> in ANCHORED mode: it self-positions so its
+// down-tail tip lands exactly on the cursor (x, y) and edge-clamps horizontally, rather than
+// a fixed offset that drifts the box off to the side. `dep-tip` raises it above the depot card.
 function WeaponTip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
   return (
-    <div class="dep-tooltip" style={{left: `${x + 12}px`, top: `${y - 14}px`}}>
-      <Tooltip
-        title={weaponName(w)}
-        content={weaponDesc(w) || strings.value.depot.noDescription}
-        tailLeft="14px"
-        tipPosition="down"
-      />
-    </div>
+    <Tooltip
+      title={weaponName(w)}
+      content={weaponDesc(w) || strings.value.depot.noDescription}
+      tipPosition="down"
+      anchorX={x + 6}
+      anchorY={y - 18}
+      anchorClass="dep-tip"
+    />
   );
 }
 

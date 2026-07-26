@@ -37,6 +37,13 @@ function frameImage(): Promise<HTMLImageElement | null> {
   return framePromise;
 }
 
+/** Warm the shared frame bitmap (fetch + colour-key + decode) ahead of first use, so the depot
+ *  tooltip's green box is drawn the instant it opens instead of popping in a frame late. Idempotent
+ *  (the promise is cached). */
+export function preloadZeonFrame(): Promise<unknown> {
+  return frameImage();
+}
+
 export function ZeonFrame() {
   const ref = useRef<HTMLCanvasElement>(null);
 

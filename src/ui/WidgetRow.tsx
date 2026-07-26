@@ -7,6 +7,7 @@
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {type Widget} from './settingsPages';
+import {uiClick} from './store';
 import {clamp, wrapIndex} from '../math/num';
 
 const ROW_FONT = 'bazouk-28';
@@ -47,6 +48,7 @@ export function WidgetRow({
   const val = w.get();
   const change = (dir: number) => {
     if (!w.set) return;
+    uiClick(); // a settings change clicks (like the original) — the value flips right after
     if (w.kind === 'toggle') w.set(val ? 0 : 1);
     else if (w.kind === 'enum') w.set(wrapIndex(val + dir, w.options!.length));
     else {

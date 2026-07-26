@@ -72,6 +72,7 @@ export function Tooltip({
   animated = false,
   anchorX,
   anchorY,
+  anchorClass,
   fade = 1,
 }: {
   title: string;
@@ -88,6 +89,8 @@ export function Tooltip({
    *  positions AND edge-clamps itself; the tail slides to stay on the target. */
   anchorX?: number;
   anchorY?: number;
+  /** Extra class on the anchored wrapper (e.g. to raise its z-index above the depot). */
+  anchorClass?: string;
   /** Whole-bubble fade multiplier for anchored mode (e.g. a taunt dying out). */
   fade?: number;
 }) {
@@ -144,7 +147,10 @@ export function Tooltip({
   // Anchored mode: the Tooltip places itself (fixed) so its tail tip meets the anchor
   // and the box grows up from it, edge-clamped horizontally.
   return (
-    <div class="tooltip-anchor" style={{left: `${left}px`, top: `${anchorY}px`, opacity: fade}}>
+    <div
+      class={`tooltip-anchor ${anchorClass ?? ''}`}
+      style={{left: `${left}px`, top: `${anchorY}px`, opacity: fade}}
+    >
       {box}
     </div>
   );
