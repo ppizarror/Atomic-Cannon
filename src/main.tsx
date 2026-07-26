@@ -271,7 +271,7 @@ async function main(): Promise<void> {
     switch (action) {
       case 'fire':
         e.preventDefault();
-        gameController.fire();
+        gameController.requestFire();
         break;
       // Aim left = increase angle (CCW), aim right = decrease; both wrap at 0/359.
       case 'aimLeft':
@@ -352,7 +352,7 @@ async function main(): Promise<void> {
     if (e.button === 2) {
       if (GameConfig.rightClickFires && canFire.value) {
         e.preventDefault();
-        gameController.fire();
+        gameController.requestFire();
       }
       return;
     }

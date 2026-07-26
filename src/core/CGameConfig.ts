@@ -66,6 +66,7 @@ export const GameConfig = {
   changeWind: TYPE_INT, // Change Wind (0 Per-game · 1 After-round · 2 After-shot · 3 Anytime)
   windModel: TYPE_INT, // Wind Model (0 Linear/uniform · 1 Realistic boundary-layer profile). See core/wind.ts
   explosionScale: TYPE_FLOAT, // Explosion Size (blast radius)
+  roundTime: TYPE_INT, // Round Timer — per-turn shot clock in seconds (0 = off → infinite turns)
   utilityTurn: TYPE_BOOL, // Utility Turn (using a utility ends the turn)
   randomizeTurns: TYPE_BOOL, // Randomize Turns (shuffle turn order each battle)
   alternateTurns: TYPE_BOOL, // Alternate Turns (interleave teams: A1,B1,A2,B2 vs A1,A2,B1,B2)

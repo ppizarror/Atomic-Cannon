@@ -41,6 +41,7 @@ export function applyGameConfig(): void {
   GameConfig.windModel = S.windModel();
   GameConfig.explosionScale = S.explosionScale();
   GameConfig.utilityTurn = S.utilityTurn();
+  GameConfig.roundTime = S.roundTime(); // per-turn shot clock (0 = off); shared in net via MatchConfig
   GameConfig.randomizeTurns = S.randomizeTurns();
   GameConfig.alternateTurns = S.alternateTurns();
   GameConfig.crateChance = S.crateChance();

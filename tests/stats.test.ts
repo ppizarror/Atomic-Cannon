@@ -23,6 +23,7 @@ const CFG = {
   variance: true,
   relativeTurrets: false,
   utilityTurn: false,
+  roundTime: 0,
   crateChance: 20,
   radiationDamage: true,
   startCredits: 3000,

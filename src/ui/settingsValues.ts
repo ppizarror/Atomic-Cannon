@@ -100,6 +100,8 @@ export const gameSettings = {
   relativeTurrets: (): boolean => getVal('tank.relTurrets') !== 0,
   /** Tanks can be buried underground instead of always riding the surface top. */
   buryTanks: (): boolean => getVal('tank.bury') !== 0,
+  /** Per-turn shot clock in seconds (0 = Off → infinite turns). Enum index → 0/15/30/45. */
+  roundTime: (): number => scale('gp.roundTime', 0),
   /** Using a utility item consumes the turn (off = it's free, fire afterwards). */
   utilityTurn: (): boolean => getVal('gp.utilTurn') !== 0,
   /** Shuffle the turn order at the start of each battle. */

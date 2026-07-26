@@ -173,6 +173,7 @@ describe('settings catalog (single source)', () => {
       'tank.size': en.settings.tank.size.options!,
       'gp.wind': en.settings.gameplay.wind.options!,
       'gp.explosionSize': en.settings.gameplay.explosionSize.options!,
+      'gp.roundTime': en.settings.gameplay.roundTime.options!,
       'gfx.fpsCap': en.settings.graphics.fpsCap.options!,
     };
     for (const [id, meta] of Object.entries(SETTINGS)) {

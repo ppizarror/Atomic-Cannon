@@ -438,14 +438,6 @@ canvas {
   pointer-events: none;
 }
 
-.turn-timer .tt-cap {
-  height: 100%;
-  aspect-ratio: 1;
-  background: #c81c1c;
-  border: 1px solid #000;
-  box-sizing: border-box;
-}
-
 .turn-timer .tt-track {
   flex: 1;
   height: 100%;

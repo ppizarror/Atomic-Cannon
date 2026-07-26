@@ -1232,7 +1232,7 @@ export class CGameController implements ShotWorld {
     const wasActive = this.m_aim.active;
     this.m_aim.active = false;
     if (fire && wasActive && this.m_gameState === EGameState.Battle && this.isPlayerTurn()) {
-      this.fire();
+      this.requestFire(); // human input → wind up the FIRE bar before launching
     }
   }
 
@@ -2614,6 +2614,7 @@ export class CGameController implements ShotWorld {
    */
   private updateBattle(dt: number): void {
     this.updateTurnTimer(dt);
+    this.updateFireCharge(dt);
     this.updateMines(dt);
     this.updateTanks(dt);
 
@@ -3593,6 +3594,7 @@ export class CGameController implements ShotWorld {
     // no target) must not re-enter finishBattle and restart the winner animation / replay the jingle.
     if (this.m_gameState === EGameState.BattleEnd) return;
     this.m_turnTimerRunning = false; // the clock never outlives its turn
+    this.m_charging = false; // and neither does a fire wind-up (defensive; a committed shot already cleared it)
 
     // Network match: the server arbitrates turns. The local simulation has settled — clear the
     // resolving flag, report the outcome, and wait for turnBegin. (endTurn can fire repeatedly
@@ -3777,7 +3779,7 @@ export class CGameController implements ShotWorld {
     const tank = this.getCurrentTank();
     if (fresh) this.m_turnElapsed = 0;
     this.m_turnTimerRunning =
-      this.m_shotTime > 0 &&
+      GameConfig.roundTime > 0 &&
       tank.isHuman() &&
       !this.m_weaponTest &&
       (!this.m_netMode || this.isLocalNetTurn());
@@ -3786,23 +3788,105 @@ export class CGameController implements ShotWorld {
   private updateTurnTimer(dt: number): void {
     if (!this.m_turnTimerRunning) return;
     this.m_turnElapsed += dt;
-    if (this.m_turnElapsed >= this.m_shotTime) {
+    if (this.m_turnElapsed >= GameConfig.roundTime) {
       this.m_turnTimerRunning = false;
-      this.endTurn(); // time's up → forfeit the turn
+      this.endTurn(); // time's up → forfeit the turn (a stale open depot auto-closes on hand-off)
+    }
+  }
+
+  /** Whether the human currently has live control and is waiting to fire — the phase during which
+   *  the FIRE bar (charge, countdown, or inert track) is meaningful. False for bots / shots in
+   *  flight / weapon test / a remote client's turn. */
+  private isHumanControlPhase(): boolean {
+    return (
+      this.m_gameState === EGameState.Battle &&
+      !this.m_weaponTest &&
+      this.getCurrentTank().isHuman() &&
+      (!this.m_netMode || this.isLocalNetTurn())
+    );
+  }
+
+  /** Advance the fire wind-up; launches the shot once the bar has filled and flashed green. */
+  private updateFireCharge(dt: number): void {
+    if (!this.m_charging) return;
+    this.m_chargeElapsed += dt;
+    this.markDirty();
+    if (
+      this.m_chargeElapsed >=
+      CGameController.FIRE_CHARGE_TIME + CGameController.FIRE_GREEN_HOLD
+    ) {
+      this.m_charging = false;
+      this.fire(); // wind-up done → launch for real (fire() clears m_charging too, defensively)
     }
   }
 
   /**
-   * Shot-timer state for the panel bar below FIRE, or null when it shouldn't
-   * show (shot-time disabled, or not a human waiting to fire). `frac` is the
-   * fraction of time REMAINING (1 = full); colour goes green→yellow→red as it
-   * drains.
+   * Shot entry for a LOCAL actor (human input, or a bot's scheduled fire). A real projectile first
+   * WINDS UP the FIRE bar (charges red→full→green) before it launches; updateFireCharge calls fire()
+   * when the bar fills. On-use actions (utilities / move / jet), weapon test, and net turns that
+   * aren't ours skip the wind-up and fire at once. Net peers and the post-charge completion call
+   * fire() directly, never this. Bots only wind up in single-player (in net the host relays 'fire',
+   * and a delayed launch there would just add lag for spectators).
    */
-  getTurnTimer(): {frac: number; color: string} | null {
-    if (!this.m_turnTimerRunning || this.m_shotTime <= 0) return null;
-    const frac = clamp01(1 - this.m_turnElapsed / this.m_shotTime);
+  requestFire(): void {
+    if (this.m_charging) return; // already winding up — ignore repeat presses
+    const tank = this.getCurrentTank();
+    // Humans wind up on their local turn (incl. net); bots wind up only in single-player.
+    const actorEligible = tank.isHuman()
+      ? !this.m_netMode || this.isLocalNetTurn()
+      : !this.m_netMode;
+    if (
+      actorEligible &&
+      this.m_gameState === EGameState.Battle &&
+      tank.isAlive() &&
+      !tank.isMoving() &&
+      !this.m_weaponTest &&
+      this.isChargeableShot(getWeapon(this.m_currentWeaponIndex).getExtType())
+    ) {
+      this.m_charging = true;
+      this.m_chargeElapsed = 0;
+      this.m_turnTimerRunning = false; // committed to the shot — hold the clock during the wind-up
+      this.markDirty();
+      return;
+    }
+    this.fire(); // utilities / move / jet / net peer: no wind-up, fire immediately
+  }
+
+  /**
+   * State for the panel bar below FIRE. Three modes:
+   *  • charge — a human's shot is winding up: fills red 0→full, then green (the launch flash).
+   *  • timer  — Round Timer on: drains green→yellow→red; `frac` is the fraction REMAINING.
+   *  • off    — Round Timer disabled during the human's turn: an inert dark track (no cap).
+   * Returns null when there's nothing to show (bot turn, shot in flight, weapon test).
+   */
+  getTurnTimer(): {frac: number; color: string; charge?: boolean; off?: boolean} | null {
+    if (this.m_charging) {
+      const t = CGameController.FIRE_CHARGE_TIME;
+      const frac = clamp01(this.m_chargeElapsed / t);
+      // Red while filling; green once full (held briefly before the projectile leaves).
+      const color = this.m_chargeElapsed >= t ? '#00ff00' : '#ff0000';
+      return {frac: this.m_chargeElapsed >= t ? 1 : frac, color, charge: true};
+    }
+    if (!this.isHumanControlPhase()) return null;
+    if (GameConfig.roundTime <= 0) return {frac: 1, color: '#0a0f0a', off: true}; // untimed → dark bar
+    const frac = clamp01(1 - this.m_turnElapsed / GameConfig.roundTime);
     const color = frac > 0.33 ? '#00ff00' : frac > 0.12 ? '#ffff00' : '#ff0000';
     return {frac, color};
+  }
+
+  /** A weapon whose FIRE launches a real projectile (so it gets the fire wind-up). Excludes the
+   *  on-use utilities that end the turn without a shot: Move, Jet, Shield, Heal, Armor, Hazmat,
+   *  and the Bunker/Wall terrain tools. (Sentry is bot-only and gated by the isHuman() check.) */
+  private isChargeableShot(ext: ExtType): boolean {
+    return (
+      ext !== EXT.MOVE &&
+      ext !== EXT.JET &&
+      ext !== EXT.SHIELD &&
+      ext !== EXT.HEAL &&
+      ext !== EXT.ARMOR &&
+      ext !== EXT.HAZMAT &&
+      ext !== EXT.BUNKER_WALL
+    );
   }
 
   /**
@@ -3846,6 +3930,7 @@ export class CGameController implements ShotWorld {
     }
 
     this.m_turnTimerRunning = false; // committed to a shot — stop the clock
+    this.m_charging = false; // a direct fire() (bot / net peer / post-charge) clears any wind-up
     this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
     this.m_firedThisTurn = true; // a shot was taken → post-fire gloat is eligible at turn end
 
@@ -4772,7 +4857,7 @@ export class CGameController implements ShotWorld {
 
     // Execute fire after a brief "thinking" delay. The turn ends automatically once the shot
     // resolves (or immediately, for a self-buff utility).
-    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
+    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.requestFire()); // wind up the reload bar for AI too
   }
 
   /**
@@ -4822,14 +4907,14 @@ export class CGameController implements ShotWorld {
         power: aim.power,
       });
       this.commitAim(botTank, wrapIndex(Math.round(aim.angleDeg), 360), Math.round(aim.power));
-      this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
+      this.schedule(CGameController.BOT_FIRE_DELAY, () => this.requestFire()); // wind up the reload bar for AI too
       return;
     }
     if (plan.action === 'buff') {
       // A self-buff applies to the bot itself — keep its current aim, just fire the utility.
       this.commitAim(botTank, botTank.getAimAngle(), Math.round(botTank.getPower()));
     }
-    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.fire());
+    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.requestFire()); // wind up the reload bar for AI too
   }
 
   // Ranging correction tuning.
@@ -5162,6 +5247,7 @@ export class CGameController implements ShotWorld {
     this.m_variance = c.variance; // per-shot inaccuracy gates a seeded draw — must match on all
     GameConfig.relativeTurrets = c.relativeTurrets;
     GameConfig.utilityTurn = c.utilityTurn;
+    GameConfig.roundTime = c.roundTime; // host owns the shot clock so every client forfeits on the same limit
     GameConfig.crateChance = c.crateChance;
     GameConfig.radiationDamage = c.radiationDamage; // fallout DOT rule — host is source of truth
     // Randomize Turns is FORCED OFF in net: the server owns the turn order, and the local
@@ -5218,6 +5304,7 @@ export class CGameController implements ShotWorld {
       variance: this.m_variance,
       relativeTurrets: GameConfig.relativeTurrets,
       utilityTurn: GameConfig.utilityTurn,
+      roundTime: GameConfig.roundTime,
       crateChance: GameConfig.crateChance,
       radiationDamage: GameConfig.radiationDamage,
       startCredits: this.m_startCredits,
@@ -6424,14 +6511,24 @@ export class CGameController implements ShotWorld {
   private m_turnStartAngle: number = 45;
   private m_turnStartPower: number = 500;
 
-  // Shot-time countdown (from the "Shot Time" setting). The human has this many
-  // seconds to aim + fire; the panel bar below FIRE drains green→yellow→red and,
-  // on expiry, the turn is forfeited. 0 = disabled (no limit, bar hidden).
-  private m_shotTime: number = 30;
+  // Round Timer countdown (the "Round Timer" gameplay setting, seconds; 0 = off). The human
+  // has GameConfig.roundTime seconds to aim + fire; the panel bar below FIRE drains
+  // green→yellow→red and, on expiry, the turn is forfeited. When off, turns are untimed and
+  // the bar shows an inert dark track. In net play the host's value is shared via MatchConfig.
   private m_turnElapsed: number = 0;
   // Only counts while awaiting the human's shot: true from beginTurn (human,
   // limit on) until fire()/expiry/turn-end. Bots never time out.
   private m_turnTimerRunning: boolean = false;
+
+  // Fire wind-up: when a human commits a real shot (via requestFire), the FIRE bar charges red
+  // 0→full over FIRE_CHARGE_TIME, flashes green for FIRE_GREEN_HOLD, then updateFireCharge calls
+  // fire() to launch. Purely a local presentation gate on the acting client — bots, net peers and
+  // tests call fire() directly (immediate), and peers get the relayed 'fire' at charge end, so the
+  // deterministic sim is unaffected.
+  private static readonly FIRE_CHARGE_TIME = 0.4;
+  private static readonly FIRE_GREEN_HOLD = 0.1;
+  private m_charging: boolean = false;
+  private m_chargeElapsed: number = 0;
   // Latch so the acting-tank passive-death forfeit fires endTurn ONCE per turn (re-armed in beginTurn),
   // not every frame while awaiting the server's net turn hand-off. See the forfeit in updateBattle.
   private m_turnForfeited = false;

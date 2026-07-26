@@ -330,7 +330,10 @@ export const es: Strings = {
       buy: {name: 'Comprar  $', desc: 'Abre el Depósito de Armas para comprar armas.'},
       menu: {name: 'Menú  X', desc: 'Abre el menú del juego: ajustes y salir.'},
       wind: {name: 'Viento', desc: 'Fuerza y dirección del viento, cuando está activado.'},
-      shotTimer: {name: 'Temporizador', desc: 'La barra bajo DISPARAR cuenta atrás tu turno.'},
+      shotTimer: {
+        name: 'Tiempo de Turno',
+        desc: 'La barra bajo DISPARAR cuenta atrás tu turno cuando está activo, y se carga al disparar.',
+      },
     },
   },
 
@@ -548,6 +551,11 @@ export const es: Strings = {
       variance: {
         label: 'Varianza',
         tip: 'Todas las armas tienen una varianza aleatoria distinta al disparar',
+      },
+      roundTime: {
+        label: 'Tiempo de Turno',
+        tip: 'Segundos permitidos por turno antes de perderlo (Off = infinito)',
+        options: ['Off', '15 segundos', '30 segundos', '45 segundos'],
       },
       utilTurn: {label: 'Utilidad Cuenta Turno', tip: 'Si usar una utilidad cuenta como turno'},
       randTurns: {

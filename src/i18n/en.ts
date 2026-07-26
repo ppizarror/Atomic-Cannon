@@ -324,7 +324,10 @@ export const en: Strings = {
       buy: {name: 'Buy  $', desc: 'Open the Weapons Depot to buy weapons.'},
       menu: {name: 'Menu  X', desc: 'Open the game menu: settings and quit.'},
       wind: {name: 'Wind', desc: 'Wind strength and direction, when enabled.'},
-      shotTimer: {name: 'Shot Timer', desc: 'The bar under FIRE counts down your turn.'},
+      shotTimer: {
+        name: 'Round Timer',
+        desc: 'The bar under FIRE counts down your turn when the Round Timer is on, and charges as you shoot.',
+      },
     },
   },
 
@@ -531,6 +534,11 @@ export const en: Strings = {
         options: ['Small', 'Normal', 'Large', 'Massive'],
       },
       variance: {label: 'Variance', tip: 'All weapons have a different random variance when shot'},
+      roundTime: {
+        label: 'Round Timer',
+        tip: 'Seconds allowed per turn before it is forfeited (Off = infinite)',
+        options: ['Off', '15 seconds', '30 seconds', '45 seconds'],
+      },
       utilTurn: {label: 'Utility Turn', tip: 'If a utility item use counts as turn'},
       randTurns: {label: 'Randomize Turns', tip: 'Randomly assings the turn order each battle'},
       altTurns: {

@@ -67,7 +67,7 @@ const R = {
   meter: [45.35, 16.3, 4.25, 64.5], // the coloured gradient column only
 
   fire: [54.8, 16.5, 15, 29.5],
-  timer: [54.7, 50, 14.6, 3.4], // shot-time bar (thin), just below FIRE
+  timer: [56.3, 50.3, 14.2, 3], // shot-time bar (thin), just below FIRE
   buy: [55, 64.6, 3.2, 18],
   reset: [60.8, 64, 3.2, 18],
   help: [66.8, 64, 3.2, 18],
@@ -205,7 +205,7 @@ function FireButton() {
       style={pos(R.fire)}
       disabled={off}
       onClick={() => {
-        if (game().isPlayerTurn()) game().fire();
+        if (game().isPlayerTurn()) game().requestFire();
       }}
     >
       <BmpText font="fire" text={strings.value.hud.fire} height={38} />
@@ -213,17 +213,25 @@ function FireButton() {
   );
 }
 
-// The shot-time bar below FIRE: a fixed red end-cap on the left, then a track
-// whose green fill drains right→left as the turn clock runs down, shading
-// green→yellow→red. Hidden (null) whenever there's no active countdown.
+// The bar below FIRE. Three looks driven by getTurnTimer():
+//  • charge — a shot winding up: fill grows red 0→full, then flashes green as it launches.
+//  • timer  — Round Timer on: fill drains right→left, shading green→yellow→red.
+//  • off    — Round Timer disabled (this player's turn): an inert dark track, no red cap.
+// Hidden (null) whenever there's nothing to show (bot turn, shot in flight).
 function TurnTimerBar() {
   const t = turnTimer.value;
   if (!t) return null;
   return (
     <div class="ov turn-timer" style={pos(R.timer)}>
-      <div class="tt-cap" />
       <div class="tt-track">
-        <div class="tt-fill" style={{width: `${t.frac * 100}%`, background: t.color}} />
+        <div
+          class="tt-fill"
+          style={{
+            width: `${t.frac * 100}%`,
+            background: t.color,
+            transition: t.charge ? 'none' : undefined,
+          }}
+        />
       </div>
     </div>
   );

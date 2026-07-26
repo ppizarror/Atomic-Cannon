@@ -411,6 +411,7 @@ export interface Strings {
       windModel: RowCopy;
       explosionSize: RowCopy;
       variance: RowCopy;
+      roundTime: RowCopy;
       utilTurn: RowCopy;
       randTurns: RowCopy;
       altTurns: RowCopy;

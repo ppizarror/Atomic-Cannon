@@ -53,6 +53,7 @@ const CATALOG = {
   'gp.windModel': {default: 0}, // 0 Linear (uniform) · 1 Realistic (boundary-layer profile)
   'gp.explosionSize': {default: 1, scale: [0.7, 1, 1.35, 1.8]},
   'gp.variance': {default: true},
+  'gp.roundTime': {default: 2, scale: [0, 15, 30, 45]}, // Round Timer seconds; index 0 = Off (infinite turns)
   'gp.utilTurn': {default: false},
   'gp.randTurns': {default: false},
   'gp.altTurns': {default: false}, // interleave teams (A1,B1,A2,B2) instead of contiguous (A1,A2,B1,B2)

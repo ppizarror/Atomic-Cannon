@@ -136,6 +136,7 @@ function gameplayRows(): Widget[] {
     enumW(s.windModel, 'gp.windModel'),
     enumW(s.explosionSize, 'gp.explosionSize'),
     toggle(s.variance, 'gp.variance'),
+    enumW(s.roundTime, 'gp.roundTime'),
     toggle(s.utilTurn, 'gp.utilTurn'),
     toggle(s.randTurns, 'gp.randTurns'),
     toggle(s.altTurns, 'gp.altTurns'),
