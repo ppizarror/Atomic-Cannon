@@ -9,10 +9,22 @@
  * and translations re-flow on their own. Text is ASCII-only (the bitmap fonts cover
  * ASCII 33..126 — no arrows / en-dash / smart quotes).
  */
-import {strings} from '../i18n';
+import {strings, fmt} from '../i18n';
+import {ACTIONS, keyName} from '../core/CControls';
+import {bindings} from './controlsStore';
 import {SectionedDoc} from './SectionedDoc';
 
 export function Manual() {
   const s = strings.value.manual;
-  return <SectionedDoc title={s.title} subtitle={s.subtitle} sections={s.sections} back={s.back} />;
+  // Resolve the Controls section's `{actionId}` placeholders to the player's LIVE key bindings (the
+  // same source Customize Controls reads), so the manual always matches the editor instead of a
+  // hardcoded default — e.g. a taunt rebound to "2" reads "2" here, not "Enter".
+  const b = bindings.value;
+  const unassigned = strings.value.editors.controls.unassigned;
+  const keys: Record<string, string> = {};
+  for (const a of ACTIONS) keys[a.id] = keyName(b[a.id]) || unassigned;
+  const sections = s.sections.map(sec =>
+    sec.bullets ? {...sec, bullets: sec.bullets.map(line => fmt(line, keys))} : sec,
+  );
+  return <SectionedDoc title={s.title} subtitle={s.subtitle} sections={sections} back={s.back} />;
 }
