@@ -819,7 +819,10 @@ export class CTank {
     // left so the art stays upright. Scaled so its length = the muzzle offset.
     const turret = assets?.getSprite(`tanks/${this.m_sTankType} turret`) ?? null;
     if (turret) {
-      const scale = turretLen() / turret.width;
+      // Blit at the SAME scale as the hull so the barrel's length + thickness come from the
+      // art (native turret bitmap), not a fixed size. The tip lands at turretDrawLen(), which
+      // getMuzzlePosition() also uses, so the drawn barrel and the shot-spawn point coincide.
+      const scale = tankBlitScale(this.m_sTankType);
       const tw = turret.width * scale,
         th = turret.height * scale;
       const turretKey = `tanks/${this.m_sTankType} turret`;
@@ -1045,7 +1048,8 @@ export class CTank {
   getMuzzlePosition(): Vec2 {
     const pivot = this.getTurretPivot();
     const aim = this.aimUnit();
-    return new Vec2(pivot.x + aim.x * turretLen(), pivot.y + aim.y * turretLen());
+    const len = turretDrawLen(this.m_sTankType);
+    return new Vec2(pivot.x + aim.x * len, pivot.y + aim.y * len);
   }
 
   /**
@@ -1056,7 +1060,8 @@ export class CTank {
     const r = (deg * Math.PI) / 180;
     const aim = new Vec2(Math.cos(r), -Math.sin(r));
     const pivot = this.getTurretPivot();
-    return new Vec2(pivot.x + aim.x * turretLen(), pivot.y + aim.y * turretLen());
+    const len = turretDrawLen(this.m_sTankType);
+    return new Vec2(pivot.x + aim.x * len, pivot.y + aim.y * len);
   }
 
   // ========================================================================
@@ -1358,7 +1363,6 @@ export class CTank {
 // chosen size. Accessors below are used everywhere in place of the raw constants.
 const TSZ_R = 16; // Half-width of tank collision box
 const TSZ_H = 24; // Approximate height in pixels
-const TSZ_TLEN = 20; // Turret barrel length for muzzle calc
 const TSZ_THGT = 15; // Turret pivot height above the ground line
 const TSZ_W = 46; // On-screen hull width in pixels
 // Native width (px) of the reference hull bitmap (the standard tanks are ~64–70). Every
@@ -1370,7 +1374,29 @@ const hullDrawWidth = (sprite: {width: number}) =>
   tankWidth() * Math.min(1, sprite.width / REF_HULL_W);
 const tankRadius = () => TSZ_R * GameConfig.tankSizeScale;
 const tankHeight = () => TSZ_H * GameConfig.tankSizeScale;
-const turretLen = () => TSZ_TLEN * GameConfig.tankSizeScale;
+// Native bitmap widths per tank type (px): `body` sets the shared blit scale, `turret`
+// sets the barrel length. The original blits hull AND turret at ONE native-size scale, so
+// their proportions come straight from the art. We mirror that: both are drawn at
+// `tankBlitScale`, and the barrel length (= muzzle offset) follows the turret bitmap's own
+// width instead of a fixed constant. Kept as a static table because the muzzle/aim geometry
+// runs with no sprite handy (bot sim). Values must track the tanks/*.bmp files.
+const TANK_ART: Record<string, {body: number; turret: number}> = {
+  Standard: {body: 64, turret: 40},
+  Green: {body: 68, turret: 32},
+  MA1: {body: 68, turret: 50},
+  MSPO: {body: 70, turret: 50},
+  'Atomic Cannon': {body: 70, turret: 61},
+  Sentry: {body: 37, turret: 32},
+};
+const tankArt = (type: string) => TANK_ART[type] ?? TANK_ART.Standard;
+// Scale at which BOTH hull and turret bitmaps are blitted (native px × this). Matches
+// hullDrawWidth() exactly for the body, so the barrel base tracks the drawn hull.
+const tankBlitScale = (type: string) => {
+  const bodyW = tankArt(type).body;
+  return (tankWidth() * Math.min(1, bodyW / REF_HULL_W)) / bodyW;
+};
+// On-screen barrel length = muzzle offset = native turret width × the shared blit scale.
+const turretDrawLen = (type: string) => tankArt(type).turret * tankBlitScale(type);
 // Turret pivot height above the ground line. Default TSZ_THGT nests the pivot inside every hull
 // EXCEPT the short "Atomic Cannon" one (drawn body-top ≈ 13px < 15), where it floats — so that hull
 // gets a lower pivot that seats the barrel back on it. Taller hulls keep the default, so they're
