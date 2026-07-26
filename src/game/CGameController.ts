@@ -1192,9 +1192,15 @@ export class CGameController implements ShotWorld {
   /** Longest drag (px) = full power (also the arrow's max length). */
   private static AIM_MAX_DRAG = 400;
 
-  /** Fixed aim origin — the tank body centre. NOT the muzzle (which rotates with aim). */
+  /**
+   * The point the aim angle is measured from — the turret PIVOT (where the barrel
+   * hinges), not the hull top. The barrel rotates around this pivot, so measuring the
+   * cursor angle from anywhere else (the old hull-top origin sat ~9px above it) leaves
+   * the barrel pointing slightly off the cursor — worst at short drags / steep angles.
+   * Using the pivot makes barrel, muzzle, aim arrow and cursor collinear.
+   */
   private aimOrigin(): Vec2 {
-    return this.getCurrentTank().getPosition();
+    return this.getCurrentTank().getTurretPivot();
   }
 
   /** Begin aiming from the current tank (world coords). No-op unless it's a human's turn. */
@@ -1919,7 +1925,9 @@ export class CGameController implements ShotWorld {
   private drawAim(ctx: CanvasRenderingContext2D): void {
     if (!this.m_aim.active) return;
     // The arrow starts at the cannon tip (muzzle) and its tip reaches the cursor.
-    // (The crosshair markers still use the fixed body centre, so the faded
+    // Since the aim angle is now measured from the turret pivot, the muzzle lies on
+    // the pivot→cursor ray, so the arrow runs collinear with the barrel.
+    // (The crosshair markers still anchor to the pivot via aimPoint(), so the faded
     // "initial" marker stays put while aiming.)
     const o = this.getCurrentTank().getMuzzlePosition();
     const dx = this.m_aim.tx - o.x,

@@ -101,7 +101,7 @@ function WeaponTip({w, x, y}: {w: WeaponDef; x: number; y: number}) {
       title={weaponName(w)}
       content={weaponDesc(w) || strings.value.depot.noDescription}
       tipPosition="down"
-      anchorX={x + 6}
+      anchorX={x + 5}
       anchorY={y - 18}
       anchorClass="dep-tip"
     />
