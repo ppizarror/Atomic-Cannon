@@ -51,7 +51,7 @@ function refreshEconomy(): void {
   mapName.value = c.getMapName();
 }
 
-/** Freeze the battle sim behind a modal overlay (depot / pause / help): halt the shot-timer AND
+/** Freeze the battle sim behind a modal overlay (pause / help — NOT the depot): halt the Round Timer AND
  *  suspend the gameplay-SFX audio context (in-flight effects/loops freeze and resume in sync; music
  *  and UI sounds keep playing). Paired with {@link unfreezeSim}. (goToMenu deliberately does NOT use
  *  these — it freezes only the render loop; see there.) */
@@ -72,10 +72,11 @@ function unfreezeSim(): void {
 export function openDepot(): void {
   if (controller && !controller.canOpenDepot()) return;
   refreshEconomy();
-  // Freeze the sim while shopping (as Help does) so the shot-timer can't drain — and, more
-  // importantly, can't FORFEIT the turn out from under the open depot, which would then leave it
-  // buying/selling against whoever's turn it became (credits are per-tank).
-  freezeSim();
+  // The sim keeps running while shopping so the Round Timer can't be stalled by opening the depot
+  // (it forces quick play, and is fair in net where a freeze can't be shared). If the clock expires
+  // with the depot open, endTurn hands off and the "buying no longer allowed" guard in syncHud
+  // auto-closes it — so it can never buy/sell against whoever's turn it became. Explicit Pause is a
+  // separate path that DOES freeze everything.
   showDepot.value = true;
   uiOpen();
   pushRoute();
@@ -83,9 +84,23 @@ export function openDepot(): void {
 
 export function closeDepot(): void {
   showDepot.value = false;
-  unfreezeSim();
   uiClose();
   popRoute();
+}
+
+/** Warm the depot's colour-keyed UI sprites into the bmp cache so the FIRST depot open shows them
+ *  fully — instead of the tooltip flashing black text over an unstyled, transparent box (the green
+ *  zeon frame + tail arrow not yet decoded), or the header's sort arrow popping in. Called from the
+ *  loading screen (see enterBattle); idempotent + cheap after the first match (every loader caches).
+ *  A dynamic import for ZeonFrame avoids a static store↔ZeonFrame import cycle. */
+export function preloadDepotUi(): Promise<unknown> {
+  return Promise.all([
+    import('./ZeonFrame').then(m => m.preloadZeonFrame()), // the tooltip's 9-sliced green box
+    loadUiBmp('gui/zeon/tt arrow up.bmp', 'greyblack'), // tooltip tail (both directions)
+    loadUiBmp('gui/zeon/tt arrow down.bmp', 'greyblack'),
+    loadUiBmp('gui/sort arrow up.bmp'), // depot header sort arrow (up / down)
+    loadUiBmp('gui/sort arrow down.bmp'),
+  ]);
 }
 
 // Pause menu — an overlay over the frozen battle (Resume / Settings / Quit).
@@ -144,10 +159,9 @@ export function openSettings(from: 'pause' | 'menu'): void {
   settingsPage.value = 'root';
   showPause.value = false;
   screen.value = 'settings';
-  // From the main menu this is a menu navigation (Mechanismus forward); from the
-  // in-battle pause menu it's a dialog panel opening over the frozen battle.
-  if (from === 'menu') uiMenuForward();
-  else uiOpen();
+  // Entering the Settings menu — clicks (or the Menu Sounds whirr), the same from either origin so
+  // pause → Settings sounds like main-menu → Settings, not a panel-open.
+  uiMenuForward();
   pushRoute();
 }
 
@@ -175,11 +189,12 @@ export function closeSettings(): void {
   if (settingsOrigin.value === 'pause') {
     screen.value = 'battle';
     showPause.value = true;
-    uiClose();
   } else {
     screen.value = 'menu';
-    uiMenuBack(); // returning to the main menu — the menu "back" whirr
   }
+  // Leaving the Settings menu — clicks (or the Menu Sounds whirr), the same from either origin so
+  // Done sounds like a menu-back, not a panel-close (pairs with openSettings using uiMenuForward).
+  uiMenuBack();
   popRoute();
 }
 
@@ -299,7 +314,8 @@ function reconcileOverlay(kind: '' | 'pause' | 'help' | 'depot'): void {
   showPause.value = kind === 'pause';
   showHelp.value = kind === 'help';
   showDepot.value = kind === 'depot';
-  const wantFrozen = kind !== '';
+  // Pause and Help freeze the sim; the depot does NOT — the Round Timer keeps running while shopping.
+  const wantFrozen = kind === 'pause' || kind === 'help';
   if (wantFrozen && !paused.value) freezeSim();
   else if (!wantFrozen && paused.value) unfreezeSim();
 }
@@ -379,15 +395,16 @@ function enterBattle(players: number, humans: number, tanksPerTeam: number): voi
   const token = ++launchToken;
   loading.value = true;
   freezeSim();
-  void game()
-    .assetsReady()
-    .then(() => {
-      if (token !== launchToken) return; // a newer launch superseded this one — drop the reveal
-      loading.value = false;
-      // Resume the sim unless something opened an overlay over the battle while it loaded (a dev
-      // URL flag such as ?pause / ?depot), which owns the freeze until it closes.
-      if (!showPause.value && !showDepot.value && !showHelp.value) unfreezeSim();
-    });
+  // Reveal once the world textures AND the depot's colour-keyed UI sprites are ready — the depot
+  // chrome is tiny, so it finishes long before the landscape and adds no wall-clock, but it means
+  // the first depot open is fully styled (no black-text-on-transparent-box tooltip flash).
+  void Promise.all([game().assetsReady(), preloadDepotUi()]).then(() => {
+    if (token !== launchToken) return; // a newer launch superseded this one — drop the reveal
+    loading.value = false;
+    // Resume the sim unless something opened an overlay over the battle while it loaded (a dev
+    // URL flag such as ?pause / ?depot), which owns the freeze until it closes.
+    if (!showPause.value && !showDepot.value && !showHelp.value) unfreezeSim();
+  });
 }
 
 /** Start a battle from the current (persisted) Play setup — the Start Game button.
@@ -579,7 +596,12 @@ export const weapons = signal<WeaponDef[]>([]);
 // green→yellow→red colour, or null when there's no active countdown. Republished
 // only when the quantised width or colour changes, so the bar animates without
 // churning every frame.
-export const turnTimer = signal<{frac: number; color: string} | null>(null);
+export const turnTimer = signal<{
+  frac: number;
+  color: string;
+  charge?: boolean;
+  off?: boolean;
+} | null>(null);
 
 // Top-left status overlay: per-tank life lines (team-coloured) + the battle/shot
 // line — "%s: %d%% life" and "Battle %d of %d - Shot %d".
@@ -744,7 +766,9 @@ export function syncHud(): void {
   // Shot-time bar — republish only when the drawn width (quantised to whole
   // percent) or colour flips, so the drain animates smoothly but cheaply.
   const t = c.getTurnTimer();
-  const tSig = t ? `${Math.round(t.frac * 100)}|${t.color}` : '';
+  const tSig = t
+    ? `${Math.round(t.frac * 100)}|${t.color}|${t.charge ? 'c' : t.off ? 'o' : 't'}`
+    : '';
   if (tSig !== lastTimerSig) {
     lastTimerSig = tSig;
     turnTimer.value = t;

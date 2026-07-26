@@ -304,16 +304,16 @@ export class CAudio {
     this.m_uiSfx.play(SFX.MENU_HOVER);
   }
 
-  /** Mechanical whirr when navigating INTO a menu screen from the main menu. */
+  /** Navigating INTO a menu screen from the main menu. Plays the legacy click.wav by default (as the
+   *  original did on every menu button); the mechanical "Mechanismus" whirr is the opt-in Menu Sounds
+   *  replacement, not an extra layer on top. */
   menuForward(): void {
-    if (!this.m_menuSfxOn) return;
-    this.m_uiSfx.play(SFX.MENU_FORWARD);
+    this.m_uiSfx.play(this.m_menuSfxOn ? SFX.MENU_FORWARD : SFX.CLICK);
   }
 
-  /** …and its counterpart when stepping Back to the main menu. */
+  /** …and its counterpart when stepping Back to the main menu (legacy click, or the Menu Sounds whirr). */
   menuBack(): void {
-    if (!this.m_menuSfxOn) return;
-    this.m_uiSfx.play(SFX.MENU_BACK);
+    this.m_uiSfx.play(this.m_menuSfxOn ? SFX.MENU_BACK : SFX.CLICK);
   }
 
   /** A keystroke while typing a name (Customize Players). */
