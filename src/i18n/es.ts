@@ -627,6 +627,11 @@ export const es: Strings = {
         label: 'Fuentes de Compra Pequeñas',
         tip: 'Usa una fuente más pequeña en el menú de compra',
       },
+      mobileHud: {
+        label: 'HUD Táctil',
+        tip: 'Controles táctiles compactos: Auto (en pantallas pequeñas/bajas), Sí (siempre) o No',
+        options: ['Auto', 'Sí', 'No'],
+      },
       showTurn: {label: 'Mostrar Turno', tip: 'Muestra una flecha cuando es tu turno'},
       blastCircles: {
         label: 'Mostrar Círculos de Explosión',

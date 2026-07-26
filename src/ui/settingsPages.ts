@@ -165,20 +165,23 @@ function languageRow(s: RowCopy): Widget {
 
 function graphicsRows(): Widget[] {
   const s = strings.value.settings.graphics;
-  return [
-    {
-      // Real fullscreen via the Fullscreen API; reads the live document state so it
-      // stays reactive (leaving fullscreen with Esc flips it back to OFF on its own).
-      label: s.fullScreen.label,
-      tip: s.fullScreen.tip,
-      kind: 'toggle',
-      get: () => (typeof document !== 'undefined' && document.fullscreenElement ? 1 : 0),
-      set: (v: number) => {
-        if (typeof document === 'undefined') return;
-        if (v) void document.documentElement.requestFullscreen?.();
-        else void document.exitFullscreen?.();
-      },
+  // Real fullscreen via the Fullscreen API; reads the live document state so it stays
+  // reactive (leaving fullscreen with Esc flips it back to OFF on its own). Hidden on
+  // mobile — the API is unavailable/blocked there (notably iOS Safari) and the touch
+  // layout already fills the screen.
+  const fullScreen: Widget = {
+    label: s.fullScreen.label,
+    tip: s.fullScreen.tip,
+    kind: 'toggle',
+    get: () => (typeof document !== 'undefined' && document.fullscreenElement ? 1 : 0),
+    set: (v: number) => {
+      if (typeof document === 'undefined') return;
+      if (v) void document.documentElement.requestFullscreen?.();
+      else void document.exitFullscreen?.();
     },
+  };
+  return [
+    ...(isMobile.value ? [] : [fullScreen]),
     languageRow(s.language),
     toggle(s.tracking, 'gfx.tracking'),
     toggle(s.smoke, 'gfx.smoke'),
@@ -189,6 +192,7 @@ function graphicsRows(): Widget[] {
     toggle(s.aiStats, 'gfx.aiStats'),
     toggle(s.teamColor, 'gfx.teamColor'),
     toggle(s.smallBuy, 'gfx.smallBuy'),
+    enumW(s.mobileHud, 'gfx.mobileHud'),
     toggle(s.showTurn, 'gfx.showTurn'),
     toggle(s.blastCircles, 'gfx.blastCircles'),
     toggle(s.showPoints, 'gfx.showPoints'),

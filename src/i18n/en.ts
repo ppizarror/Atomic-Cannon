@@ -600,6 +600,11 @@ export const en: Strings = {
       aiStats: {label: 'Show AI Stats', tip: "Show the computer's stats"},
       teamColor: {label: 'Show Team Color', tip: 'Display each tanks name and team color'},
       smallBuy: {label: 'Small Buy Fonts', tip: 'Use a smaller font on the buy menu'},
+      mobileHud: {
+        label: 'Touch HUD',
+        tip: 'Compact touch controls: Auto (on small/short screens), On (always), or Off',
+        options: ['Auto', 'On', 'Off'],
+      },
       showTurn: {label: 'Show Turn', tip: 'Display an arrow when its your turn'},
       blastCircles: {label: 'Show Blast Circles', tip: 'Display bounds of explosions'},
       showPoints: {label: 'Show Points', tip: 'Display damage points for each shot'},

@@ -447,6 +447,7 @@ export interface Strings {
       aiStats: RowCopy;
       teamColor: RowCopy;
       smallBuy: RowCopy;
+      mobileHud: RowCopy;
       showTurn: RowCopy;
       blastCircles: RowCopy;
       showPoints: RowCopy;

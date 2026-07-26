@@ -72,8 +72,7 @@ const CATALOG = {
   'gfx.aiStats': {default: false},
   'gfx.teamColor': {default: true},
   'gfx.smallBuy': {default: false},
-
-  // ── More Graphics ──
+  'gfx.mobileHud': {default: 0}, // touch HUD: 0 Auto (size detection) · 1 On · 2 Off
   'gfx.showTurn': {default: true},
   'gfx.blastCircles': {default: false},
   'gfx.showPoints': {default: true},

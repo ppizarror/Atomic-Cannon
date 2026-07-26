@@ -4,8 +4,9 @@
  * Preact reads these signals; the game controller never touches the DOM. Screens
  * (menu / settings / depot) switch on `screen`.
  */
-import {signal} from '@preact/signals';
+import {signal, computed, effect} from '@preact/signals';
 import {strings, fmt} from '../i18n';
+import {getVal} from './settingsStore';
 import {
   EGameState,
   type CGameController,
@@ -25,25 +26,44 @@ export type Screen =
 
 export const screen = signal<Screen>('battle');
 
-// Below this viewport width the raster gui.bmp control panel gets cropped, so the
-// HUD swaps to a compact touch layout (MobileHud). The panel is a fixed 736px wide
-// (the 640x120 gui.bmp scaled to the bar's 138px height) and needs ~756px to show
-// without clipping its rightmost box — so 768 is the point where it starts to crop,
-// NOT phone-only; narrow desktop windows and tablets also get the touch HUD.
-// `isMobile` mirrors the live viewport; watchViewport() keeps it in sync and stamps
-// a `.mobile` class on <html> so the CSS (shorter --hud-h, etc.) tracks the same
-// single breakpoint. Only sizes under the App gate (320x240) are refused outright.
+// When to use the compact touch HUD (MobileHud) instead of the raster gui.bmp panel:
+//  • too NARROW — below MOBILE_W the 736px-wide panel (640x120 gui.bmp at the bar's
+//    138px height) crops its rightmost box (~756px needed), so 768 is where it starts
+//    to clip; narrow desktop windows and tablets get the touch HUD too, not just phones.
+//  • too SHORT — below MOBILE_H the tall 152px desktop bar leaves too little battlefield
+//    (e.g. a landscape phone: wide but only ~390px tall). The compact 30px bar reclaims it.
+// The gfx.mobileHud setting overrides the auto-detection: 0 = Auto (this rule), 1 = On
+// (force mobile), 2 = Off (force desktop). `isMobile` is a computed of the live viewport +
+// that setting; watchViewport() feeds it the viewport and mirrors the result onto a
+// `.mobile` class on <html> so the CSS (shorter --hud-h, etc.) tracks it. Only sizes under
+// the App gate (320x240) are refused outright.
 export const MOBILE_W = 768;
-export const isMobile = signal(typeof window !== 'undefined' && window.innerWidth < MOBILE_W);
+export const MOBILE_H = 500;
+
+const viewport = signal({
+  w: typeof window !== 'undefined' ? window.innerWidth : 9999,
+  h: typeof window !== 'undefined' ? window.innerHeight : 9999,
+});
+
+export const isMobile = computed(() => {
+  const mode = getVal('gfx.mobileHud'); // 0 Auto · 1 On · 2 Off
+  if (mode === 1) return true;
+  if (mode === 2) return false;
+  const {w, h} = viewport.value;
+  return w < MOBILE_W || h < MOBILE_H;
+});
 
 export function watchViewport(): void {
   const sync = () => {
-    const m = window.innerWidth < MOBILE_W;
-    isMobile.value = m;
-    document.documentElement.classList.toggle('mobile', m);
+    viewport.value = {w: window.innerWidth, h: window.innerHeight};
   };
   sync();
   window.addEventListener('resize', sync);
+  // Mirror the live decision onto <html> so the CSS tracks it (re-runs when the viewport
+  // OR the gfx.mobileHud setting changes, since isMobile reads both).
+  effect(() => {
+    document.documentElement.classList.toggle('mobile', isMobile.value);
+  });
 }
 
 // Loading screen: true while a freshly-launched match loads its landscape textures. A
