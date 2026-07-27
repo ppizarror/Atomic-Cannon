@@ -197,6 +197,14 @@ canvas {
   right: var(--sa-r, 0px);
 }
 
+/* The mobile bottom sheets (weapon list / power / angle) sit above the bar — inset them
+   too so the notch never covers the list / slider. (The scrim stays full-width; it just
+   catches taps, and the notch strip is black anyway.) */
+:root.safe-area .msheet {
+  left: var(--sa-l, 0px);
+  right: var(--sa-r, 0px);
+}
+
 :root.safe-area #battle-status {
   left: calc(8px + var(--sa-l, 0px));
   top: calc(6px + var(--sa-t, 0px));
