@@ -12,12 +12,11 @@ import {useEffect, useState} from 'preact/hooks';
 import {strings} from '../i18n';
 import {settingsPageBack} from './store';
 import {BigButton} from './BigButton';
-import {SettingsScreen} from './SettingsScreen';
+import {MenuScreen} from './MenuScreen';
 import {getSettingsPage} from './settingsPages';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
 import {useMenuNav} from './useMenuNav';
-import {ClassicScrollbar} from './ClassicScrollbar';
 
 export function SettingsPage({id}: {id: string}) {
   const bump = useForceRender();
@@ -35,20 +34,18 @@ export function SettingsPage({id}: {id: string}) {
   if (!page) return null;
 
   return (
-    <SettingsScreen subtitle={sub ?? page.header}>
-      <ClassicScrollbar class="settings-scroll">
-        <div class="menu-list settings-rows" ref={navRef}>
-          {page.rows.map((w, i) => (
-            <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
-          ))}
-          <BigButton
-            label={strings.value.settings.pageDone}
-            onEnter={() => setSub(strings.value.settings.pageDoneSub)}
-            onLeave={() => setSub(null)}
-            onClick={settingsPageBack}
-          />
-        </div>
-      </ClassicScrollbar>
-    </SettingsScreen>
+    <MenuScreen subtitle={sub ?? page.header}>
+      <div class="menu-list settings-rows" ref={navRef}>
+        {page.rows.map((w, i) => (
+          <WidgetRow key={i} w={w} bump={bump} onHover={setSub} />
+        ))}
+        <BigButton
+          label={strings.value.settings.pageDone}
+          onEnter={() => setSub(strings.value.settings.pageDoneSub)}
+          onLeave={() => setSub(null)}
+          onClick={settingsPageBack}
+        />
+      </div>
+    </MenuScreen>
   );
 }

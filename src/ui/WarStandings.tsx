@@ -8,6 +8,7 @@
  */
 import {BmpText} from './BmpText';
 import {BattleMedals} from './BattleMedals';
+import {MenuScreen} from './MenuScreen';
 import {warStandings, advanceWar} from './store';
 import {strings} from '../i18n';
 import type {WarTeamRow} from '../game/CGameController';
@@ -50,38 +51,36 @@ export function WarStandings() {
   const s = warStandings.value;
   if (!s) return null;
   return (
-    <div class="war-standings" onClick={advanceWar}>
-      {s.banner ? (
-        <div class="war-banner">
-          <BmpText font="bazouk-28" text={s.banner} />
+    <MenuScreen backdrop="none" subtitle={s.prompt} onClick={advanceWar} class="menu-tap">
+      <div class="hs-content">
+        {s.banner ? (
+          <div class="war-banner">
+            <BmpText font="bazouk-28" text={s.banner} />
+          </div>
+        ) : (
+          <div class="war-banner-space" />
+        )}
+        <div class="war-title">
+          <BmpText font="bazouk-28" text={s.title} />
         </div>
-      ) : (
-        <div class="war-banner-space" />
-      )}
-      <div class="war-title">
-        <BmpText font="bazouk-28" text={s.title} />
+        {s.subtitle.map((line, i) => (
+          <div key={i} class="war-sub">
+            <BmpText font="beijing-16-out" text={line} />
+          </div>
+        ))}
+
+        <Table rows={s.rows} pointsMode={s.pointsMode} />
+
+        {s.winCondition ? (
+          <div class="war-wincond">
+            <BmpText font="silkscreen-8-out" text={s.winCondition} />
+          </div>
+        ) : null}
+
+        {/* War-over victory only: the local player's Battles Won/Lost + medal stack
+            (the same shared footer as the High Scores screen). */}
+        {s.warOver && s.banner === strings.value.warStandings.victory ? <BattleMedals /> : null}
       </div>
-      {s.subtitle.map((line, i) => (
-        <div key={i} class="war-sub">
-          <BmpText font="beijing-16-out" text={line} />
-        </div>
-      ))}
-
-      <Table rows={s.rows} pointsMode={s.pointsMode} />
-
-      {s.winCondition ? (
-        <div class="war-wincond">
-          <BmpText font="silkscreen-8-out" text={s.winCondition} />
-        </div>
-      ) : null}
-
-      {/* War-over victory only: the local player's Battles Won/Lost + medal stack
-          (the same shared footer as the High Scores screen). */}
-      {s.warOver && s.banner === strings.value.warStandings.victory ? <BattleMedals /> : null}
-
-      <div class="war-prompt">
-        <BmpText font="beijing-16-out" text={s.prompt} />
-      </div>
-    </div>
+    </MenuScreen>
   );
 }

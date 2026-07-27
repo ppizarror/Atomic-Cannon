@@ -13,7 +13,7 @@ import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import type {RowCopy} from '../i18n';
 import {BigButton} from './BigButton';
-import {SettingsScreen} from './SettingsScreen';
+import {MenuScreen} from './MenuScreen';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
 import {useMenuNav} from './useMenuNav';
@@ -67,7 +67,7 @@ export function PlaySetup() {
   ];
 
   return (
-    <SettingsScreen
+    <MenuScreen
       subtitle={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))}
       spacing={-1}
     >
@@ -91,6 +91,6 @@ export function PlaySetup() {
           onClick={backToMenu}
         />
       </div>
-    </SettingsScreen>
+    </MenuScreen>
   );
 }

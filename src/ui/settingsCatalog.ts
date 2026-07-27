@@ -34,7 +34,7 @@ const CATALOG = {
 
   // ── Tank ── (kickback / player-size carry engine scalars; index → multiplier)
   'tank.kickback': {default: 2, scale: [0, 0.6, 1, 1.5]},
-  'tank.size': {default: 2, scale: [0.72, 1, 1.35]},
+  'tank.size': {default: 1, scale: [0.72, 1, 1.35]},
   'tank.relTurrets': {default: false},
   'tank.bury': {default: false},
   'tank.powerScale': {default: 100},
@@ -73,6 +73,7 @@ const CATALOG = {
   'gfx.teamColor': {default: true},
   'gfx.smallBuy': {default: false},
   'gfx.mobileHud': {default: 0}, // touch HUD: 0 Auto (size detection) · 1 On · 2 Off
+  'gfx.safeArea': {default: true}, // mobile: inset the app past the notch/Dynamic Island
   'gfx.showTurn': {default: true},
   'gfx.blastCircles': {default: false},
   'gfx.showPoints': {default: true},

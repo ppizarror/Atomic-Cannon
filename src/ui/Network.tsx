@@ -8,6 +8,7 @@ import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 import {BigButton} from './BigButton';
+import {ClassicScrollbar} from './ClassicScrollbar';
 import {Modal} from './Modal';
 import {goToMenu, uiMenuBack} from './store';
 import {formatRoomCode, formatCodeInput} from '../net/roomCode';
@@ -477,7 +478,9 @@ function Inner() {
 export function Network() {
   return (
     <div class="net-screen">
-      <Inner />
+      <ClassicScrollbar class="net-scroll">
+        <Inner />
+      </ClassicScrollbar>
     </div>
   );
 }

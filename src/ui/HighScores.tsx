@@ -14,6 +14,7 @@ import {strings} from '../i18n';
 import {gameSettings as S} from './settingsValues';
 import {BmpText} from './BmpText';
 import {BattleMedals} from './BattleMedals';
+import {MenuScreen} from './MenuScreen';
 
 function Board({entries, valueHeader}: {entries: HeroEntry[]; valueHeader: string}) {
   const s = strings.value.heroes;
@@ -49,18 +50,16 @@ export function HighScores() {
   const valueHeader = pointsMode ? s.score : s.kills;
 
   return (
-    <div class="highscores" onClick={backToMenu}>
-      <div class="hs-title">
-        <BmpText font="bazouk-28" text={s.title} />
+    <MenuScreen backdrop="steel" subtitle={s.prompt} onClick={backToMenu} class="menu-tap">
+      <div class="hs-content">
+        <div class="hs-title">
+          <BmpText font="bazouk-28" text={s.title} />
+        </div>
+
+        <Board entries={entries} valueHeader={valueHeader} />
+
+        <BattleMedals />
       </div>
-
-      <Board entries={entries} valueHeader={valueHeader} />
-
-      <BattleMedals />
-
-      <div class="hs-prompt">
-        <BmpText font="beijing-16-out" text={s.prompt} />
-      </div>
-    </div>
+    </MenuScreen>
   );
 }
