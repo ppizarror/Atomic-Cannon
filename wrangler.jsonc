@@ -23,10 +23,27 @@
 
   // Static client (the Vite build). The Worker handles /api/* and /room/*; every
   // other path falls through to these assets, with SPA fallback to index.html.
+  //
+  // run_worker_first: by default a request that matches a static asset is served WITHOUT
+  // invoking the Worker — which would skip /robots.txt + /sitemap.xml (worker-generated,
+  // since their absolute URLs depend on the deploy origin) and the SEO injection into
+  // index.html (worker/seo.ts). So route everything through the Worker EXCEPT the real
+  // static files, which stay on the fast path (no Worker invocation, no billing) — the
+  // game pulls hundreds of those per session.
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/*",
+      "!/assets/*",
+      "!/audio/*",
+      "!/sw.js",
+      "!/*.png",
+      "!/*.jpg",
+      "!/*.ico",
+      "!/*.webmanifest",
+    ],
   },
 
   // Per-IP limiters (period must be 10 or 60). ROOM_LIMIT gates room creation (/api/new);

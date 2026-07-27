@@ -83,6 +83,26 @@ Requirements & effects:
 hostname never lands in git. `wrangler dev` / `pnpm dev:net` ignore all of this and run
 locally as before.
 
+## SEO / link previews
+
+Search and social metadata needs **absolute** URLs, which the repo cannot store (see
+"Custom domain" above). So the Worker derives them from the live request origin — whatever
+host it is actually served from — and nothing needs configuring:
+
+- `/robots.txt` and `/sitemap.xml` are generated per request (`src/seo.ts`), pointing at
+  that origin and keeping crawlers off `/api/` and `/room/`. This needs the Worker to see
+  the request at all, hence `run_worker_first` in `wrangler.jsonc` — real static files
+  (`/assets/*`, `/audio/*`, images, `sw.js`) still bypass the Worker entirely.
+- The HTML shell ships root-relative `og:url` / `og:image`; `worker/seo.ts` rewrites them to
+  absolute on the way out and appends the tags that exist only in absolute form — the
+  canonical link and the schema.org `VideoGame` JSON-LD.
+- The social card is `public/screenshot.jpg` (1200×630, served at `/screenshot.jpg`).
+  Regenerate it from a fresh capture when the game's look changes.
+
+Only the deployed Worker injects this — `pnpm dev` / `pnpm preview` serve the relative
+tags as-is. After a first deploy, submit the domain in Google Search Console and re-scrape
+the card at [Facebook's sharing debugger](https://developers.facebook.com/tools/debug/).
+
 ## Cost & monitoring
 
 - **Free tier:** 100k requests/day, ~13k GB-s/day, 5 GB SQLite. A full 4-player match

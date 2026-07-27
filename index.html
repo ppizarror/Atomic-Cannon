@@ -6,6 +6,45 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <title>Atomic Cannon — Free Online Turn-Based Artillery Game</title>
+    <!-- Search metadata. The URLs below are ROOT-RELATIVE on purpose: the Worker rewrites
+         them to absolute against the live request origin (worker/seo.ts), which keeps the
+         deploy hostname out of this repo while still satisfying crawlers and link
+         unfurlers. The Worker also appends the tags that exist only in absolute form (the
+         rel=canonical link and the JSON-LD blob) and serves /robots.txt + /sitemap.xml
+         from the same source (src/seo.ts). -->
+    <meta
+      name="description"
+      content="Play Atomic Cannon free in your browser: a turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <!-- Open Graph: link previews in Discord / WhatsApp / Facebook / Slack -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Atomic Cannon" />
+    <meta property="og:title" content="Atomic Cannon — Free Online Turn-Based Artillery Game" />
+    <meta
+      property="og:description"
+      content="A turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends — free, in the browser."
+    />
+    <meta property="og:url" content="/" />
+    <meta property="og:image" content="/screenshot.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A rocket arcing over destructible terrain toward an enemy tank in Atomic Cannon"
+    />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="es_ES" />
+    <!-- X / Twitter card (image URL absolutised by the Worker, same as og:image) -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Atomic Cannon — Free Online Turn-Based Artillery Game" />
+    <meta
+      name="twitter:description"
+      content="A turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends — free, in the browser."
+    />
+    <meta name="twitter:image" content="/screenshot.jpg" />
     <!-- Run full-screen (no browser chrome) when added to the home screen; on iOS the
        black-translucent status bar lets the game fill under it (with safe-area insets). -->
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,13 +59,57 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Atomic Cannon</title>
+    <!-- Critical CSS: paint the page dark from the very first frame. hud.css is imported by
+         the bundle, so in dev (and on a slow first load) it lands after first paint — without
+         this the browser would flash a white page before the game appears. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #10141a;
+      }
+    </style>
   </head>
   <body>
     <!-- Pixi mounts its canvas here -->
     <div id="game-container"></div>
     <!-- Preact renders the HUD / screens here (overlays the canvas) -->
     <div id="ui-root"></div>
+    <!-- The game is a canvas, so this is the only prose in the document: the heading and
+         pitch a crawler reads from the raw HTML, and the message a JS-less visitor gets.
+         Deliberately inside <noscript> — it must NEVER flash on screen before the game
+         starts, and hiding it with CSS instead would be exactly the cloaking pattern
+         search engines penalise. Machine-readable SEO lives in the <head> (description,
+         Open Graph, and the JSON-LD the Worker injects). -->
+    <noscript>
+      <style>
+        #no-js {
+          padding: 48px 24px;
+          text-align: center;
+          font-family: 'Segoe UI', Arial, sans-serif;
+          color: #8fa6bd;
+        }
+        #no-js h1 {
+          letter-spacing: 3px;
+          text-transform: uppercase;
+          color: #eef2f6;
+        }
+        #no-js p {
+          max-width: 62ch;
+          margin: 16px auto 0;
+          line-height: 1.55;
+        }
+      </style>
+      <div id="no-js">
+        <h1>Atomic Cannon</h1>
+        <p>
+          A free turn-based artillery game. Two or more tanks trade shots across destructible
+          terrain — set your angle and power, account for the wind, and blow the other tank off
+          the map. Play against bots or online with friends, straight in the browser.
+        </p>
+        <p>Playing it needs JavaScript and WebGL — enable JavaScript to start a battle.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
