@@ -208,17 +208,11 @@ canvas {
   top: calc(6px + var(--sa-t, 0px));
 }
 
-:root.safe-area .mainmenu,
-:root.safe-area .settings-screen,
-:root.safe-area .editor-screen,
-:root.safe-area .war-standings,
-:root.safe-area .highscores,
-:root.safe-area .net-screen,
-:root.safe-area .overlay {
-  left: var(--sa-l, 0px);
-  right: var(--sa-r, 0px);
-  top: var(--sa-t, 0px);
-}
+/* NOTE: the menu / overlay screens (.mainmenu, .settings-screen, .overlay, …) are
+   deliberately NOT inset. Their content is centred (buttons/option rows well inside the
+   notch) and their backdrop is decorative sky/steel, so insetting them only de-centres the
+   layout and shifts the title splash for no gain. Only GAMEPLAY (the world, HUD, status,
+   wind) needs to clear the notch. */
 
 /* ---- top-left status text (life per tank, battle + shot) ---- */
 #battle-status {
