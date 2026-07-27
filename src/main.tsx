@@ -201,6 +201,13 @@ async function main(): Promise<void> {
   // the path to the resting screen (e.g. `?settings=graphics` → `/settings/graphics`).
   initRouter();
 
+  // Register the minimal service worker (public/sw.js) so the app is installable on
+  // Android/Chromium — its `beforeinstallprompt` (the InstallHint's one-tap Install) only
+  // fires with a registered SW. PROD-only so it never interferes with the dev HMR socket.
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
   // Jet-flight steering: held-key state (arrows / WASD), pushed to the controller
   // each event. Only acts while the game is in the Flying state.
   const thrust = {up: false, left: false, right: false};

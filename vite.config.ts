@@ -19,6 +19,7 @@ export default defineConfig({
     port: 2141,
     strictPort: true,
     hmr: false,
+    host: true,
     // Multiplayer backend lives in the Worker/Durable Object (`pnpm dev:net`, :8787).
     // Proxy the room API + WebSocket there so the HMR dev page (:2141) can reach it —
     // run both `pnpm dev` and `pnpm dev:net`, then use :2141. If :8787 isn't up these

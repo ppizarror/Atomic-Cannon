@@ -2514,10 +2514,21 @@ canvas {
 
 /* A thin strip like the original phone HUD: ~30px tall, a shot-clock bar across the
    top, then a row of beveled GREEN buttons over the real `gui empty` metal filler
-   (clear grey). Includes the iOS home-indicator inset so the world (100vh − --hud-h)
-   never hides behind it. */
+   (clear grey).
+   The bottom home-indicator inset is applied ONLY in the installed (standalone) app,
+   which owns the whole screen. In a normal Safari TAB, iOS already reserves its bottom
+   toolbar, so adding the inset there just balloons the bar with a tall grey metal band
+   (and steals battlefield height) — so `--safe-b` defaults to 0 and the standalone media
+   query below restores the real inset. */
 .mobile {
-  --hud-h: calc(30px + env(safe-area-inset-bottom, 0px));
+  --safe-b: 0px;
+  --hud-h: calc(30px + var(--safe-b));
+}
+
+@media (display-mode: standalone) {
+  .mobile {
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 #mhud {
@@ -2534,8 +2545,8 @@ canvas {
   background: url('/assets/gui/gui empty.bmp') repeat-x;
   background-size: auto 100%;
   image-rendering: pixelated;
-  /* keep the iOS home-indicator clear below all HUD content */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* keep the iOS home-indicator clear below all HUD content (standalone only; see --safe-b) */
+  padding-bottom: var(--safe-b);
   touch-action: none;
 }
 
@@ -2865,4 +2876,81 @@ canvas {
 
 .mobile .settings-screen {
   padding-bottom: 3vh;
+}
+
+/* ---- "Install for fullscreen" hint (menu only, dismissible; see InstallHint.tsx).
+   iOS shows manual Share→Add-to-Home-Screen; Android/Chromium adds a one-tap Install. --- */
+.install-hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(92vw, 460px);
+  padding: 7px 8px 7px 12px;
+  background: linear-gradient(#2b3036, #1b1e22);
+  border: 1px solid #4a4f55;
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  color: #e7ebef;
+}
+
+.install-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: #4aa8ff; /* action blue */
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.install-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Android/Chromium one-tap install — a green action button. */
+.install-go {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: linear-gradient(#4e8a3a, #2f5a22);
+  border: 1px solid #6fa84f;
+  border-radius: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.install-go:active {
+  background: linear-gradient(#2f5a22, #4e8a3a);
+}
+
+.install-x {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font:
+    700 15px/1 system-ui,
+    sans-serif;
+  color: #aeb4bb;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.install-x:active {
+  background: rgba(255, 255, 255, 0.14);
 }
