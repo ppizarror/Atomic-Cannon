@@ -309,6 +309,10 @@ export const es: Strings = {
     tooSmallCurrent: 'Actual:  {w} x {h}',
     rotateTitle: 'GIRA TU DISPOSITIVO',
     rotateHint: 'Atomic Cannon se juega en horizontal.',
+    installTitle: 'PANTALLA COMPLETA',
+    installBody: 'Toca Compartir y "Añadir a inicio"',
+    installAndroid: 'Instala la app para pantalla completa',
+    installAction: 'Instalar',
     loading: 'Cargando',
   },
 

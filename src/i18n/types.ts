@@ -219,6 +219,12 @@ export interface Strings {
     /** Portrait-orientation nudge on phones (the battlefield is landscape). */
     rotateTitle: string;
     rotateHint: string;
+    /** "Install for fullscreen" hint (menu only, dismissible). iOS shows the manual
+     *  Share→Add-to-Home-Screen body; Android/Chromium shows the one-tap Install button. */
+    installTitle: string;
+    installBody: string;
+    installAndroid: string;
+    installAction: string;
     /** Loading screen caption shown while a match's textures load (animated dots are appended). */
     loading: string;
   };

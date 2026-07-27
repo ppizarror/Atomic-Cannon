@@ -27,6 +27,7 @@ import {hexToRgb} from '../math/color';
 import {strings, fmt} from '../i18n';
 import {BmpText} from './BmpText';
 import {Hud} from './Hud';
+import {InstallHint} from './InstallHint';
 import {DepotPanel} from './DepotPanel';
 import {TauntLayer} from './TauntLayer';
 import {PauseMenu} from './PauseMenu';
@@ -298,6 +299,7 @@ export function App() {
       <ScreenFlash />
       <HudWave />
       {loading.value && <LoadingScreen />}
+      <InstallHint />
       <RotateOverlay />
       <TooSmallOverlay />
     </>

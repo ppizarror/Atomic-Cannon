@@ -309,6 +309,10 @@ export const en: Strings = {
     tooSmallCurrent: 'Current:  {w} x {h}',
     rotateTitle: 'ROTATE YOUR DEVICE',
     rotateHint: 'Atomic Cannon plays in landscape.',
+    installTitle: 'PLAY FULLSCREEN',
+    installBody: 'Tap Share, then "Add to Home Screen"',
+    installAndroid: 'Install the app for fullscreen play',
+    installAction: 'Install',
     loading: 'Loading',
   },
 
