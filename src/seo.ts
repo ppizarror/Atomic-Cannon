@@ -16,7 +16,7 @@ export const SITE_NAME = 'Atomic Cannon';
 
 /**
  * The one-line pitch shown in search results and link previews.
- * KEEP IN SYNC with `<meta name="description">` in index.html — tests/seo.test.ts asserts it.
+ * KEEP IN SYNC with `<meta name="description">` in index.html — test/seo.test.ts asserts it.
  */
 export const SITE_DESCRIPTION =
   'Play Atomic Cannon free in your browser: a turn-based artillery duel on destructible ' +

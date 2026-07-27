@@ -13,7 +13,7 @@ exactly; they encode conventions the codebase already relies on.
   · `pnpm test` · `pnpm check` (format:check + typecheck + lint + test in one shot).
 - **Always `pnpm check` before considering a change done** (run `pnpm format` first to auto-fix style).
   `typecheck` runs `strict` `tsc` over two projects — `tsconfig.app.json` (browser code in `src/`, DOM
-  libs, no node globals) and `tsconfig.node.json` (Vite config + `tests/`, node + DOM). `lint` is
+  libs, no node globals) and `tsconfig.node.json` (Vite config + `test/`, node + DOM). `lint` is
   `oxlint --deny-warnings` (config in `.oxlintrc.json`; TS-native, so it works with the native
   TypeScript compiler that `typescript-eslint` does not yet support). **Formatting is Prettier**
   (`.prettierrc.json`): 2-space indent, single quotes, compact braces (`{x}`, `bracketSpacing: false`),
@@ -89,8 +89,8 @@ Keep this separation. New UI is a Preact component driven by a signal; new gamep
 
 ## Verifying changes
 
-- `pnpm test` runs `tests/*.test.ts` under **Vitest** (`describe`/`it`/`expect`); `pnpm test:watch`
-  for the watch UI. `tests/_setup.ts` installs the headless DOM stubs before every file. There is
+- `pnpm test` runs `test/*.test.ts` under **Vitest** (`describe`/`it`/`expect`); `pnpm test:watch`
+  for the watch UI. `test/_setup.ts` installs the headless DOM stubs before every file. There is
   **no DOM canvas** in tests, so they exercise logic and gradient fallbacks only — **not** real
   `drawImage`/WebGL paths.
 - To verify anything visual, **drive the real running game**: dev exposes
