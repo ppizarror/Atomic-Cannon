@@ -177,6 +177,49 @@ canvas {
   display: block;
 }
 
+/* ---- Avoid-notch (safe area) mode — toggled by the gfx.safeArea setting via the
+   <html>.safe-area class. Insets the full-viewport containers past the notch / Dynamic
+   Island; the freed strip shows the black body background. The insets come from
+   --sa-l/--sa-r/--sa-t (set by store.applyNotchInset), which put the WHOLE landscape
+   inset on the NOTCH side only so the notch-free edge stays usable. They're 0 before JS
+   runs / on non-notched devices, so this is inert there. Bottom stays 0 (home-indicator
+   inset is handled by --hud-h). */
+:root.safe-area #game-container {
+  left: var(--sa-l, 0px);
+  right: var(--sa-r, 0px);
+  top: var(--sa-t, 0px);
+  height: calc(100dvh - var(--hud-h) - var(--sa-t, 0px));
+}
+
+:root.safe-area #fx-overlay {
+  inset: var(--sa-t, 0px) var(--sa-r, 0px) 0 var(--sa-l, 0px);
+  width: auto;
+  height: auto;
+}
+
+:root.safe-area #mhud,
+:root.safe-area #hud {
+  left: var(--sa-l, 0px);
+  right: var(--sa-r, 0px);
+}
+
+:root.safe-area #battle-status {
+  left: calc(8px + var(--sa-l, 0px));
+  top: calc(6px + var(--sa-t, 0px));
+}
+
+:root.safe-area .mainmenu,
+:root.safe-area .settings-screen,
+:root.safe-area .editor-screen,
+:root.safe-area .war-standings,
+:root.safe-area .highscores,
+:root.safe-area .net-screen,
+:root.safe-area .overlay {
+  left: var(--sa-l, 0px);
+  right: var(--sa-r, 0px);
+  top: var(--sa-t, 0px);
+}
+
 /* ---- top-left status text (life per tank, battle + shot) ---- */
 #battle-status {
   position: absolute;
@@ -1342,13 +1385,14 @@ canvas {
   --disp-w: max(100vw, calc(100vh * 1600 / 893));
   --disp-h: max(100vh, calc(100vw * 893 / 1600));
   position: absolute;
-  /* Logo bottom-right corner, top-center anchored: x = 50vw + (0.843-0.5)·disp-w. */
-  left: calc(50vw + 0.343 * var(--disp-w));
+  left: calc(50vw + 0.33 * var(--disp-w));
   top: calc(0.152 * var(--disp-h));
   z-index: var(--z-screen);
   pointer-events: none; /* purely decorative — never eats clicks meant for the nav */
-  /* Sit just below-right of the corner so the badge clears the glyphs. */
-  transform: translate(-45%, 15%) rotate(var(--splash-tilt));
+  /* Anchor by the text's CENTRE (translateX(-50%)) so different-length splash strings
+     grow symmetrically and always sit in the same spot; the Y (15%) drops it just
+     below-right of the corner so it clears the glyphs. */
+  transform: translate(-50%, 15%) rotate(var(--splash-tilt));
   transform-origin: center;
   will-change: transform;
 }
@@ -1376,17 +1420,18 @@ canvas {
 }
 
 /* ===================== BATTLE HEROES (High Scores) ======================= */
-/* A full steel-plate screen (like War Standings, but standalone): title, Top-10
-   board, medal footer. Click anywhere to return to the menu. */
-.highscores {
-  /* full-screen scaffold shared above; only the unique backdrop + layout below */
-  background: var(--steel-plate);
-  justify-content: flex-start;
+/* Info-screen content column (High Scores / War Standings) inside MenuScreen's scroll
+   host — centres when it fits, scrolls (classic bar) when the board/medals run tall. */
+.hs-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  padding: 5vh 2vw calc(var(--hud-h) + 3vh);
+}
+
+/* whole-screen tap-to-return/advance affordance (MenuScreen onClick screens) */
+.menu-tap {
   cursor: pointer;
-  overflow: hidden;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
 }
 
 .hs-title {
@@ -1770,13 +1815,27 @@ canvas {
 }
 
 /* ============================ SETTINGS (options root) ======================= */
+/* `.settings-screen` is the shared MenuScreen chrome (see MenuScreen.tsx). Its backdrop
+   is chosen by a `bg-*` modifier: dim title plate (default, for the option menus), the
+   un-dimmed title plate, or the brushed-steel plate (results / doc screens). */
 .settings-screen {
-  /* Same title backdrop as the main menu (the chrome "ATOMIC CANNON" logo is baked
-     in), darkened with a flat black wash so the white-outlined options read clearly.
-     The brushed-steel plate is reserved for the deeper editor sub-screens. */
+  /* darkened title backdrop (the baked "ATOMIC CANNON" logo), so white-outlined rows read. */
   background: var(--title-plate-dim);
   /* Reserve the bottom band for the absolute subtitle so the scroll host stops above it. */
   padding: 2vh 0 9vh;
+}
+
+.settings-screen.bg-plain {
+  background: var(--title-plate);
+}
+
+.settings-screen.bg-steel {
+  background: var(--steel-plate);
+}
+
+/* transparent — overlays the live scene (e.g. the between-battles War Standings). */
+.settings-screen.bg-none {
+  background: none;
 }
 
 /* The scroll host that holds the option list (root categories or a page's widget rows). It fills
@@ -1864,14 +1923,6 @@ canvas {
 
 /* ==================== Between-battles "winning the war" standings ==================== */
 /* A transparent, click-anywhere overlay over the frozen battle scene (HUD hidden). */
-.war-standings {
-  justify-content: flex-start;
-  gap: 6px;
-  padding: 3vh 2vw;
-  cursor: pointer;
-  /* every line reads over the scene */
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
-}
 /* The war-end banner (bazouk-28) and, between battles, an empty spacer of the SAME
    height sit above the title — so the title holds one position across both screens. */
 .war-banner {
@@ -2102,8 +2153,23 @@ canvas {
   /* full-screen scaffold shared above; only the unique backdrop + layout below */
   background: var(--title-plate-dim);
   justify-content: flex-start;
-  overflow-y: auto;
 }
+
+/* ClassicScrollbar host (matches every other screen — no native OS scrollbar). Full
+   width so the 88vw panel never clips; the view centres the panel when it fits and
+   scrolls when it's taller than the viewport. */
+.net-scroll {
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.net-scroll .cscroll-view {
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  align-items: center;
+}
+
 /* The centered content column inside the overlay. */
 .net-panel {
   display: flex;
@@ -2626,12 +2692,12 @@ canvas {
 
 /* power / angle — wide enough that a 4-digit "Power 1000" never shrinks or clips. */
 .mval {
-  flex: 1.45 1 0;
+  flex: 1.4 1 0;
 }
 
 /* $ and X are the narrowest — just enough for the glyph. */
 .mbuy {
-  flex: 0.35 1 0;
+  flex: 0.4 1 0;
 }
 
 /* FIRE needs no extra room — a short word, so keep it compact. */
@@ -2863,9 +2929,7 @@ canvas {
    the centered menu) and scaled down so it neither clips the edge nor overlaps the
    buttons on narrow viewports. */
 .mobile .mainmenu-splash {
-  top: 11%;
-  left: 75%;
-  transform: rotate(var(--splash-tilt)) scale(0.62);
+  transform: translateX(-50%) scale(0.62) rotate(var(--splash-tilt));
 }
 
 /* Hide the bottom option-description legend on mobile (it overlaps the last row on
@@ -2882,9 +2946,13 @@ canvas {
    iOS shows manual Share→Add-to-Home-Screen; Android/Chromium adds a one-tap Install. --- */
 .install-hint {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
+  /* Centre with auto margins, NOT translateX(-50%): a fractional-pixel transform blurs
+     the bitmap-font canvases (image-rendering: pixelated). */
+  width: fit-content;
+  margin-inline: auto;
   z-index: var(--z-modal);
   display: flex;
   align-items: center;
@@ -2916,7 +2984,7 @@ canvas {
   min-width: 0;
 }
 
-/* Android/Chromium one-tap install — a green action button. */
+/* Android/Chromium one-tap install — a green action button (label is BmpText). */
 .install-go {
   flex: 0 0 auto;
   display: flex;

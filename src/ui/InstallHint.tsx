@@ -55,6 +55,12 @@ const iosEligible = (() => {
   return iOS && safari && !standalone;
 })();
 
+// Touch device? Mouse desktops (incl. desktop Chrome, which ALSO fires
+// beforeinstallprompt) play in-browser and shouldn't get the install nudge — so the
+// hint is touch-only. `pointer: coarse` is independent of window size, so a small
+// desktop window never triggers it.
+const isTouch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
 if (typeof window !== 'undefined') {
   // Chromium fires this when the PWA is installable; keep it to drive our own button.
   window.addEventListener('beforeinstallprompt', e => {
@@ -93,7 +99,9 @@ function InstallIcon() {
 
 export function InstallHint() {
   const canPrompt = deferred.value != null; // Android / desktop Chromium
-  if (dismissed.value || screen.value !== 'menu' || !(canPrompt || iosEligible)) return null;
+  // Touch-only, on the title screen, not dismissed, and something to offer.
+  if (!isTouch || dismissed.value || screen.value !== 'menu' || !(canPrompt || iosEligible))
+    return null;
   const a = strings.value.app;
   const dismiss = () => {
     lsDismiss();

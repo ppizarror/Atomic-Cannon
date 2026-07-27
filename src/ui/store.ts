@@ -53,16 +53,57 @@ export const isMobile = computed(() => {
   return w < MOBILE_W || h < MOBILE_H;
 });
 
+// The notch / Dynamic Island sits on ONE side in landscape, but iOS reports a safe-area
+// inset on BOTH sides — insetting both wastes the notch-free edge (the game shrinks and
+// centres instead of using the full width). So we read the live insets, put the WHOLE
+// inset on the notch side only, and free the other edge. Exposed to CSS as --sa-l/--sa-r/
+// --sa-t (consumed by the .safe-area rules). Notch side = the larger inset; on the ties
+// iOS sometimes reports, orientation angle breaks it (90° → notch on the left).
+function applyNotchInset(): void {
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;' +
+    'padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const l = parseFloat(cs.paddingLeft) || 0;
+  const r = parseFloat(cs.paddingRight) || 0;
+  const t = parseFloat(cs.paddingTop) || 0;
+  probe.remove();
+
+  const side = Math.max(l, r);
+  let notchLeft = l > r;
+  if (l === r && side > 0) {
+    const angle =
+      window.screen?.orientation?.angle ?? (window as {orientation?: number}).orientation ?? 0;
+    notchLeft = angle === 90; // 90° = rotated so the notch is on the left
+  }
+  const root = document.documentElement.style;
+  root.setProperty('--sa-l', notchLeft ? `${side}px` : '0px');
+  root.setProperty('--sa-r', notchLeft ? '0px' : `${side}px`);
+  root.setProperty('--sa-t', `${t}px`);
+}
+
 export function watchViewport(): void {
   const sync = () => {
     viewport.value = {w: window.innerWidth, h: window.innerHeight};
+    applyNotchInset();
   };
   sync();
   window.addEventListener('resize', sync);
+  window.addEventListener('orientationchange', applyNotchInset);
   // Mirror the live decision onto <html> so the CSS tracks it (re-runs when the viewport
   // OR the gfx.mobileHud setting changes, since isMobile reads both).
   effect(() => {
     document.documentElement.classList.toggle('mobile', isMobile.value);
+  });
+  // "Avoid Notch": inset the app past the safe area (CSS keys off .safe-area). Mobile-only —
+  // the env() insets are 0 on desktop anyway, but gating keeps <html> clean.
+  effect(() => {
+    document.documentElement.classList.toggle(
+      'safe-area',
+      isMobile.value && getVal('gfx.safeArea') === 1,
+    );
   });
 }
 

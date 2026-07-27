@@ -454,6 +454,7 @@ export interface Strings {
       teamColor: RowCopy;
       smallBuy: RowCopy;
       mobileHud: RowCopy;
+      safeArea: RowCopy;
       showTurn: RowCopy;
       blastCircles: RowCopy;
       showPoints: RowCopy;

@@ -636,6 +636,10 @@ export const es: Strings = {
         tip: 'Controles táctiles compactos: Auto (en pantallas pequeñas/bajas), Sí (siempre) o No',
         options: ['Auto', 'Sí', 'No'],
       },
+      safeArea: {
+        label: 'Evitar Notch',
+        tip: 'Aparta el juego del notch / Isla Dinámica (una franja negra lo cubre)',
+      },
       showTurn: {label: 'Mostrar Turno', tip: 'Muestra una flecha cuando es tu turno'},
       blastCircles: {
         label: 'Mostrar Círculos de Explosión',

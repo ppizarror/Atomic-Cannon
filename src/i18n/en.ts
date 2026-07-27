@@ -609,6 +609,10 @@ export const en: Strings = {
         tip: 'Compact touch controls: Auto (on small/short screens), On (always), or Off',
         options: ['Auto', 'On', 'Off'],
       },
+      safeArea: {
+        label: 'Avoid Notch',
+        tip: 'Inset the game past the notch / Dynamic Island (a black strip covers it)',
+      },
       showTurn: {label: 'Show Turn', tip: 'Display an arrow when its your turn'},
       blastCircles: {label: 'Show Blast Circles', tip: 'Display bounds of explosions'},
       showPoints: {label: 'Show Points', tip: 'Display damage points for each shot'},
