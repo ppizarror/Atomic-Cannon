@@ -18,7 +18,7 @@ function splitTaunt(text: string): {title: string; content: string} {
 }
 
 export function TauntLayer() {
-  const {w, h} = useSceneSize();
+  const {x, y, w, h} = useSceneSize();
   const bubbles = tauntBubbles.value;
   if (!bubbles.length || !w) return null;
   return (
@@ -30,8 +30,8 @@ export function TauntLayer() {
             key={b.id}
             title={title}
             content={content}
-            anchorX={b.xPct * w + 4}
-            anchorY={b.yPct * h - 24}
+            anchorX={x + b.xPct * w + 4}
+            anchorY={y + b.yPct * h - 24}
             fade={b.alpha}
             tipPosition="down"
             animated

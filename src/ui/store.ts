@@ -53,12 +53,14 @@ export const isMobile = computed(() => {
   return w < MOBILE_W || h < MOBILE_H;
 });
 
-// The notch / Dynamic Island sits on ONE side in landscape, but iOS reports a safe-area
-// inset on BOTH sides — insetting both wastes the notch-free edge (the game shrinks and
-// centres instead of using the full width). So we read the live insets, put the WHOLE
-// inset on the notch side only, and free the other edge. Exposed to CSS as --sa-l/--sa-r/
-// --sa-t (consumed by the .safe-area rules). Notch side = the larger inset; on the ties
-// iOS sometimes reports, orientation angle breaks it (90° → notch on the left).
+// Avoid-Notch inset. gfx.safeArea: 0 Off · 1 Notch Side · 2 Both Sides.
+//  • Notch Side (1): the notch sits on ONE side in landscape but iOS reports an inset on
+//    BOTH sides — insetting both would waste the notch-free edge, so we put the WHOLE inset
+//    on the notch side only (larger inset; ties broken by orientation angle) and free the
+//    other edge. Uses the full width bar the notch.
+//  • Both Sides (2): inset both edges equally (by the larger inset) — clears the OPPOSITE
+//    rounded corner too, so the wind readout / FIRE button aren't clipped by it.
+// Exposed to CSS as --sa-l/--sa-r/--sa-t (consumed by the .safe-area rules).
 function applyNotchInset(): void {
   const probe = document.createElement('div');
   probe.style.cssText =
@@ -72,15 +74,22 @@ function applyNotchInset(): void {
   probe.remove();
 
   const side = Math.max(l, r);
-  let notchLeft = l > r;
-  if (l === r && side > 0) {
-    const angle =
-      window.screen?.orientation?.angle ?? (window as {orientation?: number}).orientation ?? 0;
-    notchLeft = angle === 90; // 90° = rotated so the notch is on the left
-  }
   const root = document.documentElement.style;
-  root.setProperty('--sa-l', notchLeft ? `${side}px` : '0px');
-  root.setProperty('--sa-r', notchLeft ? '0px' : `${side}px`);
+  if (getVal('gfx.safeArea') === 2) {
+    // Both Sides — symmetric, clears both rounded corners.
+    root.setProperty('--sa-l', `${side}px`);
+    root.setProperty('--sa-r', `${side}px`);
+  } else {
+    // Notch Side only — the whole inset on whichever edge the notch is on.
+    let notchLeft = l > r;
+    if (l === r && side > 0) {
+      const angle =
+        window.screen?.orientation?.angle ?? (window as {orientation?: number}).orientation ?? 0;
+      notchLeft = angle === 90; // 90° = rotated so the notch is on the left
+    }
+    root.setProperty('--sa-l', notchLeft ? `${side}px` : '0px');
+    root.setProperty('--sa-r', notchLeft ? '0px' : `${side}px`);
+  }
   root.setProperty('--sa-t', `${t}px`);
 }
 
@@ -97,13 +106,13 @@ export function watchViewport(): void {
   effect(() => {
     document.documentElement.classList.toggle('mobile', isMobile.value);
   });
-  // "Avoid Notch": inset the app past the safe area (CSS keys off .safe-area). Mobile-only —
-  // the env() insets are 0 on desktop anyway, but gating keeps <html> clean.
+  // "Avoid Notch": inset gameplay past the safe area (CSS keys off .safe-area). Mobile-only.
+  // Re-applies the inset vars when the mode OR the viewport changes (env insets are 0 on
+  // desktop anyway, but gating the class keeps <html> clean).
   effect(() => {
-    document.documentElement.classList.toggle(
-      'safe-area',
-      isMobile.value && getVal('gfx.safeArea') === 1,
-    );
+    const on = isMobile.value && getVal('gfx.safeArea') > 0;
+    document.documentElement.classList.toggle('safe-area', on);
+    applyNotchInset(); // recompute --sa-* for the current mode (single vs symmetric)
   });
 }
 

@@ -566,12 +566,15 @@ async function main(): Promise<void> {
       fxCtx.clearRect(0, 0, fx.width, fx.height);
       // The world is authored in the controller's fixed LOGICAL space and presented
       // stretched to fill the GAME CONTAINER (window minus the HUD). Map logical→container
-      // so badges/damage numbers line up with the presented world — using the container
-      // size, NOT the full-window FX canvas (which also spans the HUD region below).
+      // so badges/damage numbers line up with the presented world — using the container's
+      // live viewport RECT (offset + size), so an Avoid-Notch inset (the container shifted
+      // in from the notch) moves the overlay with it instead of leaving it at the edge.
+      const cr = container.getBoundingClientRect();
       fxCtx.save();
+      fxCtx.translate(cr.left, cr.top);
       fxCtx.scale(
-        container.clientWidth / gameController.getViewWidth(),
-        container.clientHeight / gameController.getViewHeight(),
+        cr.width / gameController.getViewWidth(),
+        cr.height / gameController.getViewHeight(),
       );
       gameController.drawOverlay(fxCtx);
       fxCtx.restore();

@@ -612,7 +612,8 @@ export const en: Strings = {
       },
       safeArea: {
         label: 'Avoid Notch',
-        tip: 'Inset the game past the notch / Dynamic Island (a black strip covers it)',
+        tip: 'Inset gameplay past the notch: Notch Side only, or Both Sides (also clears the opposite rounded corner — easier to see wind / reach FIRE)',
+        options: ['OFF', 'Notch Side', 'Both Sides'],
       },
       showTurn: {label: 'Show Turn', tip: 'Display an arrow when its your turn'},
       blastCircles: {label: 'Show Blast Circles', tip: 'Display bounds of explosions'},

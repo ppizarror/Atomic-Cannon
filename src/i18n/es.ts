@@ -635,11 +635,12 @@ export const es: Strings = {
       mobileHud: {
         label: 'HUD Táctil',
         tip: 'Controles táctiles compactos: Auto (en pantallas pequeñas/bajas), Sí (siempre) o No',
-        options: ['Auto', 'Sí', 'No'],
+        options: ['Auto', 'SI', 'NO'],
       },
       safeArea: {
         label: 'Evitar Notch',
-        tip: 'Aparta el juego del notch / Isla Dinámica (una franja negra lo cubre)',
+        tip: 'Aparta el juego del notch: solo el Lado del Notch, o Ambos Lados (también libera la esquina redondeada opuesta)',
+        options: ['NO', 'Lado del Notch', 'Ambos Lados'],
       },
       showTurn: {label: 'Mostrar Turno', tip: 'Muestra una flecha cuando es tu turno'},
       blastCircles: {

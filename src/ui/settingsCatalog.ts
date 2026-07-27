@@ -73,7 +73,7 @@ const CATALOG = {
   'gfx.teamColor': {default: true},
   'gfx.smallBuy': {default: false},
   'gfx.mobileHud': {default: 0}, // touch HUD: 0 Auto (size detection) · 1 On · 2 Off
-  'gfx.safeArea': {default: true}, // mobile: inset the app past the notch/Dynamic Island
+  'gfx.safeArea': {default: 1}, // mobile notch inset: 0 Off · 1 Notch side only · 2 Both sides (symmetric — clears both rounded corners)
   'gfx.showTurn': {default: true},
   'gfx.blastCircles': {default: false},
   'gfx.showPoints': {default: true},

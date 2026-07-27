@@ -191,12 +191,6 @@ canvas {
   height: calc(100dvh - var(--hud-h) - var(--sa-t, 0px));
 }
 
-:root.safe-area #fx-overlay {
-  inset: var(--sa-t, 0px) var(--sa-r, 0px) 0 var(--sa-l, 0px);
-  width: auto;
-  height: auto;
-}
-
 :root.safe-area #mhud,
 :root.safe-area #hud {
   left: var(--sa-l, 0px);
