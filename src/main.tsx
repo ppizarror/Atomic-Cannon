@@ -265,7 +265,7 @@ async function main(): Promise<void> {
       const p = !pausedSignal.value;
       gameController.setPaused(p);
       gameController.getAudio()?.setDebugSilenced(p); // debug freeze halts ALL audio — music + UI too
-      pausedSignal.value = p; // freeze DOM FX (HUD ripple) too
+      pausedSignal.value = p; // freeze DOM FX (HUD ripple); also blocks the HUD (paused → no act)
       return;
     }
 

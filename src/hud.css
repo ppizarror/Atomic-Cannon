@@ -10,7 +10,7 @@
      Everything that stacks reads from here so the ordering is legible in one place. */
   --z-hud: 10; /* HUD bar, battle status, turn indicator */
   --z-hud-fx: 12; /* foreground FX canvas (particles/badges) — ABOVE the HUD bar */
-  --z-mhud: 14; /* mobile HUD bar + sheets — ABOVE the FX canvas so tank labels/badges don't bleed over the touch controls */
+  --z-mhud: 14; /* mobile bottom-SHEETS (weapon/power/angle) — ABOVE the FX canvas so tank labels/badges don't bleed over an open sheet (the bar itself stays at --z-hud) */
   --z-flight: 15; /* jet-flight indicator */
   --z-overlay: 20; /* generic full-screen overlays (placeholder) */
   --z-depot: 21; /* weapons depot */
@@ -2603,8 +2603,9 @@ canvas {
   right: 0;
   bottom: 0;
   height: var(--hud-h);
-  /* above the FX overlay so tank labels/badges never bleed over the touch controls */
-  z-index: var(--z-mhud);
+  /* SAME layer as the desktop HUD: below the FX overlay, so a tank at the bottom of the
+     screen shows its life-bar/stats/name over the bar (the sheets stay above — see below). */
+  z-index: var(--z-hud);
   display: flex;
   flex-direction: column;
   /* the real HUD filler metal (clear grey), same as the desktop bar */
@@ -3021,4 +3022,27 @@ canvas {
 
 .install-x:active {
   background: rgba(255, 255, 255, 0.14);
+}
+
+/* Top-right wind readout (mobile) — a plain crisp text line, same corner/style as the
+   FPS / frame counters. Sits at the top; the FPS/FRAME counters shift down below it on
+   mobile (see below) so nothing overlaps. Clear of the notch via the safe-area vars. */
+.mwind {
+  position: fixed;
+  top: calc(8px + var(--sa-t, 0px));
+  right: calc(10px + var(--sa-r, 0px));
+  z-index: var(--z-hud);
+  pointer-events: none;
+}
+
+/* Stack the dev FPS / frame counters BELOW the wind readout on mobile (and clear the
+   notch), so the always-on wind line never occludes them. */
+.mobile #fps-hud {
+  top: calc(30px + var(--sa-t, 0px));
+  right: calc(10px + var(--sa-r, 0px));
+}
+
+.mobile #frame-hud {
+  top: calc(52px + var(--sa-t, 0px));
+  right: calc(10px + var(--sa-r, 0px));
 }

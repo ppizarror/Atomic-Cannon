@@ -22,9 +22,11 @@ import {strings} from '../i18n';
 import {
   power,
   angle,
+  wind,
   weaponIndex,
   weapons,
   blocked,
+  paused,
   canBuyNow,
   battleStatus,
   turnTimer,
@@ -178,10 +180,14 @@ function MobileBar() {
 
         <StatusCluster />
 
+        {/* The menu (X) stays available during a bot's turn (unlike the greyed controls),
+            so you can always pause — EXCEPT under the Ctrl/Cmd+P frame-test freeze, which
+            blocks everything (paused → canAct() false, and this greys X to match). */}
         <Btn
-          cls="mmenu"
+          cls={`mmenu${paused.value ? ' blocked' : ''}`}
           text="X"
           title={h.menu}
+          disabled={paused.value}
           onClick={() => {
             closeSheet();
             openPauseMenu();
@@ -316,9 +322,25 @@ function Sheet() {
   );
 }
 
+// Top-right wind readout — the mobile HUD has no room for the desktop wind dial, so this
+// shows the same `wind` signal as a plain crisp text line (native size, no scaling), in the
+// same style/corner as the FPS / frame counters: "Wind >N.N" (direction as ›/‹, magnitude).
+function MobileWind() {
+  const h = strings.value.hud;
+  const w = wind.value;
+  const mag = Math.abs(w);
+  const txt = mag < 0.05 ? h.windOff : `${w >= 0 ? '>' : '<'}${mag.toFixed(1)}`;
+  return (
+    <div class="mwind">
+      <BmpText font="beijing-16-out" spacing={-1} text={`${h.wind} ${txt}`} />
+    </div>
+  );
+}
+
 export function MobileHud() {
   return (
     <>
+      <MobileWind />
       <Sheet />
       <MobileBar />
     </>
