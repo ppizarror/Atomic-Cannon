@@ -160,8 +160,9 @@ export interface Strings {
     stats: {
       title: string;
       unavailable: string;
-      games: string;
-      onlineGames: string;
+      wars: string;
+      onlineWars: string;
+      battles: string;
       tanksDestroyed: string;
       weaponsFired: string;
       shotsFired: string;
@@ -170,7 +171,7 @@ export interface Strings {
       terrainCarved: string;
       creditsSpent: string;
       playTime: string;
-      longestGame: string;
+      longestWar: string;
       byCountry: string;
       mapEmpty: string;
     };

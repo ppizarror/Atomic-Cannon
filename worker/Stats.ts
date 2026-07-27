@@ -1,16 +1,18 @@
 /**
  * Stats — ONE global Durable Object (named "global") that holds the aggregate play counters and the
- * per-country game tally shown on the About screen. A single DO gives atomic read-modify-write, so
- * concurrent match-finish POSTs never lose an increment (unlike KV). No IPs / personal data are
- * stored — only summed counters and a 2-letter country → games map.
+ * per-country war tally shown on the About screen. A single DO gives atomic read-modify-write, so
+ * concurrent battle-end POSTs never lose an increment (unlike KV). No IPs / personal data are
+ * stored — only summed counters and a 2-letter country → wars map.
  *
  * The front-door worker forwards `POST /api/stats` here (stamped with the edge country) and serves
- * `GET /api/stats` from here. All numeric deltas are re-clamped server-side (never trust the client),
- * and `games` is server-controlled (+1 per accepted POST), so the worst a bad actor can do is add a
- * few games at the per-IP rate limit — approximate-by-design, like any public unauthenticated counter.
+ * `GET /api/stats` from here. Clients upload INCREMENTALLY (as each battle ends, and once more when
+ * the war does), so every number arrives from the client and every one is re-clamped server-side
+ * (never trust the client) — the worst a bad actor can do is add a few wars at the per-IP rate
+ * limit, approximate-by-design like any public unauthenticated counter.
  */
 import {
   type StatsSnapshot,
+  type StatsTotals,
   type StatsDelta,
   type StatsDeltaNums,
   EMPTY_TOTALS,
@@ -21,9 +23,10 @@ interface Env {
   STATS: DurableObjectNamespace;
 }
 
-/** Map a delta's numeric field to the totals field it accumulates into (all share a name except the
- *  duration, which the DO routes into playTimeSec + longestGameSec separately). */
-const SUM_FIELDS: Exclude<keyof StatsDeltaNums, 'gameSec'>[] = [
+/** Delta fields that simply add into the same-named total. The two durations are the exception:
+ *  `playSec` accumulates into playTimeSec and `warSec` maxes into longestWarSec. */
+const SUM_FIELDS: Exclude<keyof StatsDeltaNums, 'playSec' | 'warSec' | 'wars'>[] = [
+  'battles',
   'weaponsFired',
   'shotsFired',
   'tanksDestroyed',
@@ -46,8 +49,19 @@ const normCountry = (c: string | null | undefined): string =>
 export class Stats {
   constructor(private readonly ctx: DurableObjectState) {}
 
+  /** The stored aggregate, normalised against EMPTY_TOTALS: a counter the stored blob predates
+   *  (or one holding garbage) reads as 0 rather than undefined, and a counter it still carries from
+   *  an older shape is dropped. Arithmetic on the result is always finite. */
   private async load(): Promise<StatsSnapshot> {
-    return (await this.ctx.storage.get<StatsSnapshot>('stats')) ?? freshSnapshot();
+    const raw = await this.ctx.storage.get<Partial<StatsSnapshot>>('stats');
+    if (!raw) return freshSnapshot();
+    const stored = (raw.totals ?? {}) as Record<string, unknown>;
+    const totals = {...EMPTY_TOTALS};
+    for (const k of Object.keys(EMPTY_TOTALS) as (keyof StatsTotals)[]) {
+      const n = Number(stored[k]);
+      if (Number.isFinite(n) && n > 0) totals[k] = n;
+    }
+    return {totals, countries: {...raw.countries}, updated: raw.updated ?? 0};
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -73,12 +87,14 @@ export class Stats {
     await this.ctx.blockConcurrencyWhile(async () => {
       const s = await this.load();
       const t = s.totals;
-      t.games += 1; // server-controlled — one game per accepted POST
-      if (delta.online) t.onlineGames += 1;
+      // `wars` (and the country tally, and onlineWars) only move on the flush that CLOSES a war —
+      // the per-battle flushes that precede it carry wars:0 and just add play.
+      t.wars += delta.wars;
+      if (delta.online) t.onlineWars += delta.wars;
       for (const f of SUM_FIELDS) t[f] += delta[f];
-      t.playTimeSec += delta.gameSec;
-      t.longestGameSec = Math.max(t.longestGameSec, delta.gameSec);
-      s.countries[country] = (s.countries[country] ?? 0) + 1;
+      t.playTimeSec += delta.playSec;
+      t.longestWarSec = Math.max(t.longestWarSec, delta.warSec);
+      if (delta.wars > 0) s.countries[country] = (s.countries[country] ?? 0) + delta.wars;
       s.updated = Date.now();
       await this.ctx.storage.put('stats', s);
     });

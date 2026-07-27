@@ -17,7 +17,7 @@ import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
 import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
-import {postGameStats} from '../net/stats';
+import {initStatsUpload, flushStats} from './statsUpload';
 import {wrapIndex} from '../math/num';
 import {knockoutWhere, makeCanvas2d} from '../util/canvas';
 
@@ -288,6 +288,9 @@ export function closeSettings(): void {
 export function goToMenu(): void {
   showPause.value = false;
   screen.value = 'menu';
+  // Bank whatever was played since the last round boundary BEFORE the teardown below drops the
+  // tanks — quitting mid-battle still counts the shots that were fired.
+  void flushStats();
   // Tear the battle DOWN (not just freeze it): isStarted() → false, so the sim/redraw/HUD all
   // short-circuit like the boot title screen — no tanks keep playing and the scene is cleared. Also
   // stops any tank-drive / jet loop.
@@ -699,13 +702,11 @@ export function advanceWar(): void {
   warStandings.value = null;
   uiClick();
   game().clearTaunts(); // drop the victor's bubble before leaving the standings
-  if (s.warOver) {
-    // War over: record every team on the Battle Heroes boards before leaving.
-    submitBattleHeroes(game().getBattleHeroes());
-    // Fire-and-forget the anonymous global play stats (one uploader per net match; always in solo).
-    if (game().isStatsUploader()) void postGameStats(game().getMatchStats());
-    goToMenu();
-  } else game().nextBattle();
+  // Nothing is RECORDED here any more: the Battle Heroes boards and the global counters are both
+  // written the moment the war ends (see the stats hook in setController), not when the player
+  // finally clicks past the standings — leaving that screen open used to throw the match away.
+  if (s.warOver) goToMenu();
+  else game().nextBattle();
 }
 export const screenFlash = signal(0); // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff'); // flash tint (the bomb's colour)
@@ -763,6 +764,13 @@ let controller: CGameController | null = null;
 export function setController(c: CGameController): void {
   controller = c;
   weapons.value = c.getWeaponDefs() as WeaponDef[];
+  initStatsUpload(c);
+  // Every completed round / battle / war banks its play in the global counters, and the war-closing
+  // one also writes the Battle Heroes boards. Both used to wait for a click on the standings screen.
+  c.setStatsListener(closed => {
+    if (closed.warOver) submitBattleHeroes(c.getBattleHeroes());
+    void flushStats(closed);
+  });
 }
 
 export function game(): CGameController {

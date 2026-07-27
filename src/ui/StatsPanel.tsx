@@ -127,8 +127,9 @@ export function StatsPanel() {
     <div class="stat-panel">
       {t ? (
         <div class="stat-grid">
-          <Row label={c.games} value={nf(t.games)} />
-          <Row label={c.onlineGames} value={nf(t.onlineGames)} />
+          <Row label={c.wars} value={nf(t.wars)} />
+          <Row label={c.onlineWars} value={nf(t.onlineWars)} />
+          <Row label={c.battles} value={nf(t.battles)} />
           <Row label={c.tanksDestroyed} value={nf(t.tanksDestroyed)} />
           <Row label={c.weaponsFired} value={nf(t.weaponsFired)} />
           <Row label={c.shotsFired} value={nf(t.shotsFired)} />
@@ -137,7 +138,7 @@ export function StatsPanel() {
           <Row label={c.terrainCarved} value={nf(t.terrainCarved)} />
           <Row label={c.creditsSpent} value={nf(t.creditsSpent)} />
           <Row label={c.playTime} value={dur(t.playTimeSec)} />
-          <Row label={c.longestGame} value={dur(t.longestGameSec)} />
+          <Row label={c.longestWar} value={dur(t.longestWarSec)} />
         </div>
       ) : (
         <div class="stat-empty">

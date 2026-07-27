@@ -133,8 +133,9 @@ export const en: Strings = {
     stats: {
       title: 'Global Stats',
       unavailable: 'Global stats are offline right now.',
-      games: 'Games played',
-      onlineGames: 'Online games',
+      wars: 'Wars played',
+      onlineWars: 'Online wars',
+      battles: 'Battles played',
       tanksDestroyed: 'Tanks destroyed',
       weaponsFired: 'Weapons fired',
       shotsFired: 'Shots fired',
@@ -143,9 +144,9 @@ export const en: Strings = {
       terrainCarved: 'Craters blasted',
       creditsSpent: 'Credits spent',
       playTime: 'Time played',
-      longestGame: 'Longest game',
-      byCountry: 'Games by country ({n})',
-      mapEmpty: 'No games logged yet',
+      longestWar: 'Longest war',
+      byCountry: 'Wars by country ({n})',
+      mapEmpty: 'No wars logged yet',
     },
     sections: [
       {

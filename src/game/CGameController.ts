@@ -135,6 +135,37 @@ export interface WarStandings {
   warOver: boolean;
 }
 
+/** The running per-match play tallies the global-stat deltas are differenced from (`sec` is the
+ *  match's elapsed play time; the rest mirror the same-named StatsDelta fields). */
+interface MatchStatTally {
+  weaponsFired: number;
+  shotsFired: number;
+  tanksDestroyed: number;
+  damageDealt: number;
+  nukesFired: number;
+  terrainCarved: number;
+  creditsSpent: number;
+  sec: number;
+}
+
+const freshStatTally = (): MatchStatTally => ({
+  weaponsFired: 0,
+  shotsFired: 0,
+  tanksDestroyed: 0,
+  damageDealt: 0,
+  nukesFired: 0,
+  terrainCarved: 0,
+  creditsSpent: 0,
+  sec: 0,
+});
+
+/** The units of progress a stats flush CLOSES — stamped onto the drained delta (see takeStatsDelta).
+ *  A plain `{}` flush (quitting to the menu, leaving the page) banks the play with no progress. */
+export interface StatsFlush {
+  battles?: number; // battles completed by this flush
+  warOver?: boolean; // this flush closes the war (the fireworks) → counts as one finished war
+}
+
 interface LandConfig {
   bg: string;
   ambient: string; // hand-picked mood tint (#rrggbb) for Ambient Lighting — soft-light over the scene
@@ -581,7 +612,7 @@ export class CGameController implements ShotWorld {
     this.m_lastImpactX = 0; // fresh camera focus (no stale prior-match impact)
     this.m_camDwell = 0; // no Cinematic dwell carried across matches
     this.m_impactThisTurn = false; // no carried-over "a blast landed" flag
-    // Fresh per-match stat tally.
+    // Fresh per-match stat tally (and its upload baseline — nothing of this match is banked yet).
     this.m_stats = {
       weaponsFired: 0,
       shotsFired: 0,
@@ -590,6 +621,7 @@ export class CGameController implements ShotWorld {
       terrainCarved: 0,
       creditsSpent: 0,
     };
+    this.m_statsBase = freshStatTally();
     this.m_matchStartTime = this.m_time;
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
@@ -3686,6 +3718,9 @@ export class CGameController implements ShotWorld {
     if (this.m_tanks.some(t => t.isHuman())) {
       this.m_pendingBattleOutcome = humanWon ? 'won' : 'lost';
     }
+    // Bank the battle (and the war, if this was its last) in the global counters RIGHT HERE — the
+    // moment the standings appear. Nothing about the upload waits on the player clicking past them.
+    this.m_onStats?.({battles: 1, warOver: this.getWarOver()});
   }
 
   /** Explode Losers (Graphics): blow up every still-standing tank not on the winning team as the
@@ -5336,9 +5371,10 @@ export class CGameController implements ShotWorld {
     return !this.m_netMode || this.m_netLocalIndex === 0;
   }
 
-  /** This match's play-stat delta for the global counters (uploaded once at match end). damageDealt
-   *  is summed from the tanks' cumulative net damage; the rest are live per-match tallies. */
-  getMatchStats(): StatsDelta {
+  /** The match tallies as they stand right now — the running total the drain differences against.
+   *  damageDealt is summed from the tanks' cumulative net damage; the rest are live per-match
+   *  counters, and `sec` is the whole war's elapsed play time (m_time is monotonic). */
+  private statsSnapshot(): MatchStatTally {
     const damageDealt = this.m_tanks.reduce((sum, t) => sum + Math.max(0, t.getDamageDealt()), 0);
     return {
       weaponsFired: this.m_stats.weaponsFired,
@@ -5348,7 +5384,34 @@ export class CGameController implements ShotWorld {
       nukesFired: this.m_stats.nukesFired,
       terrainCarved: this.m_stats.terrainCarved,
       creditsSpent: this.m_stats.creditsSpent,
-      gameSec: Math.max(0, Math.round(this.m_time - this.m_matchStartTime)),
+      sec: Math.max(0, Math.round(this.m_time - this.m_matchStartTime)),
+    };
+  }
+
+  /** Drain everything played since the last drain into an upload-ready delta, stamped with the
+   *  progress `closed` by this flush. Incremental by design: the uploader banks each battle as it
+   *  ends, so a quit / a closed tab / a lost connection only ever risks the battle in play (the old
+   *  one-lump-at-the-end upload lost the entire match). Every field is a difference against the
+   *  previous drain and floored at 0, so a between-battle respawn (tank damage resets) can never
+   *  produce a negative. Safe to call from any client — a non-uploader simply discards the result. */
+  takeStatsDelta(closed: StatsFlush = {}): StatsDelta {
+    const cur = this.statsSnapshot();
+    const base = this.m_statsBase;
+    const since = (k: Exclude<keyof MatchStatTally, 'sec'>): number =>
+      Math.max(0, cur[k] - base[k]);
+    this.m_statsBase = cur;
+    return {
+      wars: closed.warOver ? 1 : 0,
+      battles: Math.max(0, Math.round(closed.battles ?? 0)),
+      weaponsFired: since('weaponsFired'),
+      shotsFired: since('shotsFired'),
+      tanksDestroyed: since('tanksDestroyed'),
+      damageDealt: since('damageDealt'),
+      nukesFired: since('nukesFired'),
+      terrainCarved: since('terrainCarved'),
+      creditsSpent: since('creditsSpent'),
+      playSec: Math.max(0, cur.sec - base.sec),
+      warSec: closed.warOver ? cur.sec : 0, // "longest war" spans every battle, not just this flush
       online: this.m_netMode,
     };
   }
@@ -6117,6 +6180,13 @@ export class CGameController implements ShotWorld {
     this.m_onImpact = cb;
   }
 
+  /** Register the global-stats hook: called as each battle (and the war it closes) completes so the
+   *  UI can drain (takeStatsDelta) and upload the play banked so far. Fires on EVERY client in a net
+   *  match; the UI decides who actually uploads (isStatsUploader). */
+  setStatsListener(cb: (closed: StatsFlush) => void): void {
+    this.m_onStats = cb;
+  }
+
   /** Weapon-test mode (?weapontest=1): the AI never takes a turn and the human's
    *  shot timer is disabled, so weapons can be fired back-to-back indefinitely. */
   setWeaponTest(on: boolean): void {
@@ -6274,8 +6344,9 @@ export class CGameController implements ShotWorld {
   // authoritative snapshot does the real damage/terrain); never carve or hit.
   private m_ghostShots: CShot[] = [];
 
-  // Per-match play-stat tallies (uploaded once at match end for the global About counters). Reset in
-  // startGame; in a net match every client tallies (all simulate every shot) but only ONE uploads.
+  // Per-match play-stat tallies (uploaded INCREMENTALLY for the global About counters — see
+  // takeStatsDelta). Reset in startGame; in a net match every client tallies (all simulate every
+  // shot) but only ONE uploads.
   private m_stats = {
     weaponsFired: 0, // fire actions committed
     shotsFired: 0, // individual projectiles/rounds launched
@@ -6284,6 +6355,10 @@ export class CGameController implements ShotWorld {
     terrainCarved: 0, // ground-carving blasts (craters)
     creditsSpent: 0, // depot spend
   };
+  // The tallies as of the last stats drain — everything past this has yet to be uploaded.
+  private m_statsBase: MatchStatTally = freshStatTally();
+  // Fired when a unit of progress completes (round / battle / war) so the UI can bank the delta.
+  private m_onStats: ((closed: StatsFlush) => void) | null = null;
   private m_matchStartTime = 0; // m_time captured at startGame → this match's play seconds
   // The single GAMEPLAY random stream — seeded per match so a shot resolves identically
   // on every client (lockstep). Cosmetic randomness (particles/weather/taunts) stays on

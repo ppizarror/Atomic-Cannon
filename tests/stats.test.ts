@@ -1,12 +1,14 @@
 /**
- * Global play stats: the per-match delta is clamped (client + server share sanitizeDelta), the
- * controller tallies fires/spend per match, and only the right client uploads (solo always; in a
- * net match only localIndex 0, never a spectator). Country flag emoji derive from the ISO code.
+ * Global play stats: the incremental delta is clamped (client + server share sanitizeDelta), the
+ * controller drains only what's new since the last flush, and only the right client uploads (solo
+ * always; in a net match only localIndex 0, never a spectator). Flag emoji derive from the ISO code.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
-import {CGameController, EGameType} from '../src/game/CGameController';
-import {sanitizeDelta, STAT_CAPS} from '../src/net/stats';
+import {CGameController, EGameType, type StatsFlush} from '../src/game/CGameController';
+import {Roster} from '../src/core/CRoster';
+import type {CTank} from '../src/core/CTank';
+import {sanitizeDelta, STAT_CAPS, emptyDelta, isEmptyDelta, mergeDelta} from '../src/net/stats';
 import {flagEmoji, countryName} from '../src/ui/worldGeo';
 
 const ROSTER = [
@@ -60,14 +62,14 @@ describe('stats delta sanitize', () => {
       shotsFired: 1e12,
       tanksDestroyed: 3.9,
       damageDealt: NaN,
-      gameSec: 100,
+      playSec: 100,
       online: true,
     });
     expect(d.weaponsFired).toBe(0); // negative → 0
     expect(d.shotsFired).toBe(STAT_CAPS.shotsFired); // over cap → cap
     expect(d.tanksDestroyed).toBe(3); // floored
     expect(d.damageDealt).toBe(0); // NaN → 0
-    expect(d.gameSec).toBe(100);
+    expect(d.playSec).toBe(100);
     expect(d.online).toBe(true);
   });
 
@@ -76,6 +78,23 @@ describe('stats delta sanitize', () => {
     expect(d.shotsFired).toBe(0);
     expect(d.creditsSpent).toBe(0);
     expect(d.online).toBe(false);
+  });
+
+  it('a fresh delta is empty; any progress or play makes it worth sending', () => {
+    expect(isEmptyDelta(emptyDelta())).toBe(true);
+    expect(isEmptyDelta({...emptyDelta(), battles: 1})).toBe(false);
+    expect(isEmptyDelta({...emptyDelta(), shotsFired: 3})).toBe(false);
+  });
+
+  it('merging a failed upload back in sums the play but keeps longest-war a max', () => {
+    const a = {...emptyDelta(), battles: 1, shotsFired: 4, playSec: 30, warSec: 300};
+    const b = {...emptyDelta(), battles: 2, shotsFired: 5, playSec: 20, warSec: 100, online: true};
+    const m = mergeDelta(a, b);
+    expect(m.battles).toBe(3);
+    expect(m.shotsFired).toBe(9);
+    expect(m.playSec).toBe(50); // play time accumulates
+    expect(m.warSec).toBe(300); // "longest" is a max, never a sum
+    expect(m.online).toBe(true);
   });
 });
 
@@ -87,14 +106,73 @@ describe('controller match stats', () => {
     gc.setAngle(45);
     gc.setPower(600);
 
-    const before = gc.getMatchStats();
+    gc.takeStatsDelta(); // drain the match-start baseline
     gc.fire();
-    const after = gc.getMatchStats();
+    const after = gc.takeStatsDelta();
 
-    expect(after.weaponsFired).toBe(before.weaponsFired + 1);
+    expect(after.weaponsFired).toBe(1);
     expect(after.shotsFired).toBeGreaterThanOrEqual(after.weaponsFired); // ≥1 projectile per fire
     expect(after.online).toBe(false);
     expect(gc.isStatsUploader()).toBe(true); // solo always uploads
+  });
+
+  it('each drain reports only what is new — the same shot is never uploaded twice', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.startGame(2);
+    gc.setAngle(45);
+    gc.setPower(600);
+    gc.fire();
+
+    const first = gc.takeStatsDelta({battles: 1});
+    expect(first.weaponsFired).toBe(1);
+    expect(first.battles).toBe(1);
+    expect(first.wars).toBe(0); // a mid-war battle flush never closes the war
+
+    const second = gc.takeStatsDelta();
+    expect(second.weaponsFired).toBe(0); // already banked
+    expect(second.battles).toBe(0);
+  });
+
+  it('a war-closing flush counts one war and reports the whole war duration', () => {
+    const gc = new CGameController(makeCanvas());
+    gc.startGame(2);
+    const d = gc.takeStatsDelta({battles: 1, warOver: true});
+    expect(d.wars).toBe(1);
+    expect(d.battles).toBe(1);
+    expect(d.warSec).toBeGreaterThanOrEqual(0);
+    expect(gc.takeStatsDelta().wars).toBe(0); // and only that one flush counts it
+  });
+
+  it('a finished battle banks the match immediately — no click on the standings', () => {
+    Roster.players = [];
+    const gc = new CGameController(makeCanvas());
+    gc.setGameType(EGameType.Deathmatch);
+    gc.setTotalBattles(1); // one battle = the whole war
+    gc.startGame(2);
+    const flushes: StatsFlush[] = [];
+    gc.setStatsListener(f => flushes.push(f));
+
+    const tanks = (gc as unknown as {m_tanks: CTank[]; endTurn(): void}).m_tanks;
+    tanks[1].hit(999999); // one team left → the battle (and the war) ends
+    (gc as unknown as {endTurn(): void}).endTurn();
+
+    expect(flushes).toContainEqual({battles: 1, warOver: true});
+  });
+
+  it('an unfinished war banks the battle but not the war', () => {
+    Roster.players = [];
+    const gc = new CGameController(makeCanvas());
+    gc.setGameType(EGameType.Deathmatch);
+    gc.setTotalBattles(3); // battle 1 of 3 — the war goes on
+    gc.startGame(2);
+    const flushes: StatsFlush[] = [];
+    gc.setStatsListener(f => flushes.push(f));
+
+    const tanks = (gc as unknown as {m_tanks: CTank[]}).m_tanks;
+    tanks[1].hit(999999);
+    (gc as unknown as {endTurn(): void}).endTurn();
+
+    expect(flushes).toContainEqual({battles: 1, warOver: false});
   });
 
   it('startGame resets the per-match tally', () => {
@@ -103,9 +181,8 @@ describe('controller match stats', () => {
     gc.setAngle(45);
     gc.setPower(600);
     gc.fire();
-    expect(gc.getMatchStats().weaponsFired).toBeGreaterThan(0);
-    gc.startGame(2); // fresh match
-    expect(gc.getMatchStats().weaponsFired).toBe(0);
+    gc.startGame(2); // fresh match — the un-drained tally goes with it
+    expect(gc.takeStatsDelta().weaponsFired).toBe(0);
   });
 
   it('in a net match only localIndex 0 uploads; a spectator never does', () => {
