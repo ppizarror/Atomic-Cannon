@@ -5,9 +5,12 @@
  * (weapon name / player name) over **content** (the description / the taunt line).
  *
  * The Tooltip owns its fonts and line breaking (callers pass plain strings), and — in
- * ANCHORED mode — its own on-screen placement: given the viewport point its tail should
- * aim at, it positions itself, clamps to stay fully on screen (a margin from the edges),
- * and slides the tail so it keeps pointing at the target. Otherwise it's a plain box a
+ * ANCHORED mode — its own on-screen placement: given the point its tail should aim at,
+ * it positions itself, clamps to stay fully inside its bounds (the viewport by default,
+ * a margin from the edges), and slides the tail so it keeps pointing at the target.
+ * The tail wins over the clamp: once the target moves so far out that the box could no
+ * longer point at it, the box travels WITH the target (off the edge, for the caller's
+ * clip layer to crop) rather than sticking to the edge. Otherwise it's a plain box a
  * caller positions via a wrapper (the tail sits at `tailLeft`).
  *
  * The frame + tail share ONE translucency group (`.tooltip-frame`, `opacity`) so they
@@ -73,6 +76,7 @@ export function Tooltip({
   anchorX,
   anchorY,
   anchorClass,
+  bounds,
   fade = 1,
 }: {
   title: string;
@@ -85,12 +89,16 @@ export function Tooltip({
   opacity?: number;
   /** Grow-from-centre "pop" as it appears. Show-only — instant removal. */
   animated?: boolean;
-  /** ANCHORED mode: the viewport x/y the tail tip should aim at. When set, the Tooltip
-   *  positions AND edge-clamps itself; the tail slides to stay on the target. */
+  /** ANCHORED mode: the x/y the tail tip should aim at, in the coordinate space of the
+   *  anchor's containing block (the viewport unless the caller supplies one). When set,
+   *  the Tooltip positions AND edge-clamps itself; the tail slides to stay on the target. */
   anchorX?: number;
   anchorY?: number;
   /** Extra class on the anchored wrapper (e.g. to raise its z-index above the depot). */
   anchorClass?: string;
+  /** The horizontal band the box is clamped into (same space as `anchorX`). Defaults to
+   *  the viewport — pass the scene rect when the anchor is scene-relative. */
+  bounds?: {left: number; right: number};
   /** Whole-bubble fade multiplier for anchored mode (e.g. a taunt dying out). */
   fade?: number;
 }) {
@@ -115,8 +123,14 @@ export function Tooltip({
   let left = (anchorX ?? 0) - TAIL_HOME;
   let resolvedTail = tailLeft;
   if (anchored && w > 0) {
-    const viewW = window.innerWidth;
-    left = clamp(anchorX! - TAIL_HOME, MARGIN, viewW - MARGIN - w);
+    const lo = (bounds?.left ?? 0) + MARGIN;
+    const hi = (bounds?.right ?? window.innerWidth) - MARGIN - w;
+    // The tail must stay inside the box, which pins `left` to a band around the anchor.
+    // Applying it AFTER the edge-clamp is what makes the box follow a target that has
+    // left the bounds (camera scrolling the speaker off) instead of parking at the edge.
+    const tailLo = anchorX! - (w - TAIL_MIN);
+    const tailHi = anchorX! - TAIL_MIN;
+    left = clamp(clamp(anchorX! - TAIL_HOME, lo, hi), tailLo, tailHi);
     resolvedTail = `${clamp(anchorX! - left, TAIL_MIN, w - TAIL_MIN)}px`;
   }
 

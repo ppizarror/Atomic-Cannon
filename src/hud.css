@@ -629,10 +629,23 @@ canvas {
   opacity: 0.85;
 }
 
+/* ---- Taunt bubble clip box --------------------------------------------------
+   Sized inline to the scene rect. `contain: paint` does two jobs: it CROPS the
+   bubbles at the scene edge (so one whose speaker the camera has scrolled past
+   slides off instead of sticking), and it makes this the containing block for
+   their fixed anchors — so the Tooltip's inline left/top are scene-relative. */
+.taunt-layer {
+  position: fixed;
+  contain: paint;
+  pointer-events: none;
+  z-index: var(--z-hud);
+}
+
 /* ---- Anchored tooltip (taunt bubble) ---------------------------------------
-   The Tooltip positions ITSELF here: `left`/`top` are set inline (viewport px,
-   edge-clamped, tail slid to stay on the tank), and the box rises from that
-   bottom-left anchor with the tail tip at (left+tail, top). Pointer-transparent. */
+   The Tooltip positions ITSELF here: `left`/`top` are set inline (px in its
+   containing block, edge-clamped, tail slid to stay on the tank), and the box
+   rises from that bottom-left anchor with the tail tip at (left+tail, top).
+   Pointer-transparent. */
 .tooltip-anchor {
   position: fixed;
   z-index: var(--z-hud);
