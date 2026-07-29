@@ -59,7 +59,7 @@ import {useAsyncImage} from './useAsyncImage';
 // Measured off a gridded render of the 640x120 panel.
 const R = {
   // Extents measured directly from the gui.bmp pixels (button faces + black boxes).
-  list: [0.9, 11.7, 29.1, 70.8],
+  list: [1, 11.7, 29.1, 70.8],
   up: [30.8, 12, 3.5, 18],
   down: [30.8, 63, 3.5, 18],
   plus: [38.3, 16, 4.6, 19],

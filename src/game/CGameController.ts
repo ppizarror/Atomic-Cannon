@@ -225,6 +225,12 @@ const sentryMachineGunIndex = (): number => {
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
 
+// Opening aim range (UI degrees) drawn per tank at each battle start: the whole upward half-circle,
+// 0 = flat right through 90 = straight up to 180 = flat left. Below-horizon aim (181..359) is
+// excluded — a tank would open the battle pointing into the ground.
+const START_AIM_MIN = 0;
+const START_AIM_MAX = 180;
+
 // DEATH-class weapon indices (Six Under, Burial Mound, Cremation, Ashes, Toxic Grave), in database
 // order. When a tank is destroyed while it still OWNS one of these, the FIRST is detonated on the
 // corpse (posthumous "cook-off"). Memoised — the database is immutable after load.
@@ -724,6 +730,7 @@ export class CGameController implements ShotWorld {
       if (s.model) pTank.setTankType(s.model);
       pTank.init(this.tankSpawnX(slots[i], n), this.m_land);
       pTank.setHuman(s.human);
+      this.randomizeStartAim(pTank); // its own opening aim, not a shared 45°
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
       // Starting purse scales with squad size: each tank begins with `perTeam × CreditStart`
       // (the original seeds every member this way, and team-pooling shares one balance, so a
@@ -3539,6 +3546,19 @@ export class CGameController implements ShotWorld {
     return slots;
   }
 
+  /** Give `tank` its opening aim: a random angle over the upward half-circle (0 = flat right,
+   *  90 = straight up, 180 = flat left), so a battle doesn't start with every barrel frozen at the
+   *  same 45°. Drawn from the SEEDED match RNG, so a network match opens identically on every
+   *  client. The turret sprite and the last-shot fields follow the draw — the panel's Reset button
+   *  is documented to return to the starting aim before the first shot, so it must not snap back to
+   *  a 45° the tank never held. */
+  private randomizeStartAim(tank: CTank): void {
+    const deg = this.m_rng.rangeInt(START_AIM_MIN, START_AIM_MAX);
+    tank.setAimAngle(deg);
+    tank.setTurretAngle(deg);
+    tank.saveLastShot(deg, tank.getPower());
+  }
+
   private tankSpawnX(i: number, n: number): number {
     const worldW = this.m_worldWidth;
     const margin = 120;
@@ -3581,6 +3601,7 @@ export class CGameController implements ShotWorld {
     const slots = this.spawnSlots(n); // a FRESH scatter each battle (identity when the option is off)
     this.m_tanks.forEach((t, i) => {
       t.respawn(this.tankSpawnX(slots[i], n), this.m_land);
+      this.randomizeStartAim(t); // a fresh opening aim each battle, like the fresh terrain/positions
       t.setWeaponIndex(this.m_currentWeaponIndex);
       t.setCanBuy(true); // Buy Time: depot re-opens at each battle's start
     });
