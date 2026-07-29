@@ -38,6 +38,16 @@ export const es: Strings = {
     off: 'NO',
   },
 
+  meta: {
+    title: 'Atomic Cannon — Juego de Artillería por Turnos, Recreado para la Web',
+    description:
+      'Recreación para navegador de Atomic Cannon, el clásico duelo de artillería por turnos ' +
+      'sobre terreno destructible. Apunta, mide el viento, compra nucleares y gana a bots o amigos.',
+    social:
+      'Un duelo de artillería por turnos sobre terreno destructible. Apunta, mide el viento, ' +
+      'compra nucleares y gana a bots o amigos: el clásico, recreado para el navegador.',
+  },
+
   menu: {
     play: 'Jugar',
     quickPlay: 'Juego Rápido',

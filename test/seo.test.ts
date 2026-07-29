@@ -3,6 +3,9 @@
  * request origin (never a hard-coded host), and index.html carries the static half in the
  * exact shape the Worker's rewriter expects — root-relative canonical/og URLs, description
  * matching SITE_DESCRIPTION, and an og:image path the Vite build actually emits.
+ *
+ * Plus the LIVE half: ui/documentMeta restamps the same tags from the i18n catalog when the
+ * player switches language, so the English entries there must match index.html verbatim.
  */
 import {readFileSync} from 'node:fs';
 import {describe, it, expect} from 'vitest';
@@ -15,6 +18,8 @@ import {
   SITE_DESCRIPTION,
   OG_IMAGE_PATH,
 } from '../src/seo';
+import {availableLocales, stringsFor} from '../src/i18n';
+import {applyDocumentMeta} from '../src/ui/documentMeta';
 
 const ORIGIN = 'https://play.example.com';
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -49,15 +54,19 @@ describe('sitemap.xml', () => {
 });
 
 describe('JSON-LD', () => {
-  it('describes a free, playable browser game with absolute URLs', () => {
+  it('describes a playable browser game with absolute URLs', () => {
     const data = JSON.parse(jsonLd(ORIGIN));
     expect(data['@type']).toBe('VideoGame');
     expect(data.name).toBe(SITE_NAME);
     expect(data.description).toBe(SITE_DESCRIPTION);
     expect(data.url).toBe(`${ORIGIN}/`);
     expect(data.image).toBe(`${ORIGIN}${OG_IMAGE_PATH}`);
-    expect(data.isAccessibleForFree).toBe(true);
-    expect(data.offers.price).toBe('0');
+  });
+
+  it('credits the original instead of claiming to be it, and sells nothing', () => {
+    const data = JSON.parse(jsonLd(ORIGIN));
+    expect(data.isBasedOn.author.name).toBe('Isotope 244');
+    expect(data.offers).toBeUndefined();
   });
 
   it('cannot break out of its <script> element', () => {
@@ -111,5 +120,96 @@ describe('index.html', () => {
 
   it('leaks no deploy hostname', () => {
     expect(html).not.toMatch(/https?:\/\/(?!schema\.org|www\.w3\.org)/);
+  });
+});
+
+/** A <head>-only stand-in for `document` — enough of the API for applyDocumentMeta. */
+function stubDoc() {
+  interface El {
+    attrs: Record<string, string>;
+    setAttribute(k: string, v: string): void;
+    remove(): void;
+  }
+  let els: El[] = [];
+  const match = (sel: string): El[] => {
+    const m = /^meta\[(\w+)="([^"]+)"\]$/.exec(sel);
+    return m ? els.filter(e => e.attrs[m[1]] === m[2]) : [];
+  };
+  const create = (): El => {
+    const e: El = {
+      attrs: {},
+      setAttribute: (k, v) => {
+        e.attrs[k] = v;
+      },
+      remove: () => {
+        els = els.filter(x => x !== e);
+      },
+    };
+    return e;
+  };
+  const doc = {
+    documentElement: {lang: 'en'},
+    title: '',
+    head: {
+      querySelector: (sel: string) => match(sel)[0] ?? null,
+      querySelectorAll: (sel: string) => match(sel),
+      appendChild: (e: El) => els.push(e),
+    },
+    createElement: create,
+  };
+  return {
+    doc: doc as unknown as Document,
+    /** Every `content` for a selector, in document order. */
+    contents: (sel: string): string[] => match(sel).map(e => e.attrs.content),
+  };
+}
+
+describe('document metadata (live locale switch)', () => {
+  it('ships the English catalog copy verbatim in index.html', () => {
+    // Drift guard: a player on English must see exactly what a crawler was served,
+    // and the description doubles as SITE_DESCRIPTION (asserted above).
+    const en = stringsFor('en').meta;
+    expect(en.description).toBe(SITE_DESCRIPTION);
+    expect(/<title>([^<]+)<\/title>/.exec(html)?.[1]).toBe(en.title);
+    expect(tagUrl('property="og:title"')).toBe(en.title);
+    expect(tagUrl('name="twitter:title"')).toBe(en.title);
+    expect(tagUrl('property="og:description"')).toBe(en.social);
+    expect(tagUrl('name="twitter:description"')).toBe(en.social);
+  });
+
+  it('restamps the tab title, lang and share tags when the locale changes', () => {
+    const {doc, contents} = stubDoc();
+    const es = stringsFor('es').meta;
+    applyDocumentMeta(doc, 'es');
+    expect(doc.documentElement.lang).toBe('es');
+    expect(doc.title).toBe(es.title);
+    expect(contents('meta[name="description"]')).toEqual([es.description]);
+    expect(contents('meta[property="og:title"]')).toEqual([es.title]);
+    expect(contents('meta[property="og:description"]')).toEqual([es.social]);
+    expect(contents('meta[name="twitter:description"]')).toEqual([es.social]);
+    expect(contents('meta[property="og:locale"]')).toEqual(['es_ES']);
+    expect(contents('meta[property="og:locale:alternate"]')).toEqual(['en_US']);
+  });
+
+  it('switching back leaves one tag per property (no duplicates piling up)', () => {
+    const {doc, contents} = stubDoc();
+    applyDocumentMeta(doc, 'es');
+    applyDocumentMeta(doc, 'en');
+    expect(doc.documentElement.lang).toBe('en');
+    expect(contents('meta[name="description"]')).toEqual([SITE_DESCRIPTION]);
+    expect(contents('meta[property="og:locale"]')).toEqual(['en_US']);
+    expect(contents('meta[property="og:locale:alternate"]')).toEqual(['es_ES']);
+  });
+
+  it('gives every shipped locale usable head copy', () => {
+    for (const code of availableLocales) {
+      const m = stringsFor(code).meta;
+      expect(m.title.length).toBeGreaterThan(20);
+      expect(m.description.length).toBeGreaterThan(60);
+      // Search engines truncate well before this; a longer one means a run-on paragraph
+      // landed in the snippet slot.
+      expect(m.description.length).toBeLessThanOrEqual(200);
+      expect(m.social.length).toBeGreaterThan(60);
+    }
   });
 });

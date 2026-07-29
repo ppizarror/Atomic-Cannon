@@ -33,8 +33,8 @@ export const DEFAULT_LOCALE: LocaleCode = 'en';
 
 /** Shipped locales in picker order, each with its endonym (name in its own language). */
 export const LOCALES: readonly LocaleInfo[] = [
-  {code: 'en', name: 'English'},
-  {code: 'es', name: 'Español'},
+  {code: 'en', name: 'English', ogLocale: 'en_US'},
+  {code: 'es', name: 'Español', ogLocale: 'es_ES'},
 ];
 
 /** Locale codes the build ships with (catalog keys) — the language picker's options. */
@@ -77,8 +77,15 @@ export function setLocale(code: LocaleCode): void {
   saveJSON(KEY, code);
 }
 
+/** The table for a SPECIFIC locale (the default's, for a code that doesn't ship). Most
+ *  call sites want the reactive `strings` below; this is for the rare consumer that has
+ *  to render a locale other than the active one (e.g. the document-meta stamper). */
+export function stringsFor(code: LocaleCode): Strings {
+  return CATALOG[code] ?? CATALOG[DEFAULT_LOCALE];
+}
+
 /** Reactive string table for the active locale — the one thing the UI reads. */
-export const strings = computed<Strings>(() => CATALOG[locale.value]);
+export const strings = computed<Strings>(() => stringsFor(locale.value));
 
 /** Fill `{token}` placeholders in a template from `vars` (missing tokens are left as-is).
  *  `fmt('Battle {n} of {total}', {n: 2, total: 5})` → "Battle 2 of 5". */

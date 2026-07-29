@@ -37,6 +37,17 @@ export const en: Strings = {
     off: 'OFF',
   },
 
+  // Mirrors the static tags in index.html verbatim (seo.test.ts pins the pair).
+  meta: {
+    title: 'Atomic Cannon — Turn-Based Artillery Game, Recreated for the Web',
+    description:
+      'A browser recreation of Atomic Cannon, the classic turn-based artillery duel on ' +
+      'destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends.',
+    social:
+      'A turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, ' +
+      'and out-shoot bots or friends — the classic, recreated for the browser.',
+  },
+
   menu: {
     play: 'Play',
     quickPlay: 'Quick Play',

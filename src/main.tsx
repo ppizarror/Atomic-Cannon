@@ -15,6 +15,7 @@ import {CPixiCompositor} from './core/rendering/CPixiCompositor';
 import {CAudio} from './audio/CAudio';
 import {App} from './ui/App';
 import {applyGameSettings} from './ui/applySettings';
+import {watchDocumentMeta} from './ui/documentMeta';
 import {resolveAction} from './core/CControls';
 import {bindings} from './ui/controlsStore';
 import {stepWeapon} from './ui/Hud';
@@ -60,6 +61,11 @@ async function main(): Promise<void> {
   // would be sized for the tall desktop bar and then stretched into the shorter
   // mobile container — a permanent vertical blur until the next resize/reload.
   watchViewport();
+
+  // Put the document itself in the player's language (tab title, <html lang>, share
+  // tags) and keep it there across language switches. index.html ships the English
+  // copy for crawlers; this is the live-document half.
+  watchDocumentMeta();
 
   // Offscreen buffer sized to the WORLD area (above the HUD), not the viewport,
   // so the game renders above the HUD rather than behind it.

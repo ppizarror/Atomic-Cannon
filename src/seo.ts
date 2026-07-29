@@ -19,8 +19,8 @@ export const SITE_NAME = 'Atomic Cannon';
  * KEEP IN SYNC with `<meta name="description">` in index.html — test/seo.test.ts asserts it.
  */
 export const SITE_DESCRIPTION =
-  'Play Atomic Cannon free in your browser: a turn-based artillery duel on destructible ' +
-  'terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends.';
+  'A browser recreation of Atomic Cannon, the classic turn-based artillery duel on ' +
+  'destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends.';
 
 /** Social card image (1200x630), served from public/ — see og:image in index.html. */
 export const OG_IMAGE_PATH = '/screenshot.jpg';
@@ -82,7 +82,10 @@ export function sitemapXml(origin: string): string {
 /**
  * schema.org `VideoGame` structured data, as the JSON text for an
  * `<script type="application/ld+json">`. This is what lets a search engine understand the
- * page is a free, playable browser game rather than an empty canvas.
+ * page is a playable browser game rather than an empty canvas.
+ *
+ * No `offers`/pricing here: nothing is being sold. `isBasedOn` states plainly what this is
+ * — an independent recreation of Isotope 244's original, not the original itself.
  *
  * `<` is escaped so the payload can never terminate the surrounding <script> element.
  */
@@ -102,12 +105,10 @@ export function jsonLd(origin: string): string {
     operatingSystem: 'Any (modern web browser)',
     browserRequirements: 'Requires JavaScript and WebGL',
     inLanguage: ['en', 'es'],
-    isAccessibleForFree: true,
-    offers: {
-      '@type': 'Offer',
-      price: '0',
-      priceCurrency: 'USD',
-      availability: 'https://schema.org/InStock',
+    isBasedOn: {
+      '@type': 'VideoGame',
+      name: 'Atomic Cannon',
+      author: {'@type': 'Organization', name: 'Isotope 244'},
     },
   }).replace(/</g, '\\u003c');
 }

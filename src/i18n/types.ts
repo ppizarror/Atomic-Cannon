@@ -59,6 +59,21 @@ export interface Strings {
     off: string;
   };
 
+  // ── Document metadata (browser tab + link previews) ────────────────────────
+  /** The `<head>` copy, restamped on the live document whenever the locale changes
+   *  (ui/documentMeta). index.html ships the ENGLISH copy statically — that's what a
+   *  crawler and a cold share-unfurl see — so the `en` entries here must match it
+   *  verbatim; test/seo.test.ts pins the pair. */
+  meta: {
+    /** `<title>` + og:title + twitter:title. Longer than the bare product name: it's
+     *  the search-result headline, not just a tab label. */
+    title: string;
+    /** `<meta name="description">` — the search-result snippet. */
+    description: string;
+    /** og:description + twitter:description — the shorter share-card line. */
+    social: string;
+  };
+
   // ── Main menu ─────────────────────────────────────────────────────────────
   menu: {
     play: string;
@@ -671,12 +686,14 @@ export interface Strings {
   weapons: Record<string, WeaponCopy>;
 }
 
-/** Metadata for a shipped locale: its code and the name shown in the picker
- *  (in the language's own words). */
+/** Metadata for a shipped locale: its code, the name shown in the picker (in the
+ *  language's own words), and the Open Graph locale tag it maps to. */
 export interface LocaleInfo {
   code: LocaleCode;
   /** Endonym — the language's name in itself (e.g. "English", "Español"). */
   name: string;
+  /** `og:locale` value — language_TERRITORY, which OG requires (`en_US`, not `en`). */
+  ogLocale: string;
 }
 
 /** Codes of the locales that ship with the game. Extend as tables are added. */
