@@ -11,7 +11,6 @@ export interface RGB {
 }
 
 export const WHITE: RGB = {r: 255, g: 255, b: 255};
-export const BLACK: RGB = {r: 0, g: 0, b: 0};
 
 /** Decode `#rrggbb` → RGB. Assumes a valid 7-char hex; callers needing a fallback
  *  should gate with a validity check (see CParticleSystem.parseColor). */
@@ -36,20 +35,4 @@ export function mixToward(c: RGB, target: RGB, t: number): RGB {
     g: c.g + (target.g - c.g) * t,
     b: c.b + (target.b - c.b) * t,
   };
-}
-
-/** Perceived brightness, 0 (black) .. 1 (white). Rec. 601 weights — green reads far brighter
- *  than blue at the same channel value, which is exactly why pure #0000ff looks near-black. */
-export function luminance(c: RGB): number {
-  return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
-}
-
-/** Lift `c` toward white until it reaches `min` brightness; already-light colours pass through
- *  untouched. For UI accents drawn over a dark plate, where the team palette's navy / maroon /
- *  purple / pure-blue would otherwise disappear. Mixing toward white moves luminance linearly,
- *  so the needed amount solves directly — no search, and no overshoot on bright colours. */
-export function ensureLuminance(c: RGB, min: number): RGB {
-  const l = luminance(c);
-  if (l >= min) return c;
-  return mixToward(c, WHITE, (min - l) / (1 - l));
 }

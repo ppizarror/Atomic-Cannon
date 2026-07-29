@@ -52,7 +52,6 @@ import {MobileHud} from './MobileHud';
 import {weaponPower, weaponDamagePerArea, weaponName, weaponTypeName} from '../core/CWeapon';
 import {strings} from '../i18n';
 import {clamp, wrapIndex} from '../math/num';
-import {hexToRgb, rgbToHex, mixToward, ensureLuminance, BLACK} from '../math/color';
 import {WeaponIcon} from './WeaponIcon';
 import {usePointerDrag} from './usePointerDrag';
 import {useAsyncImage} from './useAsyncImage';
@@ -468,24 +467,6 @@ function ControlPanel() {
   );
 }
 
-// The acting player's row is a chip in that player's colour. Tinting with the RAW team colour
-// failed on both ends of the palette: a blue team over a blue sky showed no chip at all, and the
-// dark entries (navy, maroon, purple) sat too close to the outlined text to read. So the FILL is
-// the team colour driven far toward black — a near-opaque plate the white text always reads on,
-// still recognisably that player's hue — and the BORDER is the same colour lifted to a floor
-// brightness, so it stays a visible outline even for the darkest team.
-const ROW_PLATE = 0.72; // how far the fill is pushed toward black
-const ROW_BORDER_MIN_LUM = 0.55; // floor brightness for the chip's border
-function activeRowStyle(hex: string): JSX.CSSProperties {
-  const rgb = hexToRgb(hex);
-  const p = mixToward(rgb, BLACK, ROW_PLATE);
-  const b = ensureLuminance(rgb, ROW_BORDER_MIN_LUM);
-  return {
-    background: `rgba(${Math.round(p.r)}, ${Math.round(p.g)}, ${Math.round(p.b)}, 0.85)`,
-    borderColor: rgbToHex(b.r, b.g, b.b),
-  };
-}
-
 // Top-left status overlay: each player's "NAME: N% life" then "Battle X of Y - Shot Z" (white).
 // Past `rows` players (`compact`) the list is cut down — a full roster would otherwise run down
 // the screen. See statusWindow for what replaces it.
@@ -498,12 +479,10 @@ function BattleStatus() {
   return (
     <div id="battle-status" style={lf ? {left: `${lf * 100}%`} : undefined}>
       {lines.map((l, i) => (
-        // Key by slot, NOT by text — keying on the text remounts the line (and its
-        // canvas) on every life change, which flashes an undrawn canvas. Redraw in place.
         <div
           key={i}
           class={`bstat-line${l.active ? ' active' : ''}${l.dead ? ' dead' : ''}`}
-          style={l.active ? activeRowStyle(l.color) : undefined}
+          style={l.active ? {background: l.color + '80', borderColor: l.color} : undefined}
         >
           <BmpText font="beijing-16-out" text={l.text} height={18} spacing={-1} />
         </div>
