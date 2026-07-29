@@ -84,7 +84,7 @@ const CATALOG = {
   'gfx.blastCircles': {default: false},
   'gfx.showPoints': {default: true},
   'gfx.showPower': {default: true},
-  'gfx.tankStats': {default: false},
+  'gfx.tankStats': {default: true},
   'gfx.autoScroll': {default: true},
   'gfx.camera': {default: 0}, // turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic
   'gfx.lastAim': {default: true},
