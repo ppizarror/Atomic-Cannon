@@ -66,6 +66,7 @@ export const GameConfig = {
   roundTime: TYPE_INT, // Round Timer — per-turn shot clock in seconds (0 = off → infinite turns)
   utilityTurn: TYPE_BOOL, // Utility Turn (using a utility ends the turn)
   randomizeTurns: TYPE_BOOL, // Randomize Turns (shuffle turn order each battle)
+  randomizePosition: TYPE_BOOL, // Randomize Position (scatter squads across the map instead of grouping them)
   alternateTurns: TYPE_BOOL, // Alternate Turns (interleave teams: A1,B1,A2,B2 vs A1,A2,B1,B2)
   weaponPersist: TYPE_BOOL, // Weapon Persistence (the pick is the squad's, not the individual tank's)
   crateChance: TYPE_INT, // Crates: % chance to drop a supply crate each ROUND (0 = off)

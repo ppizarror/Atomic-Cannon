@@ -450,6 +450,7 @@ export interface Strings {
       roundTime: RowCopy;
       utilTurn: RowCopy;
       randTurns: RowCopy;
+      randPos: RowCopy;
       altTurns: RowCopy;
       weaponPersist: RowCopy;
       crates: RowCopy;

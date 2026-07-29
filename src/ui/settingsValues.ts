@@ -106,6 +106,8 @@ export const gameSettings = {
   utilityTurn: (): boolean => getVal('gp.utilTurn') !== 0,
   /** Shuffle the turn order at the start of each battle. */
   randomizeTurns: (): boolean => getVal('gp.randTurns') !== 0,
+  /** Scatter the spawn slots so a player's squad lands spread across the map, not as one block. */
+  randomizePosition: (): boolean => getVal('gp.randPos') !== 0,
   alternateTurns: (): boolean => getVal('gp.altTurns') !== 0,
   /** Weapon choice belongs to the PLAYER: every tank of a squad inherits the pick, so the next
    *  one opens its turn on it (off = each tank remembers its own weapon). */

@@ -139,6 +139,7 @@ function gameplayRows(): Widget[] {
     enumW(s.roundTime, 'gp.roundTime'),
     toggle(s.utilTurn, 'gp.utilTurn'),
     toggle(s.randTurns, 'gp.randTurns'),
+    toggle(s.randPos, 'gp.randPos'),
     toggle(s.altTurns, 'gp.altTurns'),
     toggle(s.weaponPersist, 'gp.weaponPersist'),
     stepper(s.crates, 'gp.crates', 0, 100, 5, pct),

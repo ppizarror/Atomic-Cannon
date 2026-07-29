@@ -594,6 +594,10 @@ export const es: Strings = {
         label: 'Turnos Aleatorios',
         tip: 'Asigna el orden de turno al azar en cada batalla',
       },
+      randPos: {
+        label: 'Posición Aleatoria',
+        tip: 'Dispersa cada tanque por el mapa en vez de ubicar a cada escuadra junta',
+      },
       altTurns: {
         label: 'Turnos Alternados',
         tip: 'Los equipos se turnan de a un tanque por vez (A1, B1, A2, B2)',

@@ -153,6 +153,7 @@ function sanitizeConfig(c: MatchConfig): MatchConfig {
     variance: c?.variance ?? true, // default ON (matches the game default)
     relativeTurrets: !!c?.relativeTurrets,
     utilityTurn: !!c?.utilityTurn,
+    randomizePosition: !!c?.randomizePosition,
     roundTime: num(c?.roundTime, 0, 600, 0), // per-turn shot clock (s); 0 = off
     radiationDamage: c?.radiationDamage ?? true,
     crateChance: num(c?.crateChance, 0, 100, 20),

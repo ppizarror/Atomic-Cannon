@@ -57,6 +57,9 @@ export interface MatchConfig {
   readonly variance: boolean; // per-shot inaccuracy (gates a seeded-RNG draw + jitters the arc)
   readonly relativeTurrets: boolean; // human aim is relative to the tank's terrain tilt
   readonly utilityTurn: boolean; // using a utility ends the turn
+  // Scatter the spawn slots instead of landing each squad as one block. Sim-affecting: it decides
+  // where every tank stands, so a client running its own copy would build a different battlefield.
+  readonly randomizePosition: boolean;
   readonly roundTime: number; // per-turn shot clock in seconds (0 = off) — host owns it so all clients agree
   readonly crateChance: number; // supply-crate drop chance (gates the seeded RNG)
   readonly radiationDamage: boolean; // fallout deals DOT to tanks on it (vs cosmetic-only) — sim-affecting

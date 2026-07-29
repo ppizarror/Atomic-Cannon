@@ -43,6 +43,7 @@ export function applyGameConfig(): void {
   GameConfig.utilityTurn = S.utilityTurn();
   GameConfig.roundTime = S.roundTime(); // per-turn shot clock (0 = off); shared in net via MatchConfig
   GameConfig.randomizeTurns = S.randomizeTurns();
+  GameConfig.randomizePosition = S.randomizePosition(); // spawn scatter (shared in net via MatchConfig)
   GameConfig.alternateTurns = S.alternateTurns();
   GameConfig.weaponPersist = S.weaponPersist();
   GameConfig.crateChance = S.crateChance();

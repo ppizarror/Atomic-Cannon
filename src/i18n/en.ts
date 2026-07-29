@@ -574,6 +574,10 @@ export const en: Strings = {
       },
       utilTurn: {label: 'Utility Turn', tip: 'If a utility item use counts as turn'},
       randTurns: {label: 'Randomize Turns', tip: 'Randomly assings the turn order each battle'},
+      randPos: {
+        label: 'Randomize Position',
+        tip: 'Scatter every tank across the map instead of landing each squad together',
+      },
       altTurns: {
         label: 'Alternate Turns',
         tip: 'Teams take turns one tank at a time (A1, B1, A2, B2)',

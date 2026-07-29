@@ -716,12 +716,13 @@ export class CGameController implements ShotWorld {
     // Position the tanks spread across the whole WORLD (not just the view) so a large
     // map is actually used, with a little jitter and clamped to the world.
     const n = spawns.length;
+    const slots = this.spawnSlots(n); // identity, or a shuffle under Randomize Position
     for (let i = 0; i < n; i++) {
       const s = spawns[i];
       const pTank = new CTank(s.name, s.team);
       pTank.setColor(s.color); // hull colour (and team identity)
       if (s.model) pTank.setTankType(s.model);
-      pTank.init(this.tankSpawnX(i, n), this.m_land);
+      pTank.init(this.tankSpawnX(slots[i], n), this.m_land);
       pTank.setHuman(s.human);
       pTank.setWeaponIndex(this.m_currentWeaponIndex); // its own starting weapon
       // Starting purse scales with squad size: each tank begins with `perTeam × CreditStart`
@@ -3518,6 +3519,26 @@ export class CGameController implements ShotWorld {
   }
 
   /** Spawn X for tank `i` of `n`: spread across the world with a little jitter. */
+  /** Randomize Position (Gameplay): which spawn SLOT each tank takes, as a permutation of 0..n-1.
+   *  Off, tank i takes slot i — tanks are pushed squad by squad, so a player's squad lands as one
+   *  contiguous block on the map. On, the slots are shuffled, so squads end up interleaved and no
+   *  player owns a stretch of ground. Only the index→slot mapping changes: the m_tanks array (the
+   *  turn queue, the snapshot indices, the alternate-turns squad grid) is untouched, so this is
+   *  purely about where tanks stand. Drawn from the SEEDED match RNG, so a network match lands on
+   *  the same layout on every client (unlike shuffleTurnOrder, which uses Math.random and is
+   *  forced off in net play). */
+  private spawnSlots(n: number): number[] {
+    const slots = Array.from({length: n}, (_, i) => i);
+    if (!GameConfig.randomizePosition) return slots;
+    for (let i = n - 1; i > 0; i--) {
+      const j = this.m_rng.int(i + 1);
+      const tmp = slots[i];
+      slots[i] = slots[j];
+      slots[j] = tmp;
+    }
+    return slots;
+  }
+
   private tankSpawnX(i: number, n: number): number {
     const worldW = this.m_worldWidth;
     const margin = 120;
@@ -3557,8 +3578,9 @@ export class CGameController implements ShotWorld {
     // Sentries are per-battle: clear last battle's deployed turrets before respawning.
     this.m_tanks = this.m_tanks.filter(t => !t.isSentry());
     const n = this.m_tanks.length;
+    const slots = this.spawnSlots(n); // a FRESH scatter each battle (identity when the option is off)
     this.m_tanks.forEach((t, i) => {
-      t.respawn(this.tankSpawnX(i, n), this.m_land);
+      t.respawn(this.tankSpawnX(slots[i], n), this.m_land);
       t.setWeaponIndex(this.m_currentWeaponIndex);
       t.setCanBuy(true); // Buy Time: depot re-opens at each battle's start
     });
@@ -5281,6 +5303,9 @@ export class CGameController implements ShotWorld {
     this.m_variance = c.variance; // per-shot inaccuracy gates a seeded draw — must match on all
     GameConfig.relativeTurrets = c.relativeTurrets;
     GameConfig.utilityTurn = c.utilityTurn;
+    // Spawn scatter decides where every tank stands — it MUST come from the host. Unlike Randomize
+    // Turns it is net-safe to run: spawnSlots draws from the seeded match RNG, not Math.random.
+    GameConfig.randomizePosition = c.randomizePosition;
     GameConfig.roundTime = c.roundTime; // host owns the shot clock so every client forfeits on the same limit
     GameConfig.crateChance = c.crateChance;
     GameConfig.radiationDamage = c.radiationDamage; // fallout DOT rule — host is source of truth
@@ -5338,6 +5363,7 @@ export class CGameController implements ShotWorld {
       variance: this.m_variance,
       relativeTurrets: GameConfig.relativeTurrets,
       utilityTurn: GameConfig.utilityTurn,
+      randomizePosition: GameConfig.randomizePosition,
       roundTime: GameConfig.roundTime,
       crateChance: GameConfig.crateChance,
       radiationDamage: GameConfig.radiationDamage,
