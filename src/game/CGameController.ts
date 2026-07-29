@@ -225,6 +225,14 @@ const sentryMachineGunIndex = (): number => {
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
 
+// The deployed Sentry's own hull art. Same naming CTank.getRequiredSprites builds, but a Sentry
+// only exists once one is deployed, so startGame preloads these by name to keep the first turret
+// from popping in as a vector-hull placeholder.
+const SENTRY_SPRITES = ['body', 'wreck', 'turret'].map(part => ({
+  name: `tanks/Sentry ${part}`,
+  file: `/assets/tanks/Sentry ${part}.bmp`,
+}));
+
 // Opening angle + power drawn per tank at each battle start (the original's ranges). The angle
 // spans the whole upward half-circle — 0 = flat right, 90 = straight up, 180 = flat left; the
 // below-horizon half (181..359) is excluded, since a tank would open the battle pointing into dirt.
@@ -806,6 +814,11 @@ export class CGameController implements ShotWorld {
     // Supply crate: the parachute assembly (falling, wobbling) + the bare crate (landed).
     this.m_assets.loadSprite('gui/crate-chute', '/assets/gui/crate parachute.bmp');
     this.m_assets.loadSprite('gui/crate', '/assets/gui/crate.bmp');
+    // Sentry turret hull/turret/wreck. Preloaded HERE rather than left to deploySentry: a sentry is
+    // born mid-battle, and CTank.draw falls back to the crude vector hull until its sprites decode —
+    // so loading them at deploy time flashed a placeholder turret for the first frames. The loop
+    // above only covers tanks already on the field, and no Sentry exists yet.
+    for (const s of SENTRY_SPRITES) this.m_assets.loadSprite(s.name, s.file);
 
     // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
     // and the additive starburst flare used for trail plumes / fireballs.

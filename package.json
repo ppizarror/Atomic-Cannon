@@ -1,6 +1,6 @@
 {
   "name": "atomic-cannon",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "description": "Atomic Cannon - Web port of classic turn-based tank combat game",
   "license": "AGPL-3.0-or-later",
   "type": "module",

@@ -17,6 +17,15 @@ const KEY_TOLERANCE = 24;
 export class CAssetManager implements ISpriteSource {
   private m_sprites: Map<string, Sprite> = new Map();
   private m_pending: number = 0;
+  // In-flight loads by logical name. Every load is deduped through this: a second request for a
+  // name that is already loaded (or still decoding) joins the first instead of re-fetching and
+  // re-running the colour-key pass. Mid-battle callers rely on it — deploySentry asks for the
+  // Sentry hull on EVERY turret it drops, which without this decoded the same three bitmaps again
+  // each time. Cleared per entry once settled; the sprite map is the permanent cache.
+  private m_loading: Map<string, Promise<void>> = new Map();
+  // Names whose file could not be loaded. fetchImage resolves null rather than rejecting, so
+  // without this a missing asset would be re-requested by every repeat caller (and warn each time).
+  private m_failed: Set<string> = new Set();
 
   /** Resolve a logical sprite name (null if not loaded yet). */
   getSprite(name: string): Sprite | null {
@@ -32,27 +41,45 @@ export class CAssetManager implements ISpriteSource {
    * Load a plain image as-is (no transparency processing). Suitable for
    * backgrounds and terrain textures.
    */
-  async loadImage(name: string, path: string): Promise<void> {
-    this.m_pending++;
-    const img = await this.fetchImage(path);
-    if (img) {
-      this.m_sprites.set(name, {bitmap: img, width: img.width, height: img.height});
-    }
-    this.m_pending--;
+  loadImage(name: string, path: string): Promise<void> {
+    return this.once(name, async () => {
+      const img = await this.fetchImage(path);
+      if (img) {
+        this.m_sprites.set(name, {bitmap: img, width: img.width, height: img.height});
+      }
+    });
   }
 
   /**
    * Load a sprite and knock out a colorkey (magenta by default) to
    * transparency, producing a canvas-backed sprite with real alpha.
    */
-  async loadSprite(name: string, path: string, colorKey: RGB = MAGENTA): Promise<void> {
+  loadSprite(name: string, path: string, colorKey: RGB = MAGENTA): Promise<void> {
+    return this.once(name, async () => {
+      const img = await this.fetchImage(path);
+      if (img) {
+        const canvas = this.applyColorKey(img, colorKey);
+        this.m_sprites.set(name, {bitmap: canvas, width: canvas.width, height: canvas.height});
+      }
+    });
+  }
+
+  /** Run `load` for `name` at most once: already-decoded names resolve immediately, concurrent
+   *  requests share the first load's promise, and a name that failed is not retried (see
+   *  m_failed). `m_pending` — what isReady/the loading screen watch — is only counted for the load
+   *  that actually runs, so a duplicate request can never leave the counter above zero. */
+  private once(name: string, load: () => Promise<void>): Promise<void> {
+    const inflight = this.m_loading.get(name);
+    if (inflight) return inflight;
+    if (this.m_sprites.has(name) || this.m_failed.has(name)) return Promise.resolve();
     this.m_pending++;
-    const img = await this.fetchImage(path);
-    if (img) {
-      const canvas = this.applyColorKey(img, colorKey);
-      this.m_sprites.set(name, {bitmap: canvas, width: canvas.width, height: canvas.height});
-    }
-    this.m_pending--;
+    const p = load().finally(() => {
+      if (!this.m_sprites.has(name)) this.m_failed.add(name); // fetchImage warned; don't ask again
+      this.m_pending--;
+      this.m_loading.delete(name);
+    });
+    this.m_loading.set(name, p);
+    return p;
   }
 
   private fetchImage(path: string): Promise<HTMLImageElement | null> {
