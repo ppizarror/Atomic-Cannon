@@ -752,7 +752,11 @@ export const battleStatus = signal<{
   lines: {text: string; color: string; dead: boolean; active: boolean}[];
   battle: string;
   notice: string; // transient hint below the battle line ("Can't move underground."), '' = none
-}>({lines: [], battle: '', notice: ''});
+  // Squad play (>2 tanks per player): the desktop overlay prints only the ACTIVE line, since one
+  // row per tank would fill the screen. `lines` still carries every tank — the mobile dot row
+  // (compact by nature) keeps showing them all.
+  compact: boolean;
+}>({lines: [], battle: '', notice: '', compact: false});
 
 // Fraction of view width the top-left status text is pushed right to clear the
 // minimap (0 = no minimap → default left inset).
@@ -903,11 +907,18 @@ export function syncHud(): void {
   }));
   const battle = c.getStatusLine(); // "Round N of M" (Rounds) or "Battle N of M - Shot X"
   const notice = c.getStatusNotice(); // "Can't move underground." while the acting tank is buried
+  const compact = c.getStatusCompact(); // squad play → the overlay shows the active line only
   const sig =
-    lines.map(l => l.text + l.color + l.dead + l.active).join('|') + '#' + battle + '#' + notice;
+    lines.map(l => l.text + l.color + l.dead + l.active).join('|') +
+    '#' +
+    battle +
+    '#' +
+    notice +
+    '#' +
+    compact;
   if (sig !== lastBattleSig) {
     lastBattleSig = sig;
-    battleStatus.value = {lines, battle, notice};
+    battleStatus.value = {lines, battle, notice, compact};
   }
   // Shift the status text clear of the minimap (large maps only).
   const slf = c.getMinimapRightFrac();

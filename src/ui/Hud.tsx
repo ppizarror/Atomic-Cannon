@@ -467,15 +467,17 @@ function ControlPanel() {
 }
 
 // Top-left status overlay: each tank's "NAME: N% life" (team colour) then
-// "Battle X of Y - Shot Z" (white).
+// "Battle X of Y - Shot Z" (white). In squad play (`compact`) only the acting tank's
+// line is printed — 40 rows would otherwise bury the battlefield.
 function BattleStatus() {
   const s = battleStatus.value;
+  const lines = s.compact ? s.lines.filter(l => l.active) : s.lines;
   // On large maps the overview minimap occupies the top-left corner, so the status
   // lines shift right to sit beside it (matching the original).
   const lf = statusLeftFrac.value;
   return (
     <div id="battle-status" style={lf ? {left: `${lf * 100}%`} : undefined}>
-      {s.lines.map((l, i) => (
+      {lines.map((l, i) => (
         // Key by slot, NOT by text — keying on the text remounts the line (and its
         // canvas) on every life change, which flashes an undrawn canvas. Redraw in place.
         <div

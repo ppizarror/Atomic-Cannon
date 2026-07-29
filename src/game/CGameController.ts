@@ -207,9 +207,13 @@ const STRUCTURE_SCALE = 0.45;
 const controlWeaponIndex = (): number =>
   CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
 
-// Hard ceiling on tanks on the field. 16 real players (startGame cap) plus a little
-// headroom for deployed Sentry turrets, past which deploySentry no-ops.
-const MAX_FIELD_TANKS = 24;
+// Sentry turrets ONE player (team) may hold on the field at a time, past which deploySentry
+// no-ops. Deliberately per-player rather than a shared field budget: a single pool lets the first
+// deployer starve everyone else, and it shrinks per head as the match grows (at 16 players a pool
+// of 8 is under one each), so every player gets the same allowance whatever the roster size. Some
+// ceiling is still needed — a sentry weapon under free-fire has unlimited ammo, so an ungated
+// deploy would grow the field every turn. Sentries are cleared at the start of each battle.
+const MAX_SENTRIES_PER_PLAYER = 8;
 // The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the
 // rapid Machine Gun (Minigun variant). The Turret uses the Shell staple; the Minigun looks
 // the Machine Gun up by its STABLE id (never the localised display name) — falling back to
@@ -541,8 +545,9 @@ export class CGameController implements ShotWorld {
   }
 
   /** Start a match with `nPlayers` teams; each team fields `m_tanksPerTeam` tanks (a
-   *  squad sharing that player's colour), capped at 16 tanks total. The first
-   *  `m_humanCount` teams are human. */
+   *  squad sharing that player's colour). Every configured tank spawns — the Play menu's
+   *  own limits (16 players × 5 tanks) are the only bound. The first `m_humanCount` teams
+   *  are human. */
   startGame(nPlayers: number = 2): void {
     this.m_started = true; // a battle now exists — the per-frame sim/render/HUD work is live
     // A plain startGame (solo / Play) is never a network match — clear any net state
@@ -646,11 +651,9 @@ export class CGameController implements ShotWorld {
     // Build the spawn list from the roster (Customize Players): one entry per tank.
     // Each player fields `m_tanksPerTeam` tanks that share the player's colour — colour
     // is the team identity, so a squad is a team (distinct player colours → free-for-all).
-    // Capped at 16 tanks total for playability.
     const roster = Roster.players;
     const teamOfColor = new Map<string, number>();
     const perTeam = Math.max(1, this.m_tanksPerTeam);
-    const MAX_TANKS = 16;
 
     const playerNames = strings.value.playerNames;
     // Roster layout (Customize Players): the first ROSTER_HUMAN_SLOTS entries are the HUMAN pool, the
@@ -659,7 +662,7 @@ export class CGameController implements ShotWorld {
     // (Network matches use the lobby roster in turn order — no split.)
     const BOT_POOL_START = ROSTER_HUMAN_SLOTS;
     const spawns: {name: string; color: string; model: string; team: number; human: boolean}[] = [];
-    for (let p = 0; p < nPlayers && spawns.length < MAX_TANKS; p++) {
+    for (let p = 0; p < nPlayers; p++) {
       // In a network match the roster comes from the lobby (same on every client, in
       // turn order) so names/colours — and thus team identity — match across clients.
       const netCfg = this.m_netRoster?.[p];
@@ -703,7 +706,7 @@ export class CGameController implements ShotWorld {
       if (netCfg || human) baseName = cfg.name;
       else if (isWargame()) baseName = strings.value.game.whopper;
       else baseName = cfg.name;
-      for (let k = 0; k < perTeam && spawns.length < MAX_TANKS; k++) {
+      for (let k = 0; k < perTeam; k++) {
         const name =
           perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
         spawns.push({name, color: cfg.color, model: cfg.model, team, human});
@@ -2997,10 +3000,14 @@ export class CGameController implements ShotWorld {
    *  Sentries are excluded from the turn's win count, standings and taunts, and are cleared
    *  at the next battle. */
   deploySentry(x: number, _y: number, owner: CTank | null, weaponIndex: number): void {
-    if (this.m_tanks.length >= MAX_FIELD_TANKS) return; // never grow the field without bound
+    const team = owner ? owner.getTeamId() : 0;
+    // Never grow the field without bound — but count only THIS player's own turrets, so the
+    // allowance is identical for everyone whether the match has 2 players or 16.
+    let deployed = 0;
+    for (const t of this.m_tanks) if (t.isSentry() && t.getTeamId() === team) deployed++;
+    if (deployed >= MAX_SENTRIES_PER_PLAYER) return;
     const w = getWeapon(weaponIndex);
     const minigun = w.getId() === 'sentry.minigun';
-    const team = owner ? owner.getTeamId() : 0;
     // The badge shows the OWNER's name (a sentry inherits its deployer's display name);
     // "Sentry" is only the internal TYPE — it drives the sprites + the behaviour guards
     // (turn/standings/taunt exclusions), never the on-field label.
@@ -3432,8 +3439,9 @@ export class CGameController implements ShotWorld {
     if (GameConfig.buyTime === 3 && tank.isHuman() && (!this.m_netMode || this.isLocalNetTurn())) {
       this.autoBuyWeapons();
     }
-    // Restore THIS player's own weapon so the previous player's (or a bot's)
-    // choice never carries over.
+    // Restore THIS player's own weapon so the previous player's (or a bot's) choice never carries
+    // over. With Weapon Persistence on the selection is squad-wide (setSquadWeapon), so a squad's
+    // second tank opens on the weapon its first one was left on — the player picks for the team.
     this.m_currentWeaponIndex = tank.getWeaponIndex();
     // If the human emptied that weapon last turn (fired its last round), fall back to
     // the unlimited staple so the turn never opens on a weapon that's out of stock.
@@ -4375,8 +4383,25 @@ export class CGameController implements ShotWorld {
 
   /** Select `tank`'s weapon and mirror it into the controller's current-weapon index. */
   private setCurrentWeapon(tank: CTank, index: number): void {
-    tank.setWeaponIndex(index);
+    this.setSquadWeapon(tank, index);
     this.m_currentWeaponIndex = index;
+  }
+
+  /** Persist a weapon choice on `tank`, and — with Weapon Persistence on (Gameplay) — onto every
+   *  squadmate (same team) too, making the pick the PLAYER's rather than the individual tank's: the
+   *  squad's next tank then opens its turn on the weapon the player last chose instead of on
+   *  whatever that tank happened to fire several turns ago. A local human squad buys from one
+   *  shared depot, so the inherited pick is in stock by construction; where inventories are
+   *  per-tank (bots, net) beginTurn's ensureStocked drops it back to the staple.
+   *  Sentries are excluded both ways — they fire a fixed weapon (Shell / Machine Gun) and must
+   *  neither inherit their owner's pick nor overwrite it. */
+  private setSquadWeapon(tank: CTank, index: number): void {
+    tank.setWeaponIndex(index);
+    if (!GameConfig.weaponPersist || tank.isSentry()) return;
+    const team = tank.getTeamId();
+    for (const t of this.m_tanks) {
+      if (t !== tank && !t.isSentry() && t.getTeamId() === team) t.setWeaponIndex(index);
+    }
   }
 
   /** If the current weapon is out of stock, fall back to the unlimited staple (Shell) and
@@ -5834,8 +5859,10 @@ export class CGameController implements ShotWorld {
     this.markDirty();
     if (index >= 0 && index < WEAPON_DATABASE.length) {
       this.m_currentWeaponIndex = index;
-      // Persist the choice on the acting tank so it survives the turn cycle.
-      this.m_tanks[this.m_currentPlayerIndex]?.setWeaponIndex(index);
+      // Persist the choice on the acting tank so it survives the turn cycle — and, with Weapon
+      // Persistence on, on the rest of its squad too (see setSquadWeapon).
+      const tank = this.m_tanks[this.m_currentPlayerIndex];
+      if (tank) this.setSquadWeapon(tank, index);
     }
   }
 
@@ -6554,6 +6581,14 @@ export class CGameController implements ShotWorld {
       alive: t.isAlive(),
       active: t === cur,
     }));
+  }
+
+  /** Should the top-left overlay print ONLY the acting tank's line instead of one per tank?
+   *  True in squad play (>2 tanks per player): 8 players × 5 tanks is 40 rows, which buries the
+   *  battlefield. With 1–2 tanks each the full roster still fits, so it stays listed. The mobile
+   *  HUD's per-tank dot row ignores this — it is compact enough to show every tank either way. */
+  getStatusCompact(): boolean {
+    return this.m_tanksPerTeam > 2;
   }
 
   // The aim (angle, power) at turn start — anchors the faded "initial" target cross.

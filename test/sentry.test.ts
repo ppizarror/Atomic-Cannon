@@ -127,4 +127,44 @@ describe('Sentry turrets', () => {
     // Down to one living PLAYER → the battle ends despite the sentry still standing.
     expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd);
   });
+
+  it('the deploy cap is PER PLAYER — one player cannot use up another’s allowance', () => {
+    const {gc, a, b} = twoPlayerGame();
+    const roster = priv(gc).m_tanks.length;
+    const sentriesOf = (t: CTank) =>
+      priv(gc).m_tanks.filter(x => x.isSentry() && x.getTeamId() === t.getTeamId()).length;
+
+    // Player A spends its whole allowance and then some — the surplus deploys are dropped.
+    for (let i = 0; i < 20; i++) gc.deploySentry(a.getPosition().x + i, 0, a, SENTRY_TURRET);
+    const capped = sentriesOf(a);
+    expect(capped).toBeLessThan(20); // a ceiling really is enforced (free-fire ammo is unlimited)
+    expect(priv(gc).m_tanks.length).toBe(roster + capped);
+
+    // …and player B still has its own full allowance: a shared pool would have starved it.
+    for (let i = 0; i < 20; i++) gc.deploySentry(b.getPosition().x + i, 0, b, SENTRY_TURRET);
+    expect(sentriesOf(b)).toBe(capped);
+    expect(sentriesOf(a)).toBe(capped); // B's deploys never evicted A's
+  });
+
+  it('every player keeps its allowance in a big match (16 players, 5 tanks each)', () => {
+    // Regression for a shared field budget: with a global pool the first deployers consumed it and
+    // the rest silently got nothing — worse the more players joined.
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(8); // the Play menu's maximum split: 8 humans + 8 CPUs = 16 roster slots
+    gc.setTanksPerTeam(5);
+    gc.startGame(16);
+    const tanks = priv(gc).m_tanks.slice();
+    const leaders = tanks.filter(
+      (t, i) => tanks.findIndex(x => x.getTeamId() === t.getTeamId()) === i,
+    );
+    expect(leaders).toHaveLength(16); // 16 distinct teams on the field
+
+    for (const t of leaders) {
+      for (let i = 0; i < 3; i++) gc.deploySentry(t.getPosition().x + i, 0, t, SENTRY_TURRET);
+    }
+    for (const t of leaders) {
+      const mine = priv(gc).m_tanks.filter(x => x.isSentry() && x.getTeamId() === t.getTeamId());
+      expect(mine).toHaveLength(3); // the LAST player deployed just as many as the first
+    }
+  });
 });

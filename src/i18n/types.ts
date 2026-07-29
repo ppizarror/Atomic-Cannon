@@ -451,6 +451,7 @@ export interface Strings {
       utilTurn: RowCopy;
       randTurns: RowCopy;
       altTurns: RowCopy;
+      weaponPersist: RowCopy;
       crates: RowCopy;
       updateScale: RowCopy;
       rcFires: RowCopy;

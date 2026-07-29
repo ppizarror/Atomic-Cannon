@@ -67,6 +67,7 @@ export const GameConfig = {
   utilityTurn: TYPE_BOOL, // Utility Turn (using a utility ends the turn)
   randomizeTurns: TYPE_BOOL, // Randomize Turns (shuffle turn order each battle)
   alternateTurns: TYPE_BOOL, // Alternate Turns (interleave teams: A1,B1,A2,B2 vs A1,A2,B1,B2)
+  weaponPersist: TYPE_BOOL, // Weapon Persistence (the pick is the squad's, not the individual tank's)
   crateChance: TYPE_INT, // Crates: % chance to drop a supply crate each ROUND (0 = off)
   rightClickFires: TYPE_BOOL, // Right Click Fires (RMB launches the shot)
   radiationDamage: TYPE_BOOL, // A tank standing on the visible fallout carpet takes damage-over-time

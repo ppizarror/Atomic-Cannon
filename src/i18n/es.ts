@@ -598,6 +598,10 @@ export const es: Strings = {
         label: 'Turnos Alternados',
         tip: 'Los equipos se turnan de a un tanque por vez (A1, B1, A2, B2)',
       },
+      weaponPersist: {
+        label: 'Arma Persistente',
+        tip: 'El arma elegida es del jugador: el siguiente tanque de tu equipo comienza con ella',
+      },
       crates: {label: 'Cajas', tip: 'Probabilidad de soltar una caja cada ronda'},
       updateScale: {
         label: 'Escala de Actualización',

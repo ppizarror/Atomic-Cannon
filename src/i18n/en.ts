@@ -578,6 +578,10 @@ export const en: Strings = {
         label: 'Alternate Turns',
         tip: 'Teams take turns one tank at a time (A1, B1, A2, B2)',
       },
+      weaponPersist: {
+        label: 'Weapon Persistence',
+        tip: 'The selected weapon belongs to the player: the next tank of your team starts on it',
+      },
       crates: {label: 'Crates', tip: 'Chance to drop a crate each round'},
       updateScale: {
         label: 'Update Scale',

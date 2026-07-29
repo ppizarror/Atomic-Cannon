@@ -1,7 +1,8 @@
 /**
  * Play setup — the human/CPU split and squad size (tanks per team) reach the match:
  * the first N teams are human, each team fields `tanksPerTeam` tanks that share a
- * colour, total capped at 16. The persisted setup store clamps to the binary ranges.
+ * colour, and every configured tank spawns. The persisted setup store clamps to the
+ * binary ranges.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -48,12 +49,41 @@ describe('Play setup', () => {
     expect(new Set(t.map(x => x.getTeamId())).size).toBe(2); // exactly two teams on the field
   });
 
-  it('total tanks cap at 16 (8 teams × 5 would be 40)', () => {
+  it('every configured tank spawns — no total-tank cap', () => {
     const gc = new CGameController(makeCanvas());
     gc.setTanksPerTeam(5);
     gc.startGame(8);
-    const t = (gc as unknown as Tanks).m_tanks;
-    expect(t).toHaveLength(16); // total tanks capped at 16
+    expect((gc as unknown as Tanks).m_tanks).toHaveLength(40); // 8 teams × 5 tanks, none dropped
+
+    // The Play menu's own maximum (8 humans + 8 CPUs, 5 tanks each) spawns in full too.
+    const big = new CGameController(makeCanvas());
+    big.setHumanCount(8);
+    big.setTanksPerTeam(5);
+    big.startGame(16);
+    const bt = (big as unknown as Tanks).m_tanks;
+    expect(bt).toHaveLength(80);
+    // Both roster pools are drawn on in full, so all 16 players get their own colour/team —
+    // the palette has exactly 16 entries and the two pools are 8 + 8.
+    expect(new Set(bt.map(t => t.getTeamId())).size).toBe(16);
+  });
+
+  it('the status overlay collapses to the active line once squads exceed 2 tanks', () => {
+    // One row per tank is readable at 1-2 tanks each; past that (up to 80 tanks) it would bury
+    // the battlefield, so the overlay prints only the acting tank. getTankStatuses still returns
+    // every tank — the collapse is a presentation choice the desktop HUD applies.
+    const gc = new CGameController(makeCanvas());
+    for (const [per, collapsed] of [
+      [1, false],
+      [2, false],
+      [3, true],
+      [5, true],
+    ] as const) {
+      gc.setTanksPerTeam(per);
+      gc.startGame(2);
+      expect(gc.getStatusCompact()).toBe(collapsed);
+      expect(gc.getTankStatuses()).toHaveLength(2 * per); // the full roster is always reported
+      expect(gc.getTankStatuses().filter(s => s.active)).toHaveLength(1); // exactly one acting tank
+    }
   });
 
   it('the initial (default) setup is always a startable match (≥ 2 players)', () => {

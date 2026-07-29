@@ -107,6 +107,9 @@ export const gameSettings = {
   /** Shuffle the turn order at the start of each battle. */
   randomizeTurns: (): boolean => getVal('gp.randTurns') !== 0,
   alternateTurns: (): boolean => getVal('gp.altTurns') !== 0,
+  /** Weapon choice belongs to the PLAYER: every tank of a squad inherits the pick, so the next
+   *  one opens its turn on it (off = each tank remembers its own weapon). */
+  weaponPersist: (): boolean => getVal('gp.weaponPersist') !== 0,
   /** Buy Time enum: 0 Anytime · 1 After-round · 2 At-start · 3 Automatic. */
   buyTime: (): number => getVal('eco.buyTime'),
   /** Change-Wind cadence enum: 0 Per-game · 1 After-round · 2 After-shot · 3 Anytime. */

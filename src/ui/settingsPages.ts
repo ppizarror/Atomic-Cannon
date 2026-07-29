@@ -140,6 +140,7 @@ function gameplayRows(): Widget[] {
     toggle(s.utilTurn, 'gp.utilTurn'),
     toggle(s.randTurns, 'gp.randTurns'),
     toggle(s.altTurns, 'gp.altTurns'),
+    toggle(s.weaponPersist, 'gp.weaponPersist'),
     stepper(s.crates, 'gp.crates', 0, 100, 5, pct),
     stepper(s.updateScale, 'gp.updateScale', 1, 30, 1),
     toggle(s.rcFires, 'gp.rcFires'),

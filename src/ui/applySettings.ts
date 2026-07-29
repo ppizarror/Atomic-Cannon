@@ -44,6 +44,7 @@ export function applyGameConfig(): void {
   GameConfig.roundTime = S.roundTime(); // per-turn shot clock (0 = off); shared in net via MatchConfig
   GameConfig.randomizeTurns = S.randomizeTurns();
   GameConfig.alternateTurns = S.alternateTurns();
+  GameConfig.weaponPersist = S.weaponPersist();
   GameConfig.crateChance = S.crateChance();
   GameConfig.rightClickFires = S.rightClickFires();
   GameConfig.radiationDamage = S.radiationDamage(); // fallout DOT vs cosmetic-only (shared in net via MatchConfig)

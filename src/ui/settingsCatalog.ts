@@ -57,6 +57,7 @@ const CATALOG = {
   'gp.utilTurn': {default: false},
   'gp.randTurns': {default: false},
   'gp.altTurns': {default: false}, // interleave teams (A1,B1,A2,B2) instead of contiguous (A1,A2,B1,B2)
+  'gp.weaponPersist': {default: false}, // squad-wide weapon pick (off = each tank keeps its own)
   'gp.crates': {default: 20},
   'gp.updateScale': {default: 10},
   'gp.rcFires': {default: true},

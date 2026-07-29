@@ -2730,8 +2730,13 @@ canvas {
   padding: 0 3px;
 }
 
+/* A big match can field dozens of tanks (16 players × 5), so the lights wrap into a
+   few short rows instead of stretching the bar off-screen. */
 .mdots {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 72px;
   gap: 2px;
 }
 
