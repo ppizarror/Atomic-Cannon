@@ -662,6 +662,7 @@ export class CGameController implements ShotWorld {
     const roster = Roster.players;
     const teamOfColor = new Map<string, number>();
     const perTeam = Math.max(1, this.m_tanksPerTeam);
+    this.m_teamNames.clear(); // fresh match — the previous roster's team labels are gone
 
     const playerNames = strings.value.playerNames;
     // Roster layout (Customize Players): the first ROSTER_HUMAN_SLOTS entries are the HUMAN pool, the
@@ -714,12 +715,16 @@ export class CGameController implements ShotWorld {
       if (netCfg || human) baseName = cfg.name;
       else if (isWargame()) baseName = strings.value.game.whopper;
       else baseName = cfg.name;
+      // The team's own label for the status overlay: the bare player name, no squad suffix. First
+      // slot of a colour wins, mirroring how that slot's colour defined the team above.
+      if (!this.m_teamNames.has(team)) this.m_teamNames.set(team, baseName);
       for (let k = 0; k < perTeam; k++) {
         const name =
           perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
         spawns.push({name, color: cfg.color, model: cfg.model, team, human});
       }
     }
+    this.m_teamCount = teamOfColor.size; // sides actually on the field (colours, not roster slots)
 
     // Position the tanks spread across the whole WORLD (not just the view) so a large
     // map is actually used, with a little jitter and clamped to the world.
@@ -6552,6 +6557,13 @@ export class CGameController implements ShotWorld {
   private m_startCredits = START_CREDITS;
   private m_humanCount = 1; // how many teams are human (the first N); rest CPU
   private m_tanksPerTeam = 1; // squad size — tanks each player fields (Play → Tanks)
+  // Distinct teams (= players) this match spawned, fixed at startGame. Teams form by hull colour,
+  // so this is the colour count, not nPlayers — two roster slots sharing a colour are ONE side.
+  // Read by getStatusCompact to decide whether the status overlay lists everyone.
+  private m_teamCount = 0;
+  // Each team's PLAYER name — the roster/lobby name without the "… 2" squad suffix its individual
+  // tanks carry. The status overlay lists one row per team, so it labels rows from here.
+  private m_teamNames = new Map<number, string>();
   private m_landMode = -1; // -1 = random landscape; 0..4 = a forced shape
   private m_flatLand = false; // DEV `?flatland=1`: force a flat test surface next startGame
   private m_windScale = 1; // 0 disables wind
@@ -6616,8 +6628,12 @@ export class CGameController implements ShotWorld {
     return this.m_totalRounds;
   }
 
-  /** Per-tank life status for the top-left overlay ("%s: %d%% life"). */
-  getTankStatuses(): {
+  /** Per-TEAM life status for the top-left overlay ("%s: %d%% life") — one row per player, not per
+   *  tank, as in the original. A squad's percentage is the AVERAGE of its members' life fractions
+   *  (dead members count as 0), so a 5-tank player still occupies a single row. Rows follow the
+   *  tank array's first-appearance order, and sentries are skipped — they're deployed turrets, not
+   *  a side, and would drag their owner's average down. */
+  getTeamStatuses(): {
     name: string;
     lifePct: number;
     color: string;
@@ -6625,21 +6641,43 @@ export class CGameController implements ShotWorld {
     active: boolean;
   }[] {
     const cur = this.m_tanks[this.m_currentPlayerIndex];
-    return this.m_tanks.map(t => ({
-      name: t.getName(),
-      lifePct: Math.max(0, Math.round((t.getHealth().nLife / t.getMaxLife()) * 100)), // → 0..100
-      color: t.getColor(),
-      alive: t.isAlive(),
-      active: t === cur,
-    }));
+    const order: number[] = [];
+    const acc = new Map<number, {sum: number; n: number; color: string; alive: boolean}>();
+    for (const t of this.m_tanks) {
+      if (t.isSentry()) continue;
+      const id = t.getTeamId();
+      let e = acc.get(id);
+      if (!e) {
+        e = {sum: 0, n: 0, color: t.getColor(), alive: false};
+        acc.set(id, e);
+        order.push(id);
+      }
+      const max = t.getMaxLife();
+      e.sum += max > 0 ? Math.max(0, t.getHealth().nLife / max) : 0;
+      e.n++;
+      if (t.isAlive()) e.alive = true;
+    }
+    const curTeam = cur && !cur.isSentry() ? cur.getTeamId() : -1;
+    return order.map(id => {
+      const e = acc.get(id)!;
+      return {
+        name: this.m_teamNames.get(id) ?? '',
+        lifePct: Math.round((e.sum / Math.max(1, e.n)) * 100), // → 0..100, averaged over the squad
+        color: e.color,
+        alive: e.alive,
+        active: id === curTeam,
+      };
+    });
   }
 
-  /** Should the top-left overlay print ONLY the acting tank's line instead of one per tank?
-   *  True in squad play (>2 tanks per player): 8 players × 5 tanks is 40 rows, which buries the
-   *  battlefield. With 1–2 tanks each the full roster still fits, so it stays listed. The mobile
-   *  HUD's per-tank dot row ignores this — it is compact enough to show every tank either way. */
+  /** Should the top-left overlay print ONLY the acting player's row instead of one per team?
+   *  True past 4 PLAYERS, as in the original: up to four sides are listed in full, and from the
+   *  fifth on it prints just whoever is shooting rather than a roster running down the screen.
+   *  Keyed on the team count, not the tank count — rows are per team (see getTeamStatuses), so
+   *  four players cost four rows whether they field one tank each or five. The mobile HUD's dot
+   *  row ignores this: one small dot per team stays readable at any count. */
   getStatusCompact(): boolean {
-    return this.m_tanksPerTeam > 2;
+    return this.m_teamCount > 4;
   }
 
   // The aim (angle, power) at turn start — anchors the faded "initial" target cross.

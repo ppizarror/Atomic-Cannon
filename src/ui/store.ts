@@ -746,15 +746,15 @@ export const turnTimer = signal<{
   off?: boolean;
 } | null>(null);
 
-// Top-left status overlay: per-tank life lines (team-coloured) + the battle/shot
+// Top-left status overlay: per-TEAM life lines (team-coloured) + the battle/shot
 // line — "%s: %d%% life" and "Battle %d of %d - Shot %d".
 export const battleStatus = signal<{
   lines: {text: string; color: string; dead: boolean; active: boolean}[];
   battle: string;
   notice: string; // transient hint below the battle line ("Can't move underground."), '' = none
-  // Squad play (>2 tanks per player): the desktop overlay prints only the ACTIVE line, since one
-  // row per tank would fill the screen. `lines` still carries every tank — the mobile dot row
-  // (compact by nature) keeps showing them all.
+  // Past 2 players: the desktop overlay prints only the ACTIVE line, since a row per tank would
+  // run down the screen. `lines` still carries every tank — the mobile dot row (compact by
+  // nature) keeps showing them all.
   compact: boolean;
 }>({lines: [], battle: '', notice: '', compact: false});
 
@@ -899,7 +899,7 @@ export function syncHud(): void {
   // Top-left status text — only re-publish when it actually changes so the
   // bitmap-font lines don't re-render every frame.
   const g = strings.value.game;
-  const lines = c.getTankStatuses().map(s => ({
+  const lines = c.getTeamStatuses().map(s => ({
     text: fmt(g.statusLife, {name: s.name, pct: s.lifePct}),
     color: s.color,
     dead: !s.alive,

@@ -467,8 +467,8 @@ function ControlPanel() {
 }
 
 // Top-left status overlay: each tank's "NAME: N% life" (team colour) then
-// "Battle X of Y - Shot Z" (white). In squad play (`compact`) only the acting tank's
-// line is printed — 40 rows would otherwise bury the battlefield.
+// "Battle X of Y - Shot Z" (white). Past 2 players (`compact`) only the acting tank's
+// line is printed — a full roster would otherwise run down the screen.
 function BattleStatus() {
   const s = battleStatus.value;
   const lines = s.compact ? s.lines.filter(l => l.active) : s.lines;

@@ -67,23 +67,50 @@ describe('Play setup', () => {
     expect(new Set(bt.map(t => t.getTeamId())).size).toBe(16);
   });
 
-  it('the status overlay collapses to the active line once squads exceed 2 tanks', () => {
-    // One row per tank is readable at 1-2 tanks each; past that (up to 80 tanks) it would bury
-    // the battlefield, so the overlay prints only the acting tank. getTankStatuses still returns
-    // every tank — the collapse is a presentation choice the desktop HUD applies.
+  it('the status overlay is one row per PLAYER, collapsing to the active row past 4', () => {
+    // As in the original: up to four sides are listed in full, and from the fifth on only the
+    // acting player's row is printed. Rows are per team, so squad size never grows the list —
+    // the collapse is a presentation choice the desktop HUD applies to these same rows.
     const gc = new CGameController(makeCanvas());
-    for (const [per, collapsed] of [
-      [1, false],
-      [2, false],
-      [3, true],
-      [5, true],
+    for (const [players, per, collapsed] of [
+      [2, 1, false],
+      [2, 5, false], // a duel stays listed no matter how big the squads are
+      [4, 5, false], // four players = four rows, even at 20 tanks on the field
+      [5, 1, true], // …the fifth player collapses it, even at one tank each
+      [13, 1, true],
+      [8, 5, true],
     ] as const) {
+      // Keep the split inside the menu's own pools (≤8 humans, ≤8 CPUs) so every player draws a
+      // distinct roster colour — i.e. really is its own team.
+      gc.setHumanCount(Math.max(1, players - 8));
       gc.setTanksPerTeam(per);
-      gc.startGame(2);
+      gc.startGame(players);
       expect(gc.getStatusCompact()).toBe(collapsed);
-      expect(gc.getTankStatuses()).toHaveLength(2 * per); // the full roster is always reported
-      expect(gc.getTankStatuses().filter(s => s.active)).toHaveLength(1); // exactly one acting tank
+      expect(gc.getTeamStatuses()).toHaveLength(players); // one row per player, NOT per tank
+      expect(gc.getTeamStatuses().filter(s => s.active)).toHaveLength(1); // exactly one acting side
+      expect(gc.getTeamStatuses().every(s => s.lifePct === 100 && s.alive)).toBe(true);
+      expect(gc.getTeamStatuses().every(s => s.name.length > 0)).toBe(true); // labelled by player
     }
+  });
+
+  it("a squad's row averages its members' life, and squad suffixes are dropped", () => {
+    const gc = new CGameController(makeCanvas());
+    gc.setHumanCount(1);
+    gc.setTanksPerTeam(4);
+    gc.startGame(2);
+    const tanks = (gc as unknown as Tanks).m_tanks;
+    const mine = tanks.filter(t => t.getTeamId() === tanks[0].getTeamId());
+    expect(mine).toHaveLength(4);
+
+    // Individual tanks are "Name 1".."Name 4"; the team row is the bare player name.
+    const row = () => gc.getTeamStatuses().find(s => s.active)!;
+    expect(mine.some(t => t.getName() === row().name)).toBe(false); // not any one member's name
+    expect(mine[0].getName().startsWith(row().name)).toBe(true); // …but the stem they share
+
+    mine[0].hit(999999); // one of four wiped out
+    expect(mine[0].isAlive()).toBe(false);
+    expect(row().lifePct).toBe(75); // averaged over the squad, dead member counts as 0
+    expect(row().alive).toBe(true); // the side is still in it
   });
 
   it('the initial (default) setup is always a startable match (≥ 2 players)', () => {
