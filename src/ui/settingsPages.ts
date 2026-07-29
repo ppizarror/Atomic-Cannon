@@ -193,6 +193,7 @@ function graphicsRows(): Widget[] {
     enumW(s.landType, 'gfx.landType'),
     toggle(s.aiStats, 'gfx.aiStats'),
     toggle(s.teamColor, 'gfx.teamColor'),
+    toggle(s.statusScroll, 'gfx.statusScroll'),
     toggle(s.smallBuy, 'gfx.smallBuy'),
     enumW(s.mobileHud, 'gfx.mobileHud'),
     // Notch avoidance is only meaningful on a mobile/touch device with a safe-area inset.

@@ -58,6 +58,7 @@ export function applyGameConfig(): void {
   GameConfig.highContrast = S.highContrast();
   GameConfig.showAiStats = S.showAiStats();
   GameConfig.showTeamColor = S.showTeamColor();
+  GameConfig.statusScroll = S.statusScroll();
   GameConfig.smallBuyFonts = S.smallBuyFonts();
   // Graphics — More Graphics Options
   GameConfig.showTurn = S.showTurn();

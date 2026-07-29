@@ -75,6 +75,9 @@ const CATALOG = {
   'gfx.landType': {default: 5},
   'gfx.aiStats': {default: false},
   'gfx.teamColor': {default: true},
+  // Past the status list's row cap, scroll a window of rows that follows the acting player instead
+  // of printing that player alone (the original's behaviour, and the default here).
+  'gfx.statusScroll': {default: false},
   'gfx.smallBuy': {default: false},
   'gfx.mobileHud': {default: 0}, // touch HUD: 0 Auto (size detection) · 1 On · 2 Off
   'gfx.safeArea': {default: 1}, // mobile notch inset: 0 Off · 1 Notch side only · 2 Both sides (symmetric — clears both rounded corners)

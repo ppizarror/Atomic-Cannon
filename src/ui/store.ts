@@ -752,11 +752,35 @@ export const battleStatus = signal<{
   lines: {text: string; color: string; dead: boolean; active: boolean}[];
   battle: string;
   notice: string; // transient hint below the battle line ("Can't move underground."), '' = none
-  // Past 2 players: the desktop overlay prints only the ACTIVE line, since a row per tank would
-  // run down the screen. `lines` still carries every tank — the mobile dot row (compact by
-  // nature) keeps showing them all.
+  // Past `rows` players the desktop overlay stops listing everyone: it prints the ACTIVE line
+  // alone, or — with Scroll Status List on — a `rows`-long window that follows the turn. `lines`
+  // always carries every team; the mobile dot row (compact by nature) keeps showing them all.
   compact: boolean;
-}>({lines: [], battle: '', notice: '', compact: false});
+  scroll: boolean;
+  rows: number;
+}>({lines: [], battle: '', notice: '', compact: false, scroll: false, rows: 4});
+
+/** The status rows the desktop overlay actually prints.
+ *  • not compact (few enough players) — every row.
+ *  • compact — the acting player's row alone, as in the original.
+ *  • compact + Scroll Status List — a `rows`-long window STARTING at the acting player, wrapping
+ *    past the end, so the list rolls forward with the turn (1-4, then 2-5, … then 13,1,2,3).
+ *  Exported for the HUD and its tests; `lines` itself always holds every team. */
+export function statusWindow<T extends {active: boolean}>(
+  lines: readonly T[],
+  o: {compact: boolean; scroll: boolean; rows: number},
+): T[] {
+  if (!o.compact) return lines.slice();
+  if (!o.scroll) return lines.filter(l => l.active);
+  const n = lines.length;
+  const size = Math.max(1, Math.min(o.rows, n));
+  if (n === 0) return [];
+  const start = Math.max(
+    0,
+    lines.findIndex(l => l.active),
+  ); // no active row → start at the top
+  return Array.from({length: size}, (_, k) => lines[(start + k) % n]);
+}
 
 // Fraction of view width the top-left status text is pushed right to clear the
 // minimap (0 = no minimap → default left inset).
@@ -907,7 +931,9 @@ export function syncHud(): void {
   }));
   const battle = c.getStatusLine(); // "Round N of M" (Rounds) or "Battle N of M - Shot X"
   const notice = c.getStatusNotice(); // "Can't move underground." while the acting tank is buried
-  const compact = c.getStatusCompact(); // squad play → the overlay shows the active line only
+  const compact = c.getStatusCompact(); // too many players → the overlay stops listing everyone
+  const scroll = c.getStatusScroll(); // …then either a window that follows the turn, or one row
+  const rows = c.getStatusListRows();
   const sig =
     lines.map(l => l.text + l.color + l.dead + l.active).join('|') +
     '#' +
@@ -915,10 +941,12 @@ export function syncHud(): void {
     '#' +
     notice +
     '#' +
-    compact;
+    compact +
+    scroll +
+    rows;
   if (sig !== lastBattleSig) {
     lastBattleSig = sig;
-    battleStatus.value = {lines, battle, notice, compact};
+    battleStatus.value = {lines, battle, notice, compact, scroll, rows};
   }
   // Shift the status text clear of the minimap (large maps only).
   const slf = c.getMinimapRightFrac();

@@ -81,6 +81,7 @@ export const GameConfig = {
   highContrast: TYPE_BOOL, // High Contrast (white outline around tanks)
   showAiStats: TYPE_BOOL, // Show AI Stats (the active bot's aim solution)
   showTeamColor: TYPE_BOOL, // Show Team Color (name label)
+  statusScroll: TYPE_BOOL, // Scroll Status List (window that follows the turn vs. the active row alone)
   smallBuyFonts: TYPE_BOOL, // Small Buy Fonts (compact depot list font)
 
   // Graphics — More Graphics Options

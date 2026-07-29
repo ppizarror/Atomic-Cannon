@@ -6670,14 +6670,30 @@ export class CGameController implements ShotWorld {
     });
   }
 
-  /** Should the top-left overlay print ONLY the acting player's row instead of one per team?
-   *  True past 4 PLAYERS, as in the original: up to four sides are listed in full, and from the
-   *  fifth on it prints just whoever is shooting rather than a roster running down the screen.
-   *  Keyed on the team count, not the tank count — rows are per team (see getTeamStatuses), so
-   *  four players cost four rows whether they field one tank each or five. The mobile HUD's dot
-   *  row ignores this: one small dot per team stays readable at any count. */
+  /** Should the top-left overlay stop listing every team? True past STATUS_LIST_ROWS PLAYERS, as
+   *  in the original: up to four sides are listed in full, and from the fifth on the list is cut
+   *  down rather than running a roster down the screen. Keyed on the team count, not the tank
+   *  count — rows are per team (see getTeamStatuses), so four players cost four rows whether they
+   *  field one tank each or five. What replaces the full list is {@link getStatusScroll}'s call.
+   *  The mobile HUD's dot row ignores all of this: one small dot per team stays readable. */
   getStatusCompact(): boolean {
-    return this.m_teamCount > 4;
+    return this.m_teamCount > CGameController.STATUS_LIST_ROWS;
+  }
+
+  /** Rows the top-left status overlay will print. Doubles as the player count it starts cutting
+   *  the list at: 4 sides fit, the 5th makes it compact (see getStatusCompact). */
+  private static readonly STATUS_LIST_ROWS = 4;
+
+  /** Rows the status overlay shows once it's compact — also the player count it starts cutting at. */
+  getStatusListRows(): number {
+    return CGameController.STATUS_LIST_ROWS;
+  }
+
+  /** Scroll Status List (Graphics): once compact, show a WINDOW of rows that follows the turn
+   *  (players 1-4, then 2-5, …) instead of the acting player's row alone. Off = the original's
+   *  behaviour. Purely local presentation — never shared in a net match. */
+  getStatusScroll(): boolean {
+    return GameConfig.statusScroll;
   }
 
   // The aim (angle, power) at turn start — anchors the faded "initial" target cross.

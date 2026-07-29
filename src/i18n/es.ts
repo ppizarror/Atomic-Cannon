@@ -646,6 +646,10 @@ export const es: Strings = {
         label: 'Mostrar Color de Equipo',
         tip: 'Muestra el nombre y color de equipo de cada tanque',
       },
+      statusScroll: {
+        label: 'Desplazar Lista de Estado',
+        tip: 'Con más de 4 jugadores, desplaza la lista de estado junto con el turno en vez de mostrar solo al jugador activo',
+      },
       smallBuy: {
         label: 'Fuentes de Compra Pequeñas',
         tip: 'Usa una fuente más pequeña en el menú de compra',

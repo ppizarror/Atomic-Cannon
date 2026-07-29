@@ -24,6 +24,7 @@ import {
   game,
   uiClick,
   battleStatus,
+  statusWindow,
   statusLeftFrac,
   openDepot,
   canBuyNow,
@@ -467,11 +468,11 @@ function ControlPanel() {
 }
 
 // Top-left status overlay: each tank's "NAME: N% life" (team colour) then
-// "Battle X of Y - Shot Z" (white). Past 2 players (`compact`) only the acting tank's
-// line is printed — a full roster would otherwise run down the screen.
+// "Battle X of Y - Shot Z" (white). Past `rows` players (`compact`) the list is cut down — a full
+// roster would otherwise run down the screen. See statusWindow for what replaces it.
 function BattleStatus() {
   const s = battleStatus.value;
-  const lines = s.compact ? s.lines.filter(l => l.active) : s.lines;
+  const lines = statusWindow(s.lines, s);
   // On large maps the overview minimap occupies the top-left corner, so the status
   // lines shift right to sit beside it (matching the original).
   const lf = statusLeftFrac.value;

@@ -470,6 +470,7 @@ export interface Strings {
       landType: RowCopy;
       aiStats: RowCopy;
       teamColor: RowCopy;
+      statusScroll: RowCopy;
       smallBuy: RowCopy;
       mobileHud: RowCopy;
       safeArea: RowCopy;

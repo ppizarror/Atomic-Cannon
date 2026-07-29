@@ -623,6 +623,10 @@ export const en: Strings = {
       },
       aiStats: {label: 'Show AI Stats', tip: "Show the computer's stats"},
       teamColor: {label: 'Show Team Color', tip: 'Display each tanks name and team color'},
+      statusScroll: {
+        label: 'Scroll Status List',
+        tip: 'With more than 4 players, scroll the status list along with the turn instead of showing only the active player',
+      },
       smallBuy: {label: 'Small Buy Fonts', tip: 'Use a smaller font on the buy menu'},
       mobileHud: {
         label: 'Touch HUD',

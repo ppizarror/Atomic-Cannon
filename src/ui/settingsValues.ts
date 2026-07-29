@@ -68,6 +68,9 @@ export const gameSettings = {
   /** Supply-crate drop chance per turn (0..100 %). */
   crateChance: (): number => getVal('gp.crates'),
   showTeamColor: (): boolean => getVal('gfx.teamColor') !== 0,
+  /** Status list past its row cap: scroll a window that follows the acting player (vs. that
+   *  player's row alone). */
+  statusScroll: (): boolean => getVal('gfx.statusScroll') !== 0,
   showPowerBars: (): boolean => getVal('gfx.showPower') !== 0,
   showTankStats: (): boolean => getVal('gfx.tankStats') !== 0,
   tracking: (): boolean => getVal('gfx.tracking') !== 0,
