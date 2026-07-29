@@ -36,7 +36,7 @@ const CATALOG = {
   'tank.kickback': {default: 2, scale: [0, 0.6, 1, 1.5]},
   'tank.size': {default: 1, scale: [0.72, 1, 1.35]},
   'tank.relTurrets': {default: false},
-  'tank.bury': {default: false},
+  'tank.bury': {default: true},
   'tank.powerScale': {default: 100},
   'tank.hitpoints': {default: 1000},
   'tank.chatter': {default: true},
@@ -75,9 +75,8 @@ const CATALOG = {
   'gfx.landType': {default: 5},
   'gfx.aiStats': {default: false},
   'gfx.teamColor': {default: true},
-  // Past the status list's row cap, scroll a window of rows that follows the acting player instead
-  // of printing that player alone (the original's behaviour, and the default here).
-  'gfx.statusScroll': {default: false},
+  // Past the status list's row cap, scroll a window of rows that follows the acting player
+  'gfx.statusScroll': {default: true},
   'gfx.smallBuy': {default: false},
   'gfx.mobileHud': {default: 0}, // touch HUD: 0 Auto (size detection) · 1 On · 2 Off
   'gfx.safeArea': {default: 1}, // mobile notch inset: 0 Off · 1 Notch side only · 2 Both sides (symmetric — clears both rounded corners)
