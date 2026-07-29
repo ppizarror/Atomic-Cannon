@@ -71,8 +71,12 @@ afterEach(() => {
 });
 
 describe('Randomize Position', () => {
-  it('is OFF by default — each squad lands as one contiguous block', () => {
-    expect(dflt).toBe(false);
+  it('is ON by default — the original always shuffled tanks across the spawn bands', () => {
+    expect(dflt).toBe(true);
+  });
+
+  it('OFF: each squad lands as one contiguous block', () => {
+    GameConfig.randomizePosition = false;
     const gc = match();
     const teams = teamsByPosition(gc);
     expect(teams).toHaveLength(16);

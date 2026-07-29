@@ -225,11 +225,13 @@ const sentryMachineGunIndex = (): number => {
 // A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
 const SENTRY_FIRE_POWER = 1000;
 
-// Opening aim range (UI degrees) drawn per tank at each battle start: the whole upward half-circle,
-// 0 = flat right through 90 = straight up to 180 = flat left. Below-horizon aim (181..359) is
-// excluded — a tank would open the battle pointing into the ground.
+// Opening angle + power drawn per tank at each battle start (the original's ranges). The angle
+// spans the whole upward half-circle — 0 = flat right, 90 = straight up, 180 = flat left; the
+// below-horizon half (181..359) is excluded, since a tank would open the battle pointing into dirt.
 const START_AIM_MIN = 0;
 const START_AIM_MAX = 180;
+const START_POWER_MIN = 200;
+const START_POWER_MAX = 699;
 
 // DEATH-class weapon indices (Six Under, Burial Mound, Cremation, Ashes, Toxic Grave), in database
 // order. When a tank is destroyed while it still OWNS one of these, the FIRST is detonated on the
@@ -3546,22 +3548,24 @@ export class CGameController implements ShotWorld {
     return slots;
   }
 
-  /** Give `tank` its opening aim: a random angle over the upward half-circle (0 = flat right,
-   *  90 = straight up, 180 = flat left), so a battle doesn't start with every barrel frozen at the
-   *  same 45°. Drawn from the SEEDED match RNG, so a network match opens identically on every
-   *  client. The turret sprite and the last-shot fields follow the draw — the panel's Reset button
-   *  is documented to return to the starting aim before the first shot, so it must not snap back to
-   *  a 45° the tank never held. */
+  /** Give `tank` its opening shot settings: a random angle over the upward half-circle and a random
+   *  power, so a battle doesn't start with every barrel frozen at the same 45° / 500. Both ranges
+   *  come from the original (see the START_AIM / START_POWER bounds). Drawn from the SEEDED
+   *  match RNG, so a network match opens identically on every client. The turret sprite and the
+   *  last-shot fields follow the draw — the panel's Reset button is documented to return to the
+   *  starting aim before the first shot, so it must not snap back to a 45°/500 never held. */
   private randomizeStartAim(tank: CTank): void {
     const deg = this.m_rng.rangeInt(START_AIM_MIN, START_AIM_MAX);
+    const power = this.m_rng.rangeInt(START_POWER_MIN, START_POWER_MAX);
     tank.setAimAngle(deg);
     tank.setTurretAngle(deg);
-    tank.saveLastShot(deg, tank.getPower());
+    tank.setPower(power);
+    tank.saveLastShot(deg, power);
   }
 
   private tankSpawnX(i: number, n: number): number {
     const worldW = this.m_worldWidth;
-    const margin = 120;
+    const margin = Math.min(120, 0.025 * this.m_worldWidth);
     const frac = n <= 1 ? 0.5 : i / (n - 1);
     return Math.max(
       60,

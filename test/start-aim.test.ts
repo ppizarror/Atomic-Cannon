@@ -1,7 +1,8 @@
 /**
- * Opening aim: every tank starts a battle on its own random angle over the upward half-circle
- * (0..180) instead of all barrels frozen at 45°. Drawn from the seeded match RNG so a network
- * match opens identically on every client, and re-drawn at each battle of a war.
+ * Opening shot settings: every tank starts a battle on its own random angle over the upward
+ * half-circle (0..180) and its own random power (200..699), instead of every barrel frozen at
+ * 45° / 500. Both ranges are the original's. Drawn from the seeded match RNG so a network match
+ * opens identically on every client, and re-drawn at each battle of a war.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -33,22 +34,36 @@ describe('Opening aim', () => {
     expect(new Set(aims).size).toBeGreaterThan(1);
   });
 
-  it('the human opens the battle on its own drawn aim (the HUD reads it)', () => {
+  it('every tank starts on its own power, inside 200..699', () => {
+    const powers = priv(match()).m_tanks.map(t => t.getPower());
+    for (const p of powers) {
+      expect(Number.isInteger(p)).toBe(true);
+      expect(p).toBeGreaterThanOrEqual(200);
+      expect(p).toBeLessThanOrEqual(699);
+    }
+    expect(new Set(powers).size).toBeGreaterThan(1); // not the old shared 500
+  });
+
+  it('the human opens the battle on its own drawn aim + power (the HUD reads them)', () => {
     const gc = match();
     const human = priv(gc).m_tanks.find(t => t.isHuman())!;
     // startGame ends in beginTurn, which mirrors the acting tank's aim into the panel.
     expect(gc.getAngle()).toBe(human.getAimAngle());
+    expect(gc.getPower()).toBe(human.getPower());
   });
 
-  it('Reset returns to the drawn aim, not to a 45° the tank never held', () => {
+  it('Reset returns to the drawn opening, not to a 45°/500 the tank never held', () => {
     // resetAim is documented to restore the last shot, with the last-shot fields seeded to the
     // starting aim before the first shot — so the draw has to seed them too.
     const gc = match();
     const human = priv(gc).m_tanks.find(t => t.isHuman())!;
-    const opening = human.getAimAngle();
+    const angle = human.getAimAngle();
+    const power = human.getPower();
     gc.setAngle(123);
+    gc.setPower(777);
     gc.resetAim();
-    expect(gc.getAngle()).toBe(opening);
+    expect(gc.getAngle()).toBe(angle);
+    expect(gc.getPower()).toBe(power);
   });
 
   it('a fresh battle re-draws the aim', () => {

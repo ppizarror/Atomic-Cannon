@@ -56,7 +56,9 @@ const CATALOG = {
   'gp.roundTime': {default: 2, scale: [0, 15, 30, 45]}, // Round Timer seconds; index 0 = Off (infinite turns)
   'gp.utilTurn': {default: false},
   'gp.randTurns': {default: false},
-  'gp.randPos': {default: false}, // scatter the spawn slots so squads aren't grouped on the map
+  // Scatter the spawn slots so squads aren't grouped on the map. ON by default: the original always
+  // shuffled which tank took which spawn position — it was never an option there.
+  'gp.randPos': {default: true},
   'gp.altTurns': {default: false}, // interleave teams (A1,B1,A2,B2) instead of contiguous (A1,A2,B1,B2)
   'gp.weaponPersist': {default: false}, // squad-wide weapon pick (off = each tank keeps its own)
   'gp.crates': {default: 20},
