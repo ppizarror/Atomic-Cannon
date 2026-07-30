@@ -45,6 +45,10 @@ const viewport = signal({
   h: typeof window !== 'undefined' ? window.innerHeight : 9999,
 });
 
+/** Live viewport height in px. Exposed so layout that has to FIT the screen can react to it —
+ *  the Settings pager sizes its pages off this rather than a hardcoded row count. */
+export const viewportH = computed(() => viewport.value.h);
+
 export const isMobile = computed(() => {
   const mode = getVal('gfx.mobileHud'); // 0 Auto · 1 On · 2 Off
   if (mode === 1) return true;
@@ -54,23 +58,18 @@ export const isMobile = computed(() => {
 });
 
 // Avoid-Notch inset. gfx.safeArea: 0 Off · 1 Notch Side · 2 Both Sides.
-//  • Notch Side (1): the notch sits on ONE side in landscape but iOS reports an inset on
-//    BOTH sides — insetting both would waste the notch-free edge, so we put the WHOLE inset
-//    on the notch side only (larger inset; ties broken by orientation angle) and free the
-//    other edge. Uses the full width bar the notch.
-//  • Both Sides (2): inset both edges equally (by the larger inset) — clears the OPPOSITE
-//    rounded corner too, so the wind readout / FIRE button aren't clipped by it.
-// Exposed to CSS as --sa-l/--sa-r/--sa-t (consumed by the .safe-area rules).
-function applyNotchInset(): void {
+function applyNotchInset(): boolean {
   const probe = document.createElement('div');
   probe.style.cssText =
     'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;' +
-    'padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)';
+    'padding:env(safe-area-inset-top) env(safe-area-inset-right) ' +
+    'env(safe-area-inset-bottom) env(safe-area-inset-left)';
   document.body.appendChild(probe);
   const cs = getComputedStyle(probe);
   const l = parseFloat(cs.paddingLeft) || 0;
   const r = parseFloat(cs.paddingRight) || 0;
   const t = parseFloat(cs.paddingTop) || 0;
+  const b = parseFloat(cs.paddingBottom) || 0;
   probe.remove();
 
   const side = Math.max(l, r);
@@ -91,6 +90,8 @@ function applyNotchInset(): void {
     root.setProperty('--sa-r', notchLeft ? '0px' : `${side}px`);
   }
   root.setProperty('--sa-t', `${t}px`);
+  root.setProperty('--sa-b', `${b}px`);
+  return side > 0 || t > 0 || b > 0;
 }
 
 export function watchViewport(): void {
@@ -106,13 +107,14 @@ export function watchViewport(): void {
   effect(() => {
     document.documentElement.classList.toggle('mobile', isMobile.value);
   });
-  // "Avoid Notch": inset gameplay past the safe area (CSS keys off .safe-area). Mobile-only.
-  // Re-applies the inset vars when the mode OR the viewport changes (env insets are 0 on
-  // desktop anyway, but gating the class keeps <html> clean).
+  // "Avoid Notch": inset gameplay past the safe area (CSS keys off .safe-area). Driven by the
+  // insets the device ACTUALLY reports, not by the touch-HUD breakpoint — a landscape iPad is
+  // well past that breakpoint yet still has a status bar / home indicator to clear. A desktop
+  // browser reports zero insets, so the class stays off there on its own.
   effect(() => {
-    const on = isMobile.value && getVal('gfx.safeArea') > 0;
+    void viewport.value; // re-measure on resize / rotate: the insets move with orientation
+    const on = getVal('gfx.safeArea') > 0 && applyNotchInset();
     document.documentElement.classList.toggle('safe-area', on);
-    applyNotchInset(); // recompute --sa-* for the current mode (single vs symmetric)
   });
 }
 

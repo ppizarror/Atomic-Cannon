@@ -13,7 +13,7 @@ import {strings} from '../i18n';
 import {settingsPageBack} from './store';
 import {BigButton} from './BigButton';
 import {MenuScreen} from './MenuScreen';
-import {getSettingsPage} from './settingsPages';
+import {getSettingsPage, settingsRowPitch} from './settingsPages';
 import {WidgetRow} from './WidgetRow';
 import {useForceRender} from './useForceRender';
 import {useMenuNav} from './useMenuNav';
@@ -29,6 +29,19 @@ export function SettingsPage({id}: {id: string}) {
     document.addEventListener('fullscreenchange', bump);
     return () => document.removeEventListener('fullscreenchange', bump);
   }, [bump]);
+
+  // Feed the pager the REAL row pitch so it can fit pages to the screen (see pageSize). Runs after
+  // every render — the pitch shifts with the mobile `zoom` and the short-viewport compaction, which
+  // no constant would track. Two rows give the true pitch including the list gap; one row falls back
+  // to its own height. Publishing a changed value re-renders with the new page size and then settles,
+  // because the pitch of a uniform row doesn't depend on how many of them there are.
+  useEffect(() => {
+    const rows = navRef.current?.querySelectorAll('.settings-row');
+    if (!rows?.length) return;
+    const first = rows[0].getBoundingClientRect();
+    const pitch = rows.length > 1 ? rows[1].getBoundingClientRect().top - first.top : first.height;
+    if (pitch > 0 && Math.abs(pitch - settingsRowPitch.value) > 0.5) settingsRowPitch.value = pitch;
+  });
 
   const page = getSettingsPage(id);
   if (!page) return null;

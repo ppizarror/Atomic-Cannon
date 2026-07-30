@@ -192,8 +192,7 @@ canvas {
    Island; the freed strip shows the black body background. The insets come from
    --sa-l/--sa-r/--sa-t (set by store.applyNotchInset), which put the WHOLE landscape
    inset on the NOTCH side only so the notch-free edge stays usable. They're 0 before JS
-   runs / on non-notched devices, so this is inert there. Bottom stays 0 (home-indicator
-   inset is handled by --hud-h). */
+   runs / on non-notched devices, so this is inert there. */
 :root.safe-area #game-container {
   left: var(--sa-l, 0px);
   right: var(--sa-r, 0px);
@@ -205,6 +204,24 @@ canvas {
 :root.safe-area #hud {
   left: var(--sa-l, 0px);
   right: var(--sa-r, 0px);
+}
+
+/* Bottom home-indicator strip. The touch bar folds it into --hud-h (see --safe-b), but the DESKTOP
+   bar had no equivalent — and a landscape tablet runs the desktop bar, so the strip below it was
+   left showing the bare body background as a black band. Grow the bar by the inset and pad its
+   content up, so its metal reaches the screen edge while no control sits under the indicator.
+   Standalone only: in a Safari TAB iOS already reserves its own toolbar, and adding the inset there
+   would just steal battlefield height.
+   The bar's growth and the world's matching shrink MUST stay in the SAME query: subtracting the
+   inset from the world outside it opened a --sa-b gap of bare background between the two. */
+@media (display-mode: standalone) {
+  :root.safe-area #hud {
+    height: calc(var(--hud-h) + var(--sa-b, 0px));
+    padding-bottom: var(--sa-b, 0px);
+  }
+  :root.safe-area #game-container {
+    height: calc(100dvh - var(--hud-h) - var(--sa-t, 0px) - var(--sa-b, 0px));
+  }
 }
 
 /* The mobile bottom sheets (weapon list / power / angle) sit above the bar — inset them

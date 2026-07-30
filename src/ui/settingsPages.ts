@@ -10,11 +10,13 @@
  * Language row drives the i18n locale signal — one live source of truth each. A row's game
  * effect is wired via `applyGameSettings`.
  */
+import {signal} from '@preact/signals';
 import {strings, fmt, locale, setLocale, availableLocales, localeName} from '../i18n';
 import type {RowCopy} from '../i18n';
 import {getVal, setVal} from './settingsStore';
 import {type SettingId} from './settingsCatalog';
-import {game, openSettingsPage, isMobile} from './store';
+import {game, openSettingsPage, isMobile, viewportH} from './store';
+import {clamp} from '../math/num';
 import {applyGameSettings} from './applySettings';
 
 export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';
@@ -283,10 +285,31 @@ function contentRows(): Widget[] {
   return [navRow(s.weapons, 'content.weapons'), navRow(s.landscapes, 'content.landscapes')];
 }
 
-/** Max real options shown on one settings page. Anything longer auto-splits into sub-pages, each
- *  ending in a free "More Options" nav (the nav itself does NOT count toward the cap). The mobile
- *  HUD's compact rows fit fewer per screen, so it paginates sooner. */
-const pageSize = (): number => (isMobile.value ? 6 : 10);
+/** Row PITCH in px (height + the list's gap), measured off a real rendered row by SettingsPage and
+ *  published here. 0 = nothing rendered yet. Measuring beats a constant: the row is bitmap glyphs
+ *  plus padding, and the mobile list carries a CSS `zoom`, so its true pitch (32.8px at zoom 0.8 vs
+ *  41px) falls out of the measurement instead of needing a second hardcoded number. */
+export const settingsRowPitch = signal(0);
+
+/** Fraction of the viewport a page's rows may fill before it splits. Not 100%: the page also carries
+ *  a title above and a hover subtitle below, and a list running to the very edge reads as clipped. */
+const PAGE_HEIGHT_FRACTION = 0.6;
+/** Slots the list spends on things that aren't options: the "More Options" nav and the Done button. */
+const RESERVED_ROWS = 2;
+/** Fallbacks for the very first paint, before a row exists to measure (the previous fixed values). */
+const FALLBACK_SIZE = {mobile: 6, desktop: 10};
+
+/** Max real options shown on one settings page; anything longer auto-splits into sub-pages, each
+ *  ending in a free "More Options" nav. Derived from how many rows actually FIT: a fixed 6/10 left a
+ *  tall phone showing 6 rows over a third of the screen while a short desktop window overflowed. */
+const pageSize = (): number => {
+  const pitch = settingsRowPitch.value;
+  if (pitch <= 0) return isMobile.value ? FALLBACK_SIZE.mobile : FALLBACK_SIZE.desktop;
+  const slots = Math.floor((viewportH.value * PAGE_HEIGHT_FRACTION) / pitch) - RESERVED_ROWS;
+  // Floor of 3 so a tiny viewport still paginates instead of producing empty pages; the ceiling
+  // just stops one page swallowing every option on an enormous screen.
+  return clamp(slots, 3, 30);
+};
 
 /** Slice a category's full row list to the requested sub-page, appending a "next page" nav to every
  *  page but the last. The sub-page index rides in the route id as `<base>~<n>` (page 0 = bare id),
