@@ -493,10 +493,25 @@ export class CParticleSystem {
 
   // ---------------------------------------------------------------- profiles
 
-  /** The generic coloured fireball ring — `count` flares on a fixed speed/life/size/colour tail.
-   *  Shared by the dirt-deposit blast and the fiery non-preset blast so the magic tail can't drift. */
+  /** The generic coloured fireball ring — `count` flares on a shared life/size/colour tail, their
+   *  SPEED scaled by the blast radius (the original scales its flare speed ∝ blast magnitude).
+   *  Shared by the dirt-deposit blast and the fiery non-preset blast so the magic tail can't drift.
+   *
+   *  The speeds used to be fixed px/s, which made the spray's REACH a constant while the crater
+   *  scaled: 200 px/s over a 0.7 s life throws a spark 140 px, i.e. 1.5·r out of a 90-radius hole
+   *  but 2.3·r out of a 60-radius one. That is the "offside sparks" a Plasma (r 60) flung into the
+   *  sky while a Plasma Bomb (r 90) — same style, same sprite — looked contained. Scaling on r
+   *  keeps the spray at ~0.3..1.5·r for every weapon; the factors are calibrated at r = 90 so the
+   *  sizes that already read correctly are unchanged. */
   private emitFireballRing(x: number, y: number, r: number, count: number, c: RGB): void {
-    this.emitRadial(x, y, count, 70, 200, 0.35, 0.7, r * 0.14 + 2, toward255(c, 0.3), 'flare');
+    const tail = toward255(c, 0.3);
+    // Ember SIZE is a radius fed to the glow blit, which scales it by 1.7 — so the old `r·0.14 + 2`
+    // drew each ember at 0.30·r, i.e. one "spark" nearly as wide as the crater itself, and 33 of
+    // them read as floating orbs rather than a fireball. `r·0.045` puts a member at ~0.12·r.
+    // SPEED tops out at r·1.4 so the furthest ember travels ≈ r over its 0.7 s life and the fireball
+    // stays in the hole it fills; r·2.2 let the tail carry 1.5·r past the rim.
+    const size = r * 0.045 + 1.5; // floor keeps a tiny blast's embers visible
+    this.emitRadial(x, y, count, r * 0.5, r * 1.4, 0.35, 0.7, size, tail, 'flare');
   }
 
   /**
@@ -598,7 +613,10 @@ export class CParticleSystem {
         this.emitEjectaRing(x, y, r);
         this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, toward255(c, 0.2), 'disc');
       } else {
-        this.emitBox(x, y, Math.round(r * 0.7) + 16, 90, 0.4, 1.0, 1.5, toward255(c, 0.2), 'disc');
+        // Spark spray, speed scaled by the crater for the same reason as emitFireballRing: a fixed
+        // 90 px/s threw a small blast's sparks clear of its own hole. `r` reproduces the old reach
+        // at r ≈ 90 and stays proportional below/above it.
+        this.emitBox(x, y, Math.round(r * 0.7) + 16, r, 0.4, 1.0, 1.5, toward255(c, 0.2), 'disc');
       }
     }
 
@@ -1192,7 +1210,7 @@ export class CParticleSystem {
       // Flare-burst members START big and SHRINK to nothing (the original's contracting
       // white flash); the central bloom GROWS. Both additive, so overlapping shrink flares
       // stack into a bright core that collapses inward.
-      const d = e.shrink ? e.size * (1 - t) * 2 : e.size * (0.7 + t * 1.8) * 2;
+      const d = e.shrink ? e.size * (1 - t) : e.size * (0.7 + t * 1.8) * 2;
       const a = e.shrink ? (1 - t) * 0.9 : (1 - t) * (t < 0.15 ? t / 0.15 : 1);
       const spr =
         this.m_assets?.getSprite(e.sprite) ?? this.m_assets?.getSprite('fx:explosion') ?? null;

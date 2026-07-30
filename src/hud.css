@@ -132,7 +132,6 @@ canvas {
 .mainmenu,
 .settings-screen,
 .editor-screen,
-.war-standings,
 .highscores,
 .net-screen {
   position: fixed;
@@ -141,6 +140,17 @@ canvas {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+/* `bg-none` is the transparent-backdrop screen — only the battle/war standings, which draw OVER
+   the live world instead of replacing it with a plate. Its TABLE must centre inside the PICTURE,
+   not the viewport: the bottom --hud-h strip is empty black here (the HUD is hidden once the battle
+   ends), so centring against the full height pushed the standings low.
+   Only the flex BODY is shortened, never the layer itself: `.settings-subtitle` is absolutely
+   positioned against the root, so clamping the root's height would drag the "click anywhere…"
+   prompt up out of the black strip too — and that prompt belongs in the strip. */
+.settings-screen.bg-none .settings-scroll {
+  margin-bottom: var(--hud-h);
 }
 
 /* World renders here, ABOVE the HUD (not behind it). */
