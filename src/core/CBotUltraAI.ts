@@ -54,6 +54,58 @@ export interface UltraWeapon {
   offensive: boolean; // a damaging round the bot may fire at a target
 }
 
+/** A living SQUADMATE. Ultra scores splash on its own team as a real COST: friendly damage earns the
+ *  shooter nothing, and a friendly kill actively subtracts from its credits and its kill tally (see
+ *  handleTankDestroyed / awardKillCredit). A shot that clips an ally is usually worse than no shot. */
+export interface UltraAlly {
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  shield: number;
+  hitRadius: number;
+  /** Life this "ally" has taken off its OWN side. A traitor forfeits the protection: the higher this
+   *  climbs the more the squad stops treating them as a teammate and starts shooting back. */
+  betrayal: number;
+  /** Their standing in the race the battle is actually scored on (kills in Deathmatch, damage dealt
+   *  in Points/Rounds). Only one team can be top of the board — an ally running away with it is a
+   *  rival for the win, which is what makes a late betrayal rational rather than random. */
+  score: number;
+}
+
+/**
+ * What the OPPOSITION is holding, and what it has actually been throwing. Weapons are visible in this
+ * game, so Ultra reads the enemy arsenal directly and plans AGAINST it rather than against the terrain
+ * alone — this is what lets it answer a nuke build with beams and a self-burial instead of trading
+ * shells until it loses. `fired*` are observations (intent) on top of `has*` (capability).
+ */
+export interface UltraThreat {
+  bigBlastDamage: number; // heaviest single round any living enemy could land on us right now
+  hasNuke: boolean; // holds nuke-class ordnance — a big blast is coming
+  hasBeam: boolean; // holds a beam: a ray that reaches us THROUGH dirt, so burying hides nothing
+  hasEarth: boolean; // holds a dirt round — can bury US (pinning us) as easily as we can bury ourselves
+  hasCleaner: boolean; // holds an earth-remover — burying THEM only pins them for a turn
+  credits: number; // enemy war chest: how fast they can escalate to something worse
+  firedNukes: number; // rounds they have ACTUALLY thrown — intent, not just capability
+  firedBeams: number;
+  firedEarth: number;
+  shotsSeen: number; // enemy rounds observed in total (the denominator for the above)
+}
+
+/** A blank opposition read — used when the caller supplies no threat model (unit tests). */
+export const NO_THREAT: UltraThreat = {
+  bigBlastDamage: 0,
+  hasNuke: false,
+  hasBeam: false,
+  hasEarth: false,
+  hasCleaner: false,
+  credits: 0,
+  firedNukes: 0,
+  firedBeams: 0,
+  firedEarth: 0,
+  shotsSeen: 0,
+};
+
 /** A supply crate the bot could drive onto. `bomb` is a trap (negative value). */
 export interface UltraCrate {
   x: number;
@@ -75,6 +127,7 @@ export interface UltraSelf {
   onRadiation: boolean; // standing on the fallout carpet right now
   buried: boolean; // sunk under the dirt — a ballistic round would detonate in it and self-damage
   threatened: boolean; // took damage since its last turn → an enemy has its range; seek cover
+  score?: number; // our own standing in the scored race (see UltraAlly.score) — for the betrayal call
 }
 
 export interface UltraCtx {
@@ -92,6 +145,17 @@ export interface UltraCtx {
   mines: number[]; // world-x of known mines — a drive must never roll the tank over one
   weights?: UltraWeights; // this bot's personality (defaults to ULTRA_WEIGHTS_DEFAULT when absent)
   rnd: () => number;
+  // ── Optional enrichments. Each has a safe default so the planner still runs on a bare context
+  // (unit tests build one by hand); the controller always supplies them in a real match. ──
+  allies?: UltraAlly[]; // living squadmates — splash on them is scored as a cost, never ignored
+  threat?: UltraThreat; // the opposition read (arsenal + what they've been firing)
+  focusX?: number; // world-x of the squad's agreed kill target — team focus fire converges here
+  /** Life the fallout at column x would cost over one turn parked there (0 on clean ground). Lets a
+   *  move weigh "how much radiation is that, really?" instead of treating any speck as lethal. */
+  radiationCostAt?: (x: number) => number;
+  /** The battle is nearly decided (few enemies left / final rounds) — the point at which an ally who
+   *  is beating us stops being a teammate and starts being the last thing between us and the win. */
+  endgame?: boolean;
 }
 
 /** The chosen action. `note` is a short human/debug/test label for WHY. */
@@ -135,6 +199,35 @@ const MINE_SPACING = 90;
 const COVER_VALUE = 175;
 const COVER_MARGIN = 40; // a candidate spot must beat the current one's cover by this much to bother
 
+// ── Team play ────────────────────────────────────────────────────────────────────────────────────
+// Splash on a SQUADMATE costs more than the life it removes: the shooter earns no credit for it and a
+// friendly kill subtracts a kill from its tally on top. Priced above 1:1 so a shot that catches an ally
+// has to be genuinely devastating to the enemy before it's taken.
+const FRIENDLY_FIRE_COST = 2.2;
+const FRIENDLY_KILL_COST = 2000; // killing your own tank is a catastrophe, not a trade
+// Converging the squad on ONE target: everyone shooting the same tank turns chip damage into kills
+// (credits + a standings point) instead of leaving three enemies half-hurt and still firing back.
+const FOCUS_VALUE = 220;
+const FOCUS_TOL = 90; // an enemy within this of the focus point counts as "the focus target"
+
+// ── Reading the opposition ───────────────────────────────────────────────────────────────────────
+// Fraction of an incoming ground-burst the dirt overhead soaks once we're buried: the round detonates
+// on the surface ABOVE the tank instead of on the hull, so the engine's distance falloff does the work.
+const BURY_SOAK_FRAC = 0.45;
+export const SELF_BURY_MIN_EARTH = 30; // a dirt round must pile at least this much to be worth burying under
+const SELF_BURY_MIN_GAIN = 120; // net life saved (after the round's own blast) below which it's not worth a turn
+// How big an incoming round has to look before turtling is even considered, when the enemy holds no
+// outright nuke. Below this we just trade fire.
+const SELF_BURY_MIN_THREAT = 260;
+
+// ── Attack priority ──────────────────────────────────────────────────────────────────────────────
+// A non-attacking play (flee / buff / bury) must beat the best available SHOT by this factor to take
+// the turn instead of it. Ultra is here to win, not to potter about: with a real shot on the table,
+// wandering off has to be clearly better, not merely comparable.
+const NON_ATTACK_MARGIN = 1.35;
+// Above this shot value the bot never takes a "cunning" setup play instead — a big hit is the play.
+const TRICK_MAX_SHOT_VALUE = 500;
+
 /**
  * PERSONALITY weights — the knobs that make one Ultra bot play differently from another, so two of
  * them don't converge on identical lines. The controller assigns each Ultra bot a personality per
@@ -150,6 +243,13 @@ export interface UltraWeights {
   trickChance: number; // chance to take a setup play over the raw-best shot
   healBelow: number; // life fraction at/under which it self-heals (higher = more cautious)
   explore: number; // 0..1 — randomness among near-best NON-kill shots (0 = always the top pick)
+  finisherBonus: number; // pressure on an already-WEAK tank: the same damage is worth more when it
+  //                        converts to a kill sooner (credits + a point, and it stops shooting back)
+  teamplay: number; // 0..1 — how hard it converges on the squad's shared focus target
+  paranoia: number; // 0..1 — how strongly an enemy nuke build pushes it to turtle (bury / beam up)
+  treachery: number; // 0..1 — willingness to turn on a WINNING teammate once the battle is all but
+  //                    decided. 0 = loyal to the end. Retaliation against someone who shot US first
+  //                    is separate (see hostility) and every personality does that.
 }
 
 export const ULTRA_WEIGHTS_DEFAULT: UltraWeights = {
@@ -161,6 +261,10 @@ export const ULTRA_WEIGHTS_DEFAULT: UltraWeights = {
   trickChance: 0.15,
   healBelow: 0.6,
   explore: 0.28,
+  finisherBonus: 420,
+  teamplay: 0.7,
+  paranoia: 0.6,
+  treachery: 0.12, // mostly loyal; will pounce if a teammate is running away with a decided battle
 };
 
 /** Named personalities. Each Ultra bot draws one at match start (see the controller), so a ruthless
@@ -177,6 +281,10 @@ export const ULTRA_PERSONALITIES: Record<string, UltraWeights> = {
     healBelow: 0.4,
     buryBonus: 120,
     explore: 0.1,
+    finisherBonus: 620, // hunts the wounded — finishes tanks off rather than spreading damage
+    teamplay: 0.85,
+    paranoia: 0.25, // rarely turtles; answers a nuke by killing them first
+    treachery: 0.55, // only one tank can top the board, and it intends to be the one
   },
   // Survival first: modest aggression, hoards premiums, heals early, values loot, mixes weapons up.
   cautious: {
@@ -186,6 +294,10 @@ export const ULTRA_PERSONALITIES: Record<string, UltraWeights> = {
     creditValue: 0.5,
     healBelow: 0.78,
     explore: 0.35,
+    finisherBonus: 330,
+    teamplay: 0.6,
+    paranoia: 1, // the turtle: reads an enemy nuke and digs in behind beams
+    treachery: 0, // never turns on its own side — it still shoots back at one that turns on it
   },
   // Plays mind-games: loves traps/reposition/bury setups over raw damage, very varied.
   trickster: {
@@ -195,6 +307,10 @@ export const ULTRA_PERSONALITIES: Record<string, UltraWeights> = {
     killBonus: 1100,
     dotWeight: 0.8,
     explore: 0.45,
+    finisherBonus: 380,
+    teamplay: 0.45, // freelances more than the others
+    paranoia: 0.8,
+    treachery: 0.3,
   },
 };
 export const ULTRA_PERSONALITY_NAMES = Object.keys(ULTRA_PERSONALITIES);
@@ -203,7 +319,12 @@ export const ULTRA_PERSONALITY_NAMES = Object.keys(ULTRA_PERSONALITIES);
  *  model (full inside the core, linear falloff to zero at the outer edge; beams = full everywhere).
  *  `spread` widens the OUTER reach so cluster/airburst rounds correctly catch tanks spread over an
  *  area (their submunitions rain wide), which is why Ultra reaches for them against a spread group. */
-export function blastDamageToEnemy(cx: number, cy: number, w: UltraWeapon, e: UltraEnemy): number {
+export function blastDamageToEnemy(
+  cx: number,
+  cy: number,
+  w: UltraWeapon,
+  e: {x: number; y: number; hitRadius: number},
+): number {
   const collR = e.hitRadius;
   const outer = Math.max(w.radius + w.spread, 0) + collR;
   const inner = w.innerR + collR;
@@ -213,30 +334,92 @@ export function blastDamageToEnemy(cx: number, cy: number, w: UltraWeapon, e: Ul
   return w.damage * (1 - dist / outer);
 }
 
-/** Effective HP the bot must chew through to KILL an enemy: life plus the shield (armor/hazmat are
+/** Effective HP the bot must chew through to KILL a tank: life plus the shield (armor/hazmat are
  *  percentage soaks we fold in loosely). Piercing rounds bypass the shield. */
-function effectiveHp(e: UltraEnemy, piercing: boolean): number {
+function effectiveHp(e: {life: number; shield: number}, piercing: boolean): number {
   return e.life + (piercing ? 0 : e.shield);
 }
 
-/** Score a weapon detonating at (cx,cy): total EFFECTIVE damage across all enemies + a kill bonus
- *  per tank it would drop. Effective damage is capped at each tank's HP (no overkill credit). */
+/** How hurt a tank already is, 0 (untouched) … 1 (on its last legs) — the "shoot the weak one" term. */
+function weakness(e: {life: number; maxLife: number}): number {
+  return clamp(1 - e.life / Math.max(1, e.maxLife), 0, 1);
+}
+
+/**
+ * How much of a teammate's protection they've forfeited, 0..1. A clean ally is 1 (fully protected);
+ * one that has been shelling its own side slides toward 0, at which point the squad scores a shot at
+ * them exactly like a shot at the enemy. Nobody keeps covering for the guy who keeps hitting them.
+ */
+function trust(a: UltraAlly): number {
+  return clamp(1 - a.betrayal / GRUDGE_FULL_BETRAYAL, 0, 1);
+}
+const GRUDGE_FULL_BETRAYAL = 450; // friendly damage at which an ally is treated as an outright enemy
+
+/** A teammate paired with how much of a legitimate TARGET they currently are (see {@link hostility}). */
+interface AllyTarget {
+  ally: UltraAlly;
+  hostility: number;
+}
+
+/**
+ * How much this teammate has stopped being one, 0..1 — the number that lets one continuous rule cover
+ * "cover your squad", "shoot back at the guy who shelled you" and "the last ally standing between you
+ * and the win". Two ways a teammate becomes a target:
+ *  • GRUDGE — they've been putting rounds into their own side. Retaliation needs no further excuse,
+ *    scales with how much they've done, and is what stops a traitor farming their own team for free.
+ *  • BETRAYAL — cold, deliberate, and deliberately rare: only once the battle is nearly decided, only
+ *    against a teammate who is actually BEATING us on the board (one team tops it, and if they're ahead
+ *    it won't be us), and only as far as this bot's `treachery` allows. A cautious bot never does it;
+ *    a ruthless one will. That combination is what makes it read as a decision rather than a glitch.
+ */
+function hostility(a: UltraAlly, ctx: UltraCtx, wt: UltraWeights): number {
+  const grudge = 1 - trust(a);
+  if (grudge > 0.01) return grudge;
+  if (!ctx.endgame || wt.treachery <= 0) return 0;
+  const mine = ctx.self.score ?? 0;
+  if (a.score <= mine) return 0; // not the one standing between us and the win — leave them alone
+  return wt.treachery;
+}
+
+/**
+ * Score a weapon detonating at (cx,cy). Sums EFFECTIVE damage across every enemy it catches (capped
+ * at each tank's HP — no overkill credit) plus a kill bounty, and then SUBTRACTS what it does to our
+ * own squad. On top of raw damage it prices the two things a good human player is actually tracking:
+ *  • FINISHER — the same 200 damage is worth far more on a tank that only has 250 left than on a
+ *    fresh one: it converts into a kill (credits + a standings point) and takes a gun off the board.
+ *  • FOCUS — everyone in the squad shooting the SAME tank ends the fight; three half-dead enemies
+ *    still shoot back, one dead one doesn't.
+ */
 function scoreBlast(
   cx: number,
   cy: number,
   w: UltraWeapon,
   enemies: UltraEnemy[],
   wt: UltraWeights,
-): {value: number; kills: number; hits: number} {
+  allies: AllyTarget[] = [],
+  focusX?: number,
+): {value: number; kills: number; hits: number; allyHits: number; damage: number} {
   let value = 0,
     kills = 0,
-    hits = 0;
+    hits = 0,
+    allyHits = 0,
+    damage = 0;
   for (const e of enemies) {
     const raw = blastDamageToEnemy(cx, cy, w, e);
     if (raw <= 0) continue;
     hits++;
     const hp = effectiveHp(e, w.piercing);
-    value += Math.min(raw, hp); // don't reward overkill beyond what removes the tank
+    const dealt = Math.min(raw, hp); // don't reward overkill beyond what removes the tank
+    value += dealt;
+    damage += dealt;
+    // FINISHER: a WOUNDED tank is worth hitting more than a healthy one — the same round converts into
+    // a kill (credits + a standings point) far sooner, and a dead tank stops shooting back. Keyed on
+    // how hurt the TARGET already is, not on how big our round is, so it steers WHO we shoot without
+    // disturbing WHICH weapon we pick for the job.
+    value += weakness(e) * wt.finisherBonus;
+    // FOCUS: the squad's agreed target. Converging turns three wounded enemies into one dead one.
+    if (focusX !== undefined && Math.abs(e.x - focusX) <= FOCUS_TOL)
+      value += FOCUS_VALUE * wt.teamplay;
     if (raw >= hp) {
       kills++;
       value += wt.killBonus;
@@ -247,8 +430,31 @@ function scoreBlast(
       value += Math.min(w.dotValue, hp - raw) * wt.dotWeight;
     }
   }
-  return {value, kills, hits};
+  // OUR OWN SQUAD. Splash on a teammate earns nothing and a friendly kill costs credits AND a kill off
+  // our tally, so it's priced ABOVE the life it removes: a shot that clips an ally has to be
+  // devastating to the enemy before it's worth taking. `hostility` (0..1) is how much that teammate has
+  // stopped being one — retaliation against someone who shelled us, or a cold late-game move on the
+  // squadmate who's about to take the win. It slides the same tank continuously from "protect at all
+  // costs" to "score exactly like an enemy".
+  for (const {ally: a, hostility: h} of allies) {
+    const raw = blastDamageToEnemy(cx, cy, w, a);
+    if (raw <= 0) continue;
+    allyHits++;
+    const hp = effectiveHp(a, w.piercing);
+    const dealt = Math.min(raw, hp);
+    const friend = 1 - h;
+    // What we'd gain if they're fair game…
+    value += h * (dealt + weakness(a) * wt.finisherBonus);
+    if (raw >= hp) value += h * wt.killBonus;
+    // …and what it costs us while they're still a teammate.
+    value -= friend * dealt * FRIENDLY_FIRE_COST;
+    if (raw >= hp) value -= friend * FRIENDLY_KILL_COST;
+  }
+  return {value, kills, hits, allyHits, damage};
 }
+
+/** Anything we're willing to point the gun at — an enemy, or a teammate who has become one. */
+type AimTarget = {x: number; y: number; hitRadius: number; buried?: boolean};
 
 interface ShotPlan {
   weaponIndex: number;
@@ -285,7 +491,20 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     (a.value === b.value &&
       weaponCost(weapons, a.weaponIndex) < weaponCost(weapons, b.weaponIndex));
 
-  for (const e of enemies) {
+  // Our own squad, each priced by how much of a target they've become (grudge / late-game betrayal).
+  const allies: AllyTarget[] = (ctx.allies ?? []).map(a => ({
+    ally: a,
+    hostility: hostility(a, ctx, wt),
+  }));
+  const focusX = ctx.focusX;
+  // Where we're willing to AIM. Enemies always; a teammate only once they're a real target — otherwise
+  // we'd never solve an arc onto them and a traitor could shell their own side unanswered forever.
+  const aimAt: AimTarget[] = [
+    ...enemies,
+    ...allies.filter(t => t.hostility > 0.05).map(t => t.ally),
+  ];
+
+  for (const e of aimAt) {
     // BEAMS are hitscan straight rays: only score them when the LINE from the muzzle to the enemy is
     // CLEAR — a beam can't shoot through a mountain (scoring it as an always-hit is why it used to be
     // over-picked and nukes never fired). Aim straight at the enemy, no arc.
@@ -302,14 +521,14 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
       ctx.self.buried || !beamBlocked(muzzleFor(beamAngle), {x: e.x, y: e.y}, field);
     if (beamClear)
       for (const w of firers.filter(f => f.isBeam)) {
-        const s = scoreBlast(e.x, e.y, w, enemies, wt);
-        if (s.hits > 0)
+        const s = scoreBlast(e.x, e.y, w, enemies, wt, allies, focusX);
+        if (s.hits + s.allyHits > 0)
           consider({
             weaponIndex: w.index,
             angleDeg: beamAngle,
             power: 1000,
             targetX: e.x,
-            value: adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate),
+            value: adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate, s.damage),
             kills: s.kills,
             hits: s.hits,
             note: `beam ${describe(s)}`,
@@ -338,9 +557,9 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     if (!shot.hitGround && !directHit) continue; // sailed off the field → no blast
 
     for (const w of firers.filter(f => !f.isBeam)) {
-      const s = scoreBlast(cx, cy, w, enemies, wt);
-      if (s.hits === 0) continue;
-      let value = adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate);
+      const s = scoreBlast(cx, cy, w, enemies, wt, allies, focusX);
+      if (s.hits + s.allyHits === 0) continue;
+      let value = adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate, s.damage);
       // Trap play: an earth (dirt-dumping) weapon on a weak, low target is worth a little extra even
       // when it barely damages — it buries them.
       if (w.earth > 0 && s.kills === 0 && enemyIsWeak(enemies, cx, cy)) value += wt.buryBonus;
@@ -421,9 +640,13 @@ function adjustForPremium(
   hits: number,
   wt: UltraWeights,
   desperate: boolean,
+  damage: number, // EFFECTIVE damage this round would actually land, not the composite value
 ): number {
   // DESPERATE (near death, can't heal): no reservation — throw everything, it's do-or-die.
-  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || value >= PREMIUM_MIN_VALUE)
+  // The "is this shot big enough to be worth a nuke?" test reads raw DAMAGE on purpose: the composite
+  // value carries positional bonuses (finisher/focus) that say nothing about whether the round itself
+  // landed hard, and letting those inflate it past the bar would spend nukes on grazes.
+  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || damage >= PREMIUM_MIN_VALUE)
     return value;
   return value - wt.premiumWaste;
 }
@@ -438,6 +661,27 @@ function enemyIsWeak(enemies: UltraEnemy[], cx: number, cy: number): boolean {
 const describe = (s: {kills: number; hits: number}) => `k${s.kills} h${s.hits}`;
 
 // ── Non-firing options ───────────────────────────────────────────────────────────────────────────
+
+// Fraction of our REMAINING life the fallout at a destination may cost before that destination is off
+// the table entirely. Below it the radiation is priced as a cost and weighed against the prize.
+const RAD_VETO_FRAC = 0.35;
+
+/**
+ * Life the fallout at column x would cost if we parked there for a turn, or `undefined` when the
+ * caller gave us no dosimeter. This is what turns "never step on green" into an actual judgement
+ * call: a dying speck carpet costs a few points and a fresh crater costs a third of your health, and
+ * the bot should cross the first for a weapon crate while refusing the second for anything.
+ *
+ * With no reading available we return undefined rather than a guess, and every caller falls back to
+ * the old conservative rule (any fallout = keep off). Unknown dose is not the same as small dose.
+ */
+function radCost(ctx: UltraCtx, x: number): number | undefined {
+  return ctx.radiationCostAt ? Math.max(0, ctx.radiationCostAt(x)) : undefined;
+}
+
+/** Radiation cost as a plain number for arithmetic — 0 when unmeasured (the veto has already dealt
+ *  with the unknown case, so this only ever discounts a value we've decided is reachable). */
+const radPenalty = (ctx: UltraCtx, x: number): number => radCost(ctx, x) ?? 0;
 
 /** Value + destination of the best crate to grab (or null). Only LANDED crates are grabbed (a
  *  still-parachuting crate hasn't reached where it will settle — wait a turn), bomb crates are traps
@@ -460,6 +704,9 @@ function bestCrateGrab(ctx: UltraCtx): {destX: number; value: number; note: stri
     if (c.kind === 'credits') value = c.amount * (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).creditValue;
     else if (c.kind === 'health') value = Math.min(c.amount, self.maxLife - self.life);
     else value = WEAPON_CRATE_VALUE; // weapon
+    // Net of the dose we'd take standing on that ground: a crate sitting in fallout is worth grabbing
+    // only if the payload beats the health it costs us.
+    value -= radPenalty(ctx, c.x);
     if (value <= 0) continue;
     if (!best || value > best.value) best = {destX: c.x, value, note: `crate:${c.kind}`};
   }
@@ -473,11 +720,18 @@ function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note
   if (!self.onRadiation || moveMaxDist <= 0) return null;
   const reachableCleanSafe = (x: number): boolean =>
     x >= 20 && x <= field.width - 20 && !radiationAt(x) && !pathHitsMine(self.x, x, ctx.mines);
-  // Flee value scales STEEPLY with damage taken: near-zero while healthy (so ANY real shot beats it and
-  // the bot fires back, eating a little DOT, rather than running) → high near death (survival). This is
-  // what stops it fleeing over firing — it only runs once genuinely hurt.
+  // What running is actually WORTH: the dose we'd eat by staying put, scaled by how badly we can
+  // afford it. 200 damage of fallout on a full-health tank is an annoyance it can shoot through; the
+  // same carpet on a tank with 250 life left is the whole game, so the urgency curve climbs steeply as
+  // life falls. Measured dose beats the old flat guess in both directions — it stops the bot sprinting
+  // off a dying speck carpet, and stops it standing in a fresh crater trading shots.
   const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
-  const value = RAD_FLEE_VALUE * Math.max(0.12, (1 - lifeFrac) * 1.4); // ~0.12× full → ~1.4× near 0
+  const urgency = Math.max(0.5, (1 - lifeFrac) * 2.2);
+  const dose = radCost(ctx, self.x);
+  const value =
+    dose !== undefined && dose > 0
+      ? dose * urgency
+      : RAD_FLEE_VALUE * Math.max(0.12, (1 - lifeFrac) * 1.4);
   // When it DOES flee, prefer escaping TOWARD a reachable crate — ONE move both flees and grabs the
   // loot. Same value as a plain flee (the crate is a free bonus of the destination, not a reason to run
   // when healthy), so it never overrides a shot the low base wouldn't.
@@ -511,7 +765,8 @@ function bestReposition(ctx: UltraCtx): {destX: number; value: number; note: str
   const destX = clampX(self.x + dir * moveMaxDist, field);
   if (Math.abs(destX - self.x) < 4) return null; // already as close as we can get
   if (unsafeMoveTo(ctx, destX)) return null; // don't drive over a mine / into fallout
-  return {destX, value: REPOSITION_VALUE, note: 'reposition'};
+  const value = REPOSITION_VALUE - radPenalty(ctx, destX); // net of the dose waiting at the new spot
+  return value > 0 ? {destX, value, note: 'reposition'} : null;
 }
 
 /** How much COVER a spot at column x has from an enemy at ex: the tallest terrain BETWEEN them that
@@ -544,9 +799,17 @@ function pathHitsMine(fromX: number, toX: number, mines: number[]): boolean {
   return mines.some(mx => mx >= lo && mx <= hi);
 }
 
-/** A destination is UNSAFE to drive to if the path crosses a mine or the spot sits on radiation. */
+/**
+ * A destination is UNSAFE to drive to if the path crosses a mine (instant, heavy, non-negotiable) or
+ * the fallout waiting there would eat a serious slice of the life we have left. Light contamination is
+ * NOT a veto — it comes back as a cost the caller subtracts from the prize, so the bot can decide that
+ * a weapon crate is worth walking through a thin carpet while refusing to park in a fresh hot zone.
+ */
 function unsafeMoveTo(ctx: UltraCtx, destX: number): boolean {
-  return pathHitsMine(ctx.self.x, destX, ctx.mines) || ctx.radiationAt(destX);
+  if (pathHitsMine(ctx.self.x, destX, ctx.mines)) return true;
+  const dose = radCost(ctx, destX);
+  if (dose === undefined) return ctx.radiationAt(destX); // no reading → assume the worst, keep off
+  return dose >= Math.max(1, ctx.self.life) * RAD_VETO_FRAC;
 }
 
 /** Relocate to COVER when the enemy already has our range: scan drivable spots for the one best shielded
@@ -562,11 +825,56 @@ function bestCoverMove(ctx: UltraCtx): {destX: number; value: number; note: stri
     for (const dir of [-1, 1]) {
       const x = clampX(self.x + dir * d, field);
       if (unsafeMoveTo(ctx, x)) continue; // don't hide in fallout or drive over a mine
-      const cover = coverScore(x, ex, field);
+      // A ridge that shields us is worth less if we have to stand in fallout to get behind it — price
+      // the dose against the cover before deciding this spot is "safer".
+      const cover = coverScore(x, ex, field) - radPenalty(ctx, x);
       if (cover > here + COVER_MARGIN && (!best || cover > best.cover)) best = {destX: x, cover};
     }
   }
   return best ? {destX: best.destX, value: COVER_VALUE, note: 'cover'} : null;
+}
+
+/**
+ * TURTLE UP — bury ourselves on purpose. Reading the enemy arsenal (weapons are visible) and finding a
+ * nuke pointed our way, the answer isn't to trade shells with it: it's to pile dirt over our own hull
+ * so their round detonates on the surface ABOVE us instead of on it, and keep fighting from underneath
+ * with a beam, which is a straight ray that doesn't care about the dirt in the way.
+ *
+ * Deliberately narrow, because being buried is also a cage — no driving, no ballistic rounds:
+ *  • only against a real big-blast threat, and only if they DON'T hold a beam of their own (a beam
+ *    reaches us underground just as well as it reaches us on the surface, so digging in buys nothing);
+ *  • only if we hold a beam with ammo, so we can still shoot back from down there;
+ *  • only if the dirt saves meaningfully more life than the round we drop on ourselves costs.
+ */
+function bestSelfBury(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
+  const {self} = ctx;
+  const wt = ctx.weights ?? ULTRA_WEIGHTS_DEFAULT;
+  const threat = ctx.threat ?? NO_THREAT;
+  if (self.buried || wt.paranoia <= 0) return null;
+  if (threat.hasBeam) return null; // they can shoot us through the dirt — a hole is just a hole
+  const incoming = threat.bigBlastDamage;
+  if (!threat.hasNuke && incoming < SELF_BURY_MIN_THREAT) return null;
+  if (!ctx.weapons.some(w => w.isBeam && w.count > 0)) return null; // nothing to fight back with
+  // The dirt round to drop on ourselves: enough earth to actually cover the hull, and of those the one
+  // that hurts us least (it detonates on our own hull, so its damage is paid in full).
+  const dirt = ctx.weapons
+    .filter(w => w.earth >= SELF_BURY_MIN_EARTH && w.count > 0)
+    .sort((a, b) => a.damage - b.damage || a.cost - b.cost)[0];
+  if (!dirt) return null;
+  const saved = incoming * BURY_SOAK_FRAC * wt.paranoia;
+  const value = saved - dirt.damage;
+  if (value < SELF_BURY_MIN_GAIN) return null;
+  return {
+    plan: {
+      action: 'fire',
+      weaponIndex: dirt.index,
+      angleDeg: 90,
+      power: 300,
+      targetX: self.x,
+      note: 'self-bury',
+    },
+    value,
+  };
 }
 
 /** Lay a mine in the nearest enemy's zone (area denial). Fired as a normal arc; it plants a mine where
@@ -704,53 +1012,41 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   if (shot) cands.push({plan: firePlan(), value: shot.value, trick: false});
   const canHit = !!shot && shot.hits > 0; // a shot that actually reaches an enemy
 
+  // ATTACK FIRST. With a real shot on the table, every alternative has to CLEARLY beat it — not merely
+  // match it — before the bot spends its turn on anything else. A tank that answers fire with fire wins
+  // games; one that keeps repositioning to a marginally better hill loses them slowly.
+  const attackFloor = canHit ? shot!.value * NON_ATTACK_MARGIN : 0;
+  const offer = (plan: UltraPlan, value: number, trick = false): void => {
+    if (value > attackFloor) cands.push({plan, value, trick});
+  };
+
   // BURIED: dig out with a cleaner (no self-damage) — usually the best use of a stuck turn.
   const dig = bestCleanSelf(ctx);
-  if (dig) cands.push({plan: dig.plan, value: dig.value, trick: false});
+  if (dig) offer(dig.plan, dig.value);
 
-  // SURVIVAL plays are always in the running (they can rightly override a mediocre shot): flee the
-  // fallout you're standing on, and self-buff/heal when hurt.
+  // TURTLE: read the enemy arsenal and, against an incoming nuke we can't out-trade, dig IN instead —
+  // dirt over the hull, then fight on from underneath with a beam.
+  const turtle = bestSelfBury(ctx);
+  if (turtle) offer(turtle.plan, turtle.value);
+
+  // SURVIVAL plays: flee the fallout you're standing on, and self-buff/heal when hurt. Both still have
+  // to clear the attack floor — a scratch is not a reason to stop shooting.
   const flee = bestRadiationEscape(ctx);
-  if (flee)
-    cands.push({
-      plan: {action: 'move', destX: flee.destX, note: flee.note},
-      value: flee.value,
-      trick: false,
-    });
+  if (flee) offer({action: 'move', destX: flee.destX, note: flee.note}, flee.value);
   const buff = bestBuff(ctx);
-  if (buff)
-    cands.push({
-      plan: {action: 'buff', weaponIndex: buff.weaponIndex, note: buff.note},
-      value: buff.value,
-      trick: false,
-    });
+  if (buff) offer({action: 'buff', weaponIndex: buff.weaponIndex, note: buff.note}, buff.value);
 
   // POSITIONING / LOOT plays — ONLY when the bot can't actually hit an enemy this turn. Firing always
   // comes first: a bot with a real shot shoots, it doesn't wander off for a crate or into cover.
   if (!canHit) {
     const crate = bestCrateGrab(ctx);
-    if (crate)
-      cands.push({
-        plan: {action: 'move', destX: crate.destX, note: crate.note},
-        value: crate.value,
-        trick: true,
-      });
+    if (crate) offer({action: 'move', destX: crate.destX, note: crate.note}, crate.value, true);
     const cover = bestCoverMove(ctx);
-    if (cover)
-      cands.push({
-        plan: {action: 'move', destX: cover.destX, note: cover.note},
-        value: cover.value,
-        trick: true,
-      });
+    if (cover) offer({action: 'move', destX: cover.destX, note: cover.note}, cover.value, true);
     const mine = bestMineLay(ctx);
-    if (mine) cands.push({plan: mine.plan, value: mine.value, trick: true});
+    if (mine) offer(mine.plan, mine.value, true);
     const repo = bestReposition(ctx);
-    if (repo)
-      cands.push({
-        plan: {action: 'move', destX: repo.destX, note: repo.note},
-        value: repo.value,
-        trick: true,
-      });
+    if (repo) offer({action: 'move', destX: repo.destX, note: repo.note}, repo.value, true);
   }
 
   // Nothing scored at all — take the desperation shot rather than passing the turn (a pass would just
@@ -761,9 +1057,16 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   const top = cands[0];
 
   // Human-ish cunning: occasionally take a near-as-good SETUP play (crate/reposition) over the
-  // raw-best shot — but never pass up a kill. The chance is the personality's `trickChance`.
+  // raw-best shot — but never pass up a kill, and never instead of a genuinely BIG hit. Being unpredictable
+  // is worth a little expected value; passing on a shot that would take a third of someone's health is not.
   const trickChance = (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).trickChance;
-  if (top.plan.action === 'fire' && (shot?.kills ?? 0) === 0 && ctx.rnd() < trickChance) {
+  const bigHit = (shot?.value ?? 0) >= TRICK_MAX_SHOT_VALUE;
+  if (
+    top.plan.action === 'fire' &&
+    !bigHit &&
+    (shot?.kills ?? 0) === 0 &&
+    ctx.rnd() < trickChance
+  ) {
     const trick = cands.find(c => c.trick && c.value >= top.value * 0.6);
     if (trick) return trick.plan;
   }

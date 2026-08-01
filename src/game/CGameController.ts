@@ -24,6 +24,7 @@ import {
   getDefaultWeaponIndex,
   getWeapon,
   WEAPON_DATABASE,
+  type WeaponDef,
 } from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem} from '../core/CParticleSystem';
@@ -54,11 +55,15 @@ import {
   simulateShot,
 } from '../core/CBotAI';
 import {
+  NO_THREAT,
   planUltraTurn,
   rangePowerCorrection,
+  SELF_BURY_MIN_EARTH,
   ULTRA_PERSONALITIES,
   ULTRA_PERSONALITY_NAMES,
+  type UltraAlly,
   type UltraCtx,
+  type UltraThreat,
   type UltraWeapon,
   type UltraWeights,
 } from '../core/CBotUltraAI';
@@ -305,6 +310,9 @@ const TAUNT_FADE = 0.6;
 const TAUNT_CHANCE_POSTFIRE = 8;
 const TAUNT_CHANCE_DEATH = 30;
 const TAUNT_CHANCE_IDLE = 60;
+// Own goal: a tank that drops a round on itself or its own squad occasionally has a word for itself.
+const TAUNT_CHANCE_SELF = 35;
+const SELF_TAUNT_MIN_DAMAGE = 20; // a graze isn't worth a line — it has to have actually hurt
 const TAUNT_IDLE_MIN = 7;
 const TAUNT_IDLE_MAX = 15;
 // Screen-space height (px) the bubble's tail floats above the tank's centre — just
@@ -774,6 +782,8 @@ export class CGameController implements ShotWorld {
     this.m_ultraShot.clear(); // fresh Ultra ranging memory
     this.m_ultraPersonality.clear(); // re-draw Ultra personalities for the new match
     this.m_ultraLastLife.clear();
+    this.m_friendlyDamage.clear(); // grudges don't carry into a new match — everyone starts trusted
+    this.m_ultraEnemyFire.clear(); // nor does what the other side threw in the last one
     for (const t of this.m_tanks) t.setCanBuy(true); // Buy Time: depot open at battle start
     // Randomize Turns (Gameplay): shuffle the turn queue once per battle. Never in a net
     // match — the server owns the order, and shuffle uses Math.random() (would desync).
@@ -3156,6 +3166,7 @@ export class CGameController implements ShotWorld {
     innerRadius = 0,
   ): void {
     this.m_stats.terrainCarved++; // one area blast ≈ one crater (nerdy "terrain carved" counter)
+    let ownGoal = 0; // life this blast took off the shooter's OWN side (including the shooter itself)
     for (const tank of this.m_tanks) {
       if (!tank.isAlive()) continue;
       // Two-radius model (recovered from the blast routine): full damage within the inner
@@ -3175,12 +3186,18 @@ export class CGameController implements ShotWorld {
       if (dmg <= 0) continue;
 
       const removed = tank.hit(dmg, piercing); // shield → hazmat(if piercing) → armor → life
+      if (owner && removed > 0 && owner.getTeamId() === tank.getTeamId()) ownGoal += removed;
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
       this.spawnDamageNumber(tank, removed); // Show Points: floating damage text
       this.kickTank(tank, pos.x, removed, radius); // Tank → Kickback; up-and-away, scaled by blast size
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
     }
+
+    // SELF-TAUNT: a round that lands on your own side is the one moment a tank has something to say
+    // about ITSELF. Once per blast (not per victim), so a wide own-goal doesn't start a chorus, and
+    // only when it actually hurt — a harmless graze isn't worth a line.
+    if (ownGoal >= SELF_TAUNT_MIN_DAMAGE) this.tryTaunt('taunt', owner, TAUNT_CHANCE_SELF);
 
     // Any supply crate whose centre is within the blast is destroyed — the original
     // clears crates in the crater's radius and simply removes them (no reward is spilled,
@@ -3347,7 +3364,13 @@ export class CGameController implements ShotWorld {
     // self damage subtracts from Damage/hit (so it can go negative, as in the original).
     const friendly = shooter === victim || shooter.getTeamId() === victim.getTeamId();
     shooter.addHit(friendly ? -lifeRemoved : lifeRemoved);
-    if (friendly) return;
+    if (friendly) {
+      // Ledger it (self-damage excepted — blowing yourself up is clumsy, not treachery). Squadmates
+      // read this and stop extending the benefit of the doubt; see the planner's `hostility`.
+      if (shooter !== victim)
+        this.m_friendlyDamage.set(shooter, (this.m_friendlyDamage.get(shooter) ?? 0) + lifeRemoved);
+      return;
+    }
     shooter.addCredits(lifeRemoved * this.m_creditDamage);
     this.poolTeamCredits(shooter);
   }
@@ -4054,6 +4077,8 @@ export class CGameController implements ShotWorld {
     // added at the salvo below. Every client tallies; only the uploader (host/solo) sends them.
     this.m_stats.weaponsFired++;
     if (weapon.isNuclear()) this.m_stats.nukesFired++;
+    // Log what this side just threw, so their opponents can read intent (Ultra threat model).
+    this.ultraNoteEnemyShot(tank, this.m_currentWeaponIndex);
 
     if (chargeAmmo) this.economyFor(tank).consume(this.m_currentWeaponIndex);
 
@@ -4435,6 +4460,19 @@ export class CGameController implements ShotWorld {
     return this.m_tanks.filter(t => t.isAlive() && t.getTeamId() !== tank.getTeamId());
   }
 
+  /** Living SQUADMATES of `tank` — its own team, itself excluded. */
+  private alliesOf(tank: CTank): CTank[] {
+    return this.m_tanks.filter(
+      t => t !== tank && t.isAlive() && !t.isSentry() && t.getTeamId() === tank.getTeamId(),
+    );
+  }
+
+  /** A tank's standing in the race the battle is actually scored on — the same measure
+   *  {@link getLeadingTeam} ranks teams by, so a bot judging "who's winning" reads the real board. */
+  private tankScore(t: CTank): number {
+    return this.m_gameType === EGameType.Rounds ? t.getDamageDealt() : t.getKills();
+  }
+
   /** Angular offset of round `i` within a `rounds`-wide fan spaced `spacingRad` apart
    *  (centred: a lone round fires dead-centre, a 3-fan spreads −1,0,+1 × spacing). */
   private fanOffset(i: number, rounds: number, spacingRad: number): number {
@@ -4597,6 +4635,24 @@ export class CGameController implements ShotWorld {
     if (h.nLife < maxLife * 0.6 && !this.botOwnsExt(econ, 10)) this.botBuyOneOfExt(econ, 10, 1); // heal
     if (h.nArmor <= 0 && !this.botOwnsExt(econ, 11)) this.botBuyOneOfExt(econ, 11, 1); // armor
     if (onRad && h.nHazmat <= 0 && !this.botOwnsExt(econ, 14)) this.botBuyOneOfExt(econ, 14, 1); // hazmat
+
+    // COUNTER-NUKE DOCTRINE. Weapons are visible, so read the other side's arsenal before spending:
+    // once they hold nuke-class ordnance, the answer is not to race them to a bigger one — it's to make
+    // their nuke miss. That means a BEAM (a straight ray that still reaches them once we're under the
+    // dirt, and the one weapon a buried tank can fire) and a cheap DIRT round to pull that dirt over
+    // ourselves with. Bought AHEAD of our own nuke savings, because a nuke we can't live long enough to
+    // fire is worth nothing. Skipped if they hold a beam too — then dirt hides us from nobody.
+    const threat = this.ultraThreatAgainst(tank);
+    if (threat.hasNuke && !threat.hasBeam) {
+      if (!this.botOwnsMatching(econ, i => this.isBeamWeapon(i)))
+        this.ultraBuyMatching(econ, i => this.isBeamWeapon(i), false);
+      // Only worth a dirt round if we actually got the beam — otherwise burying is just hiding in a hole.
+      if (
+        this.botOwnsMatching(econ, i => this.isBeamWeapon(i)) &&
+        !this.botOwnsMatching(econ, i => getWeapon(i).getEarth() >= SELF_BURY_MIN_EARTH)
+      )
+        this.ultraBuyMatching(econ, i => getWeapon(i).getEarth() >= SELF_BURY_MIN_EARTH, false);
+    }
 
     // A DEATH (kamikaze) round FIRST when SURROUNDED — 2+ enemies close, so dying takes them with it.
     // Priority (bought before the pricey nuke can drain the purse); pointless/skipped when spread out.
@@ -5174,6 +5230,138 @@ export class CGameController implements ShotWorld {
     return best;
   }
 
+  // ── Reading the opposition ───────────────────────────────────────────────────────────────────────
+  // Seconds of exposure a tank should assume when weighing whether to stand on fallout: roughly one
+  // full lap of the turn order, since radiation DOT ticks in every in-battle state, not only on the
+  // victim's own turn. Scaled by how many tanks are still taking turns.
+  private static readonly ULTRA_SEC_PER_TURN = 5;
+  private static readonly ULTRA_MAX_EXPOSURE = 45;
+  // How many arsenal rows a player can actually SEE on the panel at once, and therefore the only
+  // weapons an Ultra bot is allowed to know an opponent holds. Matches the HUD list geometry: the
+  // strip is 70.8% of the 138px panel (≈97.7px) at 19.5px per `.wrow` — five rows, the rest scrolled
+  // out of sight. Anything past those five is a surprise for the bot exactly as it is for the player.
+  private static readonly ULTRA_VISIBLE_WEAPONS = 5;
+
+  /** Life the fallout at column x would cost a tank parked there until it acts again. Mirrors the DOT
+   *  updateTanks actually applies (strongest live zone × elapsed), so the estimate matches the bill. */
+  private ultraRadiationCost(x: number): number {
+    if (!GameConfig.radiationDamage || this.m_netMode) return 0; // fallout is cosmetic in both cases
+    if (!this.m_land.radiationAt(Math.floor(x))) return 0;
+    let dps = 0,
+      remaining = 0;
+    for (const z of this.m_land.getRadiationZones()) {
+      if (z.damagePerSecond > dps) dps = z.damagePerSecond;
+      if (z.timeRemaining > remaining) remaining = z.timeRemaining;
+    }
+    if (dps <= 0) return 0;
+    const living = this.m_tanks.filter(t => t.isAlive()).length || 1;
+    const exposure = Math.min(
+      remaining,
+      Math.min(CGameController.ULTRA_MAX_EXPOSURE, living * CGameController.ULTRA_SEC_PER_TURN),
+    );
+    return dps * exposure;
+  }
+
+  /**
+   * What the OTHER side is holding and what they've been throwing. Weapons are visible in this game,
+   * so an Ultra bot reads the enemy arsenal straight off their economy the way a human reads the depot
+   * — that's what lets it answer a nuke build with beams and a self-burial instead of finding out the
+   * hard way. The `fired*` tallies come from {@link ultraNoteEnemyShot}: capability is what they COULD
+   * do, those are what they actually DO.
+   */
+  private ultraThreatAgainst(botTank: CTank): UltraThreat {
+    const threat: UltraThreat = {...NO_THREAT};
+    for (const foe of this.enemiesOf(botTank)) {
+      if (foe.isSentry()) continue; // a turret carries no arsenal to read
+      const econ = this.economyFor(foe);
+      threat.credits = Math.max(threat.credits, econ.getCredits());
+      // ONLY what the panel actually shows. The arsenal list is a scrolling strip and a human reading
+      // an opponent's turn sees the first ULTRA_VISIBLE_WEAPONS rows of it — nothing further down.
+      // Reading the whole inventory here would be the bot seeing through the UI, so the threat model
+      // is built from exactly the same rows, in exactly the same order (staple first, then buy order).
+      // A nuke bought sixth is genuinely a surprise, to the bot as much as to the player.
+      for (const def of this.arsenalOf(foe).slice(0, CGameController.ULTRA_VISIBLE_WEAPONS)) {
+        const i = def.index;
+        const w = getWeapon(i);
+        if (this.isNukeWeapon(i)) threat.hasNuke = true;
+        if (this.isBeamWeapon(i)) threat.hasBeam = true;
+        if (w.getEarth() > 0) threat.hasEarth = true;
+        if (w.isCleaner()) threat.hasCleaner = true;
+        const dmg = w.getDamage();
+        if (dmg > threat.bigBlastDamage && !BOT_UTILITY_EXT.has(def.extType ?? 0))
+          threat.bigBlastDamage = dmg;
+      }
+      // What they can bring NEXT turn, not just what's on the panel now: the credit readout is on the
+      // same LCD as the arsenal, so a war chest deep enough for the cheapest nuke is public knowledge
+      // and worth planning around. It raises the expected incoming blast (enough to make turtling a
+      // candidate) but never sets `hasNuke` — that stays reserved for a round we can actually SEE,
+      // because money is an intention and a bought nuke is a commitment.
+      const affordable = this.cheapestNukeDamage(econ.getCredits());
+      if (affordable > threat.bigBlastDamage) threat.bigBlastDamage = affordable;
+
+      const seen = this.m_ultraEnemyFire.get(foe.getTeamId());
+      if (seen) {
+        threat.firedNukes += seen.nukes;
+        threat.firedBeams += seen.beams;
+        threat.firedEarth += seen.earth;
+        threat.shotsSeen += seen.shots;
+      }
+    }
+    return threat;
+  }
+
+  /** Damage of the heaviest nuke-class round `credits` could buy right now, or 0 if none is in reach. */
+  private cheapestNukeDamage(credits: number): number {
+    let best = 0;
+    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      const cost = WEAPON_DATABASE[i].cost ?? 0;
+      if (cost <= 0 || cost > credits || !weaponEnabled(i) || !this.isNukeWeapon(i)) continue;
+      best = Math.max(best, getWeapon(i).getDamage());
+    }
+    return best;
+  }
+
+  /** Log a round a tank actually fired, so its OPPONENTS can read intent and not just inventory. */
+  private ultraNoteEnemyShot(shooter: CTank, weaponIndex: number): void {
+    if (shooter.isSentry()) return;
+    const team = shooter.getTeamId();
+    let rec = this.m_ultraEnemyFire.get(team);
+    if (!rec) {
+      rec = {nukes: 0, beams: 0, earth: 0, shots: 0};
+      this.m_ultraEnemyFire.set(team, rec);
+    }
+    rec.shots++;
+    if (this.isNukeWeapon(weaponIndex)) rec.nukes++;
+    if (this.isBeamWeapon(weaponIndex)) rec.beams++;
+    if (getWeapon(weaponIndex).getEarth() > 0) rec.earth++;
+  }
+
+  /** The squad's shared kill target: the WEAKEST living enemy. Every squadmate derives it from the
+   *  same public state, so they converge on one tank without passing notes — three half-dead enemies
+   *  still shoot back, one dead one doesn't. Ties break on x so the pick is stable across clients. */
+  private ultraFocusX(enemies: CTank[]): number | undefined {
+    let best: CTank | null = null,
+      bestHp = Infinity;
+    for (const e of enemies) {
+      const h = e.getHealth();
+      const hp = h.nLife + h.nShield;
+      if (hp < bestHp || (hp === bestHp && best && e.getPosition().x < best.getPosition().x)) {
+        best = e;
+        bestHp = hp;
+      }
+    }
+    return best ? best.getPosition().x : undefined;
+  }
+
+  /** Is the battle effectively decided? Only then does a teammate who is beating us stop being a
+   *  teammate (see the planner's `hostility`). Retaliation against one who shot US needs no endgame. */
+  private ultraEndgame(botTank: CTank): boolean {
+    if (this.enemiesOf(botTank).length <= 1) return true;
+    if (this.m_gameType === EGameType.Rounds)
+      return this.m_currentRound > this.m_totalRounds * 0.75;
+    return false;
+  }
+
   /** Gather the acting bot's world into the pure planner's input. */
   private buildUltraCtx(botTank: CTank, enemies: CTank[]): UltraCtx {
     const econ = this.economyFor(botTank);
@@ -5241,6 +5429,7 @@ export class CGameController implements ShotWorld {
         onRadiation: this.m_land.radiationAt(Math.floor(pos.x)),
         buried,
         threatened: this.ultraTookDamageSinceLastTurn(botTank),
+        score: this.tankScore(botTank),
       },
       enemies: enemies.map(e => {
         const c = e.getBodyCenter(); // aim at the collision CENTRE, not the hull top (beams grazed high)
@@ -5269,9 +5458,29 @@ export class CGameController implements ShotWorld {
         this.aimDegToward(botTank.getTurretPivot(), new Vec2(t.x, t.y)),
       moveMaxDist,
       radiationAt: (x: number) => this.m_land.radiationAt(Math.floor(x)),
+      radiationCostAt: (x: number) => this.ultraRadiationCost(x),
       mines: this.m_mines.map(m => m.x), // known mines — the bot won't drive over one
       weights: this.ultraWeightsFor(botTank), // this bot's personality (ruthless / cautious / …)
       rnd: Math.random,
+      // Our own squad: the planner prices splash on them as a cost, and tracks which of them have been
+      // putting rounds into their own side (see m_friendlyDamage).
+      allies: this.alliesOf(botTank).map((a): UltraAlly => {
+        const c = a.getBodyCenter();
+        const ah = a.getHealth();
+        return {
+          x: c.x,
+          y: c.y,
+          life: ah.nLife,
+          maxLife: a.getMaxLife(),
+          shield: ah.nShield,
+          hitRadius: a.getHitRadius(),
+          betrayal: this.m_friendlyDamage.get(a) ?? 0,
+          score: this.tankScore(a),
+        };
+      }),
+      threat: this.ultraThreatAgainst(botTank), // what the other side is holding / has been throwing
+      focusX: this.ultraFocusX(enemies), // the squad's shared kill target (weakest enemy)
+      endgame: this.ultraEndgame(botTank),
     };
   }
 
@@ -6003,13 +6212,22 @@ export class CGameController implements ShotWorld {
     // local human, a bot, or a remote player (every client mirrors each player's economy via relayed
     // buys, and bots buy through their own economy). So a spectator watching someone else's turn sees
     // the acting player's real inventory (e.g. a Shell-only bot shows only Shell), not the whole
-    // arsenal. The unlimited staple always qualifies; free-fire puts every weapon in stock; the active
-    // player's chosen weapon is by definition in their stock, so it always appears.
+    // arsenal.
+    return this.arsenalOf(tank);
+  }
+
+  /**
+   * A tank's arsenal in the order the HUD lists it: the unlimited STAPLE (Shell) first, then bought
+   * weapons in BUY order ("2." = the first weapon you bought, "3." the next, …), so the row numbers
+   * track acquisition rather than a fixed database id. Weapons disabled in Game Content are hidden;
+   * the staple always qualifies, free-fire puts everything in stock, and the tank's chosen weapon is
+   * by definition in its stock so it always appears.
+   */
+  private arsenalOf(tank: CTank): WeaponDef[] {
+    const staple = getDefaultWeaponIndex();
+    const enabled = (i: number) => i === staple || weaponEnabled(i);
     const econ = this.economyFor(tank);
     const owned = WEAPON_DATABASE.filter(w => enabled(w.index) && econ.hasStock(w.index));
-    // Arsenal numbering: the unlimited STAPLE (Shell) always keeps position 1, then BOUGHT weapons
-    // follow in buy order ("2." = the first weapon you bought, "3." the next, …). The HUD numbers the
-    // rows by position (1..N), so the numbers track acquisition, not a fixed database id.
     const order = econ.getAcquireOrder();
     const rank = (i: number): number => {
       const r = order.indexOf(i);
@@ -6524,6 +6742,16 @@ export class CGameController implements ShotWorld {
   // Each Ultra bot's life at the START of its previous turn — a drop means an enemy has its range
   // (it was shelled during the opponent's turn), so it should seek cover.
   private readonly m_ultraLastLife = new Map<CTank, number>();
+  // FRIENDLY-FIRE LEDGER: life each tank has taken off its OWN side. Nobody keeps covering for the one
+  // who keeps hitting them — a squadmate's Ultra planner reads this and slides that tank from "protect
+  // at all costs" toward "fair game" as it climbs. Per battle (cleared with the rest of the match state).
+  private readonly m_friendlyDamage = new Map<CTank, number>();
+  // What each TEAM has actually been firing (nukes / beams / dirt), so an opponent can read intent on
+  // top of inventory: a side that has thrown two nukes is telling you what the third one is for.
+  private readonly m_ultraEnemyFire = new Map<
+    number,
+    {nukes: number; beams: number; earth: number; shots: number}
+  >();
   private m_mapName = ''; // set (localised) on each map load; '' pre-load, never surfaced
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
