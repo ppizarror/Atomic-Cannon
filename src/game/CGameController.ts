@@ -4585,6 +4585,13 @@ export class CGameController implements ShotWorld {
     const maxLife = tank.getMaxLife();
     const onRad = this.m_land.radiationAt(Math.floor(tank.getPosition().x));
     const R = CGameController.ULTRA_CREDIT_RESERVE;
+    // BURIED — top priority, ahead of everything else: a pinned tank can't drive and can't fire a
+    // normal round without eating its own blast, so nothing else in the shop matters until it's out.
+    // A cleaner (earth-remover, no damage) is the clean way out, and bestCleanSelf can only pick one
+    // that's actually in stock — the economy never bought one, so that escape was dead on arrival.
+    // Ignores the reserve: being stuck costs far more than the credits do.
+    if (tank.isBuried() && !this.botOwnsMatching(econ, i => getWeapon(i).isCleaner()))
+      this.ultraBuyMatching(econ, i => getWeapon(i).isCleaner(), false);
     // Buy a HEAL as soon as it's hurt (< 60%) and holds none — so a heal is in stock BEFORE it gets
     // critical, and a bot with money always has the self-heal option the desperation curve will use.
     if (h.nLife < maxLife * 0.6 && !this.botOwnsExt(econ, 10)) this.botBuyOneOfExt(econ, 10, 1); // heal
@@ -4794,19 +4801,46 @@ export class CGameController implements ShotWorld {
 
   /**
    * Bot move action: pick a Move utility, drive to a random spot within its range,
-   * and end the turn. Returns false if no move weapon exists (→ fall back to fire).
+   * and end the turn. Returns false when the move can't actually happen (→ fall back
+   * to fire) — a committed drive that covers no ground burns the whole turn on nothing,
+   * because startTankMove's waitForRest ends the turn the moment the tank isn't moving.
    */
   private botMove(botTank: CTank): boolean {
+    // A BURIED tank can't drive at all (startDrive refuses until it's dug out), so a move roll here
+    // used to end the turn instantly with no action whatsoever. Fire instead — the round detonates in
+    // the dirt around the tank and blasts it free, which is the only way it gets out.
+    if (botTank.isBuried()) return false;
     const wi = pickMoveWeapon();
     if (wi < 0) return false;
     const weapon = getWeapon(wi);
-    this.setCurrentWeapon(botTank, wi);
 
     const maxDist = this.moveRange(weapon);
-    const dir = Math.random() < 0.5 ? -1 : 1;
+    const x = botTank.getPosition().x;
     const dist = (0.4 + Math.random() * 0.6) * maxDist;
-    this.startTankMove(botTank, botTank.getPosition().x + dir * dist);
-    return true;
+    // Pick a direction that has ROOM. Bots drift into the edge clamp over a match and park there; a
+    // blind 50/50 roll into the wall then clamps the destination onto the tank's own position and it
+    // "drives" zero pixels. Try the random direction first, then the other, and give up if neither
+    // has room (a very short map) rather than spending the turn standing still.
+    const first = Math.random() < 0.5 ? -1 : 1;
+    for (const dir of [first, -first]) {
+      const destX = this.clampMoveDest(x + dir * dist);
+      if (Math.abs(destX - x) < CGameController.BOT_MOVE_MIN_DIST) continue;
+      this.setCurrentWeapon(botTank, wi);
+      this.startTankMove(botTank, destX);
+      return true;
+    }
+    return false;
+  }
+
+  // A bot drive shorter than this isn't worth a whole turn — roll the other way (or fire) instead.
+  private static readonly BOT_MOVE_MIN_DIST = 8;
+  // Tanks never drive right up to the world edge; every drive destination is clamped into this inset.
+  private static readonly MOVE_EDGE_MARGIN = 20;
+
+  /** Clamp a drive destination into the drivable strip of the map. */
+  private clampMoveDest(destX: number): number {
+    const m = CGameController.MOVE_EDGE_MARGIN;
+    return clamp(destX, m, this.m_land.width - m);
   }
 
   /** Max move distance for a Move utility: landscape width × (move power / 100). */
@@ -4816,7 +4850,7 @@ export class CGameController implements ShotWorld {
 
   /** Drive a tank to `destX` (a Move utility action), then end the turn once settled. */
   private startTankMove(tank: CTank, destX: number): void {
-    const clamped = clamp(destX, 20, this.m_land.width - 20);
+    const clamped = this.clampMoveDest(destX);
     // Network: a Move is a turn-resolving action just like a shot — flag it busy so the next
     // hand-off (and any keyframe that arrives mid-drive) HOLDS until the drive settles. Without
     // this the drive is ungated: a peer whose sim is throttled (backgrounded tab) would reconcile
@@ -5038,6 +5072,12 @@ export class CGameController implements ShotWorld {
     // Beams are hitscan STRAIGHT rays — never arced or ranged. Fire exactly as the planner aimed
     // (straight at the target, full power); reusing a ballistic record's angle would bend the ray.
     if (this.isBeamWeapon(plan.weaponIndex))
+      return {weaponIndex: plan.weaponIndex, angleDeg: plan.angleDeg, power: plan.power};
+    // A SELF-targeted round (the planner's clean-self / dig-blast: fired near-vertically at our OWN
+    // column to clear the dirt burying us) isn't a ranged shot at an enemy. An enemy standing close by
+    // would put a stale ranging record within RANGE_TARGET_TOL of our own x and bend the dig into a
+    // sideways arc that never frees the tank — so fire it exactly as planned.
+    if (Math.abs(plan.targetX - botTank.getPosition().x) < 1)
       return {weaponIndex: plan.weaponIndex, angleDeg: plan.angleDeg, power: plan.power};
     const rec = this.m_ultraShot.get(botTank);
     const sameTarget =

@@ -289,8 +289,17 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     // BEAMS are hitscan straight rays: only score them when the LINE from the muzzle to the enemy is
     // CLEAR — a beam can't shoot through a mountain (scoring it as an always-hit is why it used to be
     // over-picked and nukes never fired). Aim straight at the enemy, no arc.
+    //
+    // EXCEPT while BURIED, where the check must be skipped: the muzzle sits UNDER the dirt, so the ray
+    // starts inside terrain and beamBlocked rejects every beam on its first sample — yet the buried
+    // filter above has already narrowed the pool to beams alone. The two rules cancelled out, leaving a
+    // buried bot with NO candidate action at all: it skipped its turn, nothing about its situation
+    // changed, and it skipped again every round for the rest of the battle. A beam is genuinely fine
+    // here — the engine's beam is pure hitscan that only ever stops on a TANK (see EXT.BEAM in
+    // WeaponBehavior), so shooting it out from under the dirt is exactly what it's for.
     const beamAngle = ctx.aimDegToward({x: e.x, y: e.y});
-    const beamClear = !beamBlocked(muzzleFor(beamAngle), {x: e.x, y: e.y}, field);
+    const beamClear =
+      ctx.self.buried || !beamBlocked(muzzleFor(beamAngle), {x: e.x, y: e.y}, field);
     if (beamClear)
       for (const w of firers.filter(f => f.isBeam)) {
         const s = scoreBlast(e.x, e.y, w, enemies, wt);
@@ -634,6 +643,45 @@ function bestCleanSelf(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
 }
 
 /**
+ * LAST RESORT — the play when every scored option came back empty (no arc reaches anyone, nothing to
+ * grab, nowhere to drive, no buff worth taking). Doing nothing is never the right answer: the bot's
+ * situation doesn't change on its own, so a skipped turn repeats every round for the rest of the
+ * battle. Fire the CHEAPEST offensive round it holds (never burn a nuke on a shot this hopeless):
+ *  • BURIED — straight up at its own column. The muzzle is inside the dirt, so the round detonates
+ *    right there and blasts the tank free. It eats that blast, which is why a cleaner (no damage,
+ *    scored at DIG_OUT_VALUE) always wins when one is in stock — but taking the hit beats being
+ *    pinned forever. This is the self-rescue levels 1..10 get for free by always firing.
+ *  • otherwise — the solved arc at the nearest enemy even though it scored no hit: a round that lands
+ *    SOMEWHERE reshapes the ground and feeds the cross-turn ranging correction, so the next turn is
+ *    better informed than another turn of standing still.
+ */
+function lastResortShot(ctx: UltraCtx): UltraPlan | null {
+  const firers = ctx.weapons.filter(w => w.offensive && w.count > 0 && w.damage > 0);
+  if (!firers.length) return null;
+  const w = firers.reduce((b, c) => (c.cost < b.cost ? c : b));
+  if (ctx.self.buried)
+    return {
+      action: 'fire',
+      weaponIndex: w.index,
+      angleDeg: 90,
+      power: 300,
+      targetX: ctx.self.x,
+      note: 'dig-blast',
+    };
+  if (!ctx.enemies.length) return null;
+  const e = nearestEnemy(ctx);
+  const arc = bestAim(ctx.muzzleFor, {x: e.x, y: e.y}, ctx.wind, ctx.field, ctx.gustT0);
+  return {
+    action: 'fire',
+    weaponIndex: w.index,
+    angleDeg: arc.angleDeg,
+    power: arc.power,
+    targetX: e.x,
+    note: 'last-resort',
+  };
+}
+
+/**
  * The full Ultra decision: score every candidate action in one currency and take the best, with a
  * small "human-ish" chance to prefer a setup/trap play over the raw-best shot so it feels cunning
  * rather than robotic. Returns a {@link UltraPlan} the caller executes.
@@ -705,7 +753,9 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
       });
   }
 
-  if (!cands.length) return {action: 'skip', note: 'no-action'};
+  // Nothing scored at all — take the desperation shot rather than passing the turn (a pass would just
+  // repeat next round, since nothing about the bot's position changes while it stands there).
+  if (!cands.length) return lastResortShot(ctx) ?? {action: 'skip', note: 'no-action'};
 
   cands.sort((a, b) => b.value - a.value);
   const top = cands[0];
