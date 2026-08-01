@@ -41,10 +41,7 @@ interface ParticlePreset {
 }
 
 const PRESETS = particlesRaw as unknown as Record<string, ParticlePreset>;
-
-// 'plume' = the bright starburst flare used along a projectile trail (real
-// flares/04.bmp sprite, additive). 'smoke' = grey puff (real gui/smoke.bmp).
-type RenderKind = 'disc' | 'flare' | 'flash' | 'smoke' | 'plume';
+type RenderKind = 'disc' | 'flare' | 'flash' | 'smoke' | 'plume' | 'exhaust';
 
 interface Particle {
   x: number;
@@ -63,6 +60,14 @@ interface Particle {
   grow: number; // smoke swell rate over life (small = stays compact; big = billows out)
   op: number; // smoke peak opacity (crater fumes are near-opaque so their dense cohort reads solid)
   spr?: string; // optional sprite key for plume particles (else the default flare)
+  // ---- 'exhaust' clusters only (0/1/0 on every other kind, so the pool keeps ONE object shape).
+  // The baked cell is authored in LOCAL space with +X along the emission perpendicular, so the
+  // blit is rotated by this unit vector — stored as cos/sin (= the perpendicular itself) to keep
+  // atan2/cos/sin out of the per-frame draw loop.
+  exCos: number;
+  exSin: number;
+  exVariant: number; // which baked seed row to sample (kills the repeating-stamp read)
+  exScale: number; // cluster life / EX_REF_LIFE — see `exhaustAtlas` on why the blit scales
 }
 
 // Default smoke swell rate (muzzle exhaust / shot-trail column billow out strongly).
@@ -80,6 +85,7 @@ const KIND_GRAV: Record<RenderKind, number> = {
   flash: 0,
   smoke: -0.12,
   plume: 0.15,
+  exhaust: -0.12, // a baked cluster IS trail smoke — same buoyancy as the puffs it replaces
 };
 const KIND_WIND: Record<RenderKind, number> = {
   disc: 0.15,
@@ -87,6 +93,7 @@ const KIND_WIND: Record<RenderKind, number> = {
   flash: 0,
   smoke: 1.1, // was 1.6 — the original's grey smoke rides wind at ×1; 1.6 shoved it unnaturally hard
   plume: 0.4,
+  exhaust: 1.1, // ditto — wind acts on the cluster; the intra-cluster drift is baked
 };
 // Blast radius (px) below which a detonation is drawn as a compact spark-puff rather
 // than the full firework — machine gun (r8), shotgun (r4), gatling (r8). Shells and up
@@ -184,9 +191,59 @@ const FUME_GRAV = -0.05;
 // its perpendicular DRIFT (which side of the tube it settles on) and its gui/rocket plume.bmp ROW
 // (its colour). So the outer edge reads the light UPPER rows and the inner edge the dark LOWER rows
 // — a coherent graded TUBE that emerges statistically (grounded: row = the emission-angle fraction).
-const EXHAUST_PUFFS = 5; // small puffs per sub-step (dense — the trail is many overlapping puffs)
+const EXHAUST_PUFFS = 10; // small puffs per sub-step (dense — the trail is many overlapping puffs)
 const EXHAUST_PERP = 16; // perpendicular drift speed (px/s) → puffs SPREAD apart as they age (tube widens toward the tail)
 const EXHAUST_HALF = 1; // initial perpendicular half-offset (px) → puffs START close together at the nozzle
+// Per-puff size range and the billow curve's peak — shared by the live path and the bake, so the
+// baked cell reproduces `drawSmoke`'s exhaust branch exactly.
+const EXHAUST_SIZE_MIN = 2.5;
+const EXHAUST_SIZE_MAX = 4;
+const EXHAUST_GROW_MAX = 3.4; // puff diameter peaks at size·3.4·2 (see the `gs` curve)
+// Peak opacity of an exhaust puff — low, so overlapping soft puffs blend into a blurry cloud
+// rather than reading as crisp discs.
+const SMOKE_EXHAUST_OP = 0.6;
+// Exhaust puff life, before the weapon's trailLength scaling (`lenScale`).
+const EXHAUST_LIFE_MIN = 0.9;
+const EXHAUST_LIFE_MAX = 1.6;
+
+// ---- Baked exhaust clusters -------------------------------------------------------------------
+// A sub-step's cohort of EXHAUST_PUFFS puffs shares one origin and one velocity; the ONLY thing
+// that differs between them is a random cone angle `a` that sets both the perpendicular drift and
+// the plume.bmp colour row, plus ±1px jitter. So the whole cohort's appearance is a deterministic
+// function of its normalised age — which means it can be rendered ONCE, offline, into an animation
+// strip and replayed at runtime with a single rotated blit instead of EXHAUST_PUFFS blits.
+//
+// That matters because canvas2d smoke is bound by drawImage CALL COUNT, not by fill: measured on a
+// 6-rocket Stingers volley, 11k puff blits cost ~5.8ms/frame while the same painted area in 1/5 the
+// calls costs ~0.95ms. Pixels are free; calls are not.
+//
+// What stays live: gravity, buoyancy and wind act on the cluster as a whole. The puffs sit within
+// ~40px of each other and share the boundary-layer factor, so their individual wind response was
+// already indistinguishable. What is baked: the intra-cluster spread, per-puff growth, the
+// plume.bmp colour ramp and each puff's own fade — including its life stagger, so the cohort still
+// dissolves raggedly rather than snapping out together.
+const EX_FRAMES = 24; // animation frames per variant
+// Independently-seeded strips, picked at random per cluster. This has to be GENEROUS: a cluster is
+// a rigid stamp, so with too few seeds consecutive sub-steps reuse the same silhouette and the
+// ribbon reads as a chain of identical beads instead of a continuous cloud (clearly visible at 8).
+const EX_VARIANTS = 32;
+// Reference life the cell geometry is authored at (the midpoint of the `between(0.9, 1.6)` draw).
+// A cluster whose life differs blits the cell scaled by life/EX_REF_LIFE: the perpendicular drift
+// is a constant VELOCITY, so total spread is proportional to life and the tube must widen with it
+// (trailLength 0→100 maps to lenScale 0.9→1.6). Scaling the cell scales the puff radii along with
+// the spread — a ±30% systematic size shift that sits well inside the existing per-puff random
+// range (2.5..4), so it reads as a beefier trail rather than as an error.
+const EX_REF_LIFE = 1.25;
+// Cell half-extents in world px at EX_REF_LIFE. The cell is a WIDE, SHORT rectangle, not a square:
+// puffs fan out only along the perpendicular (local X), so local Y spans nothing but the ±1px
+// jitter plus a puff radius. Sizing the two axes independently costs ~2.4× less texture, which is
+// what buys the 32 variants above.
+const EX_HALF_W = Math.ceil(
+  EXHAUST_HALF + EXHAUST_PERP * EX_REF_LIFE + 1 + EXHAUST_SIZE_MAX * EXHAUST_GROW_MAX,
+);
+const EX_HALF_H = Math.ceil(1 + EXHAUST_SIZE_MAX * EXHAUST_GROW_MAX);
+const EX_CELL_W = EX_HALF_W * 2; // texture px per cell (1:1 with world px at the reference life)
+const EX_CELL_H = EX_HALF_H * 2;
 
 // Cull margin (px) — a puff whose CENTRE is this far outside the view is skipped in draw
 // (big enough to cover a fully-swelled puff's radius so nothing pops at the edge).
@@ -228,6 +285,106 @@ export class CParticleSystem {
     this.m_assets = a;
     this.m_whiteSmoke = null;
     this.m_plumeImg = null;
+    this.m_exAtlas = null; // the bake samples plume.bmp — rebuild it against the new sprite set
+  }
+
+  /** Build the baked exhaust atlas up front (it needs gui/rocket plume.bmp, so call this once the
+   *  sprites have loaded). Purely an optimisation: without it the atlas builds lazily on the first
+   *  rocket, which would put its one-off cost on that frame. Safe to call repeatedly. */
+  prewarm(): void {
+    this.exhaustAtlas();
+  }
+
+  // The baked exhaust-cluster atlas: EX_VARIANTS rows (seeds) × EX_FRAMES columns (the cohort's
+  // life). Null until gui/rocket plume.bmp is available (and always in headless tests, where there
+  // is no canvas) — callers fall back to emitting the individual puffs.
+  private m_exAtlas: HTMLCanvasElement | null = null;
+
+  /**
+   * Render the exhaust cohort's whole life into an atlas, once.
+   *
+   * Each cell composites EXHAUST_PUFFS sub-puffs at the state they'd hold at that frame's
+   * normalised age, mirroring `drawSmoke`'s exhaust branch term for term: the plume.bmp colour
+   * lookup (X = age, Y = the puff's cone-angle row), the billow curve `gs`, and the fade `ea`.
+   * Because the sub-puffs composite source-over into a transparent cell and the cell is then
+   * composited source-over onto the scene, the result is IDENTICAL to blitting them individually —
+   * source-over is associative that way. The bake is lossless, not an approximation.
+   *
+   * Consequence worth knowing: sub-puffs inside a cell are FREE at runtime — the cost is one blit
+   * regardless of how many are baked in. EXHAUST_PUFFS is therefore a pure quality knob now.
+   */
+  private exhaustAtlas(): HTMLCanvasElement | null {
+    if (this.m_exAtlas) return this.m_exAtlas;
+    if (typeof document === 'undefined') return null;
+    const img = this.plumeImg(); // the colour table the exhaust reads — required
+    if (!img) return null;
+    const cv = document.createElement('canvas');
+    cv.width = EX_CELL_W * EX_FRAMES;
+    cv.height = EX_CELL_H * EX_VARIANTS;
+    const g = cv.getContext('2d');
+    if (!g) return null;
+
+    for (let v = 0; v < EX_VARIANTS; v++) {
+      // Draw this variant's cohort once, then replay it across the frame columns. Each sub-puff
+      // keeps its own cone angle, jitter, size and life fraction for the whole strip, so the
+      // variant is a single coherent cohort animating — not independent noise per frame.
+      const puffs = [];
+      for (let i = 0; i < EXHAUST_PUFFS; i++) {
+        const a = between(-1, 1); // cone angle: −1 = inner/dark row, +1 = outer/light row
+        puffs.push({
+          a,
+          jx: between(-1, 1),
+          jy: between(-1, 1),
+          size: between(EXHAUST_SIZE_MIN, EXHAUST_SIZE_MAX),
+          // Per-puff life as a fraction of the cluster's: the live path draws each puff's life
+          // independently over a 0.9..1.6 range (a 1.78× spread), so short-lived members wink out
+          // early and the cohort frays instead of vanishing as one block.
+          lifeFrac: between(EXHAUST_LIFE_MIN / EXHAUST_LIFE_MAX, 1),
+          row: Math.min(img.height - 1, (((1 - a) / 2) * img.height) | 0),
+        });
+      }
+      for (let f = 0; f < EX_FRAMES; f++) {
+        const t = (f + 0.5) / EX_FRAMES; // sample each frame at its midpoint
+        const ox = f * EX_CELL_W + EX_HALF_W;
+        const oy = v * EX_CELL_H + EX_HALF_H;
+        // Spread uses the CLUSTER's age, not the puff's: drift is a constant velocity in the live
+        // path, so a short-lived puff simply dies partway along the same trajectory.
+        const spread = EXHAUST_HALF + EXHAUST_PERP * EX_REF_LIFE * t;
+        for (const p of puffs) {
+          const tp = t / p.lifeFrac; // this puff's own normalised age
+          if (tp >= 1) continue; // already dead — the cohort frays
+          const cx = Math.min(img.width - 1, (tp * img.width) | 0);
+          const i = (p.row * img.width + cx) * 4;
+          const cr = img.data[i],
+            cg = img.data[i + 1],
+            cb = img.data[i + 2];
+          // Billow to EXHAUST_GROW_MAX by tp=0.72, then shrink and dissolve (drawSmoke's curve).
+          const gs =
+            tp < 0.72
+              ? 0.5 + (EXHAUST_GROW_MAX - 0.5) * (tp / 0.72)
+              : EXHAUST_GROW_MAX * (1 - (tp - 0.72) / 0.28);
+          const rad = p.size * gs;
+          const ea = Math.min(1, tp / 0.1) * (tp > 0.72 ? (1 - tp) / 0.28 : 1) * SMOKE_EXHAUST_OP;
+          if (rad <= 0 || ea <= 0.004) continue;
+          const px = ox + p.a * spread + p.jx;
+          const py = oy + p.jy;
+          // The soft cotton-ball falloff of m_puffCache, with the fade folded into the stops —
+          // equivalent to blitting the white master at globalAlpha = ea, minus the state change.
+          const grad = g.createRadialGradient(px, py, 0, px, py, rad);
+          const rgb = `${cr},${cg},${cb}`;
+          grad.addColorStop(0, `rgba(${rgb},${0.9 * ea})`);
+          grad.addColorStop(0.4, `rgba(${rgb},${0.6 * ea})`);
+          grad.addColorStop(0.75, `rgba(${rgb},${0.22 * ea})`);
+          grad.addColorStop(1, `rgba(${rgb},0)`);
+          g.fillStyle = grad;
+          g.beginPath();
+          g.arc(px, py, rad, 0, TWO_PI);
+          g.fill();
+        }
+      }
+    }
+    this.m_exAtlas = cv;
+    return cv;
   }
 
   /** gui/rocket plume.bmp as a raw 2-D pixel table (read once): X = age, Y = height. Exhaust puffs
@@ -391,8 +548,10 @@ export class CParticleSystem {
     grow: number = SMOKE_GROW,
     op: number = SMOKE_OP,
     gravMul: number = KIND_GRAV[kind],
-  ): void {
-    this.m_particles.push({
+  ): Particle {
+    // Every field is written here (including the 'exhaust'-only ones) so the pool holds a single
+    // object shape — a mixed shape would deoptimise the hot update/draw loops that walk it.
+    const p: Particle = {
       x,
       y,
       vx,
@@ -409,7 +568,13 @@ export class CParticleSystem {
       grow,
       op,
       spr,
-    });
+      exCos: 1,
+      exSin: 0,
+      exVariant: 0,
+      exScale: 1,
+    };
+    this.m_particles.push(p);
+    return p;
   }
 
   /** Radial burst: `count` particles fanned across all angles, speed ∈ [smin,smax]. */
@@ -693,7 +858,8 @@ export class CParticleSystem {
     const reach = r * 1.15; // cover the visible blast area
     let w = 0;
     for (const p of this.m_particles) {
-      if (p.kind === 'smoke' && Math.hypot(p.x - x, p.y - y) < reach) continue; // drop it
+      const smoke = p.kind === 'smoke' || p.kind === 'exhaust'; // baked clusters ARE trail smoke
+      if (smoke && Math.hypot(p.x - x, p.y - y) < reach) continue; // drop it
       this.m_particles[w++] = p;
     }
     this.m_particles.length = w;
@@ -839,28 +1005,53 @@ export class CParticleSystem {
       const px = x - vx * dt * f,
         py = y - vy * dt * f;
       if (rocket) {
-        // MANY small exhaust puffs per point. Each picks a random cone angle `a` (−1 = inner/down,
-        // +1 = outer/up); it sets the puff's perpendicular DRIFT (→ its side of the tube) AND its
-        // plume.bmp ROW (stored in `g`), so outer puffs read the light rows, inner the dark — a
-        // coherent graded tube that self-organises instead of a random cloud. Colour comes from the
-        // plume table at draw (by age × this row); r=150 marks it as exhaust.
-        for (let n = 0; n < EXHAUST_PUFFS; n++) {
-          const a = between(-1, 1);
-          const rowFrac = (1 - a) / 2; // +1 (outer) → row 0 (light); −1 (inner) → row 1 (dark)
-          const drift = a * EXHAUST_PERP;
-          this.add(
-            px + perpx * a * EXHAUST_HALF + between(-1, 1),
-            py + perpy * a * EXHAUST_HALF + between(-1, 1),
-            -nx * eject + perpx * drift,
-            -ny * eject + perpy * drift,
-            {r: 150, g: Math.round(rowFrac * 255), b: 150},
-            between(0.9, 1.6) * lenScale,
-            between(2.5, 4), // larger
-            'smoke',
-            undefined,
-            2.2, // start small at the nozzle, grow larger toward the tail
-            0.6, // lower peak opacity → overlapping soft puffs blend into a blurry cloud, not crisp discs
+        const life = between(EXHAUST_LIFE_MIN, EXHAUST_LIFE_MAX) * lenScale;
+        const atlas = this.exhaustAtlas();
+        if (atlas) {
+          // BAKED: one particle carrying the whole cohort, drawn as a single rotated blit. The
+          // cluster keeps only the motion its members SHARE — the backward exhaust throw — because
+          // the perpendicular drift that fans them apart is already baked into the strip.
+          const p = this.add(
+            px,
+            py,
+            -nx * eject,
+            -ny * eject,
+            {r: 150, g: 128, b: 150}, // unused: the colour is baked from the plume table
+            life,
+            EX_HALF_W,
+            'exhaust',
           );
+          // The cell is authored with +X along the emission perpendicular, so the blit rotates by
+          // that unit vector; the strip is scaled to this cluster's life (see EX_REF_LIFE).
+          p.exCos = perpx;
+          p.exSin = perpy;
+          p.exVariant = (rnd() * EX_VARIANTS) | 0;
+          p.exScale = life / EX_REF_LIFE;
+        } else {
+          // LIVE fallback (no plume table yet, or headless): MANY small exhaust puffs per point.
+          // Each picks a random cone angle `a` (−1 = inner/down, +1 = outer/up); it sets the puff's
+          // perpendicular DRIFT (→ its side of the tube) AND its plume.bmp ROW (stored in `g`), so
+          // outer puffs read the light rows, inner the dark — a coherent graded tube that
+          // self-organises instead of a random cloud. Colour comes from the plume table at draw
+          // (by age × this row); r=150 marks it as exhaust. This is what the atlas bakes.
+          for (let n = 0; n < EXHAUST_PUFFS; n++) {
+            const a = between(-1, 1);
+            const rowFrac = (1 - a) / 2; // +1 (outer) → row 0 (light); −1 (inner) → row 1 (dark)
+            const drift = a * EXHAUST_PERP;
+            this.add(
+              px + perpx * a * EXHAUST_HALF + between(-1, 1),
+              py + perpy * a * EXHAUST_HALF + between(-1, 1),
+              -nx * eject + perpx * drift,
+              -ny * eject + perpy * drift,
+              {r: 150, g: Math.round(rowFrac * 255), b: 150},
+              life,
+              between(EXHAUST_SIZE_MIN, EXHAUST_SIZE_MAX), // larger
+              'smoke',
+              undefined,
+              2.2, // start small at the nozzle, grow larger toward the tail
+              SMOKE_EXHAUST_OP,
+            );
+          }
         }
       } else if (s === 0) {
         // BALLISTIC (trailType 1: rail/artillery/shell/BOMB, trailLength 0) — the original lays NO
@@ -1122,9 +1313,73 @@ export class CParticleSystem {
     this.drawSmoke(ctx, cullMin, cullMax);
   }
 
+  /**
+   * Draw the baked exhaust clusters — ONE rotated blit per cluster, replacing the EXHAUST_PUFFS
+   * individual blits it stands for.
+   *
+   * The atlas cell is authored in local space (+X along the emission perpendicular), so each blit
+   * needs its own rotation. Rather than save()/rotate()/restore() per particle, the caller's
+   * transform (identity on the main ctx, a half-res scale+translate on the smoke buffer) is read
+   * ONCE and composed by hand with each cluster's rotate+translate — measured at ~28% over an
+   * unrotated blit, versus the per-call state churn save/restore would add.
+   */
+  private drawExhaust(g: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
+    // Through the cached getter, not the field: setAssets() invalidates the atlas, and any cluster
+    // still in flight at that moment would otherwise draw as nothing until something rebuilt it.
+    const atlas = this.exhaustAtlas();
+    if (!atlas) return;
+    // A context stub without getTransform (headless mocks) can't be composed with — fall back to
+    // save/restore, which every 2-D context supports.
+    const base = typeof g.getTransform === 'function' ? g.getTransform() : null;
+    const ba = base ? base.a : 1,
+      bb = base ? base.b : 0,
+      bc = base ? base.c : 0,
+      bd = base ? base.d : 1,
+      be = base ? base.e : 0,
+      bf = base ? base.f : 0;
+    let drew = false;
+    for (const p of this.m_particles) {
+      if (p.kind !== 'exhaust') continue;
+      if (p.x < cullMin || p.x > cullMax) continue;
+      const t = p.age / p.life;
+      if (t >= 1) continue;
+      const frame = Math.min(EX_FRAMES - 1, (t * EX_FRAMES) | 0);
+      const dw = EX_CELL_W * p.exScale, // destination size — see EX_REF_LIFE
+        dh = EX_CELL_H * p.exScale;
+      const hw = dw / 2,
+        hh = dh / 2;
+      const sx = frame * EX_CELL_W,
+        sy = p.exVariant * EX_CELL_H;
+      const c = p.exCos,
+        s = p.exSin;
+      if (base) {
+        // base × translate(p.x, p.y) × rotate(c, s), expanded (the rotation has no shear).
+        g.setTransform(
+          ba * c + bc * s,
+          bb * c + bd * s,
+          ba * -s + bc * c,
+          bb * -s + bd * c,
+          ba * p.x + bc * p.y + be,
+          bb * p.x + bd * p.y + bf,
+        );
+        g.drawImage(atlas, sx, sy, EX_CELL_W, EX_CELL_H, -hw, -hh, dw, dh);
+      } else {
+        g.save();
+        g.translate(p.x, p.y);
+        g.rotate(Math.atan2(s, c));
+        g.drawImage(atlas, sx, sy, EX_CELL_W, EX_CELL_H, -hw, -hh, dw, dh);
+        g.restore();
+      }
+      drew = true;
+    }
+    // Put the caller's transform back so the crater-fume pass below draws in world space.
+    if (drew && base) g.setTransform(ba, bb, bc, bd, be, bf);
+  }
+
   /** Draw every 'smoke' puff to `g` (the main ctx or the half-res buffer). Grey (r<200) = rocket
    *  exhaust (gui/rocket plume.bmp colour table); white (r≥200) = crater fumes (soft white sprite). */
   private drawSmoke(g: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
+    this.drawExhaust(g, cullMin, cullMax);
     const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null;
     for (const p of this.m_particles) {
       if (p.kind !== 'smoke') continue;
@@ -1355,14 +1610,15 @@ export class CParticleSystem {
   /**
    * Whether the EXPLOSION itself is still playing — the fireball/flare burst (`m_explosions`), a
    * beam sweep, or its fire/spark particles. Unlike `hasActiveExplosions`, this deliberately IGNORES
-   * the lingering grey `smoke`/`plume` puffs: those are a port embellishment (the original blasts
+   * the lingering `smoke`/`exhaust`/`plume` puffs: those are a port embellishment (the original blasts
    * emit only flares + fire streamers, no drifting smoke), so their multi-second fade must NOT hold
    * the turn open. Gates turn hand-off; the render gate still uses `hasActiveExplosions` so the smoke
    * keeps drawing (and drifting) into the next player's aim phase.
    */
   hasActiveBlast(): boolean {
     if (this.m_explosions.length > 0 || this.m_beams.length > 0) return true;
-    for (const p of this.m_particles) if (p.kind !== 'smoke' && p.kind !== 'plume') return true;
+    for (const p of this.m_particles)
+      if (p.kind !== 'smoke' && p.kind !== 'plume' && p.kind !== 'exhaust') return true;
     return false;
   }
 
