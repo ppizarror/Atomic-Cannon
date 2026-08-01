@@ -125,6 +125,32 @@ const DIRT_CAP_FRACTION = 0.16;
  *  coat; well below the tens of px a Dirt weapon piles, so a real fill always buries it. */
 const RAD_BURY_MARGIN = 6;
 
+/** Deterministic 0..1 hash of a lattice point — the source of the scorch blotch field. */
+function hashLattice(x: number, y: number): number {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+/** Smooth value noise (0..1) sampled on a `cell`-px lattice — soft blotches rather than per-pixel
+ *  speckle. Keyed to WORLD coordinates, so every scorch that touches a spot agrees on its value and
+ *  overlapping burns merge into one continuous patch instead of reading as stacked discs. */
+function blotchNoise(x: number, y: number, cell: number): number {
+  const fx = x / cell,
+    fy = y / cell;
+  const ix = Math.floor(fx),
+    iy = Math.floor(fy);
+  let tx = fx - ix,
+    ty = fy - iy;
+  tx = tx * tx * (3 - 2 * tx); // smoothstep the interpolation → no lattice creases
+  ty = ty * ty * (3 - 2 * ty);
+  const a = hashLattice(ix, iy),
+    b = hashLattice(ix + 1, iy),
+    c = hashLattice(ix, iy + 1),
+    d = hashLattice(ix + 1, iy + 1);
+  return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+}
+
 export class CLand {
   // ========================================================================
   // CONSTRUCTION & INITIALIZATION
@@ -1076,8 +1102,10 @@ export class CLand {
   scorch(x: number, y: number, radius: number): void {
     // Darken a rim WELL beyond the crater — the crater interior is cleared away, so a scorch
     // barely wider than it would have almost no solid pixels left to burn. This blackens the
-    // ground around and down the walls of the blast, the way the original chars the land.
-    this.scorchPixels(x, y, Math.max(20, radius * 1.8));
+    // ground around and down the walls of the blast, the way the original chars the land. The
+    // nominal radius runs a little past the old 1.8 because scorchPixels now feathers its edge
+    // inward (a ragged, fading rim rather than a hard disc), which eats into the visible reach.
+    this.scorchPixels(x, y, Math.max(22, radius * 2.0));
   }
 
   update(dt: number, wind?: Vec2): void {
@@ -1498,29 +1526,71 @@ export class CLand {
     this.m_pixelsDirty = true;
   }
 
-  /** Darken the terrain pixels inside a disc — permanent scorch, baked into the buffer (the
-   *  original tints the same pixels, so burnt DEPOSITED dirt darkens exactly like native ground). */
+  /** Char the terrain pixels inside a disc — permanent scorch, baked into the buffer (the
+   *  original tints the same pixels, so burnt DEPOSITED dirt darkens exactly like native ground).
+   *
+   *  Rather than MULTIPLYING the pixels down (which drives the core to flat black, leaves a
+   *  hard-edged disc at the rim, and compounds to a solid hole where blasts overlap), each pixel
+   *  is BLENDED toward its own charred colour by a soft radial weight:
+   *   - the weight peaks at the centre and eases to exactly zero at the rim, so the burn washes
+   *     out into the untouched ground instead of ending on a visible circle;
+   *   - two octaves of world-space blotch noise warp the rim and mottle the interior, so the burn
+   *     is a ragged patch, not a stencil — and because the noise is keyed to WORLD coordinates,
+   *     overlapping blasts share one continuous burn texture rather than stacking discs;
+   *   - the char target keeps a trace of the ground's own colour over a warm ember floor, so burnt
+   *     sand still reads different from burnt rock and repeat hits settle at charcoal, never black.
+   */
   private scorchPixels(cx: number, cy: number, radius: number): void {
     const px = this.m_pixels;
     if (!px) return;
     const W = this.m_nWidth,
       H = this.m_nHeight;
     const r = Math.max(1, radius);
+    const invR = 1 / r;
+    // Both noise octaves scale with the blast — a nuke gets big lobes and broad patchiness, a
+    // grenade the same shape in miniature, so the burn never looks like a fixed-size grain
+    // stamped over different radii.
+    const rimCell = Math.max(8, r * 0.5),
+      mottleCell = Math.max(5, r * 0.16);
+    // Inside this fraction of the radius the burn is at full strength — a solid charred core that
+    // then eases out, rather than a peak that starts fading from the very centre.
+    const CORE = 0.35;
     const [x0, x1] = this.clampCols(Math.floor(cx - r), Math.ceil(cx + r));
     const y0 = Math.max(0, Math.floor(cy - r)),
       y1 = Math.min(H - 1, Math.ceil(cy + r));
     for (let y = y0; y <= y1; y++) {
+      const dy = y - cy;
       for (let x = x0; x <= x1; x++) {
-        const d = Math.hypot(x - cx, y - cy);
-        if (d > r) continue;
+        const dx = x - cx;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d >= r) continue;
         const i = y * W + x;
         const c = px[i];
         if ((c & 0xff000000) === 0) continue; // empty → skip
-        // Charred: near-black at the blast, easing back to the untouched colour at the rim.
-        const k = 0.18 + 0.72 * (d / r);
-        const rr = (c & 0xff) * k,
-          gg = ((c >> 8) & 0xff) * k,
-          bb = ((c >> 16) & 0xff) * k;
+        // Warp the normalised radius by the coarse octave: the burn falls short of the nominal rim
+        // by a varying amount, so its outline is lobed instead of a perfect circle. The warp only
+        // ever pulls the edge INWARD (factor >= 1), which is what keeps the fade honest — the
+        // weight is already 0 by the time it meets the `d >= r` cut, so there is no clipped step.
+        const t = d * invR * (1 + 0.34 * blotchNoise(x, y, rimCell));
+        if (t >= 1) continue; // outside the warped rim
+        // Solid to CORE, then smoothstepped to zero at the rim — flat at BOTH ends, so there is
+        // neither a hot pinprick at the centre nor an edge to see where the burn runs out.
+        const u = t <= CORE ? 1 : (1 - t) / (1 - CORE);
+        // The mid-scale octave then eats into it, the way fire leaves patches barely touched.
+        const a = Math.min(1, u * u * (3 - 2 * u) * (0.86 + 0.2 * blotchNoise(x, y, mottleCell)));
+        const sr = c & 0xff,
+          sg = (c >> 8) & 0xff,
+          sb = (c >> 16) & 0xff;
+        // Charred version of THIS pixel: a dark ember-warm floor plus a fraction of the original,
+        // so the burn keeps the ground's hue and its texture still shows through the char. The
+        // floor is what stops repeat hits on one spot from grinding down to a black hole — they
+        // converge on charcoal instead.
+        const kr = 21 + sr * 0.14,
+          kg = 16 + sg * 0.11,
+          kb = 13 + sb * 0.09;
+        const rr = (sr + (kr - sr) * a) | 0,
+          gg = (sg + (kg - sg) * a) | 0,
+          bb = (sb + (kb - sb) * a) | 0;
         px[i] = ((0xff << 24) | (bb << 16) | (gg << 8) | rr) >>> 0;
       }
     }
