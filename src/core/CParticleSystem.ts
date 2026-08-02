@@ -41,7 +41,8 @@ interface ParticlePreset {
 }
 
 const PRESETS = particlesRaw as unknown as Record<string, ParticlePreset>;
-type RenderKind = 'disc' | 'flare' | 'flash' | 'smoke' | 'plume' | 'exhaust';
+
+type RenderKind = 'disc' | 'flare' | 'flash' | 'smoke' | 'plume' | 'exhaust' | 'heat';
 
 interface Particle {
   x: number;
@@ -68,6 +69,9 @@ interface Particle {
   exSin: number;
   exVariant: number; // which baked seed row to sample (kills the repeating-stamp read)
   exScale: number; // cluster life / EX_REF_LIFE — see `exhaustAtlas` on why the blit scales
+  // ---- 'heat' wisps only: a slow tumble, so the haze churns instead of sliding up rigidly.
+  rot: number;
+  spin: number;
 }
 
 // Default smoke swell rate (muzzle exhaust / shot-trail column billow out strongly).
@@ -86,6 +90,7 @@ const KIND_GRAV: Record<RenderKind, number> = {
   smoke: -0.12,
   plume: 0.15,
   exhaust: -0.12, // a baked cluster IS trail smoke — same buoyancy as the puffs it replaces
+  heat: 0, // haze lifts at a constant rate set at birth (bigger wisps lift faster), no accel
 };
 const KIND_WIND: Record<RenderKind, number> = {
   disc: 0.15,
@@ -94,6 +99,7 @@ const KIND_WIND: Record<RenderKind, number> = {
   smoke: 1.1, // was 1.6 — the original's grey smoke rides wind at ×1; 1.6 shoved it unnaturally hard
   plume: 0.4,
   exhaust: 1.1, // ditto — wind acts on the cluster; the intra-cluster drift is baked
+  heat: 0, // ground haze carries its own sideways drift; wind must not smear it off the fallout
 };
 // Blast radius (px) below which a detonation is drawn as a compact spark-puff rather
 // than the full firework — machine gun (r8), shotgun (r4), gatling (r8). Shells and up
@@ -278,6 +284,10 @@ const EX_HALF_H = Math.ceil(1 + EXHAUST_SIZE_MAX * EXHAUST_GROW_MAX);
 const EX_CELL_W = EX_HALF_W * 2; // texture px per cell (1:1 with world px at the reference life)
 const EX_CELL_H = EX_HALF_H * 2;
 
+// How much a radioactive heat wisp widens over its life. Modest: the haze is meant to read as a
+// fine shimmer over the fallout, not as billowing smoke.
+const HEAT_GROW = 1.4;
+
 // Cull margin (px) — a puff whose CENTRE is this far outside the view is skipped in draw
 // (big enough to cover a fully-swelled puff's radius so nothing pops at the edge).
 const CULL_MARGIN = 140;
@@ -319,6 +329,7 @@ export class CParticleSystem {
     this.m_whiteSmoke = null;
     this.m_plumeImg = null;
     this.m_exAtlas = null; // the bake samples plume.bmp — rebuild it against the new sprite set
+    this.m_heatTints.clear(); // tinted from smoke.bmp — rebuild against the new sprite set
   }
 
   /** Build the baked exhaust atlas up front (it needs gui/rocket plume.bmp, so call this once the
@@ -625,6 +636,8 @@ export class CParticleSystem {
       exSin: 0,
       exVariant: 0,
       exScale: 1,
+      rot: 0,
+      spin: 0,
     };
     this.m_particles.push(p);
     return p;
@@ -1214,6 +1227,148 @@ export class CParticleSystem {
     }
   }
 
+  // ------------------------------------------------------- radioactive heat haze (IHeatSink)
+  //
+  // CLand owns the fallout map and the terrain surface, so it decides WHERE and IN WHAT COLOUR a
+  // wisp rises. Everything after that decision — the pool, the physics, the sprite cache, the draw
+  // — is particle work and lives here, so CLand no longer runs a private particle system of its own.
+
+  private m_heatTints = new Map<string, HTMLCanvasElement>();
+  private m_heatFallback: HTMLCanvasElement | null = null;
+
+  /** Emit one heat wisp. `lift` is its constant rise rate (bigger wisps lift faster). */
+  heatWisp(
+    x: number,
+    y: number,
+    size: number,
+    life: number,
+    vx: number,
+    lift: number,
+    r: number,
+    g: number,
+    b: number,
+  ): void {
+    const p = this.add(x, y, vx, -lift, {r, g, b}, life, size, 'heat', undefined, HEAT_GROW);
+    p.rot = rnd() * TWO_PI;
+    p.spin = between(-0.8, 0.8);
+  }
+
+  /** Live heat wisps — CLand caps emission on this. */
+  heatCount(): number {
+    let n = 0;
+    for (const p of this.m_particles) if (p.kind === 'heat') n++;
+    return n;
+  }
+
+  /** Drop every heat wisp — the land is being regenerated, so its haze goes with it. */
+  clearAllHeat(): void {
+    let w = 0;
+    for (const p of this.m_particles) if (p.kind !== 'heat') this.m_particles[w++] = p;
+    this.m_particles.length = w;
+  }
+
+  /** Drop heat wisps inside a disc — an earth-remover that clears the fallout clears its haze too. */
+  clearHeat(x: number, y: number, r: number): void {
+    const r2 = r * r;
+    let w = 0;
+    for (const p of this.m_particles) {
+      if (p.kind === 'heat') {
+        const dx = p.x - x,
+          dy = p.y - y;
+        if (dx * dx + dy * dy <= r2) continue; // inside the cleared disc → drop
+      }
+      this.m_particles[w++] = p;
+    }
+    this.m_particles.length = w;
+  }
+
+  /** The soft warm glow used until the real smoke sprite is available. */
+  private heatFallback(): HTMLCanvasElement | null {
+    if (this.m_heatFallback) return this.m_heatFallback;
+    if (typeof document === 'undefined') return null;
+    const S = 32;
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    if (!g) return null;
+    const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    grad.addColorStop(0, 'rgba(255,150,70,0.9)');
+    grad.addColorStop(0.4, 'rgba(255,90,40,0.4)');
+    grad.addColorStop(1, 'rgba(255,60,30,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, S, S);
+    this.m_heatFallback = c;
+    return c;
+  }
+
+  /** The smoke sprite tinted to a weapon's radiation hue (hydrogen blue / plutonium green /
+   *  uranium red), cached per colour. `multiply` colours the grey smoke while keeping its texture;
+   *  the rim then gets the same monotonic falloff as `whiteSmoke` — without it each wisp keeps a
+   *  hard edge and the haze reads as pasted stamps rather than shimmer. */
+  private heatTint(r: number, g: number, b: number): HTMLCanvasElement | null {
+    const spr = this.m_assets?.getSprite('fx:smoke');
+    if (!spr || typeof document === 'undefined') return null;
+    const key = `${r},${g},${b}`;
+    const hit = this.m_heatTints.get(key);
+    if (hit) return hit;
+    const w = spr.width,
+      h = spr.height;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const gx = c.getContext('2d');
+    if (!gx) return null;
+    gx.drawImage(spr.bitmap, 0, 0, w, h);
+    gx.globalCompositeOperation = 'multiply'; // colour the grey smoke, keep its texture
+    gx.fillStyle = `rgb(${r},${g},${b})`;
+    gx.fillRect(0, 0, w, h);
+    gx.globalCompositeOperation = 'destination-in'; // re-mask to the smoke's own alpha…
+    gx.drawImage(spr.bitmap, 0, 0, w, h);
+    const cx = w / 2,
+      cy = h / 2;
+    const soft = gx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy)); // …then feather it
+    soft.addColorStop(0, 'rgba(0,0,0,1)');
+    soft.addColorStop(0.4, 'rgba(0,0,0,0.75)');
+    soft.addColorStop(0.75, 'rgba(0,0,0,0.35)');
+    soft.addColorStop(1, 'rgba(0,0,0,0)');
+    gx.fillStyle = soft;
+    gx.fillRect(0, 0, w, h);
+    gx.globalCompositeOperation = 'source-over';
+    this.m_heatTints.set(key, c);
+    return c;
+  }
+
+  /**
+   * Draw the radioactive heat haze. Kept OUT of `draw()` on purpose: these wisps belong visually to
+   * the ground, and used to be painted inside CLand.draw() — under the tanks and the aim overlay.
+   * A separate entry point lets the controller call it in exactly that slot, so moving the pool out
+   * of CLand changes the ownership without changing the frame.
+   */
+  drawHeat(ctx: CanvasRenderingContext2D): void {
+    const fallback = this.heatFallback();
+    const prev = ctx.globalCompositeOperation;
+    // Additive, so the tinted smoke reads as a warm GLOWING haze over any backdrop.
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of this.m_particles) {
+      if (p.kind !== 'heat') continue;
+      const t = p.age / p.life;
+      if (t >= 1) continue;
+      const a = Math.sin(Math.PI * t) * 0.1; // ease in, ease out — a faint hint, not a cloud
+      if (a <= 0.005) continue;
+      const d = p.size * (1 + t * p.grow); // widen as it rises
+      const spr = this.heatTint(p.r, p.g, p.b) ?? fallback;
+      if (!spr) continue;
+      ctx.globalAlpha = a;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.drawImage(spr, -d, -d, d * 2, d * 2);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = prev;
+  }
+
   /** A slow column of grey smoke rising from a blast site (lingers after the flash). */
   private emitSmokeColumn(x: number, y: number, count: number, scale: number): void {
     if (!smokeEnabled()) return; // Graphics → Draw Smoke (+ Detail gating) (lingering ground plumes)
@@ -1288,6 +1443,7 @@ export class CParticleSystem {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.age += dt;
+      if (p.spin !== 0) p.rot += p.spin * dt; // heat wisps tumble slowly as they lift
 
       const dead =
         p.age >= p.life ||
@@ -1688,7 +1844,8 @@ export class CParticleSystem {
   hasActiveBlast(): boolean {
     if (this.m_explosions.length > 0 || this.m_beams.length > 0) return true;
     for (const p of this.m_particles)
-      if (p.kind !== 'smoke' && p.kind !== 'plume' && p.kind !== 'exhaust') return true;
+      if (p.kind !== 'smoke' && p.kind !== 'plume' && p.kind !== 'exhaust' && p.kind !== 'heat')
+        return true;
     return false;
   }
 

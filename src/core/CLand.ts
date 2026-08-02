@@ -74,20 +74,36 @@ interface RadSpeck {
   b: number; // tint (from the weapon's irRGB, per zone)
 }
 
-// A faint warm plume rising off the radioactive carpet — it lifts, widens, spins
-// and fades, so the hot fallout SHIMMERS with heat. Purely visual, transient.
-interface HeatWisp {
-  x: number;
-  y: number;
-  age: number;
-  life: number;
-  size: number;
-  vx: number;
-  rot: number;
-  spin: number;
-  r: number;
-  g: number;
-  b: number;
+// Heat-haze tuning. The wisps read as a fine SHIMMER, so they want to be many-and-small rather
+// than few-and-large: a handful of big stamps reads as pasted blobs (the look the crater fumes had
+// before their own rework), whereas a dense field of small soft puffs reads as haze. Cost is linear
+// in the cap and these are tiny, so the higher cap is cheap.
+const HEAT_MAX = 260; // live wisps allowed at once (was 90)
+const HEAT_PER_ZONE = 3; // spawn attempts per zone per frame (was 1)
+const HEAT_SIZE_MIN = 2.5; // base radius px (was 5..12 — far too big, hence the blobs)
+const HEAT_SIZE_MAX = 5.5;
+
+/**
+ * Where the radioactive heat haze goes. CLand owns the fallout map and the terrain surface, so it
+ * decides WHERE a wisp rises and in what colour — but a wisp is a particle, and particles are
+ * CParticleSystem's job. CLand talks to it through this one-method-per-need interface rather than
+ * holding a particle system of its own.
+ */
+export interface IHeatSink {
+  heatWisp(
+    x: number,
+    y: number,
+    size: number,
+    life: number,
+    vx: number,
+    lift: number,
+    r: number,
+    g: number,
+    b: number,
+  ): void;
+  heatCount(): number;
+  clearHeat(x: number, y: number, r: number): void;
+  clearAllHeat(): void;
 }
 
 // A falling overburden block (beam/digger slice collapse): a captured column of pixels
@@ -448,7 +464,7 @@ export class CLand {
     this.m_particles.length = 0;
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
-    this.m_heat.length = 0;
+    this.m_heatSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
     const y = Math.floor(this.m_nHeight * 0.62);
     for (let x = 0; x < this.m_nWidth; x++) this.m_arrHeights[x] = y;
     if (this.m_baseHeights) this.m_baseHeights.fill(y);
@@ -471,7 +487,7 @@ export class CLand {
     this.m_radSpecks.length = 0;
     this.m_speckPool.length = 0;
     this.m_radParticles.length = 0;
-    this.m_heat.length = 0;
+    this.m_heatSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
     for (const c of [this.m_terrainCanvas, this.m_backdropCanvas, this.m_debugCanvas]) {
       if (c) c.width = c.height = 0; // free the backing store now, not at the next GC
     }
@@ -496,7 +512,7 @@ export class CLand {
     this.m_particles.length = 0; // + any dirt debris still in flight
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
-    this.m_heat.length = 0;
+    this.m_heatSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
     const A = 15; // walk amplitude
     const Ymin = Math.floor(this.m_nHeight * 0.3); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -940,7 +956,7 @@ export class CLand {
         dy = py - y;
       return dx * dx + dy * dy > r2;
     };
-    if (this.m_heat.length) this.m_heat = this.m_heat.filter(h => outside(h.x, h.y));
+    this.m_heatSink?.clearHeat(x, y, r); // …and the haze that was rising off it
     // Grains still IN THE AIR over the disc go too, not only the ones already within it: the blast
     // erupts up through that column. Left alone they simply carry on down and re-coat the floor of
     // the crater that was supposed to have swept them away — a cleaner fired into a settling cloud
@@ -2214,11 +2230,15 @@ export class CLand {
     // reads as HOT. The zone sets the clock and the span; whether the EARTH at the chosen column is
     // still hot decides if a wisp actually rises there, so a crater carved through the middle of a
     // zone stops fuming without the zone having to be destroyed (which took its glow with it).
-    if (this.m_radParticles.length && this.m_heat.length < 90) {
+    const sink = this.m_heatSink;
+    if (sink && this.m_radParticles.length && sink.heatCount() < HEAT_MAX) {
       for (const z of this.m_radParticles) {
         const cool = z.timeRemaining / Math.max(0.5, z.duration); // 1 hot → 0 cold
         const rr = z.radius;
-        const spawn = Math.random() < cool * 0.7 ? 1 : 0; // sparse — a wisp here and there
+        // Several small wisps per frame rather than the occasional big one — the haze reads as
+        // haze only when the puffs overlap; sparse stamps just look like blobs.
+        let spawn = 0;
+        for (let k = 0; k < HEAT_PER_ZONE; k++) if (Math.random() < cool * 0.7) spawn++;
         // Tint the wisp with the weapon's radiation colour (irRGB), brightened
         // so hydrogen puffs BLUE / plutonium GREEN / uranium RED — matching the
         // carpet, not a fixed red.
@@ -2231,98 +2251,29 @@ export class CLand {
           const col = Math.floor(z.x - rr + Math.random() * rr * 2);
           if (col < 0 || col >= this.m_nWidth) continue; // spawn anywhere in the zone, off the surface
           if (!this.radiationAt(col, 0)) continue; // …but only where the ground is actually still hot
-          this.m_heat.push({
-            x: col + plusMinus(1),
-            y: this.getHeightAt(col) - Math.random() * 4,
-            age: 0,
-            life: between(0.7, 1.5),
-            size: between(5, 12),
-            vx: (Math.random() - 0.5) * 12,
-            rot: Math.random() * TWO_PI,
-            spin: (Math.random() - 0.5) * 1.6,
-            r: tr,
-            g: tg,
-            b: tb,
-          });
+          const size = between(HEAT_SIZE_MIN, HEAT_SIZE_MAX);
+          // Hand the wisp off; CParticleSystem integrates and draws it from here. `26 + size` is
+          // its constant lift — bigger plumes rise faster.
+          sink.heatWisp(
+            col + plusMinus(1),
+            this.getHeightAt(col) - Math.random() * 4,
+            size,
+            between(0.7, 1.5),
+            (Math.random() - 0.5) * 12,
+            26 + size,
+            tr,
+            tg,
+            tb,
+          );
         }
       }
     }
-    let hw = 0;
-    for (let i = 0; i < this.m_heat.length; i++) {
-      const h = this.m_heat[i];
-      h.age += dt;
-      if (h.age >= h.life) continue; // faded → drop
-      h.y -= (26 + h.size) * dt; // rise, bigger plumes lift faster
-      h.x += h.vx * dt;
-      h.rot += h.spin * dt; // slow tumble
-      this.m_heat[hw++] = h;
-    }
-    this.m_heat.length = hw;
   }
 
-  /** Lazily build the soft warm radial glow blitted per heat wisp (additive). */
-  private heatSprite(): HTMLCanvasElement {
-    if (this.m_heatSprite) return this.m_heatSprite;
-    const S = 32,
-      c = document.createElement('canvas');
-    c.width = c.height = S;
-    const g = c.getContext('2d')!;
-    const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-    grad.addColorStop(0, 'rgba(255,150,70,0.9)');
-    grad.addColorStop(0.4, 'rgba(255,90,40,0.4)');
-    grad.addColorStop(1, 'rgba(255,60,30,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, S, S);
-    this.m_heatSprite = c;
-    return this.m_heatSprite;
-  }
-
-  /** Give CLand the game's smoke sprite so heat plumes use the real pixel-art
-   *  smoke (tinted warm/red) instead of a procedural blob — matching the art. */
-  setSmokeSprite(img: CanvasImageSource, w: number, h: number): void {
-    this.m_smokeSrc = img;
-    this.m_smokeW = w;
-    this.m_smokeH = h;
-    this.m_smokeTints.clear();
-  }
-
-  /** Lazily build (and cache per colour) a copy of the smoke sprite tinted to the
-   *  weapon's radiation hue — keeping the smoke's texture + alpha. So hydrogen puffs
-   *  blue, plutonium green, uranium red. Null until the sprite is provided. */
-  private smokeTint(r: number, g: number, b: number): HTMLCanvasElement | null {
-    if (!this.m_smokeSrc || !this.m_smokeW || !this.m_smokeH) return null;
-    const key = `${r},${g},${b}`;
-    const cached = this.m_smokeTints.get(key);
-    if (cached) return cached;
-    const w = this.m_smokeW,
-      h = this.m_smokeH;
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const gx = c.getContext('2d')!;
-    gx.drawImage(this.m_smokeSrc, 0, 0, w, h);
-    gx.globalCompositeOperation = 'multiply'; // colour the grey smoke, keep its texture
-    gx.fillStyle = `rgb(${r},${g},${b})`;
-    gx.fillRect(0, 0, w, h);
-    gx.globalCompositeOperation = 'destination-in'; // re-mask to the smoke's own alpha
-    gx.drawImage(this.m_smokeSrc, 0, 0, w, h);
-    // …then dissolve the rim with a MONOTONIC falloff (still `destination-in`, so it multiplies the
-    // mask and leaves the texture intact). smoke.bmp's own mask ends in a hard edge, which makes
-    // every wisp read as a discrete pasted stamp however many overlap. Falling continuously from
-    // the centre leaves no radius at which an edge registers, so wisps blend into a haze. The curve
-    // must stay monotonic — a version with a flat opaque core just turns each wisp into a disc.
-    const cx = w / 2,
-      cy = h / 2;
-    const soft = gx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy));
-    soft.addColorStop(0, 'rgba(0,0,0,1)');
-    soft.addColorStop(0.4, 'rgba(0,0,0,0.75)');
-    soft.addColorStop(0.75, 'rgba(0,0,0,0.35)');
-    soft.addColorStop(1, 'rgba(0,0,0,0)');
-    gx.fillStyle = soft;
-    gx.fillRect(0, 0, w, h);
-    gx.globalCompositeOperation = 'source-over';
-    this.m_smokeTints.set(key, c);
-    return c;
+  /** Wire the haze to the particle system. CLand still decides where fallout fumes (it owns the
+   *  radiation map); CParticleSystem owns the resulting particles. */
+  setHeatSink(sink: IHeatSink): void {
+    this.m_heatSink = sink;
   }
 
   getRadiationZones(): RadParticle[] {
@@ -2804,7 +2755,7 @@ export class CLand {
       this.m_particles.length > 0 ||
       this.m_radSpecks.length > 0 ||
       this.m_radParticles.length > 0 ||
-      this.m_heat.length > 0
+      (this.m_heatSink?.heatCount() ?? 0) > 0
     );
   }
 
@@ -2961,32 +2912,9 @@ export class CLand {
       }
     }
 
-    // Heat haze — faint warm plumes rising off the hot fallout: the game's real
-    // smoke sprite tinted radioactive red (falls back to a soft glow blob until
-    // the sprite is provided), widening + tumbling + fading as it lifts, so it
-    // matches the pixel-art rather than reading as a clean CGI gradient.
-    if (this.m_heat.length) {
-      const fallback = this.heatSprite();
-      const prevOp = ctx.globalCompositeOperation;
-      // Additive so the tinted smoke reads as a warm GLOWING radioactive haze
-      // and stays visible over any backdrop (dark sky or bright sand).
-      ctx.globalCompositeOperation = 'lighter';
-      for (const h of this.m_heat) {
-        const t = h.age / h.life;
-        const a = Math.sin(Math.PI * t) * 0.1; // ease in, ease out — a faint hint, not a cloud
-        if (a <= 0.005) continue;
-        const d = h.size * (1 + t * 1.8); // widen as it rises
-        const spr = this.smokeTint(h.r, h.g, h.b) ?? fallback; // tinted to THIS wisp's weapon hue
-        ctx.globalAlpha = a;
-        ctx.save();
-        ctx.translate(h.x, h.y);
-        ctx.rotate(h.rot);
-        ctx.drawImage(spr, -d, -d, d * 2, d * 2);
-        ctx.restore();
-      }
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = prevOp;
-    }
+    // The radioactive heat haze used to be drawn here. It now lives in CParticleSystem
+    // (see IHeatSink); the controller calls drawHeat() straight after this, so it still paints
+    // in exactly this slot — under the tanks and the aim overlay.
 
     // Dirt debris chunks in flight — each is a SINGLE opaque 1px pixel (the original plots one
     // `setPixel(floor(x), floor(y), color)` per chunk: no 2px squares, no blend). Floor the
@@ -3072,12 +3000,9 @@ export class CLand {
   private m_particlePool: LandParticle[] = [];
   private m_speckPool: RadSpeck[] = [];
   private m_dirtColors: string[] = []; // dirt-chunk colour strings cached by brightness v
-  private m_heat: HeatWisp[] = []; // rising heat-haze plumes off the fallout
-  private m_heatSprite: HTMLCanvasElement | null = null; // cached soft warm glow sprite (fallback)
-  private m_smokeSrc: CanvasImageSource | null = null; // the game's smoke.bmp (for heat wisps)
-  private m_smokeW: number = 0;
-  private m_smokeH: number = 0;
-  private m_smokeTints: Map<string, HTMLCanvasElement> = new Map(); // per-colour tinted smoke cache
+  // The heat haze itself lives in CParticleSystem (see IHeatSink); CLand only decides where it
+  // rises. Null in tests / before wiring, in which case the fallout simply doesn't fume.
+  private m_heatSink: IHeatSink | null = null;
   // Falling overburden blocks (beam/digger slice collapse): a captured column of pixels (the
   // cap + earth above the cut) sliding DOWN under gravity to land on the substrate below.
   private m_falls: Fall[] = [];

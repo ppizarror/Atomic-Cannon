@@ -9,19 +9,25 @@
  */
 import {describe, it, expect} from 'vitest';
 import {CLand} from '../src/core/CLand';
+import {CParticleSystem} from '../src/core/CParticleSystem';
 
 type Priv = {
   m_pixels: Uint32Array;
   m_material: Uint8Array;
   m_arrHeights: Int16Array;
   m_radParticles: unknown[];
-  m_heat: unknown[];
   m_nWidth: number;
   m_nHeight: number;
 };
 
-/** A flat land with a REAL pixel buffer so `blastCircle` can actually carve. */
-function landWithPixels(W: number, H: number, surfaceY: number): CLand {
+/** A flat land with a REAL pixel buffer so `blastCircle` can actually carve.
+ *  The heat wisps live in CParticleSystem now (CLand only decides where fallout fumes), so the
+ *  land is wired to one and the tests count wisps there. */
+function landWithPixels(
+  W: number,
+  H: number,
+  surfaceY: number,
+): {land: CLand; fx: CParticleSystem} {
   const land = new CLand(W, H);
   land.generateFlat();
   const p = land as unknown as Priv;
@@ -33,7 +39,10 @@ function landWithPixels(W: number, H: number, surfaceY: number): CLand {
   }
   p.m_pixels = px;
   p.m_material = mat;
-  return land;
+  const fx = new CParticleSystem();
+  fx.setBounds(W, H);
+  land.setHeatSink(fx);
+  return {land, fx};
 }
 
 /** Advance frames until the predicate holds (or `max` frames elapse). */
@@ -46,16 +55,15 @@ describe('CLand — erasing terrain clears its radiation', () => {
     const W = 300,
       H = 300,
       surf = 150;
-    const land = landWithPixels(W, H, surf);
-    const p = land as unknown as Priv;
+    const {land, fx} = landWithPixels(W, H, surf);
 
     // Irradiate the middle of the field.
     land.blastIradiate(150, surf, 40, 12, 6, [255, 46, 20]);
     expect(land.getRadiationZones().length).toBe(1);
 
     // Run frames so the heat "smoke" starts venting off the live zone.
-    stepUntil(land, () => p.m_heat.length > 0);
-    expect(p.m_heat.length).toBeGreaterThan(0); // it IS smoking
+    stepUntil(land, () => fx.heatCount() > 0);
+    expect(fx.heatCount()).toBeGreaterThan(0); // it IS smoking
 
     // Fire a cleaner (earth-remover: blastCircle with coatDirt=false) right over the zone.
     land.carveDiscCollapse(150, surf, 44);
@@ -65,20 +73,19 @@ describe('CLand — erasing terrain clears its radiation', () => {
     // whenever a later shell landed on it was what darkened the coat all around the new crater).
     expect(land.radiationAt(150)).toBe(false);
     // …the existing wisps over the cleared span are wiped…
-    expect(p.m_heat.length).toBe(0);
+    expect(fx.heatCount()).toBe(0);
 
     // …and, crucially, NO new smoke spawns on later frames — a wisp needs hot ground under it, and
     // the cleaner took the ground.
     for (let i = 0; i < 120; i++) land.update(1 / 60);
-    expect(p.m_heat.length).toBe(0);
+    expect(fx.heatCount()).toBe(0);
   });
 
   it('a cleaner OFF to the side leaves an untouched radiation zone smoking', () => {
     const W = 400,
       H = 300,
       surf = 150;
-    const land = landWithPixels(W, H, surf);
-    const p = land as unknown as Priv;
+    const {land, fx} = landWithPixels(W, H, surf);
 
     land.blastIradiate(100, surf, 30, 12, 6, [255, 46, 20]);
     expect(land.getRadiationZones().length).toBe(1);
@@ -88,15 +95,15 @@ describe('CLand — erasing terrain clears its radiation', () => {
 
     // The distant zone survives (a cleaner only clears what it actually erased).
     expect(land.getRadiationZones().length).toBe(1);
-    stepUntil(land, () => p.m_heat.length > 0);
-    expect(p.m_heat.length).toBeGreaterThan(0);
+    stepUntil(land, () => fx.heatCount() > 0);
+    expect(fx.heatCount()).toBeGreaterThan(0);
   });
 
   it('radiationAt reports the visible fallout footprint (drives "Radiation Damage: On")', () => {
     const W = 800,
       H = 300,
       surf = 150;
-    const land = landWithPixels(W, H, surf);
+    const {land} = landWithPixels(W, H, surf);
 
     land.blastIradiate(400, surf, 60, 12, 6, [255, 46, 20]);
     // Let the specks fly and settle onto the surface.
@@ -112,7 +119,7 @@ describe('CLand — erasing terrain clears its radiation', () => {
     const W = 600,
       H = 400,
       surf = 200;
-    const land = landWithPixels(W, H, surf);
+    const {land} = landWithPixels(W, H, surf);
     const specks = (land as unknown as {m_radSpecks: {x: number; y: number}[]}).m_radSpecks;
     const mk = (x: number, y: number) => ({
       x,

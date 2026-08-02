@@ -12,6 +12,8 @@
  *     used to grow linearly with radius while the bowl grows with its square, so the refilled share
  *     fell off as ~1/r: a bomb put back a third of its crater, Uranium a fifth, Isotope a tenth —
  *     big weapons left a bare pit. Both weapons below must now refill to within a factor of ~1.5.
+ *     The absolute share is a separate, tuned thing (`fodder` decides it, and it is deliberately low
+ *     so a small weapon can still dig a hole); only its independence from size is invariant.
  */
 import {describe, it, expect} from 'vitest';
 
@@ -114,8 +116,13 @@ describe('Crater geometry and spoil budget', () => {
     expect(nuke.dug).toBeGreaterThan(bomb.dug * 5); // it really does dig a far bigger hole
     const bombShare = bomb.back / bomb.dug;
     const nukeShare = nuke.back / nuke.dug;
-    expect(bombShare).toBeGreaterThan(0.15);
-    expect(nukeShare).toBeGreaterThan(0.15);
+    // A floor, not a target. How MUCH a weapon puts back is `fodder`'s job and is tuned — the base
+    // share came down hard so that low-fodder weapons can actually dig (a Hellfire, radius 20 and
+    // fodder 0.1, could not make a hole at all when every blast returned ~40% of its bowl). What
+    // this test guards is the property below, which is structural: the share must not depend on the
+    // weapon's SIZE. These two only assert that some spoil comes back at all.
+    expect(bombShare).toBeGreaterThan(0.07);
+    expect(nukeShare).toBeGreaterThan(0.07);
     // The whole point: the ratio no longer collapses with size (it was ~3× worse for the nuke).
     expect(nukeShare).toBeGreaterThan(bombShare * 0.66);
   });

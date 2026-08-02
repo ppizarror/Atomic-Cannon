@@ -549,6 +549,9 @@ export class CGameController implements ShotWorld {
     // Surface provider (reads the CURRENT land each call, so it survives land rebuilds): drives the
     // wind altitude profile and keeps crater-vent fumes from spraying into empty sky (no soil).
     this.m_particles.setGroundProvider(x => this.m_land.getHeightAt(Math.floor(x)));
+    // Radiation heat haze: the land decides where the fallout fumes, the particle system owns the
+    // resulting particles (it used to run its own pool inside CLand).
+    this.m_land.setHeatSink(this.m_particles);
     // Weather fills the VIEW (rain/snow are screen-space), not the world.
     this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_economy = new CEconomy();
@@ -832,12 +835,7 @@ export class CGameController implements ShotWorld {
 
     // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
     // and the additive starburst flare used for trail plumes / fireballs.
-    this.m_assets.loadSprite('fx:smoke', '/assets/gui/smoke.bmp').then(() => {
-      // Hand the smoke sprite to the terrain so radiation heat plumes use the
-      // real (tinted) smoke art instead of a procedural blob.
-      const s = this.m_assets.getSprite('fx:smoke');
-      if (s) this.m_land.setSmokeSprite(s.bitmap, s.width, s.height);
-    });
+    this.m_assets.loadSprite('fx:smoke', '/assets/gui/smoke.bmp');
     // The rocket-exhaust colour TABLE — a 2-D lookup the author baked: X = age (bright/hot young →
     // cool old), Y = height (top light → bottom dark). The particle system samples it per exhaust
     // puff at (age, height) so the trail glows at the nozzle and greys by height in one step.
@@ -1491,6 +1489,10 @@ export class CGameController implements ShotWorld {
     // Draw terrain (mirror only the on-screen span → the terrain tile stays view-sized, not world-sized)
     this.m_land.setViewport(this.m_camX, this.m_viewW);
     this.m_land.draw(ctx);
+    // The radioactive heat haze belongs to the GROUND, so it paints here — right after the terrain
+    // and under the tanks/aim overlay, the slot it occupied when CLand still owned the pool. The
+    // particles themselves now live in the particle system (see IHeatSink).
+    this.m_particles.drawHeat(ctx);
 
     // Draw tanks
     for (const tank of this.m_tanks) {

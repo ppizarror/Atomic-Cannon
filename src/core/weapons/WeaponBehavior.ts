@@ -33,11 +33,16 @@ const MAX_LIFE = 10;
 // step never exceeds ~50px, so ~13 sub-steps; the cap is a runaway guard).
 const CCD_STEP = 4;
 const CCD_MAX_SUBS = 16;
-/** Share of its own crater a blast throws back in as spoil: a base every cratering weapon returns,
- *  plus the part its `fodder` (0…0.5) earns. The rest of the hole stays open — a crater is meant to
- *  read as a crater — but the fraction is now the SAME for a shell and for a nuke. */
-const EJECTA_FILL_BASE = 0.35;
-const EJECTA_FILL_FODDER = 0.35;
+/** Share of its own crater a blast throws back in as spoil: a small base every cratering weapon
+ *  returns, plus the part its `fodder` earns — and `fodder` carries most of it, because that is the
+ *  field that says how much dirt this weapon kicks up.
+ *
+ *  The base is deliberately LOW. At 0.35 even a fodder-0.1 shot put back nearly 40% of its bowl,
+ *  which is most of a small crater's depth once the spoil lands mostly inside it — digging with
+ *  anything but a nuke was impossible, and `fodder` barely mattered because the base dwarfed it.
+ *  Now a plain shell keeps ~85% of the hole it dug and a nuke still buries a third of its own. */
+const EJECTA_FILL_BASE = 0.08;
+const EJECTA_FILL_FODDER = 0.7;
 /** Ceiling on airborne dirt chunks per blast. Volume beyond it is bought by deepening what each
  *  chunk lays down on landing, so a nuke's spoil costs no more frame time than a bomb's. */
 const EJECTA_MAX_CHUNKS = 20000;
@@ -558,10 +563,11 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // little dirt in absolute terms, too little *for their crater*. Size the throw off the crater's
     // own excavated cross-section instead and every weapon returns the same fraction of what it dug.
     const craterVol = (Math.PI * craterR * craterR) / 2; // half-disc — the earth a surface burst removes
-    const volume = Math.max(
-      Math.round(fodder * radiusPx * 290 + radiusPx * 2), // floor: never less than it already threw
-      Math.round(craterVol * (EJECTA_FILL_BASE + fodder * EJECTA_FILL_FODDER)),
-    );
+    // NO linear floor. Keeping `fodder · radiusPx · 290` as a minimum kept the very bug the area
+    // scaling fixes: being linear in r it wins for every SMALL weapon, so those went on refilling a
+    // fixed depth of a crater that is only so deep — a low-fodder shot threw back nearly everything
+    // it dug and could not make a hole at all. Area alone, all the way down.
+    const volume = Math.round(craterVol * (EJECTA_FILL_BASE + fodder * EJECTA_FILL_FODDER));
     // Past a few thousand, extra chunks cost frame time without reading as more dirt — so buy the
     // remaining volume with DEPTH per chunk rather than with more of them (the same trade the
     // fallout grains make). Below the cap this is 1px/chunk, exactly as before.
