@@ -41,6 +41,8 @@ import {
   type UltraBuyCtx,
 } from '../core/botEconomy';
 import {CCamera, CAMERA, type CameraBounds} from './CCamera';
+import {CHitMarkers} from './CHitMarkers';
+import {drawStars, drawWinnerFlag} from './CVictoryScene';
 import {CChatter, TAUNT, type ActiveTaunt} from './CChatter';
 export type {ActiveTaunt} from './CChatter';
 import {CFireworks, type FireworksEnv} from './CFireworks';
@@ -252,17 +254,6 @@ const CONTROL_WEAPON: string | null = null;
 
 /**
 
-/**
- * On-screen readouts the Graphics options can switch on.
- */
-const HUD = {
-  /** "Show Blast Circles": how long each explosion ring lingers (s). */
-  BLAST_CIRCLE_LIFE: 1.4,
-  /** "Show Points" floating damage numbers: life (s) and rise distance over that life (px). Spawn
-   *  jitter (px) matches the original (±20 / ±12). */
-  DMG_NUM_LIFE: 1.1,
-  DMG_NUM_RISE: 28,
-} as const;
 
 /**
  * Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the radius
@@ -526,8 +517,7 @@ export class CGameController implements ShotWorld {
     this.m_ghostShots = [];
     this.m_mines = [];
     this.m_aimMarkers = [];
-    this.m_damageNumbers = [];
-    this.m_blastCircles = [];
+    this.m_markers.clear();
     this.m_crateField.clear();
     this.m_chatter.clear();
     this.m_fireworksFx.clear();
@@ -939,14 +929,7 @@ export class CGameController implements ShotWorld {
     // Ease the large-map camera toward the shot / active tank. The controller picks WHAT to
     // follow (cameraFollowX); the camera decides how it gets there.
     this.m_camera.update(dt, this.cameraFollowX(), GameConfig.autoScroll, this.camBounds());
-    if (this.m_damageNumbers.length) {
-      for (const d of this.m_damageNumbers) d.age += dt;
-      this.m_damageNumbers = this.m_damageNumbers.filter(d => d.age < HUD.DMG_NUM_LIFE);
-    }
-    if (this.m_blastCircles.length) {
-      for (const c of this.m_blastCircles) c.age += dt;
-      this.m_blastCircles = this.m_blastCircles.filter(c => c.age < HUD.BLAST_CIRCLE_LIFE);
-    }
+    this.m_markers.update(dt);
     // Age speech bubbles + run the idle-taunt countdown. Ageing pauses on the standings screen so
     // the victor's gloat persists beside the winner flag; the idle timer only ticks in a live turn.
     this.m_chatter.update(dt, {
@@ -1018,8 +1001,7 @@ export class CGameController implements ShotWorld {
     if (this.m_weather.isActive()) return true; // rain/snow/dust never rest
     if (this.m_land.isAnimating()) return true; // debris / fallout / slump / terrain rebuild
     if (!this.m_assets.isReady()) return true; // sprites still popping in
-    if (this.m_damageNumbers.length) return true; // floating damage text rising/fading
-    if (this.m_blastCircles.length) return true; // blast-circle rings fading
+    if (this.m_markers.hasAny()) return true; // damage numbers rising / blast rings fading
     if (this.m_crateField.hasAny()) return true; // crates falling/wobbling, pickup messages fading
     for (const s of this.m_shots) if (!s.isDead()) return true;
     for (const m of this.m_mines) if (m.armed > 0) return true; // arming → colour flips
@@ -1370,7 +1352,7 @@ export class CGameController implements ShotWorld {
       ctx.fillRect(0, 0, this.m_viewW, this.m_viewH);
 
       // Draw stars (subtle background)
-      this.drawStars(ctx);
+      drawStars(ctx, Date.now());
     }
 
     // Weather (rain / snow / hail / dust) sits between the backdrop and the
@@ -1424,12 +1406,18 @@ export class CGameController implements ShotWorld {
     // On a war-end victory, fireworks burst across the sky behind the standings.
     if (this.m_gameState === EGameState.BattleEnd) {
       this.m_fireworksFx.draw(ctx);
-      this.drawWinnerFlag(ctx);
+      drawWinnerFlag(ctx, {
+        winner: this.getWinnerTank(),
+        sinceBattleEnd: this.m_battleEndTime,
+        camX: this.m_camera.x(),
+        viewW: this.m_viewW,
+        groundAt: x => this.m_land.getHeightAt(x),
+      });
     }
 
     this.drawPlacedEntities(ctx);
     this.m_crateField.draw(ctx, this.crateDrawEnv(ctx)); // supply crates (parachute wobble / landed on the slope)
-    this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
+    this.m_markers.drawCircles(ctx); // Show Blast Circles: explosion-radius rings
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
@@ -1542,7 +1530,9 @@ export class CGameController implements ShotWorld {
     }
 
     // Floating damage numbers (Show Points), world space.
-    this.drawDamageNumbers(octx);
+    this.m_markers.drawNumbers((s, x, y, a) =>
+      this.drawBmpCentered(octx, 'beijing-16-out', s, x, y, a),
+    );
 
     octx.restore();
     octx.restore();
@@ -1724,49 +1714,6 @@ export class CGameController implements ShotWorld {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(cv, Math.round(cx - cv.width / 2), Math.round(cy - cv.height / 2));
     ctx.restore();
-  }
-
-  /**
-   * Floating "Show Points" damage numbers — on a
-   * damaging hit, a number rises off the struck tank and fades. Drawn in world space
-   * (under the camera) in an outlined bitmap font.
-   */
-  private drawDamageNumbers(ctx: CanvasRenderingContext2D): void {
-    for (const d of this.m_damageNumbers) {
-      const t = d.age / HUD.DMG_NUM_LIFE;
-      this.drawBmpCentered(ctx, 'beijing-16-out', d.text, d.x, d.y - t * HUD.DMG_NUM_RISE, 1 - t);
-    }
-  }
-
-  /** Show Blast Circles: a fading ring at each explosion's damage radius. */
-  private drawBlastCircles(ctx: CanvasRenderingContext2D): void {
-    for (const c of this.m_blastCircles) {
-      const a = Math.max(0, 1 - c.age / HUD.BLAST_CIRCLE_LIFE);
-      ctx.save();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = `rgba(0,0,0,${0.5 * a})`;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, TWO_PI);
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(255,255,255,${0.9 * a})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, c.r, 0, TWO_PI);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  /** Spawn a Show-Points damage number off `tank` (jittered like the original). */
-  private spawnDamageNumber(tank: CTank, amount: number): void {
-    if (!GameConfig.showPoints || amount < 1) return;
-    const p = tank.getPosition();
-    this.m_damageNumbers.push({
-      x: p.x + (Math.random() * 40 - 20),
-      y: p.y + (Math.random() * 24 - 12),
-      text: String(Math.round(amount)),
-      age: 0,
-    });
   }
 
   // ========================================================================
@@ -2035,118 +1982,6 @@ export class CGameController implements ShotWorld {
     // While dragging, the arrow's tip already marks the current aim — hide the
     // active cross and show it again on release.
     if (!this.m_aim.active) cross(this.aimPoint(this.m_angle, this.m_power), 1);
-  }
-
-  /** Background stars for atmosphere. */
-  private drawStars(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = '#ffffff';
-
-    // Static stars (seeded random)
-    const starPositions = [
-      [50, 30],
-      [150, 60],
-      [300, 25],
-      [450, 80],
-      [600, 40],
-      [700, 55],
-      [100, 100],
-      [250, 120],
-      [500, 90],
-      [650, 110],
-    ];
-
-    for (const [x, y] of starPositions) {
-      ctx.globalAlpha = 0.3 + Math.sin(Date.now() / 1000 + x) * 0.2;
-      ctx.beginPath();
-      ctx.arc(x, y, 1, 0, TWO_PI);
-      ctx.fill();
-    }
-
-    ctx.globalAlpha = 1;
-  }
-
-  /** The winner flag (between battles): a red flag on a wooden pole that RISES up out
-   *  of the terrain, then WAVES with a moving sheen — drawn procedurally. */
-  private drawWinnerFlag(ctx: CanvasRenderingContext2D): void {
-    const tank = this.getWinnerTank();
-    if (!tank) return;
-    const pos = tank.getPosition();
-    const r = tank.getHitRadius();
-    // Plant on the side with screen room: if the tank sits on the RIGHT half of the view, put the
-    // pole to its LEFT (dir=-1) so the flag can't run off the right edge and hide; otherwise to its
-    // right. The cloth is mirrored by `dir` below so it always hangs AWAY from the hull.
-    const dir = pos.x - this.m_camera.x() > this.m_viewW / 2 ? -1 : 1;
-    const fx = pos.x + dir * (r + 30); // pole a little clear of the hull, on the roomy side
-    // Plant the pole ON the terrain (a hair below the surface so it doesn't float),
-    // sampling the ground column right under the pole.
-    const base = this.m_land.getHeightAt(fx) + 2;
-    const poleH = r * 3.6; // full pole height above ground
-    const fw = r * 2.0; // flag size
-    const fh = r * 1.25;
-
-    // Rise: the whole pole (with the flag at its top) grows up out of the ground over
-    // RAISE seconds (ease-out); after that it just waves. Slower than a flick so the
-    // raise reads as a deliberate planting.
-    const RAISE = 1.8;
-    const raise = Math.min(1, this.m_battleEndTime / RAISE);
-    const ease = 1 - (1 - raise) * (1 - raise);
-    const poleTop = base - poleH * ease; // current top of the growing pole
-    const flagTop = poleTop + 1; // flag hangs just under the finial
-    const phase = this.m_battleEndTime * 7; // wave speed (unchanged)
-    const amp = fh * 0.16 * ease; // no flutter until it's up
-
-    ctx.save();
-    // Wooden pole (grows from the ground to poleTop) + a small cap finial.
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#7a4f2a'; // wood brown
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(fx, base);
-    ctx.lineTo(fx, poleTop);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,225,190,0.5)'; // left-edge highlight for a rounded pole
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(fx - 0.7, base);
-    ctx.lineTo(fx - 0.7, poleTop);
-    ctx.stroke();
-    ctx.fillStyle = '#5a3a1e';
-    ctx.beginPath();
-    ctx.arc(fx, poleTop, 2.2, 0, TWO_PI);
-    ctx.fill();
-
-    // Waving red flag: each vertical strip is offset by a sine that grows toward the
-    // free (right) edge, and SHADED by the wave's local slope so light plays across the
-    // cloth as it ripples — crests catch the light, troughs fall into shadow.
-    const N = 14;
-    const waveAt = (t: number) => Math.sin(t * TWO_PI - phase) * amp * t;
-    const clamp255 = (v: number) => clamp(Math.round(v), 0, 255);
-    for (let i = 0; i < N; i++) {
-      const t0 = i / N,
-        t1 = (i + 1) / N;
-      const mid = (t0 + t1) / 2;
-      // Sheen from the wave's slope (∝ cos of the sine's argument): +1 face-to-light → lit.
-      const shade = Math.cos(mid * TWO_PI - phase) * mid; // stronger toward free edge
-      const l = 0.82 + 0.42 * shade; // brightness multiplier
-      ctx.fillStyle = `rgb(${clamp255(224 * l)},${clamp255(34 * l)},${clamp255(34 * l)})`;
-      ctx.beginPath();
-      ctx.moveTo(fx + dir * fw * t0, flagTop + waveAt(t0));
-      ctx.lineTo(fx + dir * (fw * t1 + 0.5), flagTop + waveAt(t1)); // +0.5 overlap hides seams
-      ctx.lineTo(fx + dir * (fw * t1 + 0.5), flagTop + fh + waveAt(t1));
-      ctx.lineTo(fx + dir * fw * t0, flagTop + fh + waveAt(t0));
-      ctx.closePath();
-      ctx.fill();
-    }
-    // Thin dark outline along the top + bottom edges for definition.
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(fx, flagTop);
-    for (let i = 1; i <= N; i++) ctx.lineTo(fx + dir * fw * (i / N), flagTop + waveAt(i / N));
-    ctx.moveTo(fx, flagTop + fh);
-    for (let i = 1; i <= N; i++) ctx.lineTo(fx + dir * fw * (i / N), flagTop + fh + waveAt(i / N));
-    ctx.stroke();
-    ctx.restore();
   }
 
   // ========================================================================
@@ -2557,7 +2392,7 @@ export class CGameController implements ShotWorld {
     this.m_impactThisTurn = true; // a blast landed → the Cinematic dwell may linger on it at hand-off
     // Show Blast Circles: a ring at the blast's damage radius, fading out.
     if (GameConfig.blastCircles && radiusPx !== undefined && radiusPx > 0) {
-      this.m_blastCircles.push({x, y, r: radiusPx, age: 0});
+      this.m_markers.spawnCircle(x, y, radiusPx);
     }
     if (color !== undefined && radiusPx !== undefined) {
       this.m_particles.blast(
@@ -2828,7 +2663,7 @@ export class CGameController implements ShotWorld {
       const removed = tank.hit(dmg, piercing); // shield → hazmat(if piercing) → armor → life
       if (owner && removed > 0 && owner.getTeamId() === tank.getTeamId()) ownGoal += removed;
       this.creditDamage(owner, tank, removed); // shooter earns per life removed
-      this.spawnDamageNumber(tank, removed); // Show Points: floating damage text
+      this.m_markers.spawnDamage(tank.getPosition(), removed); // Show Points: floating damage text
       this.kickTank(tank, pos.x, removed, radius); // Tank → Kickback; up-and-away, scaled by blast size
 
       if (!tank.isAlive()) this.handleTankDestroyed(tank);
@@ -3272,8 +3107,7 @@ export class CGameController implements ShotWorld {
     this.m_timers = [];
     this.m_mines = [];
     this.m_aimMarkers = [];
-    this.m_damageNumbers = [];
-    this.m_blastCircles = [];
+    this.m_markers.clear();
     this.m_crateField.clear();
     this.m_chatter.clear();
     this.m_fireworksFx.clear();
@@ -3773,8 +3607,7 @@ export class CGameController implements ShotWorld {
     // pins live only until the NEXT round is launched (they aren't a growing history).
     // The tracer we may be firing right now plants its own pins later, in flight.
     this.m_aimMarkers = [];
-    this.m_damageNumbers = [];
-    this.m_blastCircles = [];
+    this.m_markers.clear();
     // Remember this aim as the tank's "last shot" so the reset (↺) button can
     // restore power+angle to it (non-utility only).
     tank.saveLastShot(this.m_angle, this.m_power);
@@ -6213,10 +6046,8 @@ export class CGameController implements ShotWorld {
   // Marks which live sentry tanks are the Minigun variant (→ fire "Machine Gun", not Shell).
   private m_sentryMinigun: WeakSet<CTank> = new WeakSet();
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
-  // Floating "Show Points" damage numbers (world pos + age); rise + fade over HUD.DMG_NUM_LIFE.
-  private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];
-  // "Show Blast Circles": a ring per explosion at its damage radius; fades over HUD.BLAST_CIRCLE_LIFE.
-  private m_blastCircles: {x: number; y: number; r: number; age: number}[] = [];
+  // Floating "Show Points" damage numbers + "Show Blast Circles" rings (see game/CHitMarkers).
+  private readonly m_markers = new CHitMarkers();
   // Victory fireworks (war-end, human wins). Spawned + aged during BattleEnd; drawn in
   // the sky behind the standings overlay. `m_showFireworks` is decided once at battle end.
   private readonly m_fireworksFx = new CFireworks();
