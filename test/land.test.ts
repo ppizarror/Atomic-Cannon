@@ -6,8 +6,8 @@ import {describe, it, expect} from 'vitest';
 import {CLand} from '../src/core/CLand';
 import {makeCanvas} from './_dom';
 
-type Priv = {m_particles: unknown[]};
-const debrisLeft = (land: CLand): number => (land as unknown as Priv).m_particles.length;
+type Priv = {m_spoil: unknown[]};
+const debrisLeft = (land: CLand): number => (land as unknown as Priv).m_spoil.length;
 
 describe('CLand terrain', () => {
   it('a crater lowers the surface within its radius and leaves terrain outside untouched', () => {
@@ -94,7 +94,7 @@ describe('CLand terrain', () => {
       m_debugCanvas: HTMLCanvasElement | null;
       m_pixels: unknown;
       m_material: unknown;
-      m_particles: unknown[];
+      m_spoil: unknown[];
     };
     const p = land as unknown as World;
     // Headless tests never call draw(), so stand in the baked world-sized buffers by hand.
@@ -102,7 +102,7 @@ describe('CLand terrain', () => {
     p.m_backdropCanvas = makeCanvas(1200, 400);
     p.m_pixels = new Uint32Array(1200 * 400);
     p.m_material = new Uint8Array(1200 * 400);
-    expect(p.m_particles.length).toBeGreaterThan(0);
+    expect(p.m_spoil.length).toBeGreaterThan(0);
 
     land.dispose();
 
@@ -112,7 +112,7 @@ describe('CLand terrain', () => {
     expect(p.m_debugCanvas).toBeNull();
     expect(p.m_pixels).toBeNull();
     expect(p.m_material).toBeNull();
-    expect(p.m_particles.length).toBe(0); // in-flight debris dropped too
+    expect(p.m_spoil.length).toBe(0); // in-flight debris dropped too
   });
 
   it('the view tile spans only the visible width and clamps to the world edges', () => {

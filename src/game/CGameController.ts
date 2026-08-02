@@ -27,7 +27,7 @@ import {
   type WeaponDef,
 } from '../core/CWeapon';
 import {Vec2} from '../math/Vec2';
-import {CParticleSystem} from '../core/CParticleSystem';
+import {CParticleSystem, type ISmokeSink} from '../core/CParticleSystem';
 import {ScreenShake} from '../core/rendering/ScreenShake';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
@@ -551,7 +551,7 @@ export class CGameController implements ShotWorld {
     this.m_particles.setGroundProvider(x => this.m_land.getHeightAt(Math.floor(x)));
     // Radiation heat haze: the land decides where the fallout fumes, the particle system owns the
     // resulting particles (it used to run its own pool inside CLand).
-    this.m_land.setHeatSink(this.m_particles);
+    this.m_land.setFxSink(this.m_particles);
     // Weather fills the VIEW (rain/snow are screen-space), not the world.
     this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_economy = new CEconomy();
@@ -1447,7 +1447,14 @@ export class CGameController implements ShotWorld {
 
   /** Render frame to canvas - called every frame. */
   draw(): void {
-    if (!this.m_started) return; // no battle yet (main menu at boot) — nothing to render
+    if (!this.m_started) {
+      // No battle (boot menu, or a match just torn down). The GPU smoke layer lives OUTSIDE the
+      // scene canvas, so clearing that canvas does not touch it — publish an empty frame or the
+      // last battle's smoke stays painted over the menu forever.
+      this.m_smokeSink?.smokeBegin();
+      this.m_smokeSink?.smokeEnd();
+      return;
+    }
     const ctx = this.m_ctx;
 
     // The scene canvas IS the logical world (m_viewW × m_viewH); the compositor stretches it
@@ -1493,6 +1500,9 @@ export class CGameController implements ShotWorld {
     // and under the tanks/aim overlay, the slot it occupied when CLand still owned the pool. The
     // particles themselves now live in the particle system (see IHeatSink).
     this.m_particles.drawHeat(ctx);
+    // Cosmetic dirt spray (beam dust / buried digger). Depositing crater ejecta stays with the
+    // terrain and is drawn inside m_land.draw above — see IFxSink on why they are separate.
+    this.m_particles.drawDebris(ctx);
 
     // Draw tanks
     for (const tank of this.m_tanks) {
@@ -1540,7 +1550,19 @@ export class CGameController implements ShotWorld {
     // Hand the view rect (world-X of the left edge + on-screen size) so the particle system can
     // off-screen-cull and render its smoke to a half-res buffer (perf under heavy strikes).
     this.m_particles.setViewport(this.m_camX, this.m_viewW, this.m_viewH);
+    // The smoke layer is GPU-batched when a sink is wired (see ISmokeSink): the puffs are emitted
+    // as world-space quads here instead of being blitted, and drawn in ONE call by the compositor.
+    // Its transform has to match the world transform this canvas is under — camera and shake.
+    this.m_smokeSink?.setSmokeTransform(
+      this.m_camX,
+      shakeOffset.x,
+      shakeOffset.y,
+      this.m_viewW,
+      this.m_viewH,
+    );
+    this.m_smokeSink?.smokeBegin();
     this.m_particles.draw(ctx);
+    this.m_smokeSink?.smokeEnd();
 
     // Active projectiles ON TOP of their own trail — so the missile sprite is
     // visible ahead of its exhaust+smoke, not buried under the fire head.
@@ -2999,9 +3021,22 @@ export class CGameController implements ShotWorld {
     this.m_audio?.hit(name, x);
   }
 
+  /** Route the smoke layer to the GPU compositor (null = draw it on the 2D canvas as before). */
+  setSmokeSink(sink: ISmokeSink | null): void {
+    this.m_smokeSink = sink;
+    this.m_particles.setSmokeSink(sink);
+  }
+
   ripple(x: number, y: number, strength: number): void {
     if (!GameConfig.explosionWaves) return; // Graphics → Explosion Waves (nuke wave)
     this.m_onImpact?.(x, y, strength);
+  }
+
+  /** Cosmetic dirt spray (ShotWorld) — straight through to the particle system. Crater ejecta that
+   *  actually deposits earth goes to CLand instead; it writes the heightmap and has to stay on the
+   *  match-seeded stream (see IFxSink). */
+  debrisSpray(x: number, y: number, count: number, radius: number, gentle = false): void {
+    this.m_particles.debrisSpray(x, y, count, radius, gentle);
   }
 
   /** Pixel data of a structure bitmap (bunker.bmp / wall.bmp) as a `0xAABBGGRR` view for
@@ -6785,6 +6820,7 @@ export class CGameController implements ShotWorld {
   private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
+  private m_smokeSink: ISmokeSink | null = null;
   private m_audio: CAudio | null = null;
   private m_tanksMoving = false; // tracks the tank-moving loop state
   private m_jetSounding = false; // tracks the jet.wav loop state

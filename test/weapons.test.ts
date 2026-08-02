@@ -94,6 +94,7 @@ class MockWorld implements ShotWorld {
   shake() {}
 
   ripple() {}
+  debrisSpray() {}
 
   applyBlast(_p: Vec2, _r: number, dmg: number) {
     this.blasts.push(dmg);

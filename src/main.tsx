@@ -95,6 +95,9 @@ async function main(): Promise<void> {
   sizeFx();
 
   const gameController = new CGameController(scene);
+  // Smoke bypasses the 2D scene canvas and is batched on the GPU — the layer used to be thousands
+  // of individual drawImage calls and the dominant cost of a heavy frame.
+  gameController.setSmokeSink(compositor);
   gameController.setImpactListener((x, y, s) => {
     // The shockwave maps world→screen against the controller's fixed LOGICAL size (which the
     // scene is authored in), not the native canvas size, so keep the compositor in sync here.

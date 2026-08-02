@@ -22,7 +22,11 @@ const FALLOUT_WIND_ACCEL = 26;
 // INTERFACES & TYPES
 // ==========================================================================
 
-interface LandParticle {
+/** A chunk of excavated earth IN TRANSIT. Not a cosmetic particle: it raises the column it lands
+ *  on, carries its own contamination, and is thrown from the match-seeded LCG so every client
+ *  produces the same terrain. Cosmetic dirt spray — the stuff that flies and vanishes — lives in
+ *  CParticleSystem instead (see IFxSink). */
+interface SpoilChunk {
   x: number;
   y: number;
   vx: number;
@@ -32,7 +36,6 @@ interface LandParticle {
   size: number; // chunk size in px
   spin: number; // visual tumble
   age: number; // seconds airborne
-  deposit: boolean; // on landing: raise the column (true) vs. just vanish (false — cosmetic ejecta)
   fill: number; // px of column this chunk raises when it settles (see `EJECTA_MAX_CHUNKS`)
   radSlot: number; // colour slot this chunk's earth is contaminated with; −1 = clean soil
 }
@@ -65,6 +68,7 @@ interface RadSpeck {
   rise: number; // height ABOVE the surface once settled (position within the fallout pile)
   zx: number; // x of the blast that threw this grain — how far out it LANDS sets its coat depth
   zr: number; // that blast's zone radius (the depth taper is measured against it)
+  hold: number; // seconds it hangs in the fireball before gravity takes it
   raining: boolean; // thrown from a mid-air burst: it has no crater to stay inside, so it may spread
   slot: number; // which radiation COLOUR this grain deposits (index into the terrain's slot palette)
   phase: number; // random glow-pulse phase (so specks shimmer INDEPENDENTLY, no coherent wave)
@@ -89,7 +93,9 @@ const HEAT_SIZE_MAX = 5.5;
  * CParticleSystem's job. CLand talks to it through this one-method-per-need interface rather than
  * holding a particle system of its own.
  */
-export interface IHeatSink {
+export interface IFxSink {
+  /** Cosmetic dirt spray — flies and vanishes, raising nothing (a beam cut's dust). */
+  debrisSpray(x: number, y: number, count: number, radius: number, gentle?: boolean): void;
   heatWisp(
     x: number,
     y: number,
@@ -173,17 +179,12 @@ const RAD_STAMP_MIN = 9;
 /** How far below a column's surface counts as "standing on radioactive ground" for damage. The
  *  coat is packed against the surface, so this only has to cover the contact layer. */
 const RAD_CONTACT_DEPTH = 10;
-/** Upward launch (px/s) of ground-burst fallout. Against RAD_GRAV this buys ~2.5-4s of airtime, so
- *  the grains come down AFTER a crater's ejecta has finished refilling the hole (which it does by
- *  ~2.2s). The windows must not overlap: a grain landing while the floor is still rising gets built
- *  over, and its pile ends up measured from a surface that no longer exists — which shows up as a
- *  second, deeper cluster in the coat. Sized off the ejecta's own settle time, not by eye. */
-/** Deepest a column's fallout pile may grow. A cap, not a shape — the shape comes from how many
- *  grains actually landed. */
 /** How far either side a landing grain looks for a lower spot. Wider averages more of the landing
  *  randomness out of the coat's surface. Measured: widening it to 7 changed nothing, so the
  *  remaining raggedness is NOT landing randomness — see the note on radPileTop. */
 const RAD_LEVEL_SPAN = 3;
+/** Deepest a column's fallout pile may grow. A cap, not a shape — the shape comes from how many
+ *  grains actually landed. */
 const RAD_PILE_MAX = 40;
 /** Pixels of pile one landed grain lays down. Back to 1 now the airborne cloud draws as a single
  *  blit whatever its size: a fat slug was buying cheap depth when grains cost a canvas call each,
@@ -209,8 +210,24 @@ const SINK_RATE = 55;
 /** Blotch scale of the wave's falloff — broad undulation in the compacted ground rather than
  *  column-to-column jitter, which just reads as noise on the surface line. */
 const SHOCK_CELL = 48;
-const RAD_UP_MIN = 200;
-const RAD_UP_MAX = 340;
+/** Upward launch (px/s) of ground-burst fallout. ZERO — the original gives its specks no upward
+ *  kick at all: the angle is `rand%360` and the speed a flat [2,10], an isotropic spill that goes
+ *  down as often as up, so the cloud never rises above the disc it was born in and the plume's
+ *  height IS the blast radius. A kick was added here to buy airtime, so the grains would land after
+ *  a crater's ejecta finished refilling the hole — but it bought it the expensive way and threw the
+ *  fallout into a mushroom twice the height of the blast.
+ *
+ *  The airtime was already there for free: grains spawn across the whole disc, so one born at the
+ *  top has the full radius to fall. Slowing RAD_GRAV buys the same seconds aloft while the cloud
+ *  stays inside its own radius, which is what the original looks like. Kept as named constants
+ *  rather than deleted because the ORDERING they exist to protect is real — see `radPileTop`. */
+/** How long a ground-burst grain hangs before it starts to fall. Long enough that the last of it
+ *  lands after the crater's ejecta has stopped raising the floor (~2.2s), which is the ordering the
+ *  coat depends on — bought here rather than out of gravity, so the fall itself stays quick. */
+const RAD_HOLD_MIN = 0.35;
+const RAD_HOLD_MAX = 1.15;
+const RAD_UP_MIN = 0;
+const RAD_UP_MAX = 0;
 /** How hot one pixel of a radioactive blast's own SPOIL is. Below a settled fallout grain's stamp:
  *  the dirt is contaminated throughout, while the fine ash that rains down afterwards concentrates
  *  at the surface — so a bowl of hot fill reads as a deep body of glowing earth with a hotter skin
@@ -377,7 +394,7 @@ export class CLand {
       this.m_arrHeights[x] = baseHeight;
     }
 
-    this.m_particles = [];
+    this.m_spoil = [];
     this.m_radParticles = [];
   }
 
@@ -461,10 +478,10 @@ export class CLand {
   generateFlat(): void {
     if (!this.m_arrHeights) return;
     this.m_falls.length = 0;
-    this.m_particles.length = 0;
+    this.m_spoil.length = 0;
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
-    this.m_heatSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
     const y = Math.floor(this.m_nHeight * 0.62);
     for (let x = 0; x < this.m_nWidth; x++) this.m_arrHeights[x] = y;
     if (this.m_baseHeights) this.m_baseHeights.fill(y);
@@ -482,12 +499,12 @@ export class CLand {
    */
   dispose(): void {
     this.m_falls.length = 0;
-    this.m_particles.length = 0;
-    this.m_particlePool.length = 0;
+    this.m_spoil.length = 0;
+    this.m_spoilPool.length = 0;
     this.m_radSpecks.length = 0;
     this.m_speckPool.length = 0;
     this.m_radParticles.length = 0;
-    this.m_heatSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
     for (const c of [this.m_terrainCanvas, this.m_backdropCanvas, this.m_debugCanvas]) {
       if (c) c.width = c.height = 0; // free the backing store now, not at the next GC
     }
@@ -509,10 +526,10 @@ export class CLand {
     this.m_shocks.length = 0;
     this.m_sinkX1 = -1;
     this.m_sinkX0 = 0;
-    this.m_particles.length = 0; // + any dirt debris still in flight
+    this.m_spoil.length = 0; // + any dirt debris still in flight
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
-    this.m_heatSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
     const A = 15; // walk amplitude
     const Ymin = Math.floor(this.m_nHeight * 0.3); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -811,7 +828,7 @@ export class CLand {
       // space below; ours fills the trench, so a small pop is the visible equivalent). NON-depositing:
       // they vanish on landing — the sliding overburden block already fills the trench.
       if (removed > 0) {
-        this.addShowerParticles(c, surfBefore, 2, 14, false);
+        this.m_fxSink?.debrisSpray(c, surfBefore, 2, 14);
       }
     }
     this.startSlump(lo, hi); // settle the cut so it never leaves standing nails
@@ -956,7 +973,7 @@ export class CLand {
         dy = py - y;
       return dx * dx + dy * dy > r2;
     };
-    this.m_heatSink?.clearHeat(x, y, r); // …and the haze that was rising off it
+    this.m_fxSink?.clearHeat(x, y, r); // …and the haze that was rising off it
     // Grains still IN THE AIR over the disc go too, not only the ones already within it: the blast
     // erupts up through that column. Left alone they simply carry on down and re-coat the floor of
     // the crater that was supposed to have swept them away — a cleaner fired into a settling cloud
@@ -1099,14 +1116,14 @@ export class CLand {
     // Count = earth × radius → the PEAK scales with earth (Mountain biggest), width tracks radius.
     // Each landed chunk raises a column +1px; repose + the rounding pass then settle the pile.
     const chunks = Math.min(16000, Math.round(amount * R * DIRT_DEPOSIT_VOLUME));
-    const pool = this.m_particlePool;
+    const pool = this.m_spoilPool;
     for (let i = 0; i < chunks; i++) {
       // Deposited dirt writes the heightmap → seeded LCG (deterministic in a net match).
       const ang = this.rand01() * TWO_PI;
       const dist = Math.sqrt(this.rand01()) * discR; // uniform over the DISC AREA (no central 1/r spike)
       let v = 24 + Math.floor(Math.random() * 116); // dirt brown, occasional dark clod (cosmetic)
       if (Math.random() < 0.25) v = Math.floor(v * 0.55);
-      const p: LandParticle = pool.pop() ?? {
+      const p: SpoilChunk = pool.pop() ?? {
         x: 0,
         y: 0,
         vx: 0,
@@ -1116,7 +1133,6 @@ export class CLand {
         size: 0,
         spin: 0,
         age: 0,
-        deposit: true,
         fill: 1,
         radSlot: -1,
       };
@@ -1131,8 +1147,7 @@ export class CLand {
       p.size = 1;
       p.spin = 0;
       p.age = 0;
-      p.deposit = true;
-      this.m_particles.push(p);
+      this.m_spoil.push(p);
     }
     // Arm the rounding pass over this deposit's span (accumulates across near-simultaneous spawns).
     if (this.m_dirtSmoothPasses <= 0 && this.m_dirtSmoothDelay <= 0) {
@@ -1263,6 +1278,7 @@ export class CLand {
         rise: 0,
         zx: 0,
         zr: 0,
+        hold: 0,
         raining: false,
         slot: 0,
         phase: 0,
@@ -1306,6 +1322,7 @@ export class CLand {
       s.zx = x;
       s.zr = nRadius;
       s.raining = raining;
+      s.hold = raining ? 0 : between(RAD_HOLD_MIN, RAD_HOLD_MAX);
       s.slot = slot;
       const f = between(0.3, 1); // 0.3..1.0 — dark grains stay on-hue, never black
       s.r = (r * f) | 0;
@@ -1893,15 +1910,14 @@ export class CLand {
     y: number,
     count: number,
     radius = 24,
-    deposit = true,
     gentle = false,
     fill = 1,
     radSlot = -1,
   ): void {
-    const pool = this.m_particlePool;
-    // Depositing ejecta WRITES the heightmap, so its motion must be deterministic in a
-    // network match → draw from the seeded LCG. Non-deposit spray is cosmetic → Math.random.
-    const r = deposit ? () => this.rand01() : Math.random;
+    const pool = this.m_spoilPool;
+    // This ejecta WRITES the heightmap, so every draw that shapes its motion must come from the
+    // seeded LCG — two clients that throw it differently end up with different terrain.
+    const r = () => this.rand01();
     for (let i = 0; i < count; i++) {
       const ang = r() * TWO_PI;
       // Dirt brown (R=v, G≈v/2, B≈0), occasionally a darker clod for texture.
@@ -1912,8 +1928,8 @@ export class CLand {
       const speed = gentle ? r() * 10 : 30 + r() * (radius * 2.4);
       const up = gentle ? 0 : radius * (0.3 + r() * 1.3);
       // Reuse a settled chunk from the free pool — after the first big blast the
-      // pool is warm, so a nuke allocates zero LandParticle objects (no GC spike).
-      const p: LandParticle = pool.pop() ?? {
+      // pool is warm, so a nuke allocates zero SpoilChunk objects (no GC spike).
+      const p: SpoilChunk = pool.pop() ?? {
         x: 0,
         y: 0,
         vx: 0,
@@ -1923,7 +1939,6 @@ export class CLand {
         size: 0,
         spin: 0,
         age: 0,
-        deposit: true,
         fill: 1,
         radSlot: -1,
       };
@@ -1946,7 +1961,7 @@ export class CLand {
       //
       // NOTE every draw here is `r()`, not the module random helpers: depositing ejecta writes the
       // heightmap, so each client must generate the same throw or the match desyncs.
-      const flung = !deposit || r() < EJECTA_FLUNG_FRACTION;
+      const flung = r() < EJECTA_FLUNG_FRACTION;
       // Contamination rides the spoil that falls back INTO the hole — the flung clods land as plain
       // dirt. Not because a thrown clod would really be clean, but because the blast's radiation is
       // a bounded zone: earth tagged where it lands, a couple of hundred px clear of the crater,
@@ -1965,14 +1980,13 @@ export class CLand {
       p.size = 1; // the original plots each chunk as a single 1px pixel — no 2px squares
       p.spin = 0;
       p.age = 0;
-      p.deposit = deposit;
-      this.m_particles.push(p);
+      this.m_spoil.push(p);
     }
     // Arm the rounding pass over the landing zone, exactly as `depositDirt` does. Ejecta lands one
     // 1px column at a time, so a big throw leaves the fill as a comb of spikes; the crater's own
     // slump is armed at CARVE time and has largely run out by the time the last chunks come down.
     // Without this the refilled bowl reads as bristles rather than as settled earth.
-    if (deposit && count > 0) {
+    if (count > 0) {
       if (this.m_dirtSmoothPasses <= 0 && this.m_dirtSmoothDelay <= 0) {
         this.m_dirtSmoothX0 = this.m_nWidth;
         this.m_dirtSmoothX1 = 0;
@@ -2023,8 +2037,8 @@ export class CLand {
     // above the surface. Keep such chunks airborne until the column stabilises.
     const falling = this.m_falls.length ? new Set(this.m_falls.map(f => f.col)) : null;
     let dw = 0;
-    for (let i = 0; i < this.m_particles.length; i++) {
-      const p = this.m_particles[i];
+    for (let i = 0; i < this.m_spoil.length; i++) {
+      const p = this.m_spoil[i];
 
       // Wind (Realistic mode only): the shared profile eases the push near the ground so settling
       // chunks barely drift while high-arcing ejecta leans on the wind. windX/Y are 0 in Linear mode.
@@ -2042,7 +2056,7 @@ export class CLand {
 
       const col = Math.floor(p.x);
       if (col < 0 || col >= this.m_nWidth) {
-        this.m_particlePool.push(p);
+        this.m_spoilPool.push(p);
         continue;
       } // left the field → recycle
 
@@ -2055,14 +2069,10 @@ export class CLand {
       // Don't settle onto a column whose overburden is still FALLING — its surface is a transient
       // (mid-air) block top; depositing there strands dirt once the block lands lower. Keep flying.
       if (falling && falling.has(col)) {
-        this.m_particles[dw++] = p;
+        this.m_spoil[dw++] = p;
         continue;
       }
       if (p.vy > 0 && p.y >= this.getHeightAt(col) && this.m_arrHeights) {
-        if (!p.deposit) {
-          this.m_particlePool.push(p);
-          continue; // cosmetic ejecta (beam) — reached ground, just vanish (no column raise)
-        }
         // Which column the chunk raises → writes the heightmap → seeded LCG.
         let dcol = clamp(col + ((this.rand01() * 4) | 0) - 2, 0, this.m_nWidth - 1); // −2..+1 (orig)
         if (falling && falling.has(dcol)) dcol = col; // never deposit onto a falling column
@@ -2098,13 +2108,13 @@ export class CLand {
           this.m_slumpX0 = Math.min(this.m_slumpX0, dcol - 3);
           this.m_slumpX1 = Math.max(this.m_slumpX1, dcol + 3);
         }
-        this.m_particlePool.push(p);
+        this.m_spoilPool.push(p);
         continue; // settled (or capped) → recycle
       }
 
-      this.m_particles[dw++] = p; // still airborne → keep
+      this.m_spoil[dw++] = p; // still airborne → keep
     }
-    this.m_particles.length = dw;
+    this.m_spoil.length = dw;
 
     // Terrain slump (avalanche): where adjacent columns differ by more than the
     // repose threshold, move 1px of dirt from the taller to the lower — this
@@ -2144,7 +2154,7 @@ export class CLand {
     this.m_radParticles.length = rw;
 
     // Radiation specks: fall until they hit the surface, then settle and glow.
-    const RAD_GRAV = 320;
+    const RAD_GRAV = 170;
     // A settled speck is culled once a crater drops the ground more than this far below it (it would
     // otherwise hang in the air). Wider than the +3px top of the settle scatter so the coat's surface
     let sw = 0;
@@ -2164,6 +2174,16 @@ export class CLand {
           const wf = windProfile(this.getHeightAt(wc) - s.y);
           s.vx += foutX * wf * dt;
           s.vy += foutY * wf * dt;
+        }
+        // HELD first: the grain hangs where the blast put it before gravity takes it. Fall speed and
+        // landing ORDER were otherwise the same knob — the fallout has to come down after the
+        // crater's ejecta has finished refilling, or the fill buries the coat it just laid, and the
+        // only way to buy that with gravity alone was to make the grains drift down unnaturally
+        // slowly. Holding them decouples the two: they hang in the fireball a moment, then fall at a
+        // believable rate. An airburst is not held — it is already raining from height.
+        if (s.age < s.hold) {
+          this.m_radSpecks[sw++] = s;
+          continue;
         }
         s.vy += RAD_GRAV * dt;
         s.x += s.vx * dt;
@@ -2238,7 +2258,7 @@ export class CLand {
     // reads as HOT. The zone sets the clock and the span; whether the EARTH at the chosen column is
     // still hot decides if a wisp actually rises there, so a crater carved through the middle of a
     // zone stops fuming without the zone having to be destroyed (which took its glow with it).
-    const sink = this.m_heatSink;
+    const sink = this.m_fxSink;
     if (sink && this.m_radParticles.length && sink.heatCount() < HEAT_MAX) {
       for (const z of this.m_radParticles) {
         const cool = z.timeRemaining / Math.max(0.5, z.duration); // 1 hot → 0 cold
@@ -2280,8 +2300,8 @@ export class CLand {
 
   /** Wire the haze to the particle system. CLand still decides where fallout fumes (it owns the
    *  radiation map); CParticleSystem owns the resulting particles. */
-  setHeatSink(sink: IHeatSink): void {
-    this.m_heatSink = sink;
+  setFxSink(sink: IFxSink): void {
+    this.m_fxSink = sink;
   }
 
   getRadiationZones(): RadParticle[] {
@@ -2760,10 +2780,10 @@ export class CLand {
       this.m_falls.length > 0 ||
       this.m_shocks.length > 0 ||
       this.m_sinkX1 >= this.m_sinkX0 ||
-      this.m_particles.length > 0 ||
+      this.m_spoil.length > 0 ||
       this.m_radSpecks.length > 0 ||
       this.m_radParticles.length > 0 ||
-      (this.m_heatSink?.heatCount() ?? 0) > 0
+      (this.m_fxSink?.heatCount() ?? 0) > 0
     );
   }
 
@@ -2777,7 +2797,7 @@ export class CLand {
       this.m_falls.length > 0 ||
       this.m_shocks.length > 0 ||
       this.m_sinkX1 >= this.m_sinkX0 ||
-      this.m_particles.length > 0
+      this.m_spoil.length > 0
     );
   }
 
@@ -2921,7 +2941,7 @@ export class CLand {
     }
 
     // The radioactive heat haze used to be drawn here. It now lives in CParticleSystem
-    // (see IHeatSink); the controller calls drawHeat() straight after this, so it still paints
+    // (see IFxSink); the controller calls drawHeat() straight after this, so it still paints
     // in exactly this slot — under the tanks and the aim overlay.
 
     // Dirt debris chunks in flight — each is a SINGLE opaque 1px pixel (the original plots one
@@ -2933,13 +2953,13 @@ export class CLand {
     // literally pixels, so they are plotted INTO a pixel buffer and blitted once instead: the whole
     // cloud costs one `drawImage` regardless of how many chunks it holds. Floored positions keep
     // each on a crisp pixel rather than anti-aliased across two, as before.
-    if (!this.m_particles.length) return;
+    if (!this.m_spoil.length) return;
     const dbgDebris = CLand.debugMaterials; // ?skiptexture: flying dirt chunks are green too
     let bx0 = this.m_nWidth,
       bx1 = -1,
       by0 = this.m_nHeight,
       by1 = -1;
-    for (const p of this.m_particles) {
+    for (const p of this.m_spoil) {
       const x = Math.floor(p.x),
         y = Math.floor(p.y);
       if (x < 0 || x >= this.m_nWidth || y < 0 || y >= this.m_nHeight) continue;
@@ -2954,7 +2974,7 @@ export class CLand {
     if (typeof document === 'undefined' || dw * dh > DEBRIS_BLIT_MAX_AREA) {
       // Headless, or the cloud is spread so wide the buffer would cost more than the calls it saves.
       if (dbgDebris) ctx.fillStyle = '#00c800';
-      for (const p of this.m_particles) {
+      for (const p of this.m_spoil) {
         if (!dbgDebris) ctx.fillStyle = p.color;
         ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 1, 1);
       }
@@ -2975,7 +2995,7 @@ export class CLand {
     const buf = new Uint32Array(img.data.buffer);
     buf.fill(0); // transparent — the terrain behind the cloud must still show through
     const DBG = this.packSolid(0, 200, 0);
-    for (const p of this.m_particles) {
+    for (const p of this.m_spoil) {
       const x = Math.floor(p.x) - bx0,
         y = Math.floor(p.y) - by0;
       if (x < 0 || x >= dw || y < 0 || y >= dh) continue;
@@ -2999,18 +3019,18 @@ export class CLand {
   private m_dirtyMin: number = -1;
   private m_dirtyMax: number = -1;
 
-  private m_particles: LandParticle[] = [];
+  private m_spoil: SpoilChunk[] = []; // excavated earth in flight (deposits on landing)
   private m_radParticles: RadParticle[] = [];
   private m_radSpecks: RadSpeck[] = [];
   private m_radPulseT = 0; // clock for the sinusoidal glow shimmer on the fallout
   // Free lists of dead particle objects, refilled on removal and drained on emit, so a
   // repeat blast reuses objects instead of allocating thousands (kills the GC hitch).
-  private m_particlePool: LandParticle[] = [];
+  private m_spoilPool: SpoilChunk[] = [];
   private m_speckPool: RadSpeck[] = [];
   private m_dirtColors: string[] = []; // dirt-chunk colour strings cached by brightness v
-  // The heat haze itself lives in CParticleSystem (see IHeatSink); CLand only decides where it
+  // The heat haze itself lives in CParticleSystem (see IFxSink); CLand only decides where it
   // rises. Null in tests / before wiring, in which case the fallout simply doesn't fume.
-  private m_heatSink: IHeatSink | null = null;
+  private m_fxSink: IFxSink | null = null;
   // Falling overburden blocks (beam/digger slice collapse): a captured column of pixels (the
   // cap + earth above the cut) sliding DOWN under gravity to land on the substrate below.
   private m_falls: Fall[] = [];

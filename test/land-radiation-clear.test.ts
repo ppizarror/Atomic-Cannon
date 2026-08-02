@@ -41,7 +41,7 @@ function landWithPixels(
   p.m_material = mat;
   const fx = new CParticleSystem();
   fx.setBounds(W, H);
-  land.setHeatSink(fx);
+  land.setFxSink(fx);
   return {land, fx};
 }
 

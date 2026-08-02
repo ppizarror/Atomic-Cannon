@@ -81,6 +81,10 @@ export interface ShotWorld {
     isCleaner?: boolean,
   ): void;
 
+  /** Cosmetic dirt spray — chunks that fly and vanish, raising nothing. Distinct from the crater
+   *  ejecta on CLand, which writes the heightmap and must stay on the seeded stream. */
+  debrisSpray(x: number, y: number, count: number, radius: number, gentle?: boolean): void;
+
   shake(mag: number, dur: number): void;
 
   ripple(x: number, y: number, strength: number): void;
@@ -524,12 +528,11 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // Cosmetic dirt spray only (deposit=false): a BURIED digger blast displaces its dirt into
     // its own cave-in crater, it doesn't fountain depositing earth onto the surface. Depositing
     // chunks here landed on the still-caving crater/trench columns and stranded as "floating dirt".
-    land.addShowerParticles(
+    world.debrisSpray(
       Math.floor(pos.x),
       Math.floor(surfaceY),
       Math.min(2500, Math.round(fodder * craterR * 100 + craterR * 4)),
       craterR,
-      false,
     );
   } else if (!isBeam && reachesGround) {
     // Crater radius is `radius × explosionScale` and NOTHING else. The original stamps a burst MASK
@@ -577,7 +580,6 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
       Math.floor(Math.min(pos.y, surfaceY)),
       Math.round(volume / perChunk),
       craterR, // born across the crater's own disc, so the spoil rains back into the hole it came from
-      true,
       false,
       perChunk,
       radSlot, // a nuke's spoil IS the fallout — it lands hot, it is not clean fill dusted later

@@ -19,7 +19,7 @@ import type {ISpriteSource} from './rendering/sprites';
 import {TintedSpriteCache} from './rendering/TintedSpriteCache';
 import particlesRaw from '../data/particles.json';
 import {smokeEnabled} from './CGameConfig';
-import {boundaryFactor} from './wind';
+import {boundaryFactor, windProfile} from './wind';
 import {between} from '../math/random';
 import {hexToRgb, mixToward, WHITE, type RGB} from '../math/color';
 import {TWO_PI, deg2rad} from '../math/num';
@@ -185,7 +185,7 @@ const VENT_WIN_R = 0.02;
 // nearly transparent, so its effective footprint is well under its drawn diameter. That coverage has
 // to be bought back with SIZE and COUNT, not with opacity — otherwise the cloud thins out into
 // visibly separate bubbles, which is exactly what happened when the falloff first went in.
-const FUME_RATE = 16;
+const FUME_RATE = 5;
 // Smoke swell for crater fumes. Deliberately targets GROWTH rather than birth size: the gaps open up
 // in the dispersed, aged part of the cloud, while fresh puffs at the vent are already packed tight.
 const FUME_GROW = 3.6;
@@ -195,19 +195,13 @@ const FUME_GROW = 3.6;
 // the bowl and consolidate into a tall rounded plume floating above it, which is why the cloud
 // stopped covering the crater it came from (emission across the width is uniform — measured at 0%
 // skipped, evenly bucketed — so the drift, not the spawn, is what empties the ends).
-const FUME_LIFE_BASE = 0.7;
-const FUME_LIFE_MIN = 0.01;
-const FUME_LIFE_MAX = 0.02;
+const FUME_LIFE_BASE = 1.0;
+const FUME_LIFE_MIN = 0.018;
+const FUME_LIFE_MAX = 0.034;
 // Crater smoke has mild buoyancy (vs the trail's -0.12) so each generation drifts gently UP off the
 // dirt and fades — a steady rising stream — without ballooning to the top of the screen.
 const FUME_GRAV = -0.048;
-// Peak opacity of a single crater-fume puff. This is what decides whether the cloud reads as smoke
-// or as a pile of separate blobs, and it has to be LOW because the puffs stack so deeply: measured
-// nearest-neighbour spacing is only ~0.25× a puff's drawn diameter, i.e. any given pixel is covered
-// several puffs over. Coverage compounds as 1-(1-op)^N, so at the old 0.6 just four overlapping
-// puffs already reached 0.97 — the interior blew out to flat white and the only thing still legible
-// was the individual puffs around the rim, which is exactly the "too separated" read. At ~0.3 the
-// same stack spans 0.5→0.9, so density builds as a gradient and the cloud holds together.
+// Peak opacity of a single crater-fume puff.
 const FUME_OP = 0.18;
 // A fume puff's swell and fade run on ABSOLUTE age against these time constants, NOT on the
 // normalised age/life. Life scales with the crater (measured: 3.7s at r=90, 8.6s at r=250), so a
@@ -288,9 +282,73 @@ const EX_CELL_H = EX_HALF_H * 2;
 // fine shimmer over the fallout, not as billowing smoke.
 const HEAT_GROW = 1.4;
 
+// ---- Cosmetic dirt spray -----------------------------------------------------------------------
+// A beam cut or a buried digger throws dirt that lands and simply VANISHES — no column is raised,
+// nothing is written to the heightmap, and the throw is drawn from Math.random. That makes it pure
+// decoration, so it lives here. Its depositing sibling (crater ejecta) does NOT: that one raises
+// columns, stamps radiation and draws from CLand's seeded LCG because it has to stay identical on
+// every client in a network match. Moving THAT into this system would put lockstep-critical state
+// behind Math.random, so it stays terrain — see CLand.addShowerParticles.
+//
+// Chunks are single opaque 1px dots, which is what lets them be an order of magnitude cheaper than
+// a smoke puff: instead of one canvas call each they are plotted into a pixel buffer and blitted
+// once, so a 15k cloud costs ONE drawImage. Measured 0.062 us/chunk against 0.59 us for a puff.
+const DEBRIS_GRAVITY = 500;
+const DEBRIS_WIND_ACCEL = 12;
+// Above this bbox area the scratch buffer costs more to clear and upload than the per-chunk canvas
+// calls it saves, so a cloud spread that wide falls back to plain fillRects.
+const DEBRIS_BLIT_MAX_AREA = 1_600_000;
+
+/** One flying dirt chunk: a single opaque pixel. `rgba` is the packed colour for the buffer path,
+ *  `color` the CSS string for the headless / too-wide fallback. */
+interface Debris {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rgba: number;
+  color: string;
+}
+
 // Cull margin (px) — a puff whose CENTRE is this far outside the view is skipped in draw
 // (big enough to cover a fully-swelled puff's radius so nothing pops at the edge).
 const CULL_MARGIN = 140;
+
+/**
+ * Somewhere for the smoke layer to go other than the 2D canvas. The particle system describes each
+ * puff exactly as it would to `drawImage` — a source canvas, a sub-rect, a destination box — so it
+ * needs no knowledge of the renderer on the other side. The compositor implements this on top of a
+ * GPU ParticleContainer, which collapses the whole layer into one draw call.
+ */
+export interface ISmokeSink {
+  /** Place the layer in the frame: camera, screen-shake, and the logical view being presented. */
+  setSmokeTransform(
+    camX: number,
+    shakeX: number,
+    shakeY: number,
+    viewW: number,
+    viewH: number,
+  ): void;
+  /** Puffs are re-emitted from scratch each frame; these bracket one frame's worth. */
+  smokeBegin(): void;
+  smokeEnd(): void;
+  smokeQuad(
+    src: CanvasImageSource,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    rotation: number,
+    alpha: number,
+    /** Multiplied into the sprite — lets one white master serve every colour, instead of a
+     *  separate tinted canvas per colour (each of which would be its own batch). */
+    tint?: number,
+  ): void;
+}
 
 export class CParticleSystem {
   private m_particles: Particle[] = [];
@@ -304,6 +362,88 @@ export class CParticleSystem {
   private m_viewW = 0;
   private m_viewH = 0;
   private m_smokeBuf: HTMLCanvasElement | null = null; // half-res offscreen for the smoke layer
+  private m_smokeSink: ISmokeSink | null = null; // set → smoke goes to the GPU instead of the canvas
+
+  /** Route the smoke layer to a batched renderer. Null (tests, no compositor) keeps the 2D path. */
+  setSmokeSink(sink: ISmokeSink | null): void {
+    this.m_smokeSink = sink;
+  }
+
+  /**
+   * Describe every live smoke puff as a textured quad in WORLD space. Mirrors the two 2D draw
+   * paths term for term — the baked exhaust atlas frame, and the fume/plume sprite with its swell
+   * and fade — but emits instead of blitting, so the caller can batch them.
+   */
+  private emitSmokeQuads(sink: ISmokeSink, cullMin: number, cullMax: number): void {
+    const atlas = this.exhaustAtlas();
+    const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null;
+    const white = this.whiteSmoke();
+    for (const p of this.m_particles) {
+      if (p.x < cullMin || p.x > cullMax) continue;
+      const t = p.age / p.life;
+      if (t >= 1) continue;
+
+      if (p.kind === 'exhaust') {
+        if (!atlas) continue;
+        const frame = Math.min(EX_FRAMES - 1, (t * EX_FRAMES) | 0);
+        sink.smokeQuad(
+          atlas,
+          frame * EX_CELL_W,
+          p.exVariant * EX_CELL_H,
+          EX_CELL_W,
+          EX_CELL_H,
+          p.x,
+          p.y,
+          EX_CELL_W * p.exScale,
+          EX_CELL_H * p.exScale,
+          Math.atan2(p.exSin, p.exCos),
+          1, // the fade is baked into the atlas frames
+        );
+        continue;
+      }
+      if (p.kind !== 'smoke') continue;
+
+      if (p.r < 200) {
+        // Grey = the plume-coloured puff (tank-death column, or exhaust before the atlas is baked).
+        const img = this.plumeImg();
+        let cr = 210,
+          cg = 216,
+          cb = 226;
+        if (img) {
+          const cx = Math.min(img.width - 1, (Math.min(1, t) * img.width) | 0);
+          const cy = Math.min(img.height - 1, ((p.g / 255) * img.height) | 0);
+          const i = (cy * img.width + cx) * 4;
+          cr = img.data[i];
+          cg = img.data[i + 1];
+          cb = img.data[i + 2];
+        }
+        const gs = t < 0.72 ? 0.5 + 2.9 * (t / 0.72) : 3.4 * (1 - (t - 0.72) / 0.28);
+        const de = p.size * gs * 2;
+        const ea = Math.min(1, t / 0.1) * (t > 0.72 ? (1 - t) / 0.28 : 1) * p.op;
+        // The UNTINTED master plus a tint, not m_puffCache.tint(): that cache holds up to 512
+        // distinct canvases, and every distinct canvas is a distinct texture source — i.e. its own
+        // batch. One master keeps the whole plume layer in a single draw call.
+        const puff = this.m_puffCache.master();
+        if (!puff || de <= 0 || ea <= 0.01) continue;
+        const tint = ((cr & 0xff) << 16) | ((cg & 0xff) << 8) | (cb & 0xff);
+        sink.smokeQuad(puff, 0, 0, puff.width, puff.height, p.x, p.y, de, de, 0, ea, tint);
+        continue;
+      }
+
+      // White = CRATER FUMES. Same swell/fade curves as the 2D path (see drawSmoke).
+      const spr = white ?? (smokeSpr?.bitmap as CanvasImageSource | undefined);
+      if (!spr) continue;
+      const swell = 0.9 + p.grow * (1 - Math.exp(-p.age / FUME_SWELL_TAU));
+      const tail = Math.min(1, (1 - t) / (1 - FUME_HOLD));
+      const fd = p.size * swell * (1 - FUME_SHRINK * (1 - tail)) * 2;
+      const fa = Math.min(1, p.age / FUME_FADE_IN) * tail * p.op;
+      if (fa <= 0.01 || fd <= 0) continue;
+      const sw = white ? white.width : (smokeSpr?.width ?? 0);
+      const sh = white ? white.height : (smokeSpr?.height ?? 0);
+      if (!sw || !sh) continue;
+      sink.smokeQuad(spr, 0, 0, sw, sh, p.x, p.y, fd, fd, 0, fa);
+    }
+  }
 
   /** Per-frame view rectangle (world-X of the left edge + on-screen size). Drives off-screen culling
    *  and the half-res smoke buffer. Pass width 0 to disable both (headless tests draw everything). */
@@ -592,6 +732,7 @@ export class CParticleSystem {
    *  fumes, debris and fireballs from the previous battle don't linger over the new map. */
   clear(): void {
     this.m_particles.length = 0;
+    this.m_debris.length = 0;
     this.m_beams.length = 0;
     this.m_explosions.length = 0;
     this.m_craterVents.length = 0;
@@ -965,7 +1106,7 @@ export class CParticleSystem {
     // rate, overlap into a dense fine-grained cloud (the legacy tight-puff look); the density comes
     // from the stacking, not from any one puff. Gentle rise + mild buoyancy (FUME_GRAV) so each
     // generation drifts up off the dirt and fades.
-    this.add(fx, fy, between(-5, 5), -between(8, 18), {r: v, g: v, b: v}, life, between(3, 5), 'smoke', undefined, FUME_GROW, FUME_OP, FUME_GRAV); // prettier-ignore
+    this.add(fx, fy, between(-5, 5), -between(5, 26), {r: v, g: v, b: v}, life, between(2.5, 7), 'smoke', undefined, FUME_GROW, FUME_OP, FUME_GRAV); // prettier-ignore
   }
 
   /**
@@ -1227,6 +1368,131 @@ export class CParticleSystem {
     }
   }
 
+  // ------------------------------------------------------------------ cosmetic dirt spray
+  private m_debris: Debris[] = [];
+  private m_debrisPool: Debris[] = []; // free-list — a warm pool allocates nothing per blast
+  private m_debrisColors: string[] = []; // CSS strings cached by brightness
+  private m_debrisCanvas: HTMLCanvasElement | null = null;
+  private m_debrisImage: ImageData | null = null;
+
+  /**
+   * Throw `count` cosmetic dirt chunks from (x, y) across the blast disc. Nothing here lands on the
+   * heightmap — these vanish on contact — so the throw uses Math.random freely. `gentle` gives the
+   * near-zero launch a beam cut wants (grains DROP rather than fountain).
+   */
+  debrisSpray(x: number, y: number, count: number, radius = 24, gentle = false): void {
+    const pool = this.m_debrisPool;
+    for (let i = 0; i < count; i++) {
+      const ang = rnd() * TWO_PI;
+      // Dirt brown (R=v, G≈v/2, B=0), occasionally a darker clod for texture.
+      let v = 24 + Math.floor(rnd() * 116);
+      if (rnd() < 0.25) v = Math.floor(v * 0.55);
+      const speed = gentle ? rnd() * 10 : 30 + rnd() * (radius * 2.4);
+      const up = gentle ? 0 : radius * (0.3 + rnd() * 1.3);
+      const d: Debris = pool.pop() ?? {x: 0, y: 0, vx: 0, vy: 0, rgba: 0, color: ''};
+      const bd = Math.sqrt(rnd()) * radius; // uniform over the disc AREA, no central spike
+      d.x = x + Math.cos(ang) * bd;
+      d.y = y + Math.sin(ang) * bd * 0.4;
+      // Cosmetic spray is always FLUNG on the wide radial arc — nothing lands, so where it flies is
+      // purely a matter of looks (the depositing sibling splits its throw; this one needn't).
+      d.vx = Math.cos(ang) * speed;
+      d.vy = gentle ? rnd() * 12 : Math.sin(ang) * speed * 0.7 - up;
+      d.rgba = (0xff000000 | (0 << 16) | ((v >> 1) << 8) | v) >>> 0; // ABGR little-endian
+      d.color = this.m_debrisColors[v] ?? (this.m_debrisColors[v] = `rgb(${v},${v >> 1},0)`);
+      this.m_debris.push(d);
+    }
+  }
+
+  /** Live cosmetic chunks (diagnostics / tests). */
+  debrisCount(): number {
+    return this.m_debris.length;
+  }
+
+  /** Integrate the dirt spray: gravity, an eased wind push, then die on the ground or off-field. */
+  private updateDebris(dt: number, wind?: Vec2): void {
+    if (!this.m_debris.length) return;
+    const windX = wind ? wind.x * DEBRIS_WIND_ACCEL : 0;
+    const windY = wind ? wind.y * DEBRIS_WIND_ACCEL : 0;
+    const groundAt = this.m_groundAt;
+    let w = 0;
+    for (let i = 0; i < this.m_debris.length; i++) {
+      const d = this.m_debris[i];
+      if (windX !== 0 || windY !== 0) {
+        // Same boundary-layer easing the rest of the system uses: chunks near the ground barely
+        // drift while high-arcing ones lean on the wind.
+        const wf = groundAt ? windProfile(groundAt(d.x) - d.y) : 1;
+        d.vx += windX * wf * dt;
+        d.vy += windY * wf * dt;
+      }
+      d.vy += DEBRIS_GRAVITY * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      if (d.x < this.m_minX || d.x >= this.m_maxX || d.y >= this.m_maxY) {
+        this.m_debrisPool.push(d);
+        continue; // left the field → recycle
+      }
+      if (d.vy > 0 && groundAt && d.y >= groundAt(d.x)) {
+        this.m_debrisPool.push(d);
+        continue; // reached the surface → vanish (it raises nothing)
+      }
+      this.m_debris[w++] = d;
+    }
+    this.m_debris.length = w;
+  }
+
+  /**
+   * Draw the dirt spray. Every chunk is a single opaque pixel, so instead of one canvas call each
+   * they are plotted into a scratch pixel buffer sized to the cloud's bounding box and blitted once
+   * — the whole cloud costs ONE drawImage however many chunks it holds. Falls back to per-chunk
+   * fillRects with no DOM, or when the cloud has spread so wide the buffer stops paying for itself.
+   */
+  drawDebris(ctx: CanvasRenderingContext2D): void {
+    if (!this.m_debris.length) return;
+    let bx0 = Infinity,
+      bx1 = -Infinity,
+      by0 = Infinity,
+      by1 = -Infinity;
+    for (const d of this.m_debris) {
+      const x = Math.floor(d.x),
+        y = Math.floor(d.y);
+      if (x < bx0) bx0 = x;
+      if (x > bx1) bx1 = x;
+      if (y < by0) by0 = y;
+      if (y > by1) by1 = y;
+    }
+    if (bx1 < bx0) return;
+    const dw = bx1 - bx0 + 1,
+      dh = by1 - by0 + 1;
+    if (typeof document === 'undefined' || dw * dh > DEBRIS_BLIT_MAX_AREA) {
+      for (const d of this.m_debris) {
+        ctx.fillStyle = d.color;
+        ctx.fillRect(Math.floor(d.x), Math.floor(d.y), 1, 1);
+      }
+      return;
+    }
+    let cv = this.m_debrisCanvas;
+    if (!cv) cv = this.m_debrisCanvas = document.createElement('canvas');
+    if (cv.width < dw || cv.height < dh) {
+      cv.width = Math.max(cv.width, dw);
+      cv.height = Math.max(cv.height, dh);
+      this.m_debrisImage = null;
+    }
+    const g = cv.getContext('2d');
+    if (!g) return;
+    if (!this.m_debrisImage || this.m_debrisImage.width !== dw || this.m_debrisImage.height !== dh)
+      this.m_debrisImage = g.createImageData(dw, dh);
+    const img = this.m_debrisImage;
+    const buf = new Uint32Array(img.data.buffer);
+    buf.fill(0); // transparent — the scene behind the cloud must still show through
+    for (const d of this.m_debris) {
+      const x = Math.floor(d.x) - bx0,
+        y = Math.floor(d.y) - by0;
+      buf[y * dw + x] = d.rgba;
+    }
+    g.putImageData(img, 0, 0);
+    ctx.drawImage(cv, 0, 0, dw, dh, bx0, by0, dw, dh);
+  }
+
   // ------------------------------------------------------- radioactive heat haze (IHeatSink)
   //
   // CLand owns the fallout map and the terrain surface, so it decides WHERE and IN WHAT COLOUR a
@@ -1426,6 +1692,7 @@ export class CParticleSystem {
    */
   update(dt: number, wind?: Vec2): void {
     if (dt <= 0) return;
+    this.updateDebris(dt, wind);
     const windAx = wind ? wind.x * 26 : 0; // ±5 wind → up to ±130 px/s^2 on light smoke
     const windAy = wind ? wind.y * 26 : 0;
     const groundAt = this.m_groundAt;
@@ -1500,6 +1767,13 @@ export class CParticleSystem {
 
   /** Render all particles. Additive kinds are batched to set the blend once. */
   private drawSmokeLayer(ctx: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
+    // GPU path: hand the puffs to the compositor as quads and let one batched draw call replace
+    // the thousands of drawImage calls this layer used to cost. The 2D path below stays for
+    // headless tests and for any host without a smoke sink.
+    if (this.m_smokeSink) {
+      this.emitSmokeQuads(this.m_smokeSink, cullMin, cullMax);
+      return;
+    }
     if (this.m_viewW > 0 && this.m_viewH > 0 && typeof document !== 'undefined') {
       const bw = Math.max(1, Math.ceil(this.m_viewW / 2));
       const bh = Math.max(1, Math.ceil(this.m_viewH / 2));
@@ -1830,7 +2104,12 @@ export class CParticleSystem {
   }
 
   hasActiveExplosions(): boolean {
-    return this.m_particles.length > 0 || this.m_beams.length > 0 || this.m_explosions.length > 0;
+    return (
+      this.m_particles.length > 0 ||
+      this.m_beams.length > 0 ||
+      this.m_explosions.length > 0 ||
+      this.m_debris.length > 0
+    );
   }
 
   /**
