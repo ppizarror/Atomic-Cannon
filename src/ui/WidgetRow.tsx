@@ -6,6 +6,7 @@
  */
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
+import {hoverProps} from './hoverProps';
 import {type Widget} from './settingsPages';
 import {uiClick} from './store';
 import {clamp, wrapIndex} from '../math/num';
@@ -29,10 +30,7 @@ export function WidgetRow({
     return (
       <button
         class="settings-row srow-nav menu-btn"
-        onMouseEnter={enter}
-        onFocus={enter}
-        onMouseLeave={leave}
-        onBlur={leave}
+        {...hoverProps(enter, leave)}
         onClick={() => w.onClick?.()}
       >
         <span class="srow-side">
@@ -78,14 +76,7 @@ export function WidgetRow({
   // A toggle row: label left, ON/OFF right, no arrows — either side flips it.
   if (w.kind === 'toggle') {
     return (
-      <div
-        class="settings-row menu-btn"
-        onMouseEnter={enter}
-        onMouseLeave={leave}
-        onFocus={enter}
-        onBlur={leave}
-        onKeyDown={onRowKey}
-      >
+      <div class="settings-row menu-btn" {...hoverProps(enter, leave)} onKeyDown={onRowKey}>
         <button class="srow-half srow-left" onClick={() => change(1)}>
           <BmpText font={ROW_FONT} text={w.label} />
         </button>
@@ -103,14 +94,7 @@ export function WidgetRow({
   const valueText =
     w.kind === 'enum' ? (w.options![val] ?? String(val)) : w.fmt ? w.fmt(val) : String(val);
   return (
-    <div
-      class="settings-row menu-btn"
-      onMouseEnter={enter}
-      onMouseLeave={leave}
-      onFocus={enter}
-      onBlur={leave}
-      onKeyDown={onRowKey}
-    >
+    <div class="settings-row menu-btn" {...hoverProps(enter, leave)} onKeyDown={onRowKey}>
       <button class="srow-half srow-left" onClick={() => change(-1)}>
         <span class="srow-arrow">
           <BmpText font={ROW_FONT} text="<" />

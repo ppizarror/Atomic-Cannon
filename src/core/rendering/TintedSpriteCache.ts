@@ -9,6 +9,8 @@
  * Shared by CParticleSystem's additive glow and the rocket-exhaust puff — same cache/evict
  * logic, differing only in the master's falloff (the `build` callback) and radius.
  */
+import {capSet} from '../../util/cache';
+import {recolorOpaque, tryCanvas2d} from '../../util/canvas';
 export class TintedSpriteCache {
   private m_master: HTMLCanvasElement | null = null;
   private m_na = false; // no DOM (unit tests) → callers fall back to a gradient
@@ -28,21 +30,15 @@ export class TintedSpriteCache {
   /** The white master (built once), or null where there's no canvas (headless tests). */
   master(): HTMLCanvasElement | null {
     if (this.m_master || this.m_na) return this.m_master;
-    if (typeof document === 'undefined') {
-      this.m_na = true;
-      return null;
-    }
     const R = this.m_size;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = R * 2;
-    const g = cv.getContext('2d');
-    if (!g) {
-      this.m_na = true;
+    const made = tryCanvas2d(R * 2, R * 2);
+    if (!made) {
+      this.m_na = true; // no DOM / no 2D context — don't retry every frame
       return null;
     }
-    this.m_build(g, R);
-    this.m_master = cv;
-    return cv;
+    this.m_build(made.ctx, R);
+    this.m_master = made.cv;
+    return made.cv;
   }
 
   /** The master tinted to (r,g,b), cached by 4-bit/channel colour bucket. Null when headless. */
@@ -54,19 +50,9 @@ export class TintedSpriteCache {
     const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
     const hit = this.m_tints.get(key);
     if (hit) return hit;
-    const R = this.m_size;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = R * 2;
-    const c = cv.getContext('2d')!;
-    c.drawImage(master, 0, 0);
-    c.globalCompositeOperation = 'source-in'; // keep the master's alpha, swap in a solid colour
-    c.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
-    c.fillRect(0, 0, R * 2, R * 2);
-    // Evict the OLDEST entry (Map preserves insertion order), NOT the whole cache.
-    if (this.m_tints.size >= this.m_cap) {
-      this.m_tints.delete(this.m_tints.keys().next().value as number);
-    }
-    this.m_tints.set(key, cv);
+    const D = this.m_size * 2;
+    const cv = recolorOpaque(master, D, D, `rgb(${r | 0},${g | 0},${b | 0})`);
+    capSet(this.m_tints, key, cv, this.m_cap);
     return cv;
   }
 }

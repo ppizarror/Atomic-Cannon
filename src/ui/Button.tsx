@@ -16,25 +16,31 @@
  */
 import {BmpText, type FontId} from './BmpText';
 
-export function Button({
-  label,
-  font = 'msans-14',
-  onClick,
-  disabled,
-  class: cls,
-}: {
+export interface MetalButtonProps {
   label: string;
   font?: FontId;
   onClick?: () => void;
   disabled?: boolean;
   /** Extra class for layout/placement (e.g. `span`, `about-back`). */
   class?: string;
-}) {
+}
+
+/**
+ * The shared body of the two metal action buttons. They are deliberately kept as separate
+ * NAMED components — which skin a button wears is a real design decision (see the file header
+ * and ModalButton's), and callers should pick by context, not by passing a variant string. But
+ * the markup is one line, so it lives here rather than being written twice.
+ */
+export function metalButton(skin: string, p: MetalButtonProps) {
   // The black-baked msans face reads on the grey button metal (no runtime recolour);
-  // the disabled look comes from the CSS grayscale/brightness filter on `.btn:disabled`.
+  // the disabled look comes from the CSS grayscale/brightness filter on `:disabled`.
   return (
-    <button class={`btn ${cls ?? ''}`} disabled={disabled} onClick={onClick}>
-      <BmpText font={font} text={label} />
+    <button class={`${skin} ${p.class ?? ''}`} disabled={p.disabled} onClick={p.onClick}>
+      <BmpText font={p.font ?? 'msans-14'} text={p.label} />
     </button>
   );
+}
+
+export function Button(p: MetalButtonProps) {
+  return metalButton('btn', p);
 }

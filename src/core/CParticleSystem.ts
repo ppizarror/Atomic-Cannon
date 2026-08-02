@@ -15,7 +15,9 @@
  */
 
 import type {Vec2} from '../math/Vec2';
-import type {ISpriteSource} from './rendering/sprites';
+import type {ISpriteSource, Sprite} from './rendering/sprites';
+import {capSet} from '../util/cache';
+import {tryCanvas2d} from '../util/canvas';
 import {TintedSpriteCache} from './rendering/TintedSpriteCache';
 import particlesRaw from '../data/particles.json';
 import {smokeEnabled} from './CGameConfig';
@@ -350,6 +352,10 @@ const FUME = {
  *  fine shimmer over the fallout, not as billowing smoke. */
 const HEAT_GROW = 1.4;
 
+/** Cap on the per-hue radiation smoke-tint cache (see `m_heatTints`). Sprite-sized canvases, and
+ *  a match only ever shows a handful of distinct radiation hues at once. */
+const HEAT_TINT_CACHE_MAX = 64;
+
 /**
  * Per-kind physics response: how gravity and wind act on each render kind. Light smoke rises and is
  * shoved hard by wind; heavy sparks fall and ignore it. Annotated rather than `as const` so a new
@@ -530,14 +536,14 @@ export class CParticleSystem {
    */
   private exhaustAtlas(): HTMLCanvasElement | null {
     if (this.m_exAtlas) return this.m_exAtlas;
-    if (typeof document === 'undefined') return null;
     const img = this.plumeImg(); // the colour table the exhaust reads — required
     if (!img) return null;
-    const cv = document.createElement('canvas');
-    cv.width = EXHAUST_ATLAS.CELL_W * EXHAUST_ATLAS.FRAMES;
-    cv.height = EXHAUST_ATLAS.CELL_H * EXHAUST_ATLAS.VARIANTS;
-    const g = cv.getContext('2d');
-    if (!g) return null;
+    const made = tryCanvas2d(
+      EXHAUST_ATLAS.CELL_W * EXHAUST_ATLAS.FRAMES,
+      EXHAUST_ATLAS.CELL_H * EXHAUST_ATLAS.VARIANTS,
+    );
+    if (!made) return null;
+    const {cv, ctx: g} = made;
 
     for (let v = 0; v < EXHAUST_ATLAS.VARIANTS; v++) {
       // Draw this variant's cohort once, then replay it across the frame columns. Each sub-puff
@@ -605,12 +611,10 @@ export class CParticleSystem {
   /** The soft warm glow used until the real smoke sprite is available. */
   private heatFallback(): HTMLCanvasElement | null {
     if (this.m_heatFallback) return this.m_heatFallback;
-    if (typeof document === 'undefined') return null;
     const S = 32;
-    const c = document.createElement('canvas');
-    c.width = c.height = S;
-    const g = c.getContext('2d');
-    if (!g) return null;
+    const made = tryCanvas2d(S, S);
+    if (!made) return null;
+    const {cv: c, ctx: g} = made;
     const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
     grad.addColorStop(0, 'rgba(255,150,70,0.9)');
     grad.addColorStop(0.4, 'rgba(255,90,40,0.4)');
@@ -621,40 +625,79 @@ export class CParticleSystem {
     return c;
   }
 
+  /**
+   * Recolour the smoke sprite and dissolve its rim — the ONE build behind both smoke variants,
+   * which differed only in the blend op and the fill colour (see {@link heatTint} for `multiply`
+   * and {@link whiteSmoke} for `screen`). The steps and their order matter:
+   *   1. draw the grey textured puff,
+   *   2. blend `color` over it with `op` — colouring/lifting it while KEEPING the texture
+   *      gradients (a flat fill would erase them),
+   *   3. re-mask to the sprite's own alpha, then
+   *   4. feather that mask with {@link SOFT_FALLOFF} — still under `destination-in`, so it
+   *      multiplies the mask rather than painting over the texture.
+   */
+  private tintedSmoke(
+    op: 'multiply' | 'screen',
+    color: string,
+    spr: Sprite,
+  ): HTMLCanvasElement | null {
+    const w = spr.width,
+      h = spr.height;
+    const made = tryCanvas2d(w, h); // null when headless (tests): no canvas to tint
+    if (!made) return null;
+    const {cv: c, ctx: g} = made;
+    g.drawImage(spr.bitmap, 0, 0, w, h);
+    g.globalCompositeOperation = op;
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(spr.bitmap, 0, 0, w, h);
+    CParticleSystem.featherEdge(g, w, h);
+    g.globalCompositeOperation = 'source-over';
+    return c;
+  }
+
+  /**
+   * The MONOTONIC alpha falloff every tinted smoke puff's rim gets. Its shape matters more than
+   * the fact of feathering: a ramp with a FLAT CORE (opaque out to ~0.45r, then falling) was
+   * tried first and made things WORSE — it turns each puff into a clean circular disc, so the
+   * cloud reads as a heap of balls. Falling continuously from the centre leaves no radius at
+   * which an edge can be perceived, so overlaps merge. Keep it monotonic.
+   *
+   * (`m_puffCache`'s master uses a similar but separately-tuned curve — deliberately NOT shared:
+   * its stops aren't a scaled copy of these, so folding them would change how the trail reads.)
+   */
+  private static readonly SOFT_FALLOFF: readonly (readonly [number, number])[] = [
+    [0, 1],
+    [0.4, 0.75],
+    [0.75, 0.35],
+    [1, 0],
+  ];
+
+  /** Paint {@link SOFT_FALLOFF} as a centred radial gradient over the whole `w`×`h` canvas. The
+   *  caller sets the composite op — under `destination-in` this multiplies the existing alpha. */
+  private static featherEdge(g: CanvasRenderingContext2D, w: number, h: number): void {
+    const cx = w / 2,
+      cy = h / 2;
+    const soft = g.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy));
+    for (const [stop, a] of CParticleSystem.SOFT_FALLOFF) {
+      soft.addColorStop(stop, `rgba(0,0,0,${a})`);
+    }
+    g.fillStyle = soft;
+    g.fillRect(0, 0, w, h);
+  }
+
   /** The smoke sprite tinted to a weapon's radiation hue (hydrogen blue / plutonium green /
-   *  uranium red), cached per colour. `multiply` colours the grey smoke while keeping its texture;
-   *  the rim then gets the same monotonic falloff as `whiteSmoke` — without it each wisp keeps a
-   *  hard edge and the haze reads as pasted stamps rather than shimmer. */
+   *  uranium red), cached per colour (capped — a jittered hue per blast would otherwise mint a
+   *  fresh canvas forever). `multiply` colours the grey smoke while keeping its texture. */
   private heatTint(r: number, g: number, b: number): HTMLCanvasElement | null {
     const spr = this.m_assets?.getSprite('fx:smoke');
-    if (!spr || typeof document === 'undefined') return null;
+    if (!spr) return null;
     const key = `${r},${g},${b}`;
     const hit = this.m_heatTints.get(key);
     if (hit) return hit;
-    const w = spr.width,
-      h = spr.height;
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const gx = c.getContext('2d');
-    if (!gx) return null;
-    gx.drawImage(spr.bitmap, 0, 0, w, h);
-    gx.globalCompositeOperation = 'multiply'; // colour the grey smoke, keep its texture
-    gx.fillStyle = `rgb(${r},${g},${b})`;
-    gx.fillRect(0, 0, w, h);
-    gx.globalCompositeOperation = 'destination-in'; // re-mask to the smoke's own alpha…
-    gx.drawImage(spr.bitmap, 0, 0, w, h);
-    const cx = w / 2,
-      cy = h / 2;
-    const soft = gx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy)); // …then feather it
-    soft.addColorStop(0, 'rgba(0,0,0,1)');
-    soft.addColorStop(0.4, 'rgba(0,0,0,0.75)');
-    soft.addColorStop(0.75, 'rgba(0,0,0,0.35)');
-    soft.addColorStop(1, 'rgba(0,0,0,0)');
-    gx.fillStyle = soft;
-    gx.fillRect(0, 0, w, h);
-    gx.globalCompositeOperation = 'source-over';
-    this.m_heatTints.set(key, c);
+    const c = this.tintedSmoke('multiply', `rgb(${r},${g},${b})`, spr);
+    if (c) capSet(this.m_heatTints, key, c, HEAT_TINT_CACHE_MAX);
     return c;
   }
 
@@ -662,63 +705,29 @@ export class CParticleSystem {
    *  sample it at (age, height) for their colour. Null until the sprite/canvas is available. */
   private plumeImg(): ImageData | null {
     if (this.m_plumeImg) return this.m_plumeImg;
-    if (typeof document === 'undefined') return null;
     const spr = this.m_assets?.getSprite('fx:plume');
     if (!spr) return null;
     const w = spr.width,
       h = spr.height;
-    const cv = document.createElement('canvas');
-    cv.width = w;
-    cv.height = h;
-    const g = cv.getContext('2d', {willReadFrequently: true})!;
-    g.drawImage(spr.bitmap, 0, 0, w, h);
-    this.m_plumeImg = g.getImageData(0, 0, w, h);
+    const made = tryCanvas2d(w, h, {willReadFrequently: true});
+    if (!made) return null;
+    made.ctx.drawImage(spr.bitmap, 0, 0, w, h);
+    this.m_plumeImg = made.ctx.getImageData(0, 0, w, h);
     return this.m_plumeImg;
   }
 
   /** Lazily build a bright, COOL-tinted copy of the smoke sprite for crater fumes — the grey
    *  `smoke.bmp` lifted toward a light blue-grey-white with `screen` (NOT a flat white fill), so its
-   *  internal fluffy TEXTURE survives: highlights near-white, crevices a cool blue-grey.
-   *
-   *  Its alpha is then multiplied by a MONOTONIC radial falloff — the same curve the rocket-trail
-   *  puffs use (see m_puffCache), which is why that trail reads as one blended ribbon while raw
-   *  smoke.bmp reads as pasted-on stamps: the bitmap's own mask ends in a hard edge, so every puff
-   *  keeps a legible outline no matter how densely they pack.
-   *
-   *  The shape matters more than the fact of feathering. A ramp with a FLAT CORE (opaque out to
-   *  ~0.45r, then falling) was tried first and made things WORSE — it turns each puff into a clean
-   *  circular disc, so the cloud reads as a heap of balls. Falling continuously from the centre has
-   *  no radius at which an edge can be perceived, so overlaps merge. Keep this curve monotonic. */
+   *  internal fluffy TEXTURE survives: highlights near-white, crevices a cool blue-grey. The rim
+   *  then gets the shared {@link SOFT_FALLOFF}, which is why these read as one blended cloud while
+   *  raw smoke.bmp reads as pasted-on stamps: the bitmap's own mask ends in a hard edge, so every
+   *  puff keeps a legible outline no matter how densely they pack. Built once, then cached. */
   private whiteSmoke(): HTMLCanvasElement | null {
     if (this.m_whiteSmoke) return this.m_whiteSmoke;
-    if (typeof document === 'undefined') return null; // headless (tests): no canvas to tint
     const spr = this.m_assets?.getSprite('fx:smoke');
     if (!spr) return null;
-    const w = spr.width,
-      h = spr.height;
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const g = c.getContext('2d')!;
-    g.drawImage(spr.bitmap, 0, 0, w, h); // grey textured puff
-    g.globalCompositeOperation = 'screen'; // lift toward cool-white, KEEPING the texture gradients
-    g.fillStyle = 'rgb(150,162,190)'; // cool blue-grey — screen brightens grey toward this
-    g.fillRect(0, 0, w, h);
-    g.globalCompositeOperation = 'destination-in'; // re-mask to the sprite's own alpha shape
-    g.drawImage(spr.bitmap, 0, 0, w, h);
-    // …then dissolve the edge with the rocket puff's own falloff (still `destination-in`, so this
-    // multiplies the mask rather than painting over the texture).
-    const cx = w / 2,
-      cy = h / 2;
-    const soft = g.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy));
-    soft.addColorStop(0, 'rgba(0,0,0,1)');
-    soft.addColorStop(0.4, 'rgba(0,0,0,0.75)');
-    soft.addColorStop(0.75, 'rgba(0,0,0,0.35)');
-    soft.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = soft;
-    g.fillRect(0, 0, w, h);
-    g.globalCompositeOperation = 'source-over';
-    this.m_whiteSmoke = c;
+    // cool blue-grey — `screen` brightens the grey toward it
+    this.m_whiteSmoke = this.tintedSmoke('screen', 'rgb(150,162,190)', spr);
     return this.m_whiteSmoke;
   }
 
@@ -1539,6 +1548,8 @@ export class CParticleSystem {
       d.vy += DEBRIS.GRAVITY * dt;
       d.x += d.vx * dt;
       d.y += d.vy * dt;
+      // NB the ground is sampled again HERE, at the post-step x — a fast chunk crosses columns
+      // within a frame, so on a slope this is a different height than the wind easing used.
       if (d.x < this.m_minX || d.x >= this.m_maxX || d.y >= this.m_maxY) {
         this.m_debrisPool.push(d);
         continue; // left the field → recycle
@@ -2218,6 +2229,9 @@ export class CParticleSystem {
   // the flash are short-lived enough that gravity barely moves them.
   private m_gravity = 240;
 
+  // Keyed by the weapon's exact radiation rgb. Capped like every other sprite cache: the hues are
+  // jittered per blast, so an uncapped map would mint a fresh sprite-sized canvas for every shade
+  // seen in a long session and never release one.
   private m_heatTints = new Map<string, HTMLCanvasElement>();
   private m_heatFallback: HTMLCanvasElement | null = null;
 

@@ -9,25 +9,8 @@
  * difference is the button skin (`.modal-btn` vs `.btn`). Both carry a bitmap-font
  * label; <MenuButton> remains the separate menu-list invert-rect button.
  */
-import {BmpText, type FontId} from './BmpText';
+import {metalButton, type MetalButtonProps} from './Button';
 
-export function ModalButton({
-  label,
-  font = 'msans-14',
-  onClick,
-  disabled,
-  class: cls,
-}: {
-  label: string;
-  font?: FontId;
-  onClick?: () => void;
-  disabled?: boolean;
-  /** Extra class for layout/placement (e.g. `span`, `about-back`, `dep-btn`). */
-  class?: string;
-}) {
-  return (
-    <button class={`modal-btn ${cls ?? ''}`} disabled={disabled} onClick={onClick}>
-      <BmpText font={font} text={label} />
-    </button>
-  );
+export function ModalButton(p: MetalButtonProps) {
+  return metalButton('modal-btn', p);
 }

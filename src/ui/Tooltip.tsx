@@ -34,7 +34,9 @@ const MARGIN = 8; // keep the box this far from the view edge
 const TAIL_HOME = 14; // the tail's resting x within the box (near the left)
 const TAIL_MIN = 12; // keep the tail this far from the box's own edges
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+// The bounds here are derived from the MEASURED box, so a bubble wider than the viewport gives
+// `hi < lo` — clampSafe pins to `lo` (the near edge) rather than shoving it off the far one.
+import {clampSafe as clamp} from '../math/num';
 
 // The tail arrow sprites (a matched set with the zeon dialog.bmp frame): a green fill
 // on a grey background with a black bevel. Both the grey AND black are keyed out

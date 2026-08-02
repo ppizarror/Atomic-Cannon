@@ -5,6 +5,7 @@
  * that show one (Settings / Play); Network omits them.
  */
 import {BmpText} from './BmpText';
+import {hoverProps} from './hoverProps';
 
 export function BigButton({
   label,
@@ -23,10 +24,7 @@ export function BigButton({
     <button
       class="settings-row srow-done menu-btn"
       disabled={disabled}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
-      onFocus={onEnter}
-      onBlur={onLeave}
+      {...hoverProps(onEnter, onLeave)}
       onClick={onClick}
     >
       <BmpText font="bazouk-28" text={label} />

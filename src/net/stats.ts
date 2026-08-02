@@ -17,6 +17,7 @@
  * request so one client can't wildly inflate it. No IPs or personal data are stored — only per-country
  * war COUNTS (the country never leaves the edge as anything but a 2-letter code).
  */
+import {clamp} from '../math/num';
 
 /** The cumulative counters shown on the About "stats" panel. */
 export interface StatsTotals {
@@ -125,7 +126,7 @@ export function sanitizeDelta(raw: Partial<StatsDelta>): StatsDelta {
   const clean = {online: !!raw.online} as StatsDelta;
   for (const k of Object.keys(STAT_CAPS) as (keyof StatsDeltaNums)[]) {
     const n = Math.floor(Number(raw[k]));
-    clean[k] = Number.isFinite(n) ? Math.min(STAT_CAPS[k], Math.max(0, n)) : 0;
+    clean[k] = Number.isFinite(n) ? clamp(n, 0, STAT_CAPS[k]) : 0;
   }
   return clean;
 }

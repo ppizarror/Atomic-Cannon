@@ -7,8 +7,7 @@
  * persists it to localStorage (the one deliberate enhancement) so a leaderboard that
  * would otherwise vanish on every refresh actually accumulates.
  */
-import {signal} from '@preact/signals';
-import {loadJSON, saveJSON} from '../util/storage';
+import {createPersistedSignal} from './persistedSignal';
 import type {BattleHeroTeam} from '../game/CGameController';
 
 const KEY = 'atomic.heroes';
@@ -44,23 +43,25 @@ const cleanCount = (v: unknown): number => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
-function load(): HeroData {
-  const raw = loadJSON<Partial<HeroData> | null>(KEY, null);
-  return {
-    score: cleanList(raw?.score),
-    kills: cleanList(raw?.kills),
-    won: cleanCount(raw?.won),
-    lost: cleanCount(raw?.lost),
-  };
-}
+// Every field is shape-checked on the way in, so a corrupt / foreign `atomic.heroes` value can't
+// reach the board renderer — the same `revive` slot the other persisted stores use.
+const store = createPersistedSignal<HeroData>(KEY, {
+  revive: raw => {
+    const d = raw as Partial<HeroData> | null;
+    return {
+      score: cleanList(d?.score),
+      kills: cleanList(d?.kills),
+      won: cleanCount(d?.won),
+      lost: cleanCount(d?.lost),
+    };
+  },
+  seed: () => ({score: [], kills: [], won: 0, lost: 0}),
+});
 
 /** The whole hall of fame, reactive. Components read `heroData.value`. */
-export const heroData = signal<HeroData>(load());
+export const heroData = store.signal;
 
-function persist(d: HeroData): void {
-  heroData.value = d;
-  saveJSON(KEY, d);
-}
+const persist = (d: HeroData): void => store.set(d);
 
 // Insert into a board, keeping it sorted descending and capped at CAP. An equal new
 // value lands ABOVE existing equals (legacy scan stops at the first entry <= it).

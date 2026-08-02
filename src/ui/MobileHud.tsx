@@ -9,13 +9,12 @@
  * the battlefield (see main.tsx pointer handlers) still works alongside this, so the
  * sheets are for precision and the readouts, not the only way to aim.
  */
-import {useRef} from 'preact/hooks';
 import type {JSX} from 'preact';
 import {signal} from '@preact/signals';
 import {BmpText} from './BmpText';
 import {WeaponIcon} from './WeaponIcon';
 import {ClassicScrollbar} from './ClassicScrollbar';
-import {usePointerDrag} from './usePointerDrag';
+import {useTrackDrag} from './useTrackDrag';
 import {weaponName} from '../core/CWeapon';
 import {clamp} from '../math/num';
 import {strings} from '../i18n';
@@ -218,28 +217,14 @@ function Slider({
   onValue: (v: number) => void;
   fmtValue: (v: number) => string;
 }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const seq = useRef(0);
-  const fromEvent = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    const rect = trackRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const frac = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    if (game().turnSeq() === seq.current) onValue(min + frac * (max - min));
-  };
-  const drag = usePointerDrag<HTMLDivElement>({
-    onStart: e => {
-      seq.current = game().turnSeq();
-      fromEvent(e);
-    },
-    onMove: fromEvent,
-  });
+  const drag = useTrackDrag<HTMLDivElement>('x', f => onValue(min + f * (max - min)));
   const frac = clamp((value - min) / (max - min), 0, 1);
   return (
     <div class="msheet-row">
       <button class="mstep" onClick={() => onValue(value - step)}>
         −
       </button>
-      <div class="mslider" ref={trackRef} {...drag}>
+      <div class="mslider" {...drag}>
         <div class="mslider-fill" style={{width: `${frac * 100}%`}} />
         <div class="mslider-knob" style={{left: `${frac * 100}%`}} />
       </div>

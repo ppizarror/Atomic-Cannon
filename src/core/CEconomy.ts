@@ -7,7 +7,7 @@
  *
  * Tunable constants live at the top so they are easy to adjust in one place.
  */
-import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
+import {WEAPON_DATABASE, getDefaultWeaponIndex, weaponIndices} from './CWeapon';
 import {weaponEnabled} from './CGameContent';
 import {clamp01} from '../math/num';
 
@@ -210,19 +210,16 @@ export class CEconomy {
   autoBuy(opts?: {conserve?: boolean; deterministic?: boolean}): void {
     // Guard against pathological loops (every buy removes at least the cheapest cost).
     for (let guard = 0; guard < 5000; guard++) {
-      const affordable: number[] = [];
-      for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+      const affordable = weaponIndices(i => {
         const w = WEAPON_DATABASE[i];
-        if (
+        return (
           !this.isUnlimited(i) &&
           weaponEnabled(i) &&
           w.cost > 0 &&
           w.cost <= this.creditsGet() &&
           !AUTO_BUY_SKIP_EXT.has(w.extType ?? 0)
-        ) {
-          affordable.push(i);
-        }
-      }
+        );
+      });
       if (affordable.length === 0) break;
       // Deterministic (network): cycle through the affordable list by the loop counter so every
       // client autobuys the SAME varied loadout + spends the SAME credits — no Math.random.

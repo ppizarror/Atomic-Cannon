@@ -16,8 +16,7 @@
  * per-category in localStorage via the Customize Taunts editor. Signal-backed so the
  * editor and the in-game bubbles both react to edits.
  */
-import {signal} from '@preact/signals';
-import {loadJSON, saveJSON} from '../util/storage';
+import {createPersistedSignal} from './persistedSignal';
 import {strings} from '../i18n';
 import {Taunts, type TauntCategory} from '../core/CTaunts';
 
@@ -56,7 +55,8 @@ function sanitize(raw: unknown): Overrides {
   return out;
 }
 
-const overrides = signal<Overrides>(sanitize(loadJSON<Overrides>(KEY, {})));
+const store = createPersistedSignal<Overrides>(KEY, {revive: sanitize, seed: () => ({})});
+const overrides = store.signal;
 
 /** Push a category's gameplay-ready lines (trimmed, no blanks) into the engine's live
  *  pool. Blank lines are allowed in the editor draft but never reach a bubble. */
@@ -79,8 +79,7 @@ export function tauntLines(cat: TauntCategory): string[] {
 /** Replace a category's list (the raw editor draft — blanks are kept for editing but
  *  filtered before they reach gameplay). Persisted + pushed to the engine at once. */
 export function setTauntLines(cat: TauntCategory, lines: string[]): void {
-  overrides.value = {...overrides.value, [cat]: lines};
-  saveJSON(KEY, overrides.value);
+  store.set({...overrides.value, [cat]: lines});
   pushToEngine(cat);
 }
 
@@ -88,8 +87,7 @@ export function setTauntLines(cat: TauntCategory, lines: string[]): void {
 export function resetTauntLines(cat: TauntCategory): void {
   const next = {...overrides.value};
   delete next[cat];
-  overrides.value = next;
-  saveJSON(KEY, next);
+  store.set(next);
   pushToEngine(cat);
 }
 

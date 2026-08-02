@@ -5,6 +5,7 @@
  * luminance-modulated recolour the engine applies to hulls).
  */
 import {makeCanvas2d} from '../util/canvas';
+import {clamp} from '../math/num';
 
 const PALETTE_URL = '/assets/gui/color pallette.bmp';
 
@@ -41,8 +42,8 @@ export function loadPalette(): Promise<ImageData | null> {
 
 /** Sample the palette at fractional coords (fx, fy ∈ 0..1) → '#rrggbb'. */
 export function samplePalette(data: ImageData, fx: number, fy: number): string {
-  const x = Math.min(data.width - 1, Math.max(0, Math.round(fx * (data.width - 1))));
-  const y = Math.min(data.height - 1, Math.max(0, Math.round(fy * (data.height - 1))));
+  const x = clamp(Math.round(fx * (data.width - 1)), 0, data.width - 1);
+  const y = clamp(Math.round(fy * (data.height - 1)), 0, data.height - 1);
   const i = (y * data.width + x) * 4;
   return toHex(data.data[i], data.data[i + 1], data.data[i + 2]);
 }

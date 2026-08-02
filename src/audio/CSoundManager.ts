@@ -15,6 +15,8 @@
  */
 
 import {GainChannel} from './GainChannel';
+import {AudioAssetCache} from './AudioAssetCache';
+import {clamp} from '../math/num';
 
 const SOUND_BASE = '/assets/sound/';
 
@@ -29,8 +31,7 @@ interface LoopHandle {
 }
 
 export class CSoundManager extends GainChannel {
-  private m_buffers = new Map<string, AudioBuffer>();
-  private m_loading = new Map<string, Promise<AudioBuffer | null>>();
+  private readonly m_samples: AudioAssetCache<AudioBuffer>;
   private m_lastPlay = new Map<string, number>(); // throttle timestamps (ms)
   private m_loops = new Map<string, LoopHandle>(); // named looping sounds
   private m_loopWanted = new Set<string>(); // loops requested but still loading (cancellable by stopLoop)
@@ -39,6 +40,11 @@ export class CSoundManager extends GainChannel {
 
   constructor(ctx: AudioContext, destination: AudioNode) {
     super(ctx, destination);
+    this.m_samples = new AudioAssetCache(
+      SOUND_BASE,
+      async res => ctx.decodeAudioData(await res.arrayBuffer()),
+      'sound',
+    );
   }
 
   /** Stereo panning on/off (Audio → Stereo). Off = every source plays centred. */
@@ -68,32 +74,8 @@ export class CSoundManager extends GainChannel {
    */
   async preload(names: Iterable<string>): Promise<void> {
     const jobs: Promise<unknown>[] = [];
-    for (const name of names) if (name) jobs.push(this.loadBuffer(name));
+    for (const name of names) if (name) jobs.push(this.m_samples.load(name));
     await Promise.all(jobs);
-  }
-
-  private loadBuffer(name: string): Promise<AudioBuffer | null> {
-    const cached = this.m_buffers.get(name);
-    if (cached) return Promise.resolve(cached);
-    const inFlight = this.m_loading.get(name);
-    if (inFlight) return inFlight;
-
-    const job = (async () => {
-      try {
-        const res = await fetch(encodeURI(SOUND_BASE + name));
-        if (!res.ok) throw new Error(`${res.status}`);
-        const buf = await this.m_ctx.decodeAudioData(await res.arrayBuffer());
-        this.m_buffers.set(name, buf);
-        return buf;
-      } catch (e) {
-        console.warn(`sound load failed: ${name}`, e);
-        return null;
-      } finally {
-        this.m_loading.delete(name);
-      }
-    })();
-    this.m_loading.set(name, job);
-    return job;
   }
 
   /** world-X → stereo pan in [-1, 1]. Centre-screen = 0. Always 0 when Stereo is off. */
@@ -102,7 +84,7 @@ export class CSoundManager extends GainChannel {
     const p = (worldX / this.m_worldWidth) * 2 - 1;
     // A non-finite pan (NaN worldX, or a NaN worldWidth that slipped past setWorldWidth) would throw
     // `TypeError` at `panner.pan.value = p` (AudioParam is a restricted float) — clamp it to centre.
-    return Number.isFinite(p) ? Math.max(-1, Math.min(1, p)) : 0;
+    return Number.isFinite(p) ? clamp(p, -1, 1) : 0;
   }
 
   /**
@@ -120,14 +102,14 @@ export class CSoundManager extends GainChannel {
       this.m_lastPlay.set(name, now);
     }
 
-    const buf = this.m_buffers.get(name);
+    const buf = this.m_samples.peek(name);
     if (buf) {
       this.spawn(buf, this.panFor(worldX), opts.volume ?? 1);
       return;
     }
     // Not resident yet — load then play (skips if it turns out to be missing, OR if SFX was disabled
     // while the buffer was decoding — otherwise a sound queued just before "SFX off" still fires).
-    this.loadBuffer(name).then(b => {
+    this.m_samples.load(name).then(b => {
       if (b && this.m_enabled) this.spawn(b, this.panFor(worldX), opts.volume ?? 1);
     });
   }
@@ -169,13 +151,13 @@ export class CSoundManager extends GainChannel {
       return;
     }
 
-    const buf = this.m_buffers.get(name);
+    const buf = this.m_samples.peek(name);
     if (!buf) {
       // Deferred start: the buffer is still decoding. Mark it WANTED so a stopLoop() that lands
       // before the load resolves cancels it — otherwise the deferred beginLoop would start a loop
       // with nothing left to stop it (an eternal jet/tank-move drone).
       this.m_loopWanted.add(name);
-      this.loadBuffer(name).then(b => {
+      this.m_samples.load(name).then(b => {
         // ...and only if SFX is still enabled — a disable while decoding must not start the drone
         // (onDisable also clears m_loopWanted, but guard here too in case the buffer resolves first).
         if (b && this.m_enabled && this.m_loopWanted.has(name) && !this.m_loops.has(name)) {

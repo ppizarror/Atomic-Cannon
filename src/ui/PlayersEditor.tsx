@@ -23,6 +23,7 @@ import {EditorScreen} from './EditorScreen';
 import {useAsyncImage} from './useAsyncImage';
 import {useAsyncValue} from './useAsyncValue';
 import {strings, fmt} from '../i18n';
+import {clamp01} from '../math/num';
 
 function TankPreview({model, color}: {model: string; color: string}) {
   const src = useAsyncImage(() => recolorTankPreview(model, color), [model, color]);
@@ -45,8 +46,8 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
   const pickAt = (clientX: number, clientY: number) => {
     if (!data || !imgRef.current) return;
     const r = imgRef.current.getBoundingClientRect();
-    const fx = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-    const fy = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    const fx = clamp01((clientX - r.left) / r.width);
+    const fy = clamp01((clientY - r.top) / r.height);
     onPick(samplePalette(data, fx, fy));
   };
 

@@ -54,6 +54,7 @@ import {strings} from '../i18n';
 import {clamp, wrapIndex} from '../math/num';
 import {WeaponIcon} from './WeaponIcon';
 import {usePointerDrag} from './usePointerDrag';
+import {useTrackDrag} from './useTrackDrag';
 import {useAsyncImage} from './useAsyncImage';
 
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
@@ -153,26 +154,10 @@ function PanelLabel({r, text, left}: {r: readonly number[]; text: string; left?:
 function MeterOverlay() {
   const p = power.value;
   const emptyH = R.meter[3] * (1 - (p - POWER_MIN) / (POWER_MAX - POWER_MIN));
-  const barRef = useRef<HTMLDivElement>(null);
-
-  const grabSeq = useRef(0);
-  const powerFromEvent = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
-    const rect = barRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const frac = clamp((e.clientY - rect.top) / rect.height, 0, 1);
-    game().setPower(Math.round(POWER_MAX - frac * (POWER_MAX - POWER_MIN)));
-  };
-  // Capture the turn on grab; stop applying if the turn changes mid-drag (a shot-clock forfeit hands
-  // off without a pointerup, and pointer-capture keeps delivering moves past the `blocked` CSS).
-  const drag = usePointerDrag<HTMLDivElement>({
-    onStart: e => {
-      grabSeq.current = game().turnSeq();
-      powerFromEvent(e);
-    },
-    onMove: e => {
-      if (game().turnSeq() === grabSeq.current) powerFromEvent(e);
-    },
-  });
+  // Top of the meter is MAX power, so the fraction runs backwards down the track.
+  const drag = useTrackDrag<HTMLDivElement>('y', frac =>
+    game().setPower(Math.round(POWER_MAX - frac * (POWER_MAX - POWER_MIN))),
+  );
 
   return (
     <>
@@ -190,7 +175,6 @@ function MeterOverlay() {
         <BmpText font="beijing-16-out" text={String(p)} />
       </ReadoutBox>
       <div
-        ref={barRef}
         class={`ov meter-drag${blocked.value ? ' blocked' : ''}`}
         style={pos(R.meter)}
         title={strings.value.hud.powerTitle}

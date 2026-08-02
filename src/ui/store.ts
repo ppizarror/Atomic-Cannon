@@ -18,7 +18,7 @@ import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
 import {submitBattleHeroes, recordBattleOutcome} from './highscoresStore';
 import {initStatsUpload, flushStats} from './statsUpload';
-import {wrapIndex} from '../math/num';
+import {clamp, wrapIndex} from '../math/num';
 import {knockoutWhere, makeCanvas2d} from '../util/canvas';
 
 export type Screen =
@@ -803,7 +803,7 @@ export function statusWindow<T extends {active: boolean}>(
   if (!o.compact) return lines.slice();
   if (!o.scroll) return lines.filter(l => l.active);
   const n = lines.length;
-  const size = Math.max(1, Math.min(o.rows, n));
+  const size = clamp(n, 1, o.rows);
   if (n === 0) return [];
   const start = Math.max(
     0,

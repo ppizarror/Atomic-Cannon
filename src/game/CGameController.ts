@@ -23,6 +23,8 @@ import {
   CWeapon,
   getDefaultWeaponIndex,
   getWeapon,
+  someWeapon,
+  weaponIndices,
   WEAPON_DATABASE,
   type WeaponDef,
 } from '../core/CWeapon';
@@ -526,13 +528,9 @@ export class CGameController implements ShotWorld {
    *  detonated on the corpse (posthumous "cook-off"). Memoised — the database is immutable after
    *  load. */
   private static deathWeaponIndices(): number[] {
-    let out = CGameController.deathWeapons;
-    if (!out) {
-      out = CGameController.deathWeapons = [];
-      for (let i = 0; i < WEAPON_DATABASE.length; i++)
-        if (getWeapon(i).getExtType() === EXT.DEATH) out.push(i);
-    }
-    return out;
+    return (CGameController.deathWeapons ??= weaponIndices(
+      i => getWeapon(i).getExtType() === EXT.DEATH,
+    ));
   }
 
   /** A zeroed per-player tally for one battle. */
@@ -2632,10 +2630,7 @@ export class CGameController implements ShotWorld {
   /** A random enabled, non-staple weapon index for a weapon crate (falls back to Bomb). */
   private randomCrateWeapon(): number {
     const staple = getDefaultWeaponIndex();
-    const pool: number[] = [];
-    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
-      if (i !== staple && weaponEnabled(i)) pool.push(i);
-    }
+    const pool = weaponIndices(i => i !== staple && weaponEnabled(i));
     return pool.length
       ? pool[this.m_rng.int(pool.length)]
       : WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
@@ -4755,9 +4750,7 @@ export class CGameController implements ShotWorld {
     return getWeapon(i).getRadiation().dmg > 0 && !this.isNukeWeapon(i);
   }
   private botOwnsMatching(econ: CEconomy, pred: (i: number) => boolean): boolean {
-    for (let i = 0; i < WEAPON_DATABASE.length; i++)
-      if (!econ.isUnlimited(i) && econ.getOwned(i) > 0 && pred(i)) return true;
-    return false;
+    return someWeapon(i => !econ.isUnlimited(i) && econ.getOwned(i) > 0 && pred(i));
   }
 
   /**
@@ -4867,13 +4860,10 @@ export class CGameController implements ShotWorld {
     pred: (i: number) => boolean,
     strongest: boolean,
   ): boolean {
-    const cands: number[] = [];
-    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
-      const w = WEAPON_DATABASE[i];
-      const cost = w.cost ?? 0;
-      if (cost <= 0 || cost > econ.getCredits() || !weaponEnabled(i)) continue;
-      if (pred(i)) cands.push(i);
-    }
+    const cands = weaponIndices(i => {
+      const cost = WEAPON_DATABASE[i].cost ?? 0;
+      return cost > 0 && cost <= econ.getCredits() && weaponEnabled(i) && pred(i);
+    });
     if (!cands.length) return false;
     cands.sort((a, b) =>
       strongest
@@ -4887,15 +4877,12 @@ export class CGameController implements ShotWorld {
    *  damage — so Ultra stocks a VARIED arsenal (not four of the single strongest round) and its firing
    *  actually differs turn to turn. Skips utilities/self-buffs. Returns whether it bought. */
   private ultraBuyBestOffense(econ: CEconomy, maxCost: number): boolean {
-    const cands: number[] = [];
-    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
+    const cands = weaponIndices(i => {
       const w = WEAPON_DATABASE[i];
       const cost = w.cost ?? 0;
-      if (cost <= 0 || cost > maxCost || cost > econ.getCredits()) continue;
-      if (!weaponEnabled(i) || (w.damage ?? 0) <= 0 || BOT_UTILITY_EXT.has(w.extType ?? 0))
-        continue;
-      cands.push(i);
-    }
+      if (cost <= 0 || cost > maxCost || cost > econ.getCredits()) return false;
+      return weaponEnabled(i) && (w.damage ?? 0) > 0 && !BOT_UTILITY_EXT.has(w.extType ?? 0);
+    });
     if (!cands.length) return false;
     // Weight ∝ damage² so heavy rounds are favoured, but lighter ones still get bought — a real mix.
     const weights = cands.map(i => Math.pow(WEAPON_DATABASE[i].damage ?? 1, 2));
@@ -4913,9 +4900,7 @@ export class CGameController implements ShotWorld {
 
   /** Owned weapon indices for a tank's inventory (the Shell staple always included). */
   private ownedWeaponIndices(econ: CEconomy): number[] {
-    const out: number[] = [];
-    for (let i = 0; i < WEAPON_DATABASE.length; i++) if (econ.getOwned(i) > 0) out.push(i);
-    return out;
+    return weaponIndices(i => econ.getOwned(i) > 0);
   }
 
   /** Finite rounds a tank has in stock (excludes the unlimited Shell) — the restock trigger. */

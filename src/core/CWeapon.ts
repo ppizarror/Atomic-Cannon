@@ -408,6 +408,26 @@ export function weaponDamagePerArea(w: RawWeapon): number {
   return Math.round((basePower(w, m) * 10000) / (w.radius * w.radius * m * 6.28));
 }
 
+/**
+ * Every weapon index whose entry satisfies `pred`, in database order — the
+ * `for (let i = 0; i < WEAPON_DATABASE.length; i++) if (…) out.push(i)` sweep that a dozen
+ * call sites across the controller, the economy and the bot AI each spelled out by hand.
+ *
+ * Cheap enough to call per turn (the database is ~100 entries and the predicates are field
+ * reads); the few results that are genuinely static are memoised by their own callers.
+ */
+export function weaponIndices(pred: (i: number) => boolean): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < WEAPON_DATABASE.length; i++) if (pred(i)) out.push(i);
+  return out;
+}
+
+/** Whether ANY weapon index satisfies `pred` — the early-out form of {@link weaponIndices}. */
+export function someWeapon(pred: (i: number) => boolean): boolean {
+  for (let i = 0; i < WEAPON_DATABASE.length; i++) if (pred(i)) return true;
+  return false;
+}
+
 export function getWeapon(index: number): CWeapon {
   return new CWeapon(index);
 }

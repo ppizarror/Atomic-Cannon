@@ -315,24 +315,31 @@ export type ErrorCode =
   | 'not_enough_players'
   | 'name_taken';
 
-/** Narrowing helpers (defensive parse at the socket boundary). */
-export function parseClientMessage(raw: string): ClientMessage | null {
+/**
+ * Narrowing helpers (defensive parse at the socket boundary). Both directions of the protocol
+ * are `t`-tagged unions, so one parse covers them; only the asserted type differs. Malformed
+ * JSON, a non-object, or a missing tag all yield null rather than throwing at the read.
+ *
+ * This checks the TAG only — the payload is validated per-message (see `isValidShotResult`,
+ * `isValidGameCommand`, `sanitizeMatchConfig`), because what counts as valid depends on room
+ * state the parser doesn't have.
+ */
+function parseTagged<T>(raw: string): T | null {
   try {
-    const m = JSON.parse(raw);
-    return m && typeof m.t === 'string' ? (m as ClientMessage) : null;
+    const m: unknown = JSON.parse(raw);
+    return m && typeof m === 'object' && typeof (m as {t?: unknown}).t === 'string'
+      ? (m as T)
+      : null;
   } catch {
     return null;
   }
 }
 
-export function parseServerMessage(raw: string): ServerMessage | null {
-  try {
-    const m = JSON.parse(raw);
-    return m && typeof m.t === 'string' ? (m as ServerMessage) : null;
-  } catch {
-    return null;
-  }
-}
+export const parseClientMessage = (raw: string): ClientMessage | null =>
+  parseTagged<ClientMessage>(raw);
+
+export const parseServerMessage = (raw: string): ServerMessage | null =>
+  parseTagged<ServerMessage>(raw);
 
 const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);

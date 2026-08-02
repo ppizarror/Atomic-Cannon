@@ -7,16 +7,20 @@
  * Audio (Sound / Music / volumes) is the only exception: those widgets bind straight to
  * CAudio so the menu reflects the live state, so they aren't stored here.
  */
-import {signal} from '@preact/signals';
-import {loadJSON, saveJSON} from '../util/storage';
 import {SETTINGS, type SettingId} from './settingsCatalog';
+import {createPersistedSignal} from './persistedSignal';
 
 const KEY = 'atomic.settings';
 
 type Vals = Partial<Record<SettingId, number>>;
 
-// Signal-backed so widgets that read it re-render on change.
-const vals = signal<Vals>(loadJSON<Vals>(KEY, {}));
+// Signal-backed so widgets that read it re-render on change. One flat map persisted as a whole,
+// so a write is "replace the map" — hence `setVal` spreading rather than mutating.
+const store = createPersistedSignal<Vals>(KEY, {
+  revive: raw => (raw && typeof raw === 'object' ? (raw as Vals) : {}),
+  seed: () => ({}),
+});
+const vals = store.signal;
 
 /** Current value for `id`, or its catalog default if never set (or if the stored value is corrupt).
  *  A non-finite value from a mangled/foreign `atomic.settings` must never reach an engine setter —
@@ -31,6 +35,5 @@ export function getVal(id: SettingId): number {
 
 /** Set `id` and persist the whole map. */
 export function setVal(id: SettingId, v: number): void {
-  vals.value = {...vals.value, [id]: v};
-  saveJSON(KEY, vals.value);
+  store.set({...vals.value, [id]: v});
 }

@@ -3,6 +3,7 @@
  * and CParticleSystem (`parseColor`); the byte-clamp encode lived in CWeapon (`hex`).
  * One home for all of it.
  */
+import {clamp} from './num';
 
 export interface RGB {
   r: number;
@@ -21,10 +22,7 @@ export function hexToRgb(hex: string): RGB {
 
 /** Encode RGB → `#rrggbb`, clamping/rounding each channel into a byte. */
 export function rgbToHex(r: number, g: number, b: number): string {
-  const h = (n: number) =>
-    Math.max(0, Math.min(255, Math.round(n)))
-      .toString(16)
-      .padStart(2, '0');
+  const h = (n: number) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0');
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 

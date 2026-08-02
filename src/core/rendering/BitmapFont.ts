@@ -6,6 +6,7 @@
  */
 
 import {knockoutWhere, makeCanvas2d} from '../../util/canvas';
+import {capSet} from '../../util/cache';
 
 const isMagenta = (px: Uint8ClampedArray, i: number) =>
   px[i] > 170 && px[i + 1] < 90 && px[i + 2] > 170;
@@ -58,17 +59,10 @@ const FOLD_RE = new RegExp(
 );
 export const asciiFold = (text: string): string => text.replace(FOLD_RE, m => ASCII_FOLD[m] ?? m);
 
-// Cap the per-string label caches (oldest-evicted). Fonts live for the whole page session, and
-// numeric readouts ("Credits: 12345", "Life: 87") mint a fresh entry per distinct value — over a
-// long multi-battle session that would grow without bound. Mirrors the particle tint-cache guard.
+// Cap the per-string label caches (oldest-evicted, see util/cache). Fonts live for the whole page
+// session, and numeric readouts ("Credits: 12345", "Life: 87") mint a fresh entry per distinct
+// value — over a long multi-battle session that would grow without bound.
 const FONT_CACHE_MAX = 512;
-function capSet<V>(map: Map<string, V>, key: string, value: V): void {
-  map.set(key, value);
-  if (map.size > FONT_CACHE_MAX) {
-    const oldest = map.keys().next().value as string | undefined;
-    if (oldest !== undefined) map.delete(oldest);
-  }
-}
 
 export class BitmapFont {
   ready = false;
@@ -205,7 +199,7 @@ export class BitmapFont {
     const hit = this.rendered.get(key);
     if (hit) return hit;
     const cv = this.render(text, opts);
-    if (this.ready) capSet(this.rendered, key, cv);
+    if (this.ready) capSet(this.rendered, key, cv, FONT_CACHE_MAX);
     return cv;
   }
 
@@ -239,7 +233,7 @@ export class BitmapFont {
       }
     }
     const res = top < 0 ? {top: 0, height: this.height || 1} : {top, height: bot - top + 1};
-    if (this.ready) capSet(this.bounds, key, res);
+    if (this.ready) capSet(this.bounds, key, res, FONT_CACHE_MAX);
     return res;
   }
 }

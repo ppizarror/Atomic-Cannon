@@ -967,7 +967,7 @@ function bestBuff(ctx: UltraCtx): {weaponIndex: number; value: number; note: str
   return best;
 }
 
-const clampX = (x: number, field: AimField): number => Math.max(20, Math.min(field.width - 20, x));
+const clampX = (x: number, field: AimField): number => clamp(x, 20, field.width - 20);
 
 /** When BURIED, dig out with a cleaner (an earth-remover — deals NO damage): fired near-vertically so
  *  it clears the dirt on/around the tank without hurting it. High value: being buried blocks driving

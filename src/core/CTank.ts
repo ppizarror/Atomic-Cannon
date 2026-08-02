@@ -8,6 +8,8 @@ import {strings, fmt} from '../i18n';
 import {Vec2} from '../math/Vec2';
 import {clamp, clamp01, TWO_PI} from '../math/num';
 import {hexToRgb} from '../math/color';
+import {capSet} from '../util/cache';
+import {recolorOpaque} from '../util/canvas';
 import {CLand} from './CLand';
 import {GameConfig, isWargame} from './CGameConfig';
 
@@ -166,18 +168,6 @@ export class CTank {
   private static readonly silCache = new Map<string, HTMLCanvasElement>();
   private static readonly tintCache = new Map<string, HTMLCanvasElement>();
 
-  private static capSpriteCache(
-    map: Map<string, HTMLCanvasElement>,
-    key: string,
-    cv: HTMLCanvasElement,
-  ): void {
-    map.set(key, cv);
-    if (map.size > TINT.CACHE_MAX) {
-      const oldest = map.keys().next().value as string | undefined;
-      if (oldest !== undefined) map.delete(oldest);
-    }
-  }
-
   /** Hull draw width — clamped so sprites narrower than the reference keep their proportion. */
   private static hullDrawWidth(sprite: {width: number}): number {
     return CTank.tankWidth() * Math.min(1, sprite.width / SIZE.REF_HULL_W);
@@ -193,16 +183,8 @@ export class CTank {
   private static silhouette(sprite: Sprite, color: string, key: string): HTMLCanvasElement {
     const hit = CTank.silCache.get(key);
     if (hit) return hit;
-    const cv = document.createElement('canvas');
-    cv.width = sprite.width;
-    cv.height = sprite.height;
-    const g = cv.getContext('2d')!;
-    g.imageSmoothingEnabled = false;
-    g.drawImage(sprite.bitmap, 0, 0);
-    g.globalCompositeOperation = 'source-in'; // recolour every opaque pixel
-    g.fillStyle = color;
-    g.fillRect(0, 0, cv.width, cv.height);
-    CTank.capSpriteCache(CTank.silCache, key, cv);
+    const cv = recolorOpaque(sprite.bitmap, sprite.width, sprite.height, color);
+    capSet(CTank.silCache, key, cv, TINT.CACHE_MAX);
     return cv;
   }
 
@@ -259,7 +241,7 @@ export class CTank {
       px[i + 2] = Math.round(px[i + 2] * (1 - s) + tb * f * s);
     }
     g.putImageData(im, 0, 0);
-    CTank.capSpriteCache(CTank.tintCache, key, cv);
+    capSet(CTank.tintCache, key, cv, TINT.CACHE_MAX);
     return cv;
   }
 
