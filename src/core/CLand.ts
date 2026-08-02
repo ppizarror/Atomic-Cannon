@@ -221,11 +221,14 @@ const SHOCK_CELL = 48;
  *  top has the full radius to fall. Slowing RAD_GRAV buys the same seconds aloft while the cloud
  *  stays inside its own radius, which is what the original looks like. Kept as named constants
  *  rather than deleted because the ORDERING they exist to protect is real — see `radPileTop`. */
-/** How long a ground-burst grain hangs before it starts to fall. Long enough that the last of it
- *  lands after the crater's ejecta has stopped raising the floor (~2.2s), which is the ordering the
- *  coat depends on — bought here rather than out of gravity, so the fall itself stays quick. */
-const RAD_HOLD_MIN = 0.35;
-const RAD_HOLD_MAX = 1.15;
+/** How long a ground-burst grain hangs before it starts to fall. ZERO: it exists only to make the
+ *  fallout land after the crater's ejecta stopped raising the floor, so the fill would not bury the
+ *  coat — and that is no longer a thing that can happen. The spoil a contaminating blast throws now
+ *  lands hot itself (`EJECTA_RAD_AMOUNT`), so a grain the fill covers is covered by MORE hot earth,
+ *  not by sterile soil. With nothing left to sequence, the grains simply fall: no hang, no drifting
+ *  descent, and gravity can be what it should be. Kept named so the reason is on record. */
+const RAD_HOLD_MIN = 0;
+const RAD_HOLD_MAX = 0;
 const RAD_UP_MIN = 0;
 const RAD_UP_MAX = 0;
 /** How hot one pixel of a radioactive blast's own SPOIL is. Below a settled fallout grain's stamp:
@@ -233,6 +236,17 @@ const RAD_UP_MAX = 0;
  *  at the surface — so a bowl of hot fill reads as a deep body of glowing earth with a hotter skin
  *  on it, rather than as one flat slab of red. */
 const EJECTA_RAD_AMOUNT = 8;
+/** Fall acceleration (px/s²) for the dirt this land throws. There is no single global gravity in the
+ *  codebase: 500 is what shots and debris use and is the de facto world value, while tanks (400),
+ *  smoke (240) and crates (95) take lower ones as a cheap stand-in for air resistance rather than as
+ *  different physics. */
+const LAND_GRAVITY = 500;
+/** …and for the fallout grains, which are the same thrown earth and so fall at nearly the same rate.
+ *  Not identical: the grains have to finish landing while the crater's spoil is still piling in, or
+ *  the fill ends up on top of the coat rather than mixed through it and the contaminated body reads
+ *  as a thin skin over clean fill. Measured on a Uranium Nuke, hot depth through the bowl holds up
+ *  to 430 and collapses (8+ → 6.3) at 500, so this sits at the fast end of what stays mixed. */
+const RAD_FALL_GRAVITY = 430;
 /** A weapon's fallout colour, defaulting to a hot radioactive red-orange: nukes/DOT ship no explicit
  *  irRGB. Shared so the SPOIL and the FALLOUT of one blast resolve to the same terrain slot — they
  *  are the same contamination and must not end up drawn as two colours. */
@@ -2013,7 +2027,7 @@ export class CLand {
   }
 
   update(dt: number, wind?: Vec2): void {
-    const GRAVITY = 500;
+    const GRAVITY = LAND_GRAVITY;
     // Realistic wind pushes flying dirt AND airborne fallout sideways (Linear mode leaves both purely
     // ballistic — the classic feel). Terrain is broadcast authoritatively (getNetSnapshot), so
     // wind-nudged deposits stay in sync across clients without re-simulation. Precomputed once per frame.
@@ -2154,7 +2168,9 @@ export class CLand {
     this.m_radParticles.length = rw;
 
     // Radiation specks: fall until they hit the surface, then settle and glow.
-    const RAD_GRAV = 170;
+    // Close to the dirt's own gravity, not a drifting-dust value. A fallout grain is a grain of the
+    // earth this blast threw, so it should drop roughly like the earth beside it.
+    const RAD_GRAV = RAD_FALL_GRAVITY;
     // A settled speck is culled once a crater drops the ground more than this far below it (it would
     // otherwise hang in the air). Wider than the +3px top of the settle scatter so the coat's surface
     let sw = 0;
