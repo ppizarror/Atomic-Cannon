@@ -17,7 +17,7 @@ import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind, gustFactor} from './wind';
 import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
-import {clamp, deg2rad} from '../math/num';
+import {clamp, deg2rad, rad2deg, wrapIndex} from '../math/num';
 
 // extType codes the bot decision reads directly (the original stores extType as the weapon's
 // "type" float, so these ARE the type constants). Utility/non-offensive types the random
@@ -398,4 +398,182 @@ export function chooseBotWeapon(
   if (s10 !== undefined && stats.life < stats.maxLife - val(s10) * 0.7) sel = s10; // hurt enough to heal
 
   return sel;
+}
+
+// ==========================================================================
+// THE BOT OBJECT
+// ==========================================================================
+
+/**
+ * The action a bot chose this turn — the one vocabulary every difficulty speaks, so the
+ * controller has a single executor instead of a branch per brain. Levels 0..10 only ever produce
+ * `fire` (a self-buff is just firing a utility at the current aim) or `skip`; Ultra also plans
+ * `move` and `buff`.
+ */
+export type BotPlan =
+  | {
+      action: 'fire';
+      weaponIndex: number;
+      angleDeg: number;
+      power: number;
+      targetX: number;
+      note: string;
+    }
+  | {action: 'move'; destX: number; note: string}
+  | {action: 'buff'; weaponIndex: number; note: string}
+  | {action: 'skip'; note: string};
+
+/** An enemy as the classic brain sees it. */
+export interface BotEnemy {
+  x: number;
+  y: number;
+  healthFrac: number;
+  hitRadius: number;
+}
+
+/**
+ * Everything a level 0..10 bot needs to decide a turn, marshalled by the caller. Keeping this a
+ * plain data bag (rather than handing the bot the controller) is what makes the brain testable
+ * without a running match — the same split the Ultra planner already used.
+ */
+export interface BotTurnCtx {
+  /** Live enemy tanks. An empty list means there is nothing to do. */
+  enemies: BotEnemy[];
+  /** The bot's own position, current aim, and defensive stats. */
+  self: {x: number; y: number; aimAngle: number; power: number; stats: BotStats};
+  /** Muzzle world-position for a candidate barrel angle — the arc's launch point. */
+  muzzleFor(angleDeg: number): Pt;
+  /** Turret pivot, for the straight-line beam aim. */
+  turretPivot: Pt;
+  field: AimField;
+  wind: Pt;
+  /** Gust clock AT LAUNCH (now + the firing delay), so the solve leads a gusting wind. */
+  gustTAtLaunch: number;
+  /** 1-based round within this battle; round 1 forces a ranging shot for a half-decent bot. */
+  round: number;
+  /** Deathmatch gates the deliberate weakest/nearest target split. */
+  deathmatch: boolean;
+  /** Weapon indices the bot holds (the Shell staple always among them). */
+  owned: number[];
+  /** Full-power value for a hitscan beam (no ballistic solve). */
+  beamPower: number;
+  /** extType of a weapon index — injected so the brain needn't import the weapon database view. */
+  extTypeOf(i: number): number;
+  /** True when weapon `i` is a hitscan beam. */
+  isBeam(i: number): boolean;
+  /** Randomness source; defaults to Math.random. Injected so a test can make a turn deterministic. */
+  rnd?: () => number;
+}
+
+/**
+ * CBotAI — a computer player, as an object.
+ *
+ * One instance per difficulty; `planTurn` answers "what do I do this turn?" and returns a
+ * {@link BotPlan} the caller executes. A brain never touches a tank, the controller or the
+ * renderer — everything it knows arrives in its context object, which is what makes the whole
+ * decision testable without a running match.
+ *
+ * Two specialisations ship: {@link CClassicBotAI} (levels 0..10 — solve an arc, degrade it by
+ * difficulty, pick a round from the inventory) and {@link CBotUltraAI} (level 11 — expected-value
+ * search over every action). They are siblings rather than a single chain because Ultra reads a
+ * strictly richer world than the classic brain does, so the context is the type parameter: the
+ * caller builds whichever shape its brain asks for and never the expensive one by mistake.
+ */
+export abstract class CBotAI<C = BotTurnCtx> {
+  constructor(protected readonly m_level: number) {}
+
+  /** Difficulty level this brain plays at (AI_LEVEL_MIN..AI_LEVEL_MAX). */
+  getLevel(): number {
+    return this.m_level;
+  }
+
+  /** Decide this turn. The one call the controller makes, whatever the difficulty. */
+  abstract planTurn(ctx: C): BotPlan;
+}
+
+/**
+ * The classic level 0..10 brain — the original's doctrine: a difficulty-scaled chance of solving a
+ * fresh arc at all, a target picked deliberately only at high skill in Deathmatch, a round drawn
+ * from the inventory, and an angle scatter that shrinks toward zero as the level rises.
+ */
+export class CClassicBotAI extends CBotAI<BotTurnCtx> {
+  /**
+   * Decide this turn. The classic doctrine, in order: pick a target (weakest/nearest at high skill
+   * in Deathmatch, else random), maybe compute a fresh firing solution, choose a round or a
+   * self-buff from the inventory, then aim — beams point straight, ballistics take the solved arc
+   * plus the difficulty scatter.
+   *
+   * The order of the random draws here is load-bearing: `Math.random` is a stream shared with the
+   * rest of the match (bot purchasing draws from it too), so reordering these changes the whole
+   * match, not just this turn.
+   */
+  planTurn(ctx: BotTurnCtx): BotPlan {
+    if (ctx.enemies.length === 0) return {action: 'skip', note: 'no enemies'};
+    const level = this.m_level;
+    const rnd = ctx.rnd ?? Math.random;
+
+    // 1. Target — weakest/nearest at high difficulty IN DEATHMATCH, random otherwise (a
+    //    Points/Rounds bot targets randomly, matching the original's game-mode gate on the split).
+    const ti = pickTarget(ctx.enemies, ctx.self.x, ctx.self.y, level, ctx.deathmatch, rnd);
+    const target = ctx.enemies[Math.max(0, ti)];
+
+    // 2. Whether to compute a FRESH firing solution. Low-skill bots often don't (they fire with
+    //    their stale aim); a ranging shot is forced in ROUND 1 of every battle for any half-decent
+    //    bot. `solutionFound` = the solved arc actually reaches the target, which suppresses the
+    //    no-arc fallback in the weapon choice below.
+    const willAim = rnd() < aimProbability(level) || (ctx.round === 1 && level > 3);
+    let ballisticAngle: number;
+    let ballisticPower: number;
+    let solutionFound = false;
+    if (willAim) {
+      const aim = bestAim(
+        ctx.muzzleFor,
+        {x: target.x, y: target.y},
+        ctx.wind,
+        ctx.field,
+        ctx.gustTAtLaunch,
+      );
+      ballisticAngle = aim.angleDeg;
+      ballisticPower = aim.power;
+      solutionFound = aim.dist <= target.hitRadius + 6; // the arc lands on the target
+    } else {
+      ballisticAngle = ctx.self.aimAngle;
+      ballisticPower = ctx.self.power;
+    }
+
+    // 3. Weapon or defensive utility from the bot's OWN inventory.
+    const weaponIndex = chooseBotWeapon(ctx.owned, level, solutionFound, ctx.self.stats, rnd);
+
+    // 4. Aim for the chosen round.
+    let angleDeg: number;
+    let power: number;
+    if (isBotSelfBuff(ctx.extTypeOf(weaponIndex))) {
+      // Shield/heal/armor/hazmat apply to the bot itself — no target aim; keep its current aim.
+      angleDeg = ctx.self.aimAngle;
+      power = ctx.self.power;
+    } else if (ctx.isBeam(weaponIndex)) {
+      // Beams are hitscan: point straight at the target (no ballistic solve), fire at full power.
+      angleDeg = bearingDeg(ctx.turretPivot, target);
+      power = ctx.beamPower;
+    } else {
+      // Ballistic: the solved (or stale) arc + the difficulty angle scatter (angle only).
+      angleDeg = ballisticAngle + angleError(level, rnd);
+      power = ballisticPower;
+    }
+
+    return {
+      action: 'fire',
+      weaponIndex,
+      angleDeg: wrapIndex(Math.round(angleDeg), 360), // fold into the HUD's 0..359 range
+      power: Math.round(power),
+      targetX: target.x,
+      note: willAim ? 'solved' : 'stale-aim',
+    };
+  }
+}
+
+/** Barrel angle (deg, 0 = right, screen-up positive) that points `pivot` straight at `to`.
+ *  Unrounded — callers that need the HUD's 0..359 integer wrap it themselves. */
+export function bearingDeg(pivot: Pt, to: Pt): number {
+  return rad2deg(Math.atan2(pivot.y - to.y, to.x - pivot.x));
 }

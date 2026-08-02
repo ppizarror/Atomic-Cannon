@@ -17,17 +17,17 @@ import type {ISpriteSource} from '../core/rendering/sprites';
 /** Tuning for the parachute drop. */
 const CRATE = {
   /** Landed crate size (px); the pickup reach is `BOX / 2 + tank radius`. */
-  BOX: 22,
+  BOX: 32,
   /** Constant chute descent speed (px/s). */
-  DESCENT: 42,
+  DESCENT: 90,
   /** Pickup message lifetime (s). */
-  FLOAT_TEXT_LIFE: 1.6,
+  FLOAT_TEXT_LIFE: 2.0,
   /** Free-fall accel if the chute ever detaches (px/s²). */
-  GRAVITY: 240,
+  GRAVITY: 95,
   /** Sideways drift per unit of wind while descending (px/s), Realistic mode only. */
-  WIND_DRIFT: 9,
+  WIND_DRIFT: 14,
   /** Pendulum amplitude (±deg), pivot at the canopy top. */
-  WOBBLE_DEG: 12,
+  WOBBLE_DEG: 5,
   /** deg/s of the sine argument (≈1.8 s per swing). */
   WOBBLE_SPEED: 200,
 } as const;

@@ -19,8 +19,9 @@
  * The planner is PURE (all engine coupling is marshalled into `UltraCtx` by the caller), so the whole
  * brain is unit-testable without a running game.
  */
-import {bestAim, simulateShot, type Pt, type AimField} from './CBotAI';
+import {CBotAI, bestAim, simulateShot, type BotPlan, type Pt, type AimField} from './CBotAI';
 import {clamp} from '../math/num';
+import {AI_LEVEL_ULTRA} from './CBotAI';
 
 /** One enemy tank, in the units the scorer needs. `life`/`shield` are 0..maxLife / 0..1000. */
 export interface UltraEnemy {
@@ -158,19 +159,12 @@ export interface UltraCtx {
   endgame?: boolean;
 }
 
-/** The chosen action. `note` is a short human/debug/test label for WHY. */
-export type UltraPlan =
-  | {
-      action: 'fire';
-      weaponIndex: number;
-      angleDeg: number;
-      power: number;
-      targetX: number;
-      note: string;
-    }
-  | {action: 'move'; destX: number; note: string}
-  | {action: 'buff'; weaponIndex: number; note: string}
-  | {action: 'skip'; note: string};
+/**
+ * The chosen action. Ultra plans in the same vocabulary every brain speaks ({@link BotPlan}), so
+ * the controller has one executor rather than a branch per difficulty. Kept as a named alias
+ * because the planner's internals and its tests read better talking about an "Ultra plan".
+ */
+export type UltraPlan = BotPlan;
 
 // ==========================================================================
 // TUNING
@@ -1111,4 +1105,22 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
     if (trick) return trick.plan;
   }
   return top.plan;
+}
+
+/**
+ * CBotUltraAI — the level-11 brain, as an object.
+ *
+ * Where the classic brain fires and hopes, this enumerates every action available this turn,
+ * scores each in one life-damage currency, and takes the best (see {@link planUltraTurn} for the
+ * doctrine). It is a {@link CBotAI} specialisation over the richer {@link UltraCtx}: same
+ * `planTurn` contract, same {@link BotPlan} out, strictly more world in.
+ */
+export class CBotUltraAI extends CBotAI<UltraCtx> {
+  constructor() {
+    super(AI_LEVEL_ULTRA);
+  }
+
+  planTurn(ctx: UltraCtx): BotPlan {
+    return planUltraTurn(ctx);
+  }
 }

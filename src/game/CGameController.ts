@@ -65,20 +65,17 @@ import {
 import {
   AI_DEFAULT_LEVEL,
   AI_LEVEL_ULTRA,
-  aimProbability,
-  angleError,
-  bestAim,
+  bearingDeg,
+  CClassicBotAI,
+  type BotTurnCtx,
   BOT_UTILITY_EXT,
-  chooseBotWeapon,
-  isBotSelfBuff,
   moveWeaponIndices,
   pickMoveWeapon,
-  pickTarget,
   simulateShot,
 } from '../core/CBotAI';
 import {
   NO_THREAT,
-  planUltraTurn,
+  CBotUltraAI,
   rangePowerCorrection,
   ULTRA_PERSONALITIES,
   ULTRA_PERSONALITY_NAMES,
@@ -90,7 +87,7 @@ import {
 } from '../core/CBotUltraAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
-import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
+import {clamp, clamp01, deg2rad, TWO_PI, wrapIndex} from '../math/num';
 import {between} from '../math/random';
 import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
@@ -4256,10 +4253,7 @@ export class CGameController implements ShotWorld {
   /** UI aim-angle (0..359, screen-up = 90) from `pivot` toward `target` — the barrel points
    *  along (cos θ, −sin θ) with screen-Y down, so it's atan2(−dy, dx) folded into range. */
   private aimDegToward(pivot: Vec2, target: Vec2): number {
-    return wrapIndex(
-      Math.round(rad2deg(Math.atan2(-(target.y - pivot.y), target.x - pivot.x))),
-      360,
-    );
+    return wrapIndex(Math.round(bearingDeg(pivot, target)), 360);
   }
 
   /** Push an aim onto `tank` and mirror it into the controller's live angle/power. */
@@ -4550,114 +4544,77 @@ export class CGameController implements ShotWorld {
   }
 
   /** Pick a target + weapon, solve the firing arc, degrade by difficulty, and fire. */
-  private botAimAndFire(botTank: CTank): void {
-    if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
-    // Target only ENEMY teams — a squad bot must never aim at its own teammates.
-    const enemies = this.enemiesOf(botTank);
-    if (enemies.length === 0) {
-      this.endTurn();
-      return;
+  /** One brain per difficulty, rebuilt when the level changes. */
+  private botBrain(): CClassicBotAI {
+    if (!this.m_bot || this.m_bot.getLevel() !== this.m_difficulty) {
+      this.m_bot = new CClassicBotAI(this.m_difficulty);
     }
+    return this.m_bot;
+  }
 
-    const level = this.m_difficulty;
-    const botPos = botTank.getPosition();
-
-    // Pick a target — weakest/nearest at high difficulty IN DEATHMATCH, random otherwise (a
-    // Points/Rounds bot targets randomly, matching the original's game-mode gate on the split).
-    const ti = pickTarget(
-      enemies.map(e => {
+  /** Marshal the world into the shape the classic brain reads. */
+  private botTurnCtx(botTank: CTank, enemies: CTank[]): BotTurnCtx {
+    const pos = botTank.getPosition();
+    const h = botTank.getHealth();
+    return {
+      enemies: enemies.map(e => {
         const p = e.getPosition();
         return {
           x: p.x,
           y: p.y,
           healthFrac: clamp01(e.getHealth().nLife / e.getMaxLife()),
+          hitRadius: e.getHitRadius(),
         };
       }),
-      botPos.x,
-      botPos.y,
-      level,
-      this.m_gameType === EGameType.Deathmatch,
-    );
-    const target = enemies[Math.max(0, ti)];
-    const tp = target.getPosition();
-
-    // Whether the bot computes a FRESH firing solution this turn. Low-skill bots often don't
-    // (they fire with their stale aim); a ranging shot is forced in ROUND 1 of EVERY battle for any
-    // half-decent bot — keyed on the per-battle round counter (reset each battle), NOT the battle
-    // number. `solutionFound` = the solved arc actually reaches the target (so the no-arc fallback
-    // in the weapon choice is skipped).
-    const willAim =
-      Math.random() < aimProbability(level) || (this.m_currentRound === 1 && level > 3);
-    let ballisticAngle: number;
-    let ballisticPower: number;
-    let solutionFound = false;
-    if (willAim) {
-      const field = {
+      self: {
+        x: pos.x,
+        y: pos.y,
+        aimAngle: botTank.getAimAngle(),
+        power: botTank.getPower(),
+        stats: {
+          shield: h.nShield,
+          armor: h.nArmor,
+          hazmat: h.nHazmat,
+          life: h.nLife,
+          maxLife: botTank.getMaxLife(),
+        },
+      },
+      muzzleFor: deg => botTank.muzzleForAngle(deg),
+      turretPivot: botTank.getTurretPivot(),
+      field: {
         heightAt: (x: number) => this.m_land.getHeightAt(x),
         width: this.m_land.width,
         height: this.m_land.height,
-      };
-      const aim = bestAim(
-        deg => botTank.muzzleForAngle(deg),
-        {x: tp.x, y: tp.y},
-        this.m_wind,
-        field,
-        // Predict the gust phase AT LAUNCH: the shot fires after the fixed "thinking" delay, during
-        // which the gust clock keeps ticking. Passing the launch-time clock lets the bot lead the
-        // gusting Realistic wind instead of aiming at the mean (Linear → gustFactor is flat, no-op).
-        this.m_gustT + CGameController.BOT_FIRE_DELAY,
-      );
-      ballisticAngle = aim.angleDeg;
-      ballisticPower = aim.power;
-      solutionFound = aim.dist <= target.getHitRadius() + 6; // the arc lands on the target
-    } else {
-      ballisticAngle = botTank.getAimAngle();
-      ballisticPower = botTank.getPower();
-    }
-
-    // Choose a weapon or defensive utility from the bot's OWN inventory: a random offensive round,
-    // a strongest-weapon upgrade at high skill, a no-arc fallback (Escape/Cleaner/Rebound/Beam)
-    // when the solve missed, then a self-buff (shield/heal/armor/hazmat) when a stat is low.
-    const h = botTank.getHealth();
-    const weaponIndex = chooseBotWeapon(
-      ownedWeaponIndices(this.economyFor(botTank)),
-      level,
-      solutionFound,
-      {
-        shield: h.nShield,
-        armor: h.nArmor,
-        hazmat: h.nHazmat,
-        life: h.nLife,
-        maxLife: botTank.getMaxLife(),
       },
-    );
-    this.setCurrentWeapon(botTank, weaponIndex);
-    const ext = getWeapon(weaponIndex).getExtType(); // nominal token (for isBeamExt)
-    const extNum = WEAPON_DATABASE[weaponIndex].extType ?? 0; // raw code (for isBotSelfBuff)
+      wind: this.m_wind,
+      // Predict the gust phase AT LAUNCH: the shot fires after the fixed "thinking" delay, during
+      // which the gust clock keeps ticking. Passing the launch-time clock lets the bot lead the
+      // gusting Realistic wind instead of aiming at the mean (Linear → gustFactor is flat, no-op).
+      gustTAtLaunch: this.m_gustT + CGameController.BOT_FIRE_DELAY,
+      round: this.m_currentRound,
+      deathmatch: this.m_gameType === EGameType.Deathmatch,
+      owned: ownedWeaponIndices(this.economyFor(botTank)),
+      beamPower: SENTRY.FIRE_POWER,
+      extTypeOf: i => WEAPON_DATABASE[i].extType ?? 0,
+      isBeam: i => isBeamExt(getWeapon(i).getExtType()),
+    };
+  }
 
-    let angleDeg: number;
-    let power: number;
-    if (isBotSelfBuff(extNum)) {
-      // Shield/heal/armor/hazmat apply to the bot itself — no target aim; keep its current aim.
-      angleDeg = botTank.getAimAngle();
-      power = botTank.getPower();
-    } else if (isBeamExt(ext)) {
-      // Beams are hitscan: point straight at the target (no ballistic solve), fire at full power.
-      angleDeg = this.aimDegToward(botTank.getTurretPivot(), tp);
-      power = SENTRY.FIRE_POWER;
-    } else {
-      // Ballistic: the solved (or stale) arc + the difficulty angle scatter (angle only).
-      angleDeg = ballisticAngle + angleError(level);
-      power = ballisticPower;
+  /** Classic (level 0..10) turn: ask the brain for a plan, then execute it. */
+  private botAimAndFire(botTank: CTank): void {
+    if (!botTank.isAlive() || this.m_gameState !== EGameState.Battle) return;
+    // Target only ENEMY teams — a squad bot must never aim at its own teammates.
+    const enemies = this.enemiesOf(botTank);
+    const plan = this.botBrain().planTurn(this.botTurnCtx(botTank, enemies));
+    if (plan.action !== 'fire') {
+      this.endTurn(); // nothing to shoot at
+      return;
     }
-
-    // Fold into the HUD's 0..359 range; persist on the bot so its aim carries over.
-    angleDeg = wrapIndex(Math.round(angleDeg), 360);
-    this.commitAim(botTank, angleDeg, Math.round(power));
-
+    this.setCurrentWeapon(botTank, plan.weaponIndex);
+    this.commitAim(botTank, plan.angleDeg, plan.power);
     // Execute fire after a brief "thinking" delay. The turn ends automatically once the shot
     // resolves (or immediately, for a self-buff utility).
-    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.requestFire()); // wind up the reload bar for AI too
+    this.schedule(CGameController.BOT_FIRE_DELAY, () => this.requestFire());
   }
 
   /**
@@ -4673,7 +4630,7 @@ export class CGameController implements ShotWorld {
     }
 
     const ctx = this.buildUltraCtx(botTank, enemies);
-    const plan = planUltraTurn(ctx);
+    const plan = this.m_ultraBot.planTurn(ctx);
 
     if (plan.action === 'move') {
       // Drive to the planned spot with a Move utility (grab a crate / flee radiation / reposition).
@@ -6445,6 +6402,10 @@ export class CGameController implements ShotWorld {
   // Victory fireworks (war-end, human wins). Spawned + aged during BattleEnd; drawn in
   // the sky behind the standings overlay. `m_showFireworks` is decided once at battle end.
   private readonly m_fireworksFx = new CFireworks();
+  // The computer players' brains. The classic one is rebuilt when the difficulty changes (see
+  // botBrain); Ultra is level-11 only, so one instance serves the whole match.
+  private m_bot: CClassicBotAI | null = null;
+  private readonly m_ultraBot = new CBotUltraAI();
   // Supply crates on the field + their pickup messages, and a monotonic id counter.
   private readonly m_crateField = new CCrateField();
   // Live taunt speech bubbles (Chatter). One per speaker at a time; a new one replaces
