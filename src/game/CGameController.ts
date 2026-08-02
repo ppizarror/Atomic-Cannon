@@ -860,6 +860,25 @@ export class CGameController implements ShotWorld {
     }
   }
 
+  /**
+   * RENDER interpolation factor: how far real time has advanced from the previous fixed step toward
+   * the current one, `m_simAccum / FIXED_DT` ∈ [0, 1). draw() interpolates the fast-moving visuals
+   * (the projectile, the camera pan) across it, so a 120 Hz display shows 120 distinct positions
+   * instead of each 60 Hz sim step twice — the reason a shot could judder at a rock-steady 120 fps.
+   * The stutter is worse than plain 60 Hz without this: the accumulator's leftover drifts against a
+   * jittering rAF clock, so steps land in irregular runs (0, 0, 2 …) rather than a clean 1-0-1-0.
+   *
+   * Read at DRAW time only. Feeding it back into the sim would break the fixed-step lockstep the
+   * network match is built on — update() must never see a dt other than FIXED_DT.
+   *
+   * 0 means "at the previous step", not "at the current one": everything renders up to one step in
+   * the past, which is what keeps it interpolation (always between two states the sim actually
+   * computed) instead of extrapolation past an impact that hasn't resolved yet.
+   */
+  private renderAlpha(): number {
+    return this.m_simAccum / CGameController.FIXED_DT;
+  }
+
   update(dt: number): void {
     switch (this.m_gameState) {
       case EGameState.Battle:
@@ -973,6 +992,7 @@ export class CGameController implements ShotWorld {
     }
     if (this.m_camera.isShaking()) return true;
     if (this.m_camera.isPanning()) return true; // camera still panning
+    if (this.m_camera.isInterpolating()) return true; // …or the DRAWN scroll is still catching up
     if (this.m_screenFlash > 0) return true;
     if (this.m_particles.hasActiveExplosions()) return true;
     if (this.m_weather.isActive()) return true; // rain/snow/dust never rest
@@ -1312,6 +1332,13 @@ export class CGameController implements ShotWorld {
     // The scene canvas IS the logical world (m_viewW × m_viewH); the compositor stretches it
     // to the display (GPU, linear-filtered — no CPU-scale moiré on the pixel terrain).
 
+    // Render interpolation (see renderAlpha): sampled ONCE here so every world layer this frame —
+    // and drawOverlay(), which runs after us on the same frame with no advance() between — sits in
+    // the same instant. A layer left on the raw sim value would slide against the rest by up to a
+    // step's worth of pan.
+    const alpha = this.renderAlpha();
+    const camX = this.m_camera.xAt(alpha);
+
     // Apply screen shake offset
     const shakeOffset = this.m_camera.shakeOffset();
     ctx.save();
@@ -1343,10 +1370,10 @@ export class CGameController implements ShotWorld {
     // scrolls under the fixed view (screen = world − cam). The backdrop above and
     // the notches/minimap below draw OUTSIDE this transform, in screen space.
     ctx.save();
-    ctx.translate(-this.m_camera.x(), 0);
+    ctx.translate(-camX, 0);
 
     // Draw terrain (mirror only the on-screen span → the terrain tile stays view-sized, not world-sized)
-    this.m_land.setViewport(this.m_camera.x(), this.m_viewW);
+    this.m_land.setViewport(camX, this.m_viewW);
     this.m_land.draw(ctx);
     // The radioactive heat haze belongs to the GROUND, so it paints here — right after the terrain
     // and under the tanks/aim overlay. The particles themselves live in the particle system, not in
@@ -1388,7 +1415,7 @@ export class CGameController implements ShotWorld {
       drawWinnerFlag(ctx, {
         winner: this.getWinnerTank(),
         sinceBattleEnd: this.m_battleEndTime,
-        camX: this.m_camera.x(),
+        camX,
         viewW: this.m_viewW,
         groundAt: x => this.m_land.getHeightAt(x),
       });
@@ -1407,12 +1434,12 @@ export class CGameController implements ShotWorld {
     // transparent fx overlay would turn their black-bg sprites into black boxes.
     // Hand the view rect (world-X of the left edge + on-screen size) so the particle system can
     // off-screen-cull and render its smoke to a half-res buffer (perf under heavy strikes).
-    this.m_particles.setViewport(this.m_camera.x(), this.m_viewW, this.m_viewH);
+    this.m_particles.setViewport(camX, this.m_viewW, this.m_viewH);
     // The smoke layer is GPU-batched when a sink is wired (see ISmokeSink): the puffs are emitted
     // as world-space quads here instead of being blitted, and drawn in ONE call by the compositor.
     // Its transform has to match the world transform this canvas is under — camera and shake.
     this.m_smokeSink?.setSmokeTransform(
-      this.m_camera.x(),
+      camX,
       shakeOffset.x,
       shakeOffset.y,
       this.m_viewW,
@@ -1430,11 +1457,11 @@ export class CGameController implements ShotWorld {
         const weapon = getWeapon(wi);
         // A tracer has no missile body — draw just the small white round head.
         if (weapon.getExtType() === EXT.TRACER) {
-          shot.draw(ctx, '#ffffff', null, weapon.getSize());
+          shot.draw(ctx, '#ffffff', null, weapon.getSize(), alpha);
           continue;
         }
         const sprite = this.m_assets.getSprite(`weapons/${weapon.getBitmap()}`);
-        shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize());
+        shot.draw(ctx, weapon.getColor(), sprite?.bitmap ?? null, weapon.getSize(), alpha);
       }
     }
 
@@ -1446,7 +1473,7 @@ export class CGameController implements ShotWorld {
         g.getWeaponIndex() >= 0 ? g.getWeaponIndex() : this.m_currentWeaponIndex,
       );
       const sprite = this.m_assets.getSprite(`weapons/${gw.getBitmap()}`);
-      g.draw(ctx, gw.getColor(), sprite?.bitmap ?? null, gw.getSize());
+      g.draw(ctx, gw.getColor(), sprite?.bitmap ?? null, gw.getSize(), alpha);
     }
 
     ctx.restore(); // end world-space camera transform → back to screen space
@@ -1465,7 +1492,7 @@ export class CGameController implements ShotWorld {
     }
 
     // Edge notches pointing at any projectile that has left the view (Tracking).
-    if (GameConfig.tracking) this.drawShotNotches(ctx);
+    if (GameConfig.tracking) this.drawShotNotches(ctx, camX, alpha);
 
     // Overview minimap (large maps only) — drawn last so it sits on top.
     this.drawMinimap(ctx);
@@ -1495,7 +1522,10 @@ export class CGameController implements ShotWorld {
     const shake = this.m_camera.shakeOffset();
     octx.translate(shake.x, shake.y);
     octx.save();
-    octx.translate(-this.m_camera.x(), 0);
+    // Same interpolated camera as draw() — this frame's draw() already ran and nothing advanced the
+    // sim in between, so renderAlpha() returns the identical value and the overlay stays welded to
+    // the world instead of sliding against it by up to a step's worth of pan.
+    octx.translate(-this.m_camera.xAt(this.renderAlpha()), 0);
 
     // Tank badges (name / life-shield-armour bars / hover stat lines), so a tank
     // low on screen shows its readouts over the HUD instead of being clipped.
@@ -1590,7 +1620,7 @@ export class CGameController implements ShotWorld {
    * its world X minus the camera, so on large maps the notch tracks a shot that has
    * scrolled off either side of the view.
    */
-  private drawShotNotches(ctx: CanvasRenderingContext2D): void {
+  private drawShotNotches(ctx: CanvasRenderingContext2D, camX: number, alpha: number): void {
     const live = this.m_shots.filter(s => !s.isDead());
     if (live.length === 0) return;
     const W = this.m_viewW,
@@ -1604,9 +1634,11 @@ export class CGameController implements ShotWorld {
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     for (const shot of live) {
-      const p = shot.getPosition();
+      // Render-interpolated, like the sprite this notch stands in for — on the raw sim position it
+      // would judder at 60 Hz beside a smooth missile, and lead/lag it as the view pans.
+      const p = shot.renderPosition(alpha);
       const v = shot.getVelocity();
-      const sx = p.x - this.m_camera.x(); // world → screen X (Y doesn't scroll)
+      const sx = p.x - camX; // world → screen X (Y doesn't scroll)
       // Above the ceiling: top arrow at the shot's X (+y is downward, so v.y >= 0
       // means it's on the way down → the "descent" arrow).
       if (p.y < 0) {

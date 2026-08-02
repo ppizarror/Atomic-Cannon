@@ -13,7 +13,7 @@
  * one eased and persistent, one transient and decaying — so a caller asks one object rather than
  * combining two. Shake belongs here, with the scroll it composes with, not in the particle system.
  */
-import {clamp} from '../math/num';
+import {clamp, lerp} from '../math/num';
 import {plusMinus} from '../math/random';
 
 export const CAMERA = {
@@ -48,6 +48,10 @@ export interface MinimapRect {
 
 export class CCamera {
   private m_x = 0;
+  /** Scroll position at the START of the current fixed sim step — the other end of the render
+   *  interpolation (see {@link xAt}). Kept in sync by every write to m_x that is a TELEPORT
+   *  (reset / centerOn / a minimap drag) so those snap instead of sliding across the map. */
+  private m_prevX = 0;
   private m_targetX = 0;
   /** Cinematic dwell: seconds still to linger on the impact before the pan is released. */
   private m_dwell = 0;
@@ -61,14 +65,40 @@ export class CCamera {
   private m_shakeDuration = 0;
   private m_shakeStart = 0;
 
-  /** World X of the view's left edge — for input→world mapping and the world draw. */
+  /** World X of the view's left edge — the SIM value, for input→world mapping and follow logic. */
   x(): number {
     return this.m_x;
+  }
+
+  /**
+   * World X of the view's left edge for DRAWING, interpolated across the fixed sim step by `alpha`
+   * (see CGameController.renderAlpha). The pan runs at up to SCROLL_SPEED px/s, so a 60 Hz sim
+   * moves the whole scene in ~18px jumps; on a 120 Hz display that judders the entire world, not
+   * just whatever the camera is chasing. Interpolating here is what makes an interpolated
+   * projectile actually look smooth — it is the shot's frame of reference, and only their RELATIVE
+   * motion is visible. Pass the same alpha to both, and to any overlay drawn over the world, or
+   * they drift apart by up to a step's worth of pan.
+   */
+  xAt(alpha: number): number {
+    return lerp(this.m_prevX, this.m_x, alpha);
   }
 
   /** True while the view is still easing toward its target (keeps the render gate awake). */
   isPanning(): boolean {
     return this.m_x !== this.m_targetX;
+  }
+
+  /**
+   * True while the DRAWN scroll position has not yet caught up with the sim's (see {@link xAt}).
+   * Also keeps the render gate awake: the render trails the sim by up to one step, so a pan that
+   * has just reached its target still has that last fraction of easing left to show. Without this
+   * the gate shuts the moment isPanning() goes false and the world is stranded up to one step's
+   * worth of pan short of the camera — visible as a small jerk, and worse, clicks map through the
+   * SIM position and would land offset from what is on screen. Clears on the first step after the
+   * pan settles, when update() copies m_x into m_prevX and finds nothing left to move.
+   */
+  isInterpolating(): boolean {
+    return this.m_prevX !== this.m_x;
   }
 
   isManualScroll(): boolean {
@@ -92,7 +122,7 @@ export class CCamera {
 
   /** Reset for a fresh match. */
   reset(): void {
-    this.m_x = this.m_targetX = 0;
+    this.m_x = this.m_prevX = this.m_targetX = 0;
     this.m_dwell = 0;
     this.m_manual = false;
   }
@@ -135,6 +165,7 @@ export class CCamera {
    * or Auto Scroll is off; the result is always clamped to the world.
    */
   update(dt: number, followX: number, autoScroll: boolean, b: CameraBounds): void {
+    this.m_prevX = this.m_x; // anchor this step's render interpolation before anything moves
     if (this.m_dwell > 0) this.m_dwell -= dt; // linger on the impact, then release the pan
     if (this.maxX(b) === 0) {
       this.m_x = this.m_targetX = 0;
@@ -152,7 +183,7 @@ export class CCamera {
   /** Snap to centre `worldX` immediately (battle start / recenter). */
   centerOn(worldX: number, b: CameraBounds): void {
     this.m_targetX = this.clampX(worldX - b.viewW * CAMERA.CENTER, b);
-    this.m_x = this.m_targetX;
+    this.m_x = this.m_prevX = this.m_targetX; // a snap, not a pan — leave nothing to interpolate from
   }
 
   // ── the minimap strip (the camera's own control widget) ───────────────────
@@ -212,7 +243,7 @@ export class CCamera {
     if (!this.hasMinimap(b)) return false;
     const r = this.rect(b);
     const cam = ((px - r.m) / r.width) * b.worldWidth - b.viewW * CAMERA.CENTER;
-    this.m_x = this.m_targetX = this.clampX(cam, b);
+    this.m_x = this.m_prevX = this.m_targetX = this.clampX(cam, b); // instant drag — no interpolation
     this.m_manual = true;
     return true;
   }

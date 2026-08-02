@@ -117,6 +117,12 @@ interface Explosion {
 // radius-scaled window (a big crater smokes longer), tapering out — not one instant cohort. Each
 // vent is independent, so multi-bomb weapons (Black Rain) leave the whole strip smoking; a later
 // blast in the area clears the fumes there (clearSmoke), so only settled smoke persists.
+/** One ignition point on a crater floor: where it lights (fraction of r in [-0.85, 0.85]) and how
+ *  far into the emission window it catches. */
+interface VentSeed {
+  pos: number;
+  start: number;
+}
 interface CraterVent {
   x: number;
   y: number;
@@ -124,7 +130,7 @@ interface CraterVent {
   age: number; // total time since the blast — only the silent delay is measured against this
   delay: number; // silent period before venting can start (∝ radius: a nuke's bloom lasts longer)
   ramp: number; // seconds to build from a wisp to full emission (∝ radius)
-  seed: number; // where along the crater this vent lit first, as a fraction of r in [-0.85, 0.85]
+  seeds: VentSeed[]; // the ignition points this crater lights at, each spreading on its own clock
   wait: number; // time spent HELD because the ground was still moving (capped by FUME.VENT.MAX_WAIT)
   emit: number; // emission clock — advances only while actually venting, so a hold costs no window
   window: number; // how long this crater vents once it starts (∝ radius)
@@ -358,7 +364,10 @@ const FUME = {
    *  and `SHADE_VAR` is the per-puff spread that stops any one generation reading as a flat block. */
   SHADE_DARK: 62,
   SHADE_LIGHT: 232,
-  SHADE_RAMP: 0.38,
+  SHADE_RAMP: 0.78,
+  /** Exponent on the soot→grey ramp. Above 1 the smoke HOLDS its dark early and pales late, which
+   *  is how a fire actually dies down; a linear ramp reads as a wash straight through to grey. */
+  SHADE_EASE: 1.6,
   SHADE_VAR: 26,
   /** Seconds for a puff to reach ~63% of its swell. A fume puff's swell and fade run on ABSOLUTE
    *  age against these time constants, NOT on the normalised age/life. Life scales with the crater
@@ -386,6 +395,16 @@ const FUME = {
      *  light at one point and the smoke creeps along it — instead of the entire rim igniting on the
      *  same frame. A port embellishment: the original seeds every column in one pass at detonation. */
     SPREAD: 0.4,
+    /** Ignition points per crater — `SEEDS + radius · SEEDS_R`, capped. A single source spreads as
+     *  one clean travelling wave, which is no more organic than the whole rim lighting at once; a
+     *  big crater should catch in several places that grow into each other. Scaled by radius so a
+     *  grenade still lights at one point and only a nuke gets the patchwork. */
+    SEEDS: 1,
+    SEEDS_R: 0.018,
+    SEEDS_MAX: 6,
+    /** Fraction of the window over which the later sources catch. The earliest is always normalised
+     *  to 0 so emission still starts the moment the vent opens. */
+    SEED_STAGGER: 0.3,
     /** Seconds to ramp emission 0 → full (`RAMP + radius · RAMP_R`). Without it the vent switched on
      *  at full rate and read as a chimney being lit; a crater should start with a wisp and build. */
     RAMP: 0.9,
@@ -1330,13 +1349,19 @@ export class CParticleSystem {
   /** One white smoke puff rising off the disturbed dirt across the crater width. Spawned at the
    *  REAL post-carve surface (so it comes from the earth), white, gently rising and fading — one of
    *  many successive generations the vent keeps producing while it smokes. */
-  private spawnVentPuff(x: number, y: number, r: number, prog = 1, seed = 0): void {
-    // The emission FRONT: puffs start clustered at this vent's seed column and the window widens
-    // with progress until it spans the whole disturbed strip, so the crater lights at a point and
-    // spreads. Clamped to ±0.85r either side, which keeps it off the far rim as before.
-    const reach = 1.7 * Math.min(1, prog / FUME.VENT.SPREAD);
-    const lo = Math.max(-0.85, seed - reach),
-      hi = Math.min(0.85, seed + reach);
+  private spawnVentPuff(x: number, y: number, r: number, prog = 1, live?: VentSeed[]): void {
+    // The emission FRONT. This puff belongs to ONE of the ignition points that have caught so far,
+    // and sits within however far that point has spread on its own clock — so a big crater fills in
+    // as several patches growing into each other rather than one clean wave crossing it. Clamped to
+    // ±0.85r either side, which keeps the puffs off the far rim.
+    let lo = -0.85,
+      hi = 0.85;
+    if (live && live.length) {
+      const seed = live[(Math.random() * live.length) | 0];
+      const reach = 1.7 * Math.min(1, (prog - seed.start) / FUME.VENT.SPREAD);
+      lo = Math.max(lo, seed.pos - reach);
+      hi = Math.min(hi, seed.pos + reach);
+    }
     const dx = between(lo, hi) * r; // across the disturbed strip (stay off the far rim)
     const fx = x + dx + between(-3, 3);
     // The actual carved surface at this column = the dirt the smoke rises from (fallback: bowl arc).
@@ -1351,7 +1376,7 @@ export class CParticleSystem {
     // as the fire dies. `prog` is how far through its emission window the vent is, so the colour
     // belongs to the GENERATION rather than to the puff's own age — a late puff is grey the moment
     // it is born. The per-puff spread on top keeps a generation from reading as one flat block.
-    const k = Math.min(1, prog / FUME.SHADE_RAMP);
+    const k = Math.min(1, prog / FUME.SHADE_RAMP) ** FUME.SHADE_EASE;
     const shade = FUME.SHADE_DARK + (FUME.SHADE_LIGHT - FUME.SHADE_DARK) * k;
     const v = clamp(Math.round(shade + between(-FUME.SHADE_VAR, FUME.SHADE_VAR)), 12, 255);
     const life = FUME.LIFE_BASE + r * between(...FUME.LIFE_R); // ∝ radius
@@ -1516,10 +1541,28 @@ export class CParticleSystem {
     }
   }
 
-  /** Register a crater FUME.VENT. It stays silent for FUME.VENT.DELAY (smoke emerges AS the bloom fades),
-   *  then releases its cohort over VENT_EMIT (so it builds up from the dirt). Each vent is
-   *  independent — multi-bomb weapons leave every crater smoking. Fires for ANY crater (bomb or
-   *  Cleaner), gated only on the Draw-Smoke toggle. */
+  /** Lay out a crater's ignition points: one per equal band across the disturbed strip (so they
+   *  cannot all clump at one end), each catching at its own moment, with the earliest normalised to
+   *  0 so venting still begins the instant the vent opens. Which band goes first is therefore random. */
+  private static ventSeeds(r: number): VentSeed[] {
+    const n = clamp(Math.round(FUME.VENT.SEEDS + r * FUME.VENT.SEEDS_R), 1, FUME.VENT.SEEDS_MAX);
+    const seeds: VentSeed[] = [];
+    let first = Infinity;
+    for (let i = 0; i < n; i++) {
+      const lo = -0.85 + (1.7 * i) / n,
+        hi = -0.85 + (1.7 * (i + 1)) / n;
+      const start = between(0, FUME.VENT.SEED_STAGGER);
+      if (start < first) first = start;
+      seeds.push({pos: between(lo, hi), start});
+    }
+    for (const sd of seeds) sd.start -= first;
+    return seeds;
+  }
+
+  /** Register a crater vent. It stays silent for FUME.VENT.DELAY (smoke emerges AS the bloom fades),
+   *  then holds until the ground settles and releases its fumes over the emission window, so the
+   *  cloud builds up off the dirt. Each vent is independent — multi-bomb weapons leave every crater
+   *  smoking. Fires for ANY crater (bomb or Cleaner), gated only on the Draw-Smoke toggle. */
   private ventCrater(x: number, y: number, r: number): void {
     if (!smokeEnabled()) return; // Graphics → Draw Smoke (+ Detail gating)
     // Only vent when the blast actually reaches the SOIL. An AIRBURST (Sky Bomb, Sky Cluster, …)
@@ -1533,7 +1576,7 @@ export class CParticleSystem {
       age: 0,
       delay: FUME.VENT.DELAY + r * FUME.VENT.DELAY_R,
       ramp: FUME.VENT.RAMP + r * FUME.VENT.RAMP_R,
-      seed: between(-0.85, 0.85),
+      seeds: CParticleSystem.ventSeeds(r),
       wait: 0,
       emit: 0,
       window: FUME.VENT.WIN_BASE + r * FUME.VENT.WIN_R, // how long this crater smokes (∝ radius)
@@ -1830,9 +1873,13 @@ export class CParticleSystem {
       const attack = Math.min(1, v.emit / v.ramp);
       const env = attack * (1 - prog);
       v.acc += v.r * FUME.RATE * env * dt;
-      while (v.acc >= 1) {
-        v.acc -= 1;
-        this.spawnVentPuff(v.x, v.y, v.r, prog, v.seed);
+      if (v.acc >= 1) {
+        // Which ignition points have caught by now — resolved once per frame, not per puff.
+        const live = v.seeds.filter(sd => sd.start <= prog);
+        while (v.acc >= 1) {
+          v.acc -= 1;
+          this.spawnVentPuff(v.x, v.y, v.r, prog, live);
+        }
       }
       this.m_craterVents[vw++] = v;
     }

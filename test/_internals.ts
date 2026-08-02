@@ -71,8 +71,16 @@ export interface GCPriv {
   m_firedThisTurn: boolean;
   m_tanksMoving: boolean;
   m_jetSounding: boolean;
+  m_simAccum: number;
   // ── extracted subsystems (see src/game/*) ──
-  m_camera: {reset(): void; isDwelling(): boolean; isShaking(): boolean; x(): number};
+  m_camera: {
+    reset(): void;
+    isDwelling(): boolean;
+    isShaking(): boolean;
+    x(): number;
+    xAt(alpha: number): number;
+    isInterpolating(): boolean;
+  };
   m_crateField: {
     list(): readonly {x: number; y: number; kind: string; weaponIndex: number}[];
     update(dt: number, env: unknown): void;
@@ -92,6 +100,7 @@ export interface GCPriv {
   botAimAndFire(tank: CTank): void;
   botMove(tank: CTank): boolean;
   cameraFollowX(): number;
+  renderAlpha(): number;
   crateEnv(): unknown;
   addCrate(x: number, forced?: string): void;
   collectCrate(crate: unknown, tank: CTank): void;
@@ -248,6 +257,7 @@ export const GC_KEYS: Record<keyof GCPriv, true> = {
   m_firedThisTurn: true,
   m_tanksMoving: true,
   m_jetSounding: true,
+  m_simAccum: true,
   m_camera: true,
   m_crateField: true,
   m_markers: true,
@@ -263,6 +273,7 @@ export const GC_KEYS: Record<keyof GCPriv, true> = {
   botAimAndFire: true,
   botMove: true,
   cameraFollowX: true,
+  renderAlpha: true,
   crateEnv: true,
   addCrate: true,
   collectCrate: true,

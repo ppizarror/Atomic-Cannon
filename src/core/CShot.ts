@@ -6,7 +6,7 @@ import {Vec2} from '../math/Vec2';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind} from './wind';
-import {TWO_PI} from '../math/num';
+import {TWO_PI, lerp} from '../math/num';
 
 // Trajectory constants — the single source of truth, shared with the aim AI so a
 // simulated shot matches a real one exactly. Calibrated to our px/second space,
@@ -319,6 +319,19 @@ export class CShot {
     return new Vec2(this.m_prevX, this.m_prevY);
   }
 
+  /**
+   * Where to DRAW the shot: a point on the segment the sim just stepped through, `alpha` of the way
+   * from prevPos to pos. See {@link draw} for what alpha is and why this interpolates rather than
+   * extrapolates. Anything that paints in step with the round (its edge-of-view tracking notch)
+   * must go through this with the SAME alpha, or it drifts against the sprite it is pointing at.
+   */
+  renderPosition(alpha: number): Vec2 {
+    return new Vec2(
+      lerp(this.m_prevX, this.m_pos.x, alpha),
+      lerp(this.m_prevY, this.m_pos.y, alpha),
+    );
+  }
+
   /** Exhaust point — the missile's REAR, where the trail/plume pours from. The trail
    * emits here, not at the centre: it offsets back from the centre along the heading
    * by half the on-screen sprite length, `0.5 × size × scale`. `size` = the weapon
@@ -335,13 +348,31 @@ export class CShot {
     return this.m_bIsDead;
   }
 
+  /**
+   * `alpha` is the RENDER interpolation factor (see CGameController.renderAlpha): how far real time
+   * has advanced from the previous fixed sim step toward the current one. The round is drawn at
+   * `lerp(prevPos, pos, alpha)`, so a display refreshing faster than the 60 Hz sim gets a distinct
+   * position every frame instead of each simulated one twice — without that, a shot on a 120 Hz
+   * screen judders even at a rock-steady 120 fps. Default 1 = the raw sim position (what tests and
+   * any non-interpolating caller get).
+   *
+   * Deliberately interpolates rather than extrapolates: the sprite renders up to one step in the
+   * past (16.7 ms — imperceptible) but can never be drawn inside terrain the shot has not actually
+   * reached and then snap back when the collision resolves.
+   *
+   * The heading is NOT interpolated — velocity turns by ~1° per step even at the apex, where it
+   * turns fastest, so the extra state would buy nothing visible.
+   */
   draw(
     ctx: CanvasRenderingContext2D,
     color: string = '#ff8800',
     sprite: CanvasImageSource | null = null,
     size = 12,
+    alpha = 1,
   ): void {
     if (this.m_bIsDead) return;
+
+    const {x: rx, y: ry} = this.renderPosition(alpha);
 
     // Real projectile sprite, rotated to point along its velocity. Each round blits
     // so its LONGEST side spans `weapon.size × scale` px, aspect preserved, pivoted
@@ -360,7 +391,7 @@ export class CShot {
         h = nh * k;
       const ang = Math.atan2(this.m_vel.y, this.m_vel.x);
       ctx.save();
-      ctx.translate(this.m_pos.x, this.m_pos.y);
+      ctx.translate(rx, ry);
       ctx.rotate(ang);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
@@ -374,11 +405,11 @@ export class CShot {
     ctx.shadowBlur = 10;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(this.m_pos.x, this.m_pos.y, 4, 0, TWO_PI);
+    ctx.arc(rx, ry, 4, 0, TWO_PI);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(this.m_pos.x, this.m_pos.y, 2, 0, TWO_PI);
+    ctx.arc(rx, ry, 2, 0, TWO_PI);
     ctx.fill();
     ctx.restore();
   }
