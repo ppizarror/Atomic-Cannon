@@ -5,9 +5,9 @@ import {describe, it, expect} from 'vitest';
 
 import {CLand} from '../src/core/CLand';
 import {makeCanvas} from './_dom';
+import {landPriv} from './_internals';
 
-type Priv = {m_spoil: unknown[]};
-const debrisLeft = (land: CLand): number => (land as unknown as Priv).m_spoil.length;
+const debrisLeft = (land: CLand): number => landPriv(land).m_spoil.length;
 
 describe('CLand terrain', () => {
   it('a crater lowers the surface within its radius and leaves terrain outside untouched', () => {

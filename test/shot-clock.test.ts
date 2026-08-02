@@ -7,21 +7,14 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv, type GCPriv} from './_internals';
 import {CGameController} from '../src/game/CGameController';
 
-type Priv = {
-  m_currentPlayerIndex: number;
-  m_turnElapsed: number;
-  m_turnTimerRunning: boolean;
-  m_tanks: {isHuman(): boolean}[];
-  armShotClock(fresh: boolean): void;
-};
-
-function humanController(): {gc: CGameController; p: Priv} {
+function humanController(): {gc: CGameController; p: GCPriv} {
   const gc = new CGameController(makeCanvas());
   gc.setHumanCount(1);
   gc.startGame(2); // 1 human + 1 bot; shot time defaults to 30s, no weapon-test → clock is live
-  const p = gc as unknown as Priv;
+  const p = priv(gc);
   p.m_currentPlayerIndex = p.m_tanks.findIndex(t => t.isHuman()); // put the human in control
   return {gc, p};
 }

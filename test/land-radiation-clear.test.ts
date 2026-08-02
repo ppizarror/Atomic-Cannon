@@ -8,17 +8,9 @@
  * in the erased span together, so the cleaned ground goes inert.
  */
 import {describe, it, expect} from 'vitest';
+import {landPriv} from './_internals';
 import {CLand} from '../src/core/CLand';
 import {CParticleSystem} from '../src/core/CParticleSystem';
-
-type Priv = {
-  m_pixels: Uint32Array;
-  m_material: Uint8Array;
-  m_arrHeights: Int16Array;
-  m_radParticles: unknown[];
-  m_nWidth: number;
-  m_nHeight: number;
-};
 
 /** A flat land with a REAL pixel buffer so `blastCircle` can actually carve.
  *  The heat wisps live in CParticleSystem now (CLand only decides where fallout fumes), so the
@@ -30,7 +22,7 @@ function landWithPixels(
 ): {land: CLand; fx: CParticleSystem} {
   const land = new CLand(W, H);
   land.generateFlat();
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const px = new Uint32Array(W * H);
   const mat = new Uint8Array(W * H);
   for (let x = 0; x < W; x++) {

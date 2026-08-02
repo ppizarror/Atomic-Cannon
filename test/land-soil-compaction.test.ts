@@ -12,21 +12,14 @@
  * tank on the flat nearby keeps its footing for a moment, then loses it.
  */
 import {describe, it, expect} from 'vitest';
+import {landPriv} from './_internals';
 import {CLand} from '../src/core/CLand';
-
-type Priv = {
-  m_arrHeights: Int16Array;
-  m_pixels: Uint32Array | null;
-  m_shocks: unknown[];
-  m_nWidth: number;
-  m_nHeight: number;
-};
 
 /** Flat land with a real pixel buffer, banded so a squeeze is measurable in the strata. */
 function bandedLand(W: number, H: number, surf: number): CLand {
   const land = new CLand(W, H);
   land.generateFlat();
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const px = new Uint32Array(W * H);
   for (let x = 0; x < W; x++) {
     p.m_arrHeights[x] = surf;
@@ -47,7 +40,7 @@ function settle(land: CLand): void {
 
 /** Solid pixels in a column — the material it still holds. */
 function solidCount(land: CLand, col: number): number {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const px = p.m_pixels;
   if (!px) return 0;
   let n = 0;
@@ -61,7 +54,7 @@ describe('CLand — soil compaction', () => {
       H = 400,
       surf = 150;
     const land = bandedLand(W, H, surf);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.shockCompact(400, 300, 30);
     settle(land);
@@ -101,7 +94,7 @@ describe('CLand — soil compaction', () => {
     // top. A crater of the same depth would have cut the material out; this packs it down instead,
     // which is why the strata under it survive to be compressed rather than deleted.
     const after = solidCount(land, 400);
-    const sank = (land as unknown as Priv).m_arrHeights[400] - surf;
+    const sank = landPriv(land).m_arrHeights[400] - surf;
     expect(after).toBe(before - sank);
     expect(sank).toBeGreaterThan(0);
   });
@@ -111,7 +104,7 @@ describe('CLand — soil compaction', () => {
       H = 400,
       surf = 150;
     const land = bandedLand(W, H, surf);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.shockCompact(400, 300, 30);
     // One frame in: the front has barely left the blast, so only close ground has moved.

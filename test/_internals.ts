@@ -38,6 +38,8 @@ export interface GCPriv {
   m_gameState: EGameState;
   m_currentPlayerIndex: number;
   m_currentRound: number;
+  m_currentBattle: number;
+  m_shotsFired: number;
   m_shots: CShot[];
   m_activeShot: CShot | null;
   m_mines: {
@@ -55,11 +57,15 @@ export interface GCPriv {
   m_lastImpactX: number;
   m_aim: {active: boolean; x: number; y: number};
   m_wind: {x: number; y: number};
+  m_rng: {float(): number; int(n: number): number; getState(): number; seed(n: number): void};
   m_viewW: number;
   m_viewH: number;
   m_worldWidth: number;
   m_currentWeaponIndex: number;
   m_speedScale: number;
+  m_variance: boolean;
+  m_landMode: number;
+  m_windScale: number;
   m_turnElapsed: number;
   m_turnTimerRunning: boolean;
   m_impactThisTurn: boolean;
@@ -68,7 +74,10 @@ export interface GCPriv {
   m_jetSounding: boolean;
   // ── extracted subsystems (see src/game/*) ──
   m_camera: {reset(): void; isDwelling(): boolean; isShaking(): boolean; x(): number};
-  m_crateField: {list(): readonly {x: number; y: number; kind: string; weaponIndex: number}[]};
+  m_crateField: {
+    list(): readonly {x: number; y: number; kind: string; weaponIndex: number}[];
+    update(dt: number, env: unknown): void;
+  };
   m_markers: {hasAny(): boolean};
   // ── network ──
   m_netMode: boolean;
@@ -84,10 +93,17 @@ export interface GCPriv {
   botAimAndFire(tank: CTank): void;
   botMove(tank: CTank): boolean;
   cameraFollowX(): number;
+  crateEnv(): unknown;
   addCrate(x: number, forced?: string): void;
   collectCrate(crate: unknown, tank: CTank): void;
   creditDamage(shooter: CTank | null, victim: CTank, lifeRemoved: number): void;
   settleMines(dt: number): void;
+  armShotClock(fresh: boolean): void;
+  startTankMove(tank: CTank, destX: number): void;
+  executeSentryTurn(): void;
+  fire(): void;
+  awardKillCredit(victim: CTank): void;
+  handleTankDestroyed(tank: CTank): void;
 }
 
 /** The CLand internals tests reach for (terrain buffers are the whole point of most land tests). */
@@ -98,10 +114,49 @@ export interface LandPriv {
   m_layers: unknown;
   m_nWidth: number;
   m_nHeight: number;
-  m_spoil: {x: number; y: number; vx: number; vy: number; age: number}[];
-  m_radSpecks: {x: number; y: number; r: number; g: number; b: number}[];
-  m_radParticles: {x: number; y: number; r: number}[];
+  m_spoil: {x: number; y: number; vx: number; vy: number; age: number; radSlot: number}[];
+  // Mirrors CLand's RadSpeck / RadParticle. Kept structural rather than importing the real types:
+  // they are module-private to CLand, and a test only ever reads a few fields off them.
+  m_radSpecks: {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    age: number;
+    life: number;
+    settled: boolean;
+    size: number;
+    rise: number;
+    slot: number;
+    r: number;
+    g: number;
+    b: number;
+  }[];
+  m_radParticles: {
+    x: number;
+    y: number;
+    radius: number;
+    damagePerSecond: number;
+    timeRemaining: number;
+    duration: number;
+    slot: number;
+    r: number;
+    g: number;
+    b: number;
+  }[];
   m_rngState: number;
+  // Cached radiation-glow TILES + the layer's origin (rebuilt only when the hot earth changes).
+  m_radGlowCanvas: (HTMLCanvasElement | undefined)[];
+  m_radGlowX: number;
+  m_radGlowY: number;
+  /** Per-slot RGB palette — which colour each detonation's contaminated earth glows. */
+  m_radSlotRGB: [number, number, number][];
+}
+
+/** The NetGame internals tests reach for (the busy-queue behaviour). */
+export interface NetGamePriv {
+  m_queue: unknown[];
+  drainQueue(): void;
 }
 
 /** The CTank internals tests reach for. */
@@ -110,14 +165,46 @@ export interface TankPriv {
   m_bExploded: boolean;
   m_bBuried: boolean;
   m_vVel: {x: number; y: number};
+  m_driveTargetX: number | null;
+  m_leftOwner: boolean;
+  /** Place the tank on the terrain (private; the controller calls it during spawn). */
+  init(x: number, land: CLand): void;
 }
 
-/** The CParticleSystem internals tests reach for. */
+/** The CParticleSystem internals tests reach for. Mirrors its module-private `Particle` for the
+ *  fields the draw/emit tests assert on. */
 export interface ParticlesPriv {
-  m_particles: unknown[];
-  m_explosions: unknown[];
-  m_craterVents: unknown[];
-  m_spoil: unknown[];
+  m_particles: {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    r: number;
+    g: number;
+    b: number;
+    age: number;
+    life: number;
+    size: number;
+    kind: string;
+  }[];
+  m_explosions: {x: number; y: number; age: number; life: number}[];
+  m_craterVents: {x: number; y: number; r: number; age: number}[];
+  /** Push one particle of a given render kind straight into the pool — the private emitter, so a
+   *  test can exercise a single kind's draw branch without a whole blast. */
+  add(
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    c: {r: number; g: number; b: number},
+    life: number,
+    size: number,
+    kind: string,
+  ): void;
+  clearSmoke(x: number, y: number, r: number): void;
+  /** Returns an HTMLCanvasElement in the real engine; typed structurally here because the draw
+   *  tests run without a DOM and substitute a minimal stand-in to select the baked-atlas branch. */
+  exhaustAtlas(): {width: number; height: number} | null;
 }
 
 /**
@@ -135,6 +222,8 @@ export const GC_KEYS: Record<keyof GCPriv, true> = {
   m_gameState: true,
   m_currentPlayerIndex: true,
   m_currentRound: true,
+  m_currentBattle: true,
+  m_shotsFired: true,
   m_shots: true,
   m_activeShot: true,
   m_mines: true,
@@ -145,11 +234,15 @@ export const GC_KEYS: Record<keyof GCPriv, true> = {
   m_lastImpactX: true,
   m_aim: true,
   m_wind: true,
+  m_rng: true,
   m_viewW: true,
   m_viewH: true,
   m_worldWidth: true,
   m_currentWeaponIndex: true,
   m_speedScale: true,
+  m_variance: true,
+  m_landMode: true,
+  m_windScale: true,
   m_turnElapsed: true,
   m_turnTimerRunning: true,
   m_impactThisTurn: true,
@@ -171,10 +264,17 @@ export const GC_KEYS: Record<keyof GCPriv, true> = {
   botAimAndFire: true,
   botMove: true,
   cameraFollowX: true,
+  crateEnv: true,
   addCrate: true,
   collectCrate: true,
   creditDamage: true,
   settleMines: true,
+  armShotClock: true,
+  startTankMove: true,
+  executeSentryTurn: true,
+  fire: true,
+  awardKillCredit: true,
+  handleTankDestroyed: true,
 };
 
 export const LAND_KEYS: Record<keyof LandPriv, true> = {
@@ -188,9 +288,20 @@ export const LAND_KEYS: Record<keyof LandPriv, true> = {
   m_radSpecks: true,
   m_radParticles: true,
   m_rngState: true,
+  m_radGlowCanvas: true,
+  m_radGlowX: true,
+  m_radGlowY: true,
+  m_radSlotRGB: true,
 };
 
 const cast = <T>(o: unknown): T => o as T;
+
+// These views are PRIVATES-ONLY, deliberately. An intersection (`CGameController & GCPriv`) reads
+// better and was tried first, but TypeScript reduces it to `never`: the members are `private` on
+// the class and public here, which is a real conflict. So a test that needs both keeps the original
+// reference for the public API and takes a view for the internals:
+//     gc.startGame(2);            // public
+//     priv(gc).m_tanks[0];        // internals
 
 /** Soft-private view of a controller. */
 export const priv = (gc: CGameController): GCPriv => cast<GCPriv>(gc);
@@ -198,5 +309,7 @@ export const priv = (gc: CGameController): GCPriv => cast<GCPriv>(gc);
 export const landPriv = (land: CLand): LandPriv => cast<LandPriv>(land);
 /** Soft-private view of a tank. */
 export const tankPriv = (tank: CTank): TankPriv => cast<TankPriv>(tank);
+/** Soft-private view of the net-game bridge. */
+export const netPriv = (ng: object): NetGamePriv => cast<NetGamePriv>(ng);
 /** Soft-private view of the particle system. */
 export const particlesPriv = (ps: CParticleSystem): ParticlesPriv => cast<ParticlesPriv>(ps);

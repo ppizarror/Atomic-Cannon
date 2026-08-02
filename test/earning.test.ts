@@ -5,6 +5,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CTank} from '../src/core/CTank';
 import {CGameController, EGameType} from '../src/game/CGameController';
@@ -28,8 +29,6 @@ function twoTeamRoster(n: number, humans = 1): void {
   }
   Roster.players = roster;
 }
-
-type Tanks = {m_tanks: CTank[]};
 
 describe('Earning economy', () => {
   it('hit() returns the life actually removed (the credited quantity)', () => {
@@ -69,7 +68,7 @@ describe('Earning economy', () => {
     const gc = new CGameController(makeCanvas());
     gc.setStartCredits(2000);
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const human = tanks[0],
       bot = tanks[1];
 
@@ -101,7 +100,7 @@ describe('Earning economy', () => {
     gc.setStartCredits(1000);
     gc.setTanksPerTeam(3); // 3-tank squads
     gc.startGame(2);
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
 
     // Every member is seeded with the squad-scaled purse; pooling then shares one balance,
     // so a 3-tank squad spends against 3 × 1000, matching the original's tanksPerTeam×CreditStart.
@@ -114,7 +113,7 @@ describe('Earning economy', () => {
     gc.setStartCredits(1000);
     twoTeamRoster(4);
     gc.startGame(4);
-    const t = (gc as unknown as Tanks).m_tanks; // teams 0,1,0,1
+    const t = priv(gc).m_tanks; // teams 0,1,0,1
 
     t[0].setCredits(1777);
     (gc as unknown as {poolTeamCredits(tk: CTank): void}).poolTeamCredits(t[0]);
@@ -129,24 +128,23 @@ describe('Earning economy', () => {
     gc.setStartCredits(0);
     gc.setCreditDamage(2);
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const human = tanks[0],
       bot = tanks[1]; // teams 0 and 1
-    const priv = gc as unknown as {creditDamage(s: CTank | null, v: CTank, r: number): void};
 
     human.setCredits(0);
-    priv.creditDamage(human, bot, 100); // enemy, 100 life removed
+    priv(gc).creditDamage(human, bot, 100); // enemy, 100 life removed
     expect(human.getCredits()).toBe(200); // enemy damage credits removed × CreditDamage
     expect(bot.getLastDamager()).toBe(human); // damage records the victim last-damager
 
     const ally = new CTank('Ally', human.getTeamId());
     human.setCredits(0);
-    priv.creditDamage(human, ally, 100); // same team
+    priv(gc).creditDamage(human, ally, 100); // same team
     expect(human.getCredits()).toBe(0); // friendly-fire earns no credit
     expect(ally.getLastDamager()).toBe(human); // friendly-fire still records last-damager
 
     human.setCredits(0);
-    priv.creditDamage(human, bot, 0); // e.g. shield-absorbed
+    priv(gc).creditDamage(human, bot, 0); // e.g. shield-absorbed
     expect(human.getCredits()).toBe(0); // zero life removed earns nothing
 
     // End-to-end through applyBlast (owner threaded, life delta captured & credited).
@@ -165,54 +163,52 @@ describe('Earning economy', () => {
     gc.setCreditKill(500);
     gc.setGameType(EGameType.Deathmatch);
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const human = tanks[0],
       bot = tanks[1]; // teams 0 and 1
-    const priv = gc as unknown as {awardKillCredit(v: CTank): void};
 
     bot.setLastDamager(human);
     human.setCredits(0);
-    priv.awardKillCredit(bot);
+    priv(gc).awardKillCredit(bot);
     expect(human.getCredits()).toBe(500); // enemy kill awards +CreditKill
 
     const mate = new CTank('Mate', human.getTeamId());
     mate.setLastDamager(human);
     human.setCredits(1000);
-    priv.awardKillCredit(mate); // team kill → penalty
+    priv(gc).awardKillCredit(mate); // team kill → penalty
     expect(human.getCredits()).toBe(500); // team kill applies −CreditKill penalty
 
     const orphan = new CTank('Orphan', 1); // never damaged → no killer
     human.setCredits(0);
-    priv.awardKillCredit(orphan);
+    priv(gc).awardKillCredit(orphan);
     expect(human.getCredits()).toBe(0); // unattributed death awards nothing
 
     gc.setGameType(EGameType.Rounds);
     bot.setLastDamager(human);
     human.setCredits(0);
-    priv.awardKillCredit(bot);
+    priv(gc).awardKillCredit(bot);
     expect(human.getCredits()).toBe(0); // no kill credit outside Deathmatch
   });
 
   it('Kills stat: +1 for an enemy kill, −1 for a friendly/self kill (never below 0)', () => {
     const gc = new CGameController(makeCanvas());
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const human = tanks[0],
       bot = tanks[1]; // teams 0 and 1
-    const priv = gc as unknown as {handleTankDestroyed(t: CTank): void};
 
     bot.setLastDamager(human); // enemy kill
-    priv.handleTankDestroyed(bot);
+    priv(gc).handleTankDestroyed(bot);
     expect(human.getKills()).toBe(1); // enemy kill → +1
 
     const mate = new CTank('Mate', human.getTeamId());
     mate.setLastDamager(human); // friendly-fire kill
-    priv.handleTankDestroyed(mate);
+    priv(gc).handleTankDestroyed(mate);
     expect(human.getKills()).toBe(0); // team kill → −1 (1 → 0), matching the credit penalty
 
     const mate2 = new CTank('Mate2', human.getTeamId());
     mate2.setLastDamager(human);
-    priv.handleTankDestroyed(mate2);
+    priv(gc).handleTankDestroyed(mate2);
     expect(human.getKills()).toBe(0); // clamped — never goes negative
   });
 
@@ -223,7 +219,7 @@ describe('Earning economy', () => {
     gc.setCreditKill(500);
     gc.setGameType(EGameType.Deathmatch);
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const human = tanks[0],
       bot = tanks[1];
 
@@ -241,7 +237,7 @@ describe('Earning economy', () => {
     gc4.setStartCredits(0);
     twoTeamRoster(4);
     gc4.startGame(4);
-    const t4 = (gc4 as unknown as Tanks).m_tanks;
+    const t4 = priv(gc4).m_tanks;
     const award = gc4 as unknown as {awardSurvivorCredit(n: number): void};
 
     award.awardSurvivorCredit(100);
@@ -263,17 +259,16 @@ describe('Earning economy', () => {
     gc.setCreditTurn(10);
     gc.setCreditRound(100);
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const human = tanks[0],
       bot = tanks[1];
-    const priv = gc as unknown as {endTurn(): void};
 
-    priv.endTurn(); // 0 → 1, no wrap
+    priv(gc).endTurn(); // 0 → 1, no wrap
     // turn award pays every survivor
     expect(human.getCredits()).toBe(10);
     expect(bot.getCredits()).toBe(10);
 
-    priv.endTurn(); // 1 → 0, wrap: +Round then +Turn
+    priv(gc).endTurn(); // 1 → 0, wrap: +Round then +Turn
     // round wrap pays Round then Turn
     expect(human.getCredits()).toBe(120);
     expect(bot.getCredits()).toBe(120);

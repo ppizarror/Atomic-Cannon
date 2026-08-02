@@ -2,6 +2,7 @@
  * Deterministic logic tests for the particle system (Phase 4).
  */
 import {describe, it, expect} from 'vitest';
+import {particlesPriv} from './_internals';
 
 import {CParticleSystem, EXHAUST} from '../src/core/CParticleSystem';
 import {EXP} from '../src/core/weapons/ExpType';
@@ -75,20 +76,7 @@ function mockCtx(): RecCtx {
 // Push one live particle of a given render kind straight into the pool (reaches the
 // private `add` emitter) so a test can exercise a single kind's draw branch.
 function addKind(ps: CParticleSystem, kind: string, c = {r: 200, g: 120, b: 40}): void {
-  (
-    ps as unknown as {
-      add(
-        x: number,
-        y: number,
-        vx: number,
-        vy: number,
-        c: object,
-        life: number,
-        size: number,
-        kind: string,
-      ): void;
-    }
-  ).add(400, 300, 0, 0, c, 1, 10, kind);
+  particlesPriv(ps).add(400, 300, 0, 0, c, 1, 10, kind);
 }
 
 function stepN(ps: CParticleSystem, n: number, dt: number, wind?: Vec2) {
@@ -167,7 +155,7 @@ describe('Particle system', () => {
       const ps = new CParticleSystem();
       ps.setBounds(800, 600);
       ps.blast(400, 300, 40, '#ff8c22', false, undefined, exp);
-      return (ps as unknown as {m_explosions: unknown[]}).m_explosions.length;
+      return particlesPriv(ps).m_explosions.length;
     };
     const single = ringCount(EXP.SINGLE);
     const burst = ringCount(EXP.BURST);
@@ -213,8 +201,8 @@ describe('Particle system', () => {
     stepN(left, 40, 1 / 60, new Vec2(-5, 0)); // strong left wind
     stepN(right, 40, 1 / 60, new Vec2(5, 0)); // strong right wind
     const mx = (ps: CParticleSystem) =>
-      (ps as unknown as {m_particles: {x: number; kind: string}[]}).m_particles
-        .filter(p => p.kind === 'smoke')
+      particlesPriv(ps)
+        .m_particles.filter(p => p.kind === 'smoke')
         .reduce((s, p, _i, a) => s + p.x / a.length, 0);
     const lx = mx(left),
       rx = mx(right);
@@ -233,22 +221,9 @@ describe('Particle system', () => {
       const ps = new CParticleSystem();
       ps.setBounds(4000, 2000);
       ps.setGroundProvider(groundAt); // enable the boundary-layer wind profile
-      (
-        ps as unknown as {
-          add(
-            x: number,
-            y: number,
-            vx: number,
-            vy: number,
-            c: object,
-            l: number,
-            s: number,
-            k: string,
-          ): void;
-        }
-      ).add(2000, y, 0, 0, {r: 150, g: 150, b: 150}, 5, 4, 'smoke');
+      particlesPriv(ps).add(2000, y, 0, 0, {r: 150, g: 150, b: 150}, 5, 4, 'smoke');
       for (let i = 0; i < 40; i++) ps.update(1 / 60, new Vec2(5, 0)); // strong wind
-      return (ps as unknown as {m_particles: {x: number}[]}).m_particles[0].x;
+      return particlesPriv(ps).m_particles[0].x;
     };
     const lowDrift = mk(groundY - 10) - 2000; // 10px above ground → near-zero wind factor
     const highDrift = mk(groundY - 320) - 2000; // 320px up (> WIND_PROFILE_H 260) → full wind
@@ -271,7 +246,7 @@ describe('Particle system', () => {
   // draw-call reduction the bake exists for. There is no canvas here (this file drops the stub
   // `document`), so stand a fake atlas in to select the branch.
   const withFakeAtlas = (ps: CParticleSystem): void => {
-    (ps as unknown as {exhaustAtlas(): unknown}).exhaustAtlas = () => ({width: 1, height: 1});
+    particlesPriv(ps).exhaustAtlas = () => ({width: 1, height: 1});
   };
 
   it('the baked path emits ONE cluster per sub-step where the live path emits a cohort', () => {
@@ -285,8 +260,7 @@ describe('Particle system', () => {
     live.trail(2000, 1000, '#cccccc', 300, -300, 2, 40, 1 / 60, true);
     baked.trail(2000, 1000, '#cccccc', 300, -300, 2, 40, 1 / 60, true);
 
-    const kinds = (ps: CParticleSystem) =>
-      (ps as unknown as {m_particles: {kind: string}[]}).m_particles;
+    const kinds = (ps: CParticleSystem) => particlesPriv(ps).m_particles;
     expect(kinds(live).every(p => p.kind === 'smoke')).toBe(true);
     expect(kinds(baked).every(p => p.kind === 'exhaust')).toBe(true);
     // Same number of sub-steps; the baked path collapses each sub-step's whole EXHAUST.PUFFS
@@ -303,15 +277,13 @@ describe('Particle system', () => {
     expect(ps.count()).toBeGreaterThan(0);
     // A detonation on top of the trail clears the smoke in its area — clusters included, or a
     // rocket flying into its own blast would leave its exhaust hanging through the fireball.
-    (ps as unknown as {clearSmoke(x: number, y: number, r: number): void}).clearSmoke(2000, 1000, 90); // prettier-ignore
+    particlesPriv(ps).clearSmoke(2000, 1000, 90); // prettier-ignore
     expect(ps.count()).toBe(0);
   });
 
   // Helper: the live 'smoke' particles of a system.
   const smokeOf = (ps: CParticleSystem) =>
-    (ps as unknown as {m_particles: {kind: string; r: number}[]}).m_particles.filter(
-      p => p.kind === 'smoke',
-    );
+    particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke');
 
   it('a ROCKET (trailType≥2) fumes only while the MOTOR is burning — then coasts silently', () => {
     const on = new CParticleSystem();
@@ -395,9 +367,7 @@ describe('Particle system', () => {
     const ps = new CParticleSystem();
     ps.setBounds(1600, 1200);
     ps.blast(800, 600, 45, '#ffffff', false, 'eGreen');
-    const parts = (
-      ps as unknown as {m_particles: {r: number; g: number; b: number; kind: string}[]}
-    ).m_particles;
+    const parts = particlesPriv(ps).m_particles;
     const flares = parts.filter(p => p.kind === 'flare');
     const greenish = flares.filter(p => p.g > p.r && p.g > p.b).length;
     // preset tints the fireball (eGreen → green)
@@ -413,11 +383,7 @@ describe('Particle system', () => {
     ps.blast(cx, cy, r, '#ff8c22', false);
     // The vent stays silent until VENT_DELAY (fumes rise AFTER the blast), so step past it first.
     for (let i = 0; i < 60; i++) ps.update(1 / 60); // ~1s > VENT_DELAY
-    const parts = (
-      ps as unknown as {
-        m_particles: {x: number; y: number; vy: number; r: number; size: number; kind: string}[];
-      }
-    ).m_particles;
+    const parts = particlesPriv(ps).m_particles;
     // The vent fumes are the only 'smoke' emitter spread across the crater width, WHITE (near-255) —
     // the original's crater streamers are white.
     const curtain = parts.filter(
@@ -439,8 +405,7 @@ describe('Particle system', () => {
     // isCleaner=true — the earth-remover path used to skip the streamers entirely.
     ps.blast(cx, cy, r, '#ffffff', false, undefined, undefined, undefined, false, true);
     for (let i = 0; i < 60; i++) ps.update(1 / 60); // past VENT_DELAY — fumes rise after the blast
-    const parts = (ps as unknown as {m_particles: {x: number; r: number; kind: string}[]})
-      .m_particles;
+    const parts = particlesPriv(ps).m_particles;
     const curtain = parts.filter(p => p.kind === 'smoke' && p.r > 200);
     expect(curtain.length).toBeGreaterThan(0); // cleaners now get the white curtain too
   });
@@ -449,9 +414,7 @@ describe('Particle system', () => {
     const ps = new CParticleSystem();
     ps.setBounds(1600, 1200);
     ps.blast(800, 600, 60, '#ff8c22', false);
-    const kind = () =>
-      (ps as unknown as {m_particles: {kind: string}[]}).m_particles.filter(p => p.kind === 'smoke')
-        .length;
+    const kind = () => particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke').length;
     // Let the immediate curtain fully age out (puff life ≤1.6s), then confirm NEW fumes exist —
     // proof the vent re-emitted rather than firing a single one-shot burst.
     stepN(ps, 120, 1 / 60); // 2.0s: past one puff-life, still within VENT_LIFE (2.6s)
@@ -462,11 +425,7 @@ describe('Particle system', () => {
     const ps = new CParticleSystem();
     ps.setBounds(1600, 1200);
     ps.muzzleSmoke(400, 300, 1, 0, 2, '#ff8800'); // field value 2, barrel pointing right
-    const parts = (
-      ps as unknown as {
-        m_particles: {vx: number; vy: number; r: number; g: number; b: number; kind: string}[];
-      }
-    ).m_particles;
+    const parts = particlesPriv(ps).m_particles;
     const sparks = parts.filter(p => p.kind === 'flare');
     expect(sparks).toHaveLength(30); // a FIXED count (the field scales the spread, not the count)
     expect(parts.some(p => p.kind === 'smoke')).toBe(false); // no grey smoke anymore

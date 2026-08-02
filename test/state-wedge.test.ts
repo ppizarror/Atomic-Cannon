@@ -9,21 +9,8 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 import {CGameController, EGameState} from '../src/game/CGameController';
-
-type Priv = {
-  m_pendingSalvos: number;
-  m_gameState: EGameState;
-  m_shots: unknown[];
-  m_timers: unknown[];
-  m_currentPlayerIndex: number;
-  m_netMode: boolean;
-  m_onNetTurnEnd: (() => void) | null;
-  m_tanks: {m_bIsAlive: boolean; getTeamId(): number}[];
-  executeBotTurn(): void;
-  updateBattle(dt: number): void;
-};
-const priv = (gc: CGameController) => gc as unknown as Priv;
 
 function game(): CGameController {
   const gc = new CGameController(makeCanvas());
@@ -69,7 +56,7 @@ describe('state-machine wedge guards', () => {
     const actor = p.m_currentPlayerIndex;
     p.m_tanks[actor].m_bIsAlive = false; // the acting bot just died to radiation / a mine
     const stale = {at: 0, fn: () => {}}; // its already-scheduled fire()/executeBotTurn closure
-    p.m_timers = [stale] as unknown[];
+    p.m_timers = [stale];
 
     p.updateBattle(0); // the frame after the passive death
 

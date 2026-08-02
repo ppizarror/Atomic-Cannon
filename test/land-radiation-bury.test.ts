@@ -19,34 +19,27 @@
  * which is precisely the decoupling the channel exists to prevent.
  */
 import {describe, it, expect} from 'vitest';
+import {landPriv} from './_internals';
 import {CLand} from '../src/core/CLand';
-
-type Priv = {
-  m_arrHeights: Int16Array;
-  m_radSpecks: unknown[];
-  m_material: Uint8Array | null;
-  m_nWidth: number;
-  m_nHeight: number;
-};
 
 function flatLand(W: number, H: number, surf: number): CLand {
   const land = new CLand(W, H);
   land.generateFlat();
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   for (let x = 0; x < W; x++) p.m_arrHeights[x] = surf;
   return land;
 }
 
 /** Run until every airborne grain has landed and stamped the terrain. */
 function settleFallout(land: CLand): void {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   for (let i = 0; i < 400 && p.m_radSpecks.length > 0; i++) land.update(1 / 60);
 }
 
 /** Total radioactivity recorded in a column, at any depth. The material byte packs the dirt tag in
  *  bit 0 and how radioactive that pixel of earth is in bits 1-7, so this reads past the tag. */
 function columnHeat(land: CLand, col: number): number {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const mat = p.m_material;
   if (!mat) return 0;
   let sum = 0;
@@ -57,7 +50,7 @@ function columnHeat(land: CLand, col: number): number {
 describe('CLand — radioactivity belongs to the earth', () => {
   it('fallout that lands is recorded in the terrain, not held as particles', () => {
     const land = flatLand(300, 300, 150);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.blastIradiate(150, 150, 40, 12, 6, [255, 46, 20]);
     settleFallout(land);
@@ -69,7 +62,7 @@ describe('CLand — radioactivity belongs to the earth', () => {
 
   it('a fill piled over the fallout buries it — the fresh dirt on top is clean', () => {
     const land = flatLand(300, 300, 150);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.blastIradiate(150, 150, 40, 12, 6, [255, 46, 20]);
     settleFallout(land);
@@ -88,7 +81,7 @@ describe('CLand — radioactivity belongs to the earth', () => {
 
   it('a crater carves the radiation out with the earth it removes', () => {
     const land = flatLand(300, 300, 150);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.blastIradiate(150, 150, 40, 12, 6, [255, 46, 20]);
     settleFallout(land);

@@ -6,10 +6,10 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
-import {CLand} from '../src/core/CLand';
 import {WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 
@@ -22,18 +22,6 @@ const SHELL = idxOf('Shell');
 const MACHINE_GUN = idxOf('Machine Gun');
 
 // Private-field view for driving the internals a real deploy/turn would.
-type GCInternals = {
-  m_tanks: CTank[];
-  m_currentPlayerIndex: number;
-  m_gameState: EGameState;
-  m_land: CLand;
-  executeSentryTurn(): void;
-  endBattleIfDecided(): void;
-  fire(): void;
-};
-
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
-
 /** Spawn a match and return the controller + its two enemy tanks. */
 function twoPlayerGame(): {gc: CGameController; a: CTank; b: CTank} {
   GameConfig.hitpoints = 1000;

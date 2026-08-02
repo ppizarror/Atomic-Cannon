@@ -6,6 +6,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv, netPriv} from './_internals';
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {GameConfig} from '../src/core/CGameConfig';
 import {WEAPON_DATABASE, getWeapon} from '../src/core/CWeapon';
@@ -308,10 +309,7 @@ describe('network match boot', () => {
     // Now simulate the free-running drift: advance ONLY a's crate physics. The crate field never
     // touches the RNG, so the only state that changes is the (unhashed) crate position.
     const crateTick = (gc: CGameController, dt: number) => {
-      const p = gc as unknown as {
-        m_crateField: {update(dt: number, env: unknown): void};
-        crateEnv(): unknown;
-      };
+      const p = priv(gc);
       p.m_crateField.update(dt, p.crateEnv());
     };
     for (let i = 0; i < 20; i++) crateTick(a, 1 / 60);
@@ -361,8 +359,7 @@ describe('network match boot', () => {
     // The state hash mixes the seeded-RNG cursor, and every shot advances it (kickback / crates /
     // variance). A mid-battle reconnect or spectator boots to the BATTLE-START cursor, so without
     // carrying the cursor in the snapshot it runs out of phase → false desync + real divergence.
-    const rngOf = (gc: CGameController) =>
-      (gc as unknown as {m_rng: {float(): number; getState(): number}}).m_rng;
+    const rngOf = (gc: CGameController) => priv(gc).m_rng;
 
     const room = netController(0);
     for (let i = 0; i < 7; i++) rngOf(room).float(); // advance as prior shots in the battle would
@@ -596,7 +593,7 @@ describe('network match boot', () => {
     return gc;
   }
   const forceFlying = (gc: CGameController): void => {
-    (gc as unknown as {m_gameState: EGameState}).m_gameState = EGameState.Flying;
+    priv(gc).m_gameState = EGameState.Flying;
   };
 
   it('relays thrust changes and the cut on the local turn, deduping identical repeats', () => {
@@ -784,14 +781,7 @@ describe('authoritative snapshot', () => {
     const pristine = spectator.getNetSnapshot().heights.slice();
 
     // Carve a crater on the host's terrain AT the surface (robust to world size), then sync.
-    const land = (
-      host as unknown as {
-        m_land: {
-          carveDiscCollapse(x: number, y: number, r: number): void;
-          getHeightAt(x: number): number;
-        };
-      }
-    ).m_land;
+    const land = priv(host).m_land;
     const cx = 200;
     land.carveDiscCollapse(cx, land.getHeightAt(cx) + 10, 40);
 
@@ -926,7 +916,7 @@ describe('NetGame bridge', () => {
       config: CFG,
     });
     gc.netSetActivePlayer(0); // my turn
-    (gc as unknown as {m_onNetTurnEnd: () => void}).m_onNetTurnEnd();
+    priv(gc).m_onNetTurnEnd!();
     const shot = sent.find(m => m.t === 'shotResult');
     expect(shot).toBeTruthy();
     expect(shot && shot.t === 'shotResult' && shot.result.tanks).toHaveLength(2);
@@ -948,7 +938,7 @@ describe('NetGame bridge', () => {
       config: CFG,
     });
     gc.netSetActivePlayer(1); // opponent's turn — I'm a spectator now
-    (gc as unknown as {m_onNetTurnEnd: () => void}).m_onNetTurnEnd();
+    priv(gc).m_onNetTurnEnd!();
     expect(sent.find(m => m.t === 'shotResult')).toBeUndefined();
   });
 
@@ -1058,7 +1048,7 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
     // Simulate the turn settling → from here our OWN sim is authoritative and keyframes are
     // detect-only (m_hasSimulated flips in onTurnSettled, not on turnBegin — so a mid-shot reconnect
     // stays in bootstrap and adopts instead of false-flagging).
-    (gc as unknown as {m_onNetTurnEnd?: () => void}).m_onNetTurnEnd?.();
+    priv(gc).m_onNetTurnEnd?.();
     const inSync = gc.stateHash();
 
     // A keyframe that WOULD kill tank 1.
@@ -1080,7 +1070,7 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
   it('crates are pinned from a keyframe (not self-simulated): a crate-only delta reconciles, no flag', () => {
     const {gc, ng, divergences} = bridge(1);
     ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0}); // our turn
-    (gc as unknown as {m_onNetTurnEnd?: () => void}).m_onNetTurnEnd?.(); // settle → m_hasSimulated
+    priv(gc).m_onNetTurnEnd?.(); // settle → m_hasSimulated
     const inSync = gc.stateHash(); // crates are NOT in this hash
 
     // A keyframe whose ONLY difference is a supply crate the actor has that we don't (ours drifted /
@@ -1188,7 +1178,7 @@ describe('network battle-end', () => {
     snap.tanks[1].life = 0;
     snap.tanks[1].alive = false; // life alone doesn't kill (Rounds); clear the explicit flag
     gc.applyNetSnapshot(snap);
-    (gc as unknown as {m_onNetTurnEnd: () => void}).m_onNetTurnEnd();
+    priv(gc).m_onNetTurnEnd!();
 
     const shot = sent.find(m => m.t === 'shotResult');
     expect(shot && shot.t === 'shotResult' && shot.over).toBe(true);
@@ -1207,8 +1197,8 @@ describe('net turn-flow queue', () => {
     const ng = ng2(gc);
     gc.netSetActivePlayer(0);
 
-    const busy = gc as unknown as {m_netShotResolving: boolean};
-    const q = ng as unknown as {m_queue: unknown[]; drainQueue(): void};
+    const busy = priv(gc);
+    const q = netPriv(ng);
 
     busy.m_netShotResolving = true; // our sim is mid-shot → not idle
     // Two turn hand-offs arrive while busy — the OLD single-slot stash kept only the LAST, dropping
@@ -1227,8 +1217,8 @@ describe('net turn-flow queue', () => {
     const gc = netController(0);
     const ng = ng2(gc);
     gc.netSetActivePlayer(0);
-    const busy = gc as unknown as {m_netShotResolving: boolean};
-    const q = ng as unknown as {m_queue: unknown[]};
+    const busy = priv(gc);
+    const q = netPriv(ng);
 
     ng.handle({t: 'cmd', from: 2, seq: 1, cmd: {t: 'selectWeapon', index: 0}});
     expect(q.m_queue).toHaveLength(0); // idle → applied now, not queued

@@ -5,6 +5,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
 import {CEconomy} from '../src/core/CEconomy';
@@ -18,14 +19,6 @@ import {en} from '../src/i18n/en';
 
 const NUKE = WEAPON_DATABASE.findIndex(w => w.id === 'uranium.nuke');
 const nukeCost = WEAPON_DATABASE[NUKE].cost;
-
-// Private-field view for asserting the bridge pushed live values.
-type GCInternals = {
-  m_speedScale: number;
-  m_variance: boolean;
-  m_landMode: number;
-  m_windScale: number;
-};
 
 describe('Settings → game', () => {
   it('CEconomy reset(startCredits) + configurable sell-back rate', () => {
@@ -53,23 +46,23 @@ describe('Settings → game', () => {
     const gc = new CGameController(makeCanvas());
     applyGameSettings(gc);
     gc.startGame(2);
-    const priv = gc as unknown as GCInternals;
+    const p = priv(gc);
 
     expect(gc.getCredits()).toBe(1234); // Credit Start reaches the match
     expect(gc.getTotalBattles()).toBe(9); // Battles reaches getTotalBattles
     expect(gc.getWindValue() === 0).toBe(true); // Wind Disabled → zero wind
     expect(gc.getDifficulty()).toBe(1); // Difficulty applied (Easiest = level 1)
-    expect(priv.m_speedScale).toBe(2); // Update Scale → 2× speed
-    expect(priv.m_variance).toBe(false); // Variance off is applied
-    expect(priv.m_landMode).toBe(0); // Land Type Flat → mode 0
+    expect(p.m_speedScale).toBe(2); // Update Scale → 2× speed
+    expect(p.m_variance).toBe(false); // Variance off is applied
+    expect(p.m_landMode).toBe(0); // Land Type Flat → mode 0
   });
 
   it('live change: re-applying picks up a new value immediately (High wind scalar)', () => {
     setVal('gp.wind', 3); // High → scalar 1.6
     const gc = new CGameController(makeCanvas());
     applyGameSettings(gc);
-    const priv = gc as unknown as GCInternals;
-    expect(priv.m_windScale).toBe(1.6); // changing Wind re-applies the scalar
+    const p = priv(gc);
+    expect(p.m_windScale).toBe(1.6); // changing Wind re-applies the scalar
 
     // And a fresh match honours it: |wind| stays within the scaled bound.
     gc.startGame(2);

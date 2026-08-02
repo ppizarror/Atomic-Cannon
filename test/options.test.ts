@@ -5,7 +5,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
-import {priv} from './_internals';
+import {priv, tankPriv, landPriv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
@@ -90,7 +90,7 @@ describe('Formerly-no-op Settings options', () => {
     const run = (on: boolean): {before: number; after: number} => {
       const gc = humanGame(2);
       GameConfig.radiationDamage = on; // set AFTER startGame so nothing resets it under us
-      const p = gc as unknown as {m_tanks: CTank[]; m_land: CLand};
+      const p = priv(gc);
       const tank = p.m_tanks[0];
       const x = Math.floor(tank.getPosition().x);
       const surf = p.m_land.getHeightAt(x);
@@ -112,11 +112,7 @@ describe('Formerly-no-op Settings options', () => {
 
   it("the weapon list shows the ACTIVE player's own stock, not the full arsenal", () => {
     const gc = humanGame(2);
-    const p = gc as unknown as {
-      m_tanks: CTank[];
-      m_currentPlayerIndex: number;
-      economyFor(t: CTank): {grant(i: number): void; hasStock(i: number): boolean};
-    };
+    const p = priv(gc);
     const botIdx = p.m_tanks.findIndex(t => !t.isHuman());
     expect(botIdx).toBeGreaterThanOrEqual(0);
     p.m_currentPlayerIndex = botIdx; // spectate the bot's turn
@@ -136,11 +132,7 @@ describe('Formerly-no-op Settings options', () => {
 
   it('the arsenal numbers by BUY ORDER: Shell stays #1, bought weapons follow in acquisition order', () => {
     const gc = humanGame(2);
-    const p = gc as unknown as {
-      m_tanks: CTank[];
-      m_currentPlayerIndex: number;
-      economyFor(t: CTank): {grant(i: number): void};
-    };
+    const p = priv(gc);
     const humanIdx = p.m_tanks.findIndex(t => t.isHuman());
     p.m_currentPlayerIndex = humanIdx; // getWeaponDefs reads the ACTIVE tank's economy
     const econ = p.economyFor(p.m_tanks[humanIdx]);
@@ -170,12 +162,7 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.cameraMode = 1; // Instant (Graphics → Camera): the off-screen snap is Instant-mode now
     const gc = humanGame(2);
     GameConfig.landSize = 3; // restore for other tests (world already built at 5)
-    const p = gc as unknown as {
-      m_tanks: CTank[];
-      m_currentPlayerIndex: number;
-      m_viewW: number;
-      beginTurn(): void;
-    };
+    const p = priv(gc);
 
     // Battle start centred the camera on player 0; find a tank currently OFF-SCREEN.
     const cam = gc.getCameraX();
@@ -199,24 +186,20 @@ describe('Formerly-no-op Settings options', () => {
       H = 500,
       SURF = 300;
     const build = (): CLand => {
-      const land = new CLand(W, H) as unknown as {
-        generateFlat(): void;
-        m_arrHeights: Int16Array;
-        m_pixels: Uint32Array;
-        m_material: Uint8Array;
-      };
+      const land = new CLand(W, H);
       land.generateFlat();
-      land.m_pixels = new Uint32Array(W * H);
-      land.m_material = new Uint8Array(W * H);
+      const lp = landPriv(land);
+      lp.m_pixels = new Uint32Array(W * H);
+      lp.m_material = new Uint8Array(W * H);
       for (let x = 0; x < W; x++) {
-        land.m_arrHeights[x] = SURF;
-        for (let y = SURF; y < H; y++) land.m_pixels[y * W + x] = 0xff3c5a1e >>> 0;
+        lp.m_arrHeights[x] = SURF;
+        for (let y = SURF; y < H; y++) lp.m_pixels[y * W + x] = 0xff3c5a1e >>> 0;
       }
-      return land as unknown as CLand;
+      return land;
     };
     const settled = (land: CLand): CTank => {
       const t = new CTank('T', 0);
-      (t as unknown as {init(x: number, l: CLand): void}).init(600, land);
+      tankPriv(t).init(600, land);
       for (let i = 0; i < 60; i++) t.update(land, 1 / 60);
       return t;
     };
@@ -238,7 +221,7 @@ describe('Formerly-no-op Settings options', () => {
       const l = build();
       const t = settled(l);
       const before = t.getPosition().y;
-      const pv = l as unknown as {m_arrHeights: Int16Array};
+      const pv = landPriv(l);
       for (let c = 560; c < 640; c++) pv.m_arrHeights[c] = SURF - 40; // 40px of dirt on top
       for (let i = 0; i < 200; i++) t.update(l, 1 / 60);
       return t.getPosition().y - before;
@@ -255,7 +238,7 @@ describe('Formerly-no-op Settings options', () => {
       const land = new CLand(2000, 500);
       land.generateRandomTerrain(seed);
       const tank = new CTank('T', 0);
-      (tank as unknown as {init(x: number, l: CLand): void}).init(800, land);
+      tankPriv(tank).init(800, land);
       for (let i = 0; i < 60; i++) tank.update(land, 1 / 60);
       const x0 = tank.getPosition().x;
       tank.startDrive(x0 + 150);
@@ -283,7 +266,7 @@ describe('Formerly-no-op Settings options', () => {
     }
     const L = land as unknown as CLand;
     const tank = new CTank('T', 0);
-    (tank as unknown as {init(x: number, l: CLand): void}).init(400, L);
+    tankPriv(tank).init(400, L);
     for (let i = 0; i < 60; i++) tank.update(L, 1 / 60);
     GameConfig.buryTanks = true;
 
@@ -322,10 +305,11 @@ describe('Formerly-no-op Settings options', () => {
 
   it('a destroyed wreck falls into a crater carved under it (not left floating)', () => {
     const gc = humanGame(4); // 4 teams → killing one leaves the battle running (no BattleEnd)
-    const p = gc as unknown as {m_tanks: CTank[]; m_land: CLand};
-    const wreck = p.m_tanks[1] as unknown as CTank & {m_bIsAlive: boolean; m_bExploded: boolean};
-    wreck.m_bIsAlive = false; // a destroyed tank...
-    wreck.m_bExploded = true; // ...that leaves a drawn wreck
+    const p = priv(gc);
+    const wreck = p.m_tanks[1];
+    const wp = tankPriv(wreck);
+    wp.m_bIsAlive = false; // a destroyed tank...
+    wp.m_bExploded = true; // ...that leaves a drawn wreck
     const yBefore = wreck.getPosition().y;
     const wx = Math.floor(wreck.getPosition().x);
     // Blow the ground out from under the wreck.
@@ -345,12 +329,13 @@ describe('Formerly-no-op Settings options', () => {
     };
     const kill = (owns: boolean): number => {
       const p = humanGame(4) as unknown as GCPriv; // 4 teams → no BattleEnd when one dies
-      const victim = p.m_tanks[1] as unknown as CTank & {m_bIsAlive: boolean; m_bExploded: boolean};
+      const victim = p.m_tanks[1];
+      const vp = tankPriv(victim);
       if (owns) p.economyFor(victim).grant(burial); // still holds a Burial Mound on death
       const x = Math.floor(victim.getPosition().x);
       const before = p.m_land.getHeightAt(x);
-      victim.m_bIsAlive = false;
-      victim.m_bExploded = true;
+      vp.m_bIsAlive = false;
+      vp.m_bExploded = true;
       p.handleTankDestroyed(victim); // → posthumous Death-weapon cook-off
       for (let i = 0; i < 300; i++) p.m_land.update(1 / 60); // settle the thrown dirt into a mound
       return before - p.m_land.getHeightAt(x); // >0 = surface ROSE (Y smaller = higher)
@@ -364,12 +349,7 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.landSize = 5; // wide world so a long move fits
     const gc = humanGame(2);
     GameConfig.landSize = 3; // restore (world already built at 5)
-    const p = gc as unknown as {
-      m_tanks: CTank[];
-      m_currentPlayerIndex: number;
-      m_land: CLand;
-      startTankMove(t: CTank, destX: number): void;
-    };
+    const p = priv(gc);
     const mover = p.m_tanks[0];
     p.m_currentPlayerIndex = 0;
     const startX = mover.getPosition().x;
@@ -395,7 +375,7 @@ describe('Formerly-no-op Settings options', () => {
     const gc = humanGame(2); // 2 players → 2 turns per round
     const prev = GameConfig.crateChance;
     GameConfig.crateChance = 100; // always drops WHEN it actually rolls
-    const p = gc as unknown as {m_crateField: {list(): readonly unknown[]}; endTurn(): void};
+    const p = priv(gc);
 
     expect(p.m_crateField.list().length).toBe(0);
     p.endTurn(); // player 0 → 1: mid-round hand-off (turn order NOT wrapped yet)

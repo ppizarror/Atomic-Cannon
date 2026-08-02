@@ -7,9 +7,8 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 import {CGameController} from '../src/game/CGameController';
-
-type Priv = {m_currentBattle: number; m_currentRound: number; m_shotsFired: number};
 
 describe('new-match reset', () => {
   it('startGame restarts battle/round/shot counters left high by a previous war', () => {
@@ -17,7 +16,7 @@ describe('new-match reset', () => {
     gc.setHumanCount(1);
     gc.startGame(2);
 
-    const p = gc as unknown as Priv;
+    const p = priv(gc);
     p.m_currentBattle = 5; // pretend a prior war finished with these high
     p.m_currentRound = 12;
     p.m_shotsFired = 47;

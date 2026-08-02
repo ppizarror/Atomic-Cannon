@@ -4,17 +4,13 @@
  * same flat tint. Each channel stays within [0, max]; the channels vary independently of one another.
  */
 import {describe, it, expect} from 'vitest';
+import {landPriv} from './_internals';
 import {CLand} from '../src/core/CLand';
-
-type Priv = {
-  m_arrHeights: Int16Array;
-  m_radSpecks: {r: number; g: number; b: number}[];
-};
 
 function flatLand(W: number, H: number, surf: number): CLand {
   const land = new CLand(W, H);
   land.generateFlat();
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   for (let x = 0; x < W; x++) p.m_arrHeights[x] = surf;
   return land;
 }
@@ -22,7 +18,7 @@ function flatLand(W: number, H: number, surf: number): CLand {
 describe('CLand — radiation speck colour jitter', () => {
   it('each speck jitters R/G/B within the weapon per-channel max, ranging dark→bright', () => {
     const land = flatLand(300, 300, 150);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     const irR = 255,
       irG = 46,

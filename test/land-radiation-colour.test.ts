@@ -14,17 +14,8 @@
  * newer one landed, and kept it from ever going out.
  */
 import {describe, it, expect} from 'vitest';
+import {landPriv} from './_internals';
 import {CLand} from '../src/core/CLand';
-
-type Priv = {
-  m_arrHeights: Int16Array;
-  m_radSpecks: unknown[];
-  m_material: Uint8Array | null;
-  m_radSlotRGB: [number, number, number][];
-  m_radParticles: {slot: number; timeRemaining: number; duration: number}[];
-  m_nWidth: number;
-  m_nHeight: number;
-};
 
 const BLUE: [number, number, number] = [40, 90, 255];
 const RED: [number, number, number] = [255, 46, 20];
@@ -35,19 +26,19 @@ const slotOf = (b: number): number => (b >>> 5) & 7;
 function flatLand(W: number, H: number, surf: number): CLand {
   const land = new CLand(W, H);
   land.generateFlat();
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   for (let x = 0; x < W; x++) p.m_arrHeights[x] = surf;
   return land;
 }
 
 function settleFallout(land: CLand): void {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   for (let i = 0; i < 500 && p.m_radSpecks.length > 0; i++) land.update(1 / 60);
 }
 
 /** The colours actually recorded in a column's earth, via each pixel's slot. */
 function columnColours(land: CLand, col: number): string[] {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const mat = p.m_material;
   if (!mat) return [];
   const seen = new Set<string>();
@@ -62,7 +53,7 @@ function columnColours(land: CLand, col: number): string[] {
 
 /** The distinct slots recorded in a column's earth. */
 function columnSlots(land: CLand, col: number): number[] {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const mat = p.m_material;
   if (!mat) return [];
   const seen = new Set<number>();
@@ -100,7 +91,7 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
       H = 300,
       surf = 150;
     const land = flatLand(W, H, surf);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.blastIradiate(200, surf, 45, 12, 30, BLUE);
     settleFallout(land);
@@ -137,7 +128,7 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
 
   it('each crater keeps its own clock — a later blast neither revives nor deletes it', () => {
     const land = flatLand(900, 300, 150);
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.blastIradiate(150, 150, 40, 12, 30, BLUE);
     settleFallout(land); // A ages while its fallout comes down

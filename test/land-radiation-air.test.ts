@@ -21,17 +21,7 @@
 import {describe, it, expect} from 'vitest';
 import {CLand} from '../src/core/CLand';
 import {makeCanvas, type MockImage} from './_dom';
-
-type Priv = {
-  m_arrHeights: Int16Array;
-  m_pixels: Uint32Array | null;
-  m_radSpecks: unknown[];
-  m_radGlowCanvas: (HTMLCanvasElement | null)[];
-  m_radGlowX: number;
-  m_radGlowY: number;
-  m_nWidth: number;
-  m_nHeight: number;
-};
+import {landPriv} from './_internals';
 
 const SOLID = 0xff3c5a1e >>> 0;
 
@@ -40,7 +30,7 @@ const SOLID = 0xff3c5a1e >>> 0;
 function cliffLand(W: number, H: number, cliffX: number, hi: number, lo: number): CLand {
   const land = new CLand(W, H);
   land.generateFlat();
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const px = new Uint32Array(W * H);
   for (let x = 0; x < W; x++) {
     const surf = x < cliffX ? hi : lo;
@@ -52,13 +42,13 @@ function cliffLand(W: number, H: number, cliffX: number, hi: number, lo: number)
 }
 
 function settleFallout(land: CLand): void {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   for (let i = 0; i < 500 && p.m_radSpecks.length > 0; i++) land.update(1 / 60);
 }
 
 /** Every lit texel of the baked glow, in WORLD coordinates. */
 function litTexels(land: CLand): {x: number; y: number}[] {
-  const p = land as unknown as Priv;
+  const p = landPriv(land);
   const out: {x: number; y: number}[] = [];
   for (const cv of p.m_radGlowCanvas) {
     if (!cv) continue;
@@ -82,7 +72,7 @@ describe('CLand — the radiation glow never lights empty space', () => {
       H = 300,
       cliffX = 200;
     const land = cliffLand(W, H, cliffX, 120, 220); // 100px sheer drop
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     // Contaminate the high ground right up to the edge.
     land.blastIradiate(cliffX - 40, 120, 60, 12, 30, [255, 46, 20]);
@@ -106,7 +96,7 @@ describe('CLand — the radiation glow never lights empty space', () => {
       H = 300,
       surf = 150;
     const land = cliffLand(W, H, W, surf, surf); // flat
-    const p = land as unknown as Priv;
+    const p = landPriv(land);
 
     land.blastIradiate(200, surf, 90, 12, 30, [255, 46, 20]);
     settleFallout(land);

@@ -8,15 +8,8 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 import {CGameController} from '../src/game/CGameController';
-
-type Priv = {
-  m_aim: {active: boolean};
-  m_tanksMoving: boolean;
-  m_jetSounding: boolean;
-  beginTurn(): void;
-};
-const priv = (gc: CGameController) => gc as unknown as Priv;
 
 function game(): CGameController {
   const gc = new CGameController(makeCanvas());
