@@ -305,10 +305,16 @@ describe('network match boot', () => {
     b.devDropCrate('health');
     expect(a.stateHash()).toBe(b.stateHash());
 
-    // Now simulate the free-running drift: advance ONLY a's crate physics. updateCrates never touches
-    // the RNG, so the only state that changes is the (unhashed) crate position.
-    for (let i = 0; i < 20; i++)
-      (a as unknown as {updateCrates(dt: number): void}).updateCrates(1 / 60);
+    // Now simulate the free-running drift: advance ONLY a's crate physics. The crate field never
+    // touches the RNG, so the only state that changes is the (unhashed) crate position.
+    const crateTick = (gc: CGameController, dt: number) => {
+      const p = gc as unknown as {
+        m_crateField: {update(dt: number, env: unknown): void};
+        crateEnv(): unknown;
+      };
+      p.m_crateField.update(dt, p.crateEnv());
+    };
+    for (let i = 0; i < 20; i++) crateTick(a, 1 / 60);
 
     const ca = a.getNetSnapshot().crates!;
     const cb = b.getNetSnapshot().crates!;

@@ -397,13 +397,13 @@ describe('Formerly-no-op Settings options', () => {
     const gc = humanGame(2); // 2 players → 2 turns per round
     const prev = GameConfig.crateChance;
     GameConfig.crateChance = 100; // always drops WHEN it actually rolls
-    const p = gc as unknown as {m_crates: unknown[]; endTurn(): void};
+    const p = gc as unknown as {m_crateField: {list(): readonly unknown[]}; endTurn(): void};
 
-    expect(p.m_crates.length).toBe(0);
+    expect(p.m_crateField.list().length).toBe(0);
     p.endTurn(); // player 0 → 1: mid-round hand-off (turn order NOT wrapped yet)
-    expect(p.m_crates.length).toBe(0); // no crate mid-round — the bug dropped one EVERY turn
+    expect(p.m_crateField.list().length).toBe(0); // no crate mid-round — the bug dropped one EVERY turn
     p.endTurn(); // player 1 → 0: the round wraps
-    expect(p.m_crates.length).toBe(1); // exactly one crate for the completed round
+    expect(p.m_crateField.list().length).toBe(1); // exactly one crate for the completed round
 
     GameConfig.crateChance = prev; // restore (shared singleton)
   });

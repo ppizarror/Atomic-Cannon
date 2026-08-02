@@ -10,6 +10,8 @@ import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
+import {CEconomy} from '../src/core/CEconomy';
+import {aiRestock} from '../src/core/botEconomy';
 
 type GC = {
   m_tanks: {isBot(): boolean; hit(n: number): number; setCredits(n: number): void}[];
@@ -20,7 +22,6 @@ type GC = {
     getCredits(): number;
     getOwned(i: number): number;
   };
-  aiRestock(tank: unknown, econ: unknown): void;
   botAimAndFire(tank: unknown): void;
 };
 
@@ -68,23 +69,45 @@ describe('Smarter bots — inventory + self-buff', () => {
     expect(priv.m_currentWeaponIndex).not.toBe(idOf('repairs'));
   });
 
+  // The restock doctrine is a pure function over an inventory + the buyer's condition (see
+  // core/botEconomy), so these drive it directly — no match, no controller, no private reach.
+  const restock = (difficulty: number, hurt: boolean) => {
+    const econ = new CEconomy(50_000);
+    let spent = 0;
+    aiRestock({
+      econ,
+      stats: {
+        life: hurt ? 300 : 1000, // hurt → under the heal guard (life < maxLife·0.7)
+        maxLife: 1000,
+        shield: 0,
+        armor: 0,
+        hazmat: 0,
+        buried: false,
+      },
+      difficulty,
+      rng: {float: () => 0.5},
+      onSpent: () => spent++,
+    });
+    return {econ, spent};
+  };
+
   it('a high-difficulty hurt bot restocks defensive support (shield + heal)', () => {
-    const {priv, bot} = botGame(9); // L9 > 5, so shield+heal are gated in
-    bot.hit(700); // hurt → the heal need-guard (life < maxLife·0.7) is met
-    const econ = priv.economyFor(bot);
-    priv.aiRestock(bot, econ);
+    const {econ} = restock(9, true); // L9 > 5, so shield+heal are gated in
     expect(ownsExt(econ, 7)).toBe(true); // bought a Shield
     expect(ownsExt(econ, 10)).toBe(true); // bought a Heal
     expect(ownsExt(econ, 16)).toBe(true); // and a Mine (L>4)
   });
 
   it('a LOW-difficulty bot does not stock defensive support', () => {
-    const {priv, bot} = botGame(2); // L2: below every support gate
-    bot.hit(700);
-    const econ = priv.economyFor(bot);
-    priv.aiRestock(bot, econ);
+    const {econ} = restock(2, true); // L2: below every support gate
     expect(ownsExt(econ, 7)).toBe(false); // no shield
     expect(ownsExt(econ, 10)).toBe(false); // no heal
     expect(ownsExt(econ, 11)).toBe(false); // no armor
+  });
+
+  it('re-pools the squad balance after spending (ECON-1)', () => {
+    // The controller passes `onSpent` to re-sync same-team tanks to the debited balance; without
+    // it a squad-mate's later earn would pool a stale balance back and refund the whole restock.
+    expect(restock(9, true).spent).toBe(1);
   });
 });

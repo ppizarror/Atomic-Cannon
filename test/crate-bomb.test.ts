@@ -13,7 +13,7 @@ import type {CTank} from '../src/core/CTank';
 const BOMB = WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
 
 type Priv = {
-  m_crates: {kind: string; weaponIndex: number}[];
+  m_crateField: {list(): readonly {kind: string; weaponIndex: number}[]};
   m_tanks: CTank[];
   addCrate(x: number, forced?: string): void;
   collectCrate(c: unknown, tank: CTank): void;
@@ -30,7 +30,7 @@ describe('bomb crate', () => {
     const p = gc as unknown as Priv;
 
     p.addCrate(100, 'bomb');
-    const crate = p.m_crates.at(-1)!;
+    const crate = p.m_crateField.list().at(-1)!;
     expect(crate.kind).toBe('bomb');
     expect(crate.weaponIndex).toBe(BOMB); // was -1 → mislabeled + no grant
 

@@ -14,7 +14,7 @@ import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTan
 import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 import type {StatsDelta} from '../net/stats';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
-import {windProfile, gustFactor} from '../core/wind';
+import {gustFactor} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
 import {pickTaunt, type TauntCategory} from '../core/CTaunts';
 import {landEnabled, weaponEnabled} from '../core/CGameContent';
@@ -23,11 +23,31 @@ import {
   CWeapon,
   getDefaultWeaponIndex,
   getWeapon,
-  someWeapon,
   weaponIndices,
   WEAPON_DATABASE,
   type WeaponDef,
 } from '../core/CWeapon';
+import {
+  aiRestock,
+  botFiniteStock,
+  isBeamWeapon,
+  isNukeWeapon,
+  ownedWeaponIndices,
+  ultraFiniteOffense,
+  ultraManageEconomy,
+  ULTRA_SURROUND_RADIUS,
+  type BotBuyCtx,
+  type BotBuyStats,
+  type UltraBuyCtx,
+} from '../core/botEconomy';
+import {CFireworks, type FireworksEnv} from './CFireworks';
+import {
+  CCrateField,
+  type Crate,
+  type CrateDrawEnv,
+  type CrateEnv,
+  type CrateKind,
+} from './CCrateField';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem, type ISmokeSink} from '../core/CParticleSystem';
 import {ScreenShake} from '../core/rendering/ScreenShake';
@@ -60,7 +80,6 @@ import {
   NO_THREAT,
   planUltraTurn,
   rangePowerCorrection,
-  SELF_BURY_MIN_EARTH,
   ULTRA_PERSONALITIES,
   ULTRA_PERSONALITY_NAMES,
   type UltraAlly,
@@ -72,7 +91,7 @@ import {
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
-import {between, plusMinus} from '../math/random';
+import {between} from '../math/random';
 import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
 import type {MatchConfig} from '../net/protocol';
@@ -175,51 +194,6 @@ interface LandConfig {
 
 const LAND_DATA = landData as LandConfig[];
 
-/** One firework spark: world position + velocity, its (bmp-pixel) colour, and age/life. */
-interface Firework {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  color: string;
-  age: number;
-  life: number;
-}
-
-/** A rising launch rocket: climbs from `y` (the ground) to `targetY`, trailing sparks,
- *  then detonates into a burst at (x, targetY). */
-interface FwRocket {
-  x: number;
-  y: number;
-  vy: number;
-  targetY: number;
-}
-
-type CrateKind = 'weapon' | 'credits' | 'health' | 'bomb';
-
-/** A supply crate falling under (then landed without) a parachute. `y` is the crate box's
- *  position; the parachute assembly is drawn above it and swings about its canopy top. */
-interface Crate {
-  x: number;
-  y: number;
-  vy: number; // free-fall velocity if the chute ever detaches (normally 0)
-  kind: CrateKind;
-  amount: number; // credits / health payload
-  weaponIndex: number; // weapon type (weapon / bomb kinds)
-  landed: boolean;
-  phase: number; // wobble phase offset (deg) so crates don't swing in unison
-  id: number;
-}
-
-/** A short-lived floating pickup message (e.g. "You found 400 credits.") above a tank. */
-interface FloatText {
-  x: number;
-  y: number;
-  text: string;
-  color: string;
-  age: number;
-}
-
 /** A live speech bubble: the speaker (for its screen position) + the rendered
  *  "Name: line" text + its age. Kept controller-side (not on the tank) so a death
  *  bubble outlives its now-dead speaker. */
@@ -292,7 +266,6 @@ const BEAM_COLLAPSE_DELAY = 1;
 
 /** A bot restocks a shield only when its current shield is below this (the original's autobuy
  *  shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading). */
-const BOT_SHIELD_NEED = 500;
 
 /**
  * How the view follows the action.
@@ -318,63 +291,6 @@ const CAMERA = {
 const CONTROL_WEAPON: string | null = null;
 
 /**
- * Supply crates (Gameplay → Crates). On a per-ROUND chance a parachute crate drops from the top of
- * the map, descends at a constant speed with a ±5° pendulum wobble, lands on the terrain, and is
- * collected by any tank that comes within reach — granting credits, health, or a weapon. Descent
- * speed, wobble, and the contents split match the original.
- */
-const CRATE = {
-  /** Landed crate size (px); the pickup reach is `BOX / 2 + tank radius`. */
-  BOX: 32,
-  /** Constant chute descent speed (px/s). */
-  DESCENT: 90,
-  /** Pickup message lifetime (s). */
-  FLOAT_TEXT_LIFE: 2.0,
-  /** Free-fall accel if the chute ever detaches (px/s²). */
-  GRAVITY: 95,
-  /** Sideways drift per unit of wind while descending (px/s), Realistic mode only. High vs the
-   *  descent speed because a chute is nearly all sail — at full wind (±5) it drifts ~±70 px/s
-   *  against a 90 px/s fall, a clear ~38° slant. Eased near the ground by the wind altitude
-   *  profile. */
-  WIND_DRIFT: 14,
-  /** Pendulum amplitude (±deg), pivot at the canopy top. */
-  WOBBLE_DEG: 5,
-  /** deg/s of the sine argument (≈1.8 s per swing). */
-  WOBBLE_SPEED: 200,
-} as const;
-
-/**
- * Victory fireworks (war-end Victory only). A burst appears at a random sky point on a randomized
- * interval; it's one of the 8 `bursts/*.bmp` shapes (circle/ring/star/delta/…), emitting one spark
- * per lit pixel — coloured by that pixel — that flies radially outward then arcs down under gravity
- * + wind and fades. The shape is visible at t=0, then rains down. Speed is uniform (rand01 × scale),
- * so many sparks barely move and hold the shape while a few fly out; positions are at native bmp
- * scale (the wide look comes from the expansion, not upscaling); alpha holds full for the first 60%
- * of life then falls linearly to 0. Particle life is kept short so sparks fade in air on the fixed
- * camera.
- */
-const FW = {
-  /** Downward accel (px/s²) — the burst rains down (semi-implicit Euler, no drag). */
-  GRAVITY: 95,
-  /** Fraction of life at full alpha before the linear fade begins. */
-  HOLD: 0.6,
-  /** Gap between bursts ≈ uniform(min, max) seconds. */
-  INTERVAL: [0.12, 2.4],
-  /** Particle lifetime (s). */
-  LIFE: 2.8,
-  /** The 8 shape templates (`bursts/<name>.bmp`), loaded + sampled once into `burstPixels`. */
-  NAMES: ['circle', 'ring', 'star1', 'star2', 'delta', 'pentagon', 'hexagon', 'octagon'],
-  /** Launch trail (a deliberate embellishment over the legacy, which just pops the burst in): a
-   *  rocket rises from the ground trailing sparks, then detonates into the burst. This is its rise
-   *  speed (px/s). */
-  ROCKET_SPEED: 320,
-  /** Native bmp scale (no position multiplier). */
-  SCALE: 1,
-  /** Radial launch speed scale (px/s); per-spark speed = rand01 × this. */
-  SPEED: 52,
-  /** Launch-trail spark lifetime (s). */
-  TRAIL_LIFE: 0.4,
-} as const;
 
 /**
  * On-screen readouts the Graphics options can switch on.
@@ -512,11 +428,13 @@ export class CGameController implements ShotWorld {
   // ========================================================================
 
   /** Per-shape sampled lit pixels: offset from the sprite centre + that pixel's colour. Null until
-   *  the bmp loads; filled asynchronously by `CGameController.loadBurstPixels`. */
-  private static burstPixels: ({dx: number; dy: number; color: string}[] | null)[] = FW.NAMES.map(
-    () => null,
-  );
-  private static burstLoadStarted = false;
+  private static deathWeapons: number[] | null = null;
+
+  private static controlWeaponIndex(): number {
+    return CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
+  }
+
+  /** Memoised result of {@link deathWeaponIndices}; the weapon database is immutable after load. */
   private static deathWeapons: number[] | null = null;
 
   private static controlWeaponIndex(): number {
@@ -548,38 +466,6 @@ export class CGameController implements ShotWorld {
   }
 
   /** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half subsampled
-   *  for particle count) into `CGameController.burstPixels`. Browser-only (uses Image/canvas). */
-  private static loadBurstPixels(): void {
-    if (CGameController.burstLoadStarted || typeof document === 'undefined') return;
-    CGameController.burstLoadStarted = true;
-    FW.NAMES.forEach((name, idx) => {
-      const img = new Image();
-      img.onload = () => {
-        const cv = document.createElement('canvas');
-        cv.width = img.width;
-        cv.height = img.height;
-        const g = cv.getContext('2d', {willReadFrequently: true})!;
-        g.drawImage(img, 0, 0);
-        const {data} = g.getImageData(0, 0, img.width, img.height);
-        const hw = img.width / 2,
-          hh = img.height / 2;
-        const pts: {dx: number; dy: number; color: string}[] = [];
-        for (let y = 0; y < img.height; y++) {
-          for (let x = 0; x < img.width; x++) {
-            const i = (y * img.width + x) * 4; // sample every lit pixel — many fine sparks
-            const r = data[i],
-              gg = data[i + 1],
-              b = data[i + 2];
-            if (r > 200 && gg < 80 && b > 200) continue; // magenta colour-key
-            if (r + gg + b < 30) continue; // (near-)black background
-            pts.push({dx: x - hw, dy: y - hh, color: `rgb(${r},${gg},${b})`});
-          }
-        }
-        CGameController.burstPixels[idx] = pts;
-      };
-      img.src = `/assets/bursts/${name}.bmp`;
-    });
-  }
 
   /** The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the rapid
    *  Machine Gun (Minigun variant). The Turret uses the Shell staple; the Minigun looks the Machine
@@ -705,12 +591,9 @@ export class CGameController implements ShotWorld {
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
-    this.m_crates = [];
-    this.m_floatTexts = [];
+    this.m_crateField.clear();
     this.m_bubbles = [];
-    this.m_fireworks = [];
-    this.m_rockets = [];
-    this.m_showFireworks = false;
+    this.m_fireworksFx.clear();
     // Drop any deferred actions queued by the PREVIOUS match — e.g. a still-running Explode-Losers
     // cascade or a queued bot turn. m_time is monotonic (never reset), so a leftover closure whose
     // `at` is already in the past would otherwise all fire at once on this match's first update().
@@ -1108,7 +991,8 @@ export class CGameController implements ShotWorld {
 
       case EGameState.BattleEnd:
         this.m_battleEndTime += dt; // drives the winner flag raise + wave animation
-        this.updateFireworks(dt); // victory sky fireworks (no-op unless the human won)
+        // Victory sky fireworks (no-op unless the human won the war).
+        this.m_fireworksFx.update(dt, this.fireworksEnv());
         break;
     }
 
@@ -1125,7 +1009,7 @@ export class CGameController implements ShotWorld {
       this.m_blastCircles = this.m_blastCircles.filter(c => c.age < HUD.BLAST_CIRCLE_LIFE);
     }
     this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
-    this.updateCrates(dt); // descend / land / collect supply crates + age pickup text
+    this.m_crateField.update(dt, this.crateEnv()); // descend / land / collect supply crates + age pickup text
     this.m_land.update(dt, this.m_effWind);
     // Change Wind (Gameplay): only "Anytime" (3) drifts continuously; Per-game / After-round /
     // After-shot hold the vector constant between their discrete rerolls (see endTurn).
@@ -1192,8 +1076,7 @@ export class CGameController implements ShotWorld {
     if (!this.m_assets.isReady()) return true; // sprites still popping in
     if (this.m_damageNumbers.length) return true; // floating damage text rising/fading
     if (this.m_blastCircles.length) return true; // blast-circle rings fading
-    if (this.m_crates.length) return true; // parachute crates falling / wobbling
-    if (this.m_floatTexts.length) return true; // crate-pickup messages rising/fading
+    if (this.m_crateField.hasAny()) return true; // crates falling/wobbling, pickup messages fading
     for (const s of this.m_shots) if (!s.isDead()) return true;
     for (const m of this.m_mines) if (m.armed > 0) return true; // arming → colour flips
     for (const t of this.m_tanks)
@@ -1607,17 +1490,17 @@ export class CGameController implements ShotWorld {
     // Between battles: plant a flag by the winning tank and show its taunt bubble.
     // On a war-end victory, fireworks burst across the sky behind the standings.
     if (this.m_gameState === EGameState.BattleEnd) {
-      this.drawFireworks(ctx);
+      this.m_fireworksFx.draw(ctx);
       this.drawWinnerFlag(ctx);
     }
 
     this.drawPlacedEntities(ctx);
-    this.drawCrates(ctx); // supply crates (parachute wobble / landed on the slope)
+    this.m_crateField.draw(ctx, this.crateDrawEnv(ctx)); // supply crates (parachute wobble / landed on the slope)
     this.drawBlastCircles(ctx); // Show Blast Circles: explosion-radius rings
     this.drawMoveArea(ctx);
     this.drawAimTarget(ctx);
     this.drawAim(ctx);
-    this.drawFloatTexts(ctx); // crate-pickup messages
+    this.m_crateField.drawTexts(this.crateDrawEnv(ctx)); // crate-pickup messages
 
     // Trail / explosion particles. These use additive ('lighter') blending, so they
     // stay in the world scene (over the opaque backdrop) — moving them to the
@@ -2449,6 +2332,17 @@ export class CGameController implements ShotWorld {
    *  only case the legacy fires victory fireworks. Leader is mode-aware (Deathmatch: kills;
    *  Rounds/Points: points), via getLeadingTeam — so a points win with no survivors still
    *  counts. */
+  /** The per-frame world slice the victory display reads (camera, ground, wind, the boom). */
+  private fireworksEnv(): FireworksEnv {
+    return {
+      camX: this.m_camX,
+      viewW: this.m_viewW,
+      groundAt: x => this.m_land.getHeightAt(x),
+      wind: this.m_effWind,
+      onBoom: x => this.m_audio?.firework(x),
+    };
+  }
+
   private isHumanWarVictory(): boolean {
     if (!this.getWarOver()) return false;
     if (!this.m_tanks.some(t => t.isHuman())) return false;
@@ -2456,228 +2350,47 @@ export class CGameController implements ShotWorld {
   }
 
   /** Launch a firework: pick a random sky target above the terrain and send a rocket up
-   *  from the ground toward it (it detonates into the burst on arrival). */
-  private launchFirework(): void {
-    if (!CGameController.burstPixels.some(Boolean)) {
-      CGameController.loadBurstPixels(); // shapes not sampled yet — kick off the load and skip this beat
-      return;
-    }
-    const vw = this.m_viewW;
-    const margin = 32 * FW.SCALE; // keep the whole 64px burst on screen
-    const cx = this.m_camX + margin + Math.random() * Math.max(1, vw - 2 * margin);
-    const ground = this.m_land.getHeightAt(cx); // terrain surface — the launch pad
-    const ceil = Math.max(24, ground - 24);
-    const targetY = 14 + Math.random() * ceil * 0.5; // upper sky
-    this.m_rockets.push({x: cx, y: ground, vy: -FW.ROCKET_SPEED, targetY});
-  }
-
-  /** Detonate a burst at (cx, cy): one spark per lit pixel of a random burst bmp, coloured
-   *  by that pixel, flying radially out at a uniform-random speed (rand01 × scale). */
-  private explodeFirework(cx: number, cy: number): void {
-    const ready = CGameController.burstPixels.filter(
-      (p): p is {dx: number; dy: number; color: string}[] => !!p,
-    );
-    if (!ready.length) return;
-    const pts = ready[Math.floor(Math.random() * ready.length)];
-    for (const p of pts) {
-      const dist = Math.hypot(p.dx, p.dy) || 1;
-      const sp = Math.random() * FW.SPEED; // uniform radial speed (rand01 × scale)
-      this.m_fireworks.push({
-        x: cx + p.dx * FW.SCALE,
-        y: cy + p.dy * FW.SCALE,
-        vx: (p.dx / dist) * sp,
-        vy: (p.dy / dist) * sp,
-        color: p.color, // the bmp pixel's own colour
-        age: 0,
-        life: FW.LIFE * (0.8 + Math.random() * 0.4),
-      });
-    }
-    this.m_audio?.firework(cx); // Slapthunder1/2.wav (the boom); pan spans the WORLD, so pass world-X
-  }
-
-  /** Tick the victory fireworks: launch on the interval, rise the rockets (trailing
-   *  sparks) until they detonate, then integrate every spark (gravity + wind drift ×0.7),
-   *  dropping the expired / grounded / off-view. */
-  private updateFireworks(dt: number): void {
-    if (!this.m_showFireworks) return;
-    this.m_fireworkTimer -= dt;
-    if (this.m_fireworkTimer <= 0) {
-      this.launchFirework();
-      this.m_fireworkTimer = FW.INTERVAL[0] + Math.random() * (FW.INTERVAL[1] - FW.INTERVAL[0]);
-    }
-    const wx = this.m_effWind.x * 0.7,
-      wy = this.m_effWind.y * 0.7;
-
-    // Rockets: rise, trail a spark each frame, detonate on reaching the target.
-    if (this.m_rockets.length) {
-      const rising: FwRocket[] = [];
-      for (const r of this.m_rockets) {
-        r.y += r.vy * dt;
-        r.x += wx * dt * 0.3; // slight wind lean
-        this.m_fireworks.push({
-          x: r.x + plusMinus(1.5),
-          y: r.y + Math.random() * 4, // just below the head
-          vx: plusMinus(8),
-          vy: plusMinus(8) + 6,
-          color: 'rgb(255,226,150)', // warm launch spark
-          age: 0,
-          life: FW.TRAIL_LIFE * (0.6 + Math.random() * 0.6),
-        });
-        if (r.y <= r.targetY) this.explodeFirework(r.x, r.targetY);
-        else rising.push(r);
-      }
-      this.m_rockets = rising;
-    }
-
-    // Burst + trail sparks: integrate, then cull. The shared wind profile (core/wind.ts)
-    // eases the drift near the ground in Realistic mode (constant 1 in Linear), so low sparks
-    // fall straighter while high bursts stream with the wind.
-    if (this.m_fireworks.length) {
-      for (const p of this.m_fireworks) {
-        const wf = windProfile(this.m_land.getHeightAt(p.x) - p.y);
-        p.age += dt;
-        p.vx += wx * wf * dt;
-        p.vy += (FW.GRAVITY + wy * wf) * dt;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-      }
-      this.m_fireworks = this.m_fireworks.filter(
-        p => p.age < p.life && p.y < this.m_land.getHeightAt(p.x),
-      );
-    }
-  }
-
-  /** Draw the fireworks as small glowing sparks coloured by the burst pixel. Additive
-   *  ('lighter') so they read as bright fireworks on any sky (the legacy screenshots show
-   *  bright, glowing sparks — the raw disc primitive is nominally alpha-blended, but the
-   *  particles render as flares). Alpha holds full for the first FW.HOLD of life, then
-   *  falls linearly to 0. A brighter core over a soft glow gives each spark some bloom. */
-  private drawFireworks(ctx: CanvasRenderingContext2D): void {
-    if (!this.m_fireworks.length && !this.m_rockets.length) return;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    // Fine sparks: a 1px bright core over a faint 2px bloom.
-    for (const p of this.m_fireworks) {
-      const t = p.age / p.life;
-      const alpha = t <= FW.HOLD ? 1 : 1 - (t - FW.HOLD) / (1 - FW.HOLD);
-      if (alpha <= 0) continue;
-      const x = Math.round(p.x),
-        y = Math.round(p.y);
-      ctx.fillStyle = p.color;
-      ctx.globalAlpha = alpha * 0.4;
-      ctx.fillRect(x - 1, y - 1, 2, 2); // faint bloom
-      ctx.globalAlpha = alpha;
-      ctx.fillRect(x, y, 1, 1); // 1px core
-    }
-    // Rocket heads: a bright warm streak climbing to the burst.
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = 'rgb(255,240,200)';
-    for (const r of this.m_rockets) {
-      ctx.fillRect(Math.round(r.x) - 1, Math.round(r.y), 2, 3);
-    }
-    ctx.restore();
-  }
 
   // ========================================================================
   // SUPPLY CRATES (Gameplay → Crates)
   // ========================================================================
 
-  /** Once per ROUND (turn order wrapped), roll the Crates chance and — if the field isn't full (max
-   *  2 × live tanks) — drop one parachute crate from the top at a random column. */
-  private maybeSpawnCrate(): void {
-    if (GameConfig.crateChance <= 0) return;
-    if (this.m_rng.float() * 100 >= GameConfig.crateChance) return;
-    const aliveTanks = this.m_tanks.filter(t => t.isAlive()).length;
-    if (this.m_crates.length >= 2 * aliveTanks) return;
-    this.addCrate(10 + this.m_rng.float() * Math.max(1, this.m_worldWidth - 20));
+
+
+  /** The world slice the crate field reads. Sim-affecting draws come from the SEEDED rng so a
+   *  networked client reproduces the same crate — crates ride the shared snapshot. */
+  private crateEnv(): CrateEnv {
+    return {
+      rng: this.m_rng,
+      groundAt: x => this.m_land.getHeightAt(x),
+      worldWidth: this.m_worldWidth,
+      wind: this.m_effWind,
+      tanks: this.m_tanks,
+      onCollect: (c, taker) => this.collectCrate(c, taker as CTank),
+    };
   }
 
-  /** Push one crate dropping from the top at column `x`, with contents rolled 50% weapon
-   *  / 20% credits / 20% health / 10% bomb (or a forced `kind` for dev previews). */
-  private addCrate(x: number, forced?: CrateKind): void {
-    const roll = this.m_rng.float() * 100;
-    const kind: CrateKind =
-      forced ?? (roll < 50 ? 'weapon' : roll < 70 ? 'credits' : roll < 90 ? 'health' : 'bomb');
-    let amount = 0,
-      weaponIndex = -1;
-    if (kind === 'weapon') weaponIndex = this.randomCrateWeapon();
-    else if (kind === 'credits')
-      amount = (this.m_rng.int(9) + 1) * 200; // 200..1800
-    else if (kind === 'health')
-      amount = (this.m_rng.int(9) + 1) * 100; // 100..900
-    else weaponIndex = WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
-    this.m_crates.push({
-      x,
-      y: 0, // top of the map
-      vy: 0,
-      kind,
-      amount,
-      weaponIndex,
-      landed: false,
-      phase: Math.random() * 360,
-      id: ++this.m_crateSeq,
-    });
-  }
-
-  /** DEV: drop a crate straight onto the human tank's column so it can be previewed
-   *  falling and picked up. Optional forced content kind ('weapon'|'credits'|'health'|'bomb'). */
-  devDropCrate(kind?: string): void {
-    const human = this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0];
-    const forced = (['weapon', 'credits', 'health', 'bomb'] as const).find(k => k === kind);
-    if (human) this.addCrate(human.getPosition().x, forced);
+  private crateDrawEnv(ctx: CanvasRenderingContext2D): CrateDrawEnv {
+    return {
+      assets: this.m_assets,
+      groundAt: x => this.m_land.getHeightAt(x),
+      time: this.m_time,
+      drawText: (text, x, y, alpha) =>
+        this.drawBmpCentered(ctx, 'beijing-16-out', text, x, y, alpha),
+    };
   }
 
   /** A random enabled, non-staple weapon index for a weapon crate (falls back to Bomb). */
-  private randomCrateWeapon(): number {
+  private crateWeaponFor(kind: CrateKind): number {
+    const bomb = WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
+    if (kind === 'bomb') return bomb;
     const staple = getDefaultWeaponIndex();
     const pool = weaponIndices(i => i !== staple && weaponEnabled(i));
-    return pool.length
-      ? pool[this.m_rng.int(pool.length)]
-      : WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
+    return pool.length ? pool[this.m_rng.int(pool.length)] : bomb;
   }
 
-  /** Per-frame crate physics: descend under the chute (constant speed), land on the
-   *  terrain, and get collected by any tank within reach. Also ages pickup messages. */
-  private updateCrates(dt: number): void {
-    if (this.m_crates.length) {
-      const survivors: Crate[] = [];
-      for (const c of this.m_crates) {
-        const ground = this.m_land.getHeightAt(c.x);
-        if (c.y < ground) {
-          if (!c.landed) {
-            c.y += CRATE.DESCENT * dt; // constant chute descent
-            // Realistic wind: a parachute is almost all sail, so it drifts strongly downwind. The
-            // altitude profile eases the drift as it nears the ground (windProfile → 0 at the soil),
-            // so it settles rather than skating along the surface. Linear mode → 0 (falls straight).
-            const wf = windProfile(ground - c.y);
-            c.x = clamp(c.x + this.m_effWind.x * CRATE.WIND_DRIFT * wf * dt, 0, this.m_worldWidth);
-          } else {
-            c.vy += CRATE.GRAVITY * dt; // detached chute → free-fall (rarely used)
-            c.y += c.vy * dt;
-          }
-        } else {
-          c.y = ground;
-          c.vy = 0;
-          c.landed = true;
-        }
-        // Pickup: any live tank whose centre is within (crate box + tank radius).
-        const taker = this.m_tanks.find(t => {
-          if (!t.isAlive()) return false;
-          const r = CRATE.BOX / 2 + t.getHitRadius();
-          return t.distanceTo(c.x, c.y) <= r;
-        });
-        if (taker) this.collectCrate(c, taker);
-        else survivors.push(c);
-      }
-      this.m_crates = survivors;
-    }
-    if (this.m_floatTexts.length) {
-      for (const f of this.m_floatTexts) f.age += dt;
-      this.m_floatTexts = this.m_floatTexts.filter(f => f.age < CRATE.FLOAT_TEXT_LIFE);
-    }
-  }
-
-  /** Award a crate's contents to `tank` and announce it (message shown for the human). */
+  /** Award a crate's contents to `tank` and announce it (message shown for the human). The field
+   *  detects the pickup; the payout is the controller's because it touches economy + audio. */
   private collectCrate(c: Crate, tank: CTank): void {
     let msg = '',
       color = '#ffffff';
@@ -2705,53 +2418,22 @@ export class CGameController implements ShotWorld {
     this.m_audio?.crate(c.x);
     if (tank.isHuman() && msg) {
       const p = tank.getPosition();
-      this.m_floatTexts.push({x: p.x, y: p.y - 42, text: msg, color, age: 0});
+      this.m_crateField.addText(p.x, p.y - 42, msg, color);
     }
     this.markDirty();
   }
 
-  /** Draw the live crates: falling ones as the wobbling parachute assembly (pendulum
-   *  swing about the canopy top), landed ones as the bare crate tilted to the slope. */
-  private drawCrates(ctx: CanvasRenderingContext2D): void {
-    const chute = this.m_assets.getSprite('gui/crate-chute');
-    const box = this.m_assets.getSprite('gui/crate');
-    for (const c of this.m_crates) {
-      if (!c.landed && chute) {
-        const w = chute.width,
-          h = chute.height;
-        // Pendulum: swing the whole assembly about its canopy top. The crate box hangs
-        // at the bottom, so anchor the sprite's bottom near (x, y) and rotate about top.
-        const rot =
-          Math.sin(deg2rad(this.m_time * CRATE.WOBBLE_SPEED + c.phase)) * deg2rad(CRATE.WOBBLE_DEG);
-        ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        ctx.translate(c.x, c.y - h); // canopy-top pivot
-        ctx.rotate(rot);
-        ctx.drawImage(chute.bitmap, -w / 2, 0, w, h);
-        ctx.restore();
-      } else if (box) {
-        const w = box.width,
-          h = box.height;
-        const slope = Math.atan2(
-          this.m_land.getHeightAt(c.x + w / 4) - this.m_land.getHeightAt(c.x - w / 4),
-          w / 2,
-        );
-        ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        ctx.translate(c.x, c.y);
-        ctx.rotate(slope); // sit flush on the terrain slope
-        ctx.drawImage(box.bitmap, -w / 2, -h, w, h); // bottom edge on the ground
-        ctx.restore();
-      }
-    }
+  /** Drop one crate at world column `x` (optionally forcing its contents). */
+  private addCrate(x: number, forced?: CrateKind): void {
+    this.m_crateField.add(x, this.crateEnv(), k => this.crateWeaponFor(k), forced);
   }
 
-  /** Draw the floating crate-pickup messages (rising + fading), in a bitmap font. */
-  private drawFloatTexts(ctx: CanvasRenderingContext2D): void {
-    for (const f of this.m_floatTexts) {
-      const t = f.age / CRATE.FLOAT_TEXT_LIFE;
-      this.drawBmpCentered(ctx, 'beijing-16-out', f.text, f.x, f.y - t * 26, 1 - t);
-    }
+  /** DEV: drop a crate straight onto the human tank's column so it can be previewed
+   *  falling and picked up. Optional forced content kind ('weapon'|'credits'|'health'|'bomb'). */
+  devDropCrate(kind?: string): void {
+    const human = this.m_tanks.find(t => t.isHuman()) ?? this.m_tanks[0];
+    const forced = (['weapon', 'credits', 'health', 'bomb'] as const).find(k => k === kind);
+    if (human) this.addCrate(human.getPosition().x, forced);
   }
 
   private drawTurnIndicator(ctx: CanvasRenderingContext2D, tank: CTank): void {
@@ -3335,10 +3017,7 @@ export class CGameController implements ShotWorld {
     // Any supply crate whose centre is within the blast is destroyed — the original
     // clears crates in the crater's radius and simply removes them (no reward is spilled,
     // no debris, no sound; the blast's own fireball is the only visual).
-    if (this.m_crates.length) {
-      const reach = Math.max(radius, 20) + CRATE.BOX / 2; // crater/outer-field reach
-      this.m_crates = this.m_crates.filter(c => Math.hypot(c.x - pos.x, c.y - pos.y) > reach);
-    }
+    this.m_crateField.destroyWithin(pos.x, pos.y, radius);
   }
 
   /** Handle tank destroyed event. */
@@ -3770,12 +3449,9 @@ export class CGameController implements ShotWorld {
     this.m_aimMarkers = [];
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
-    this.m_crates = [];
-    this.m_floatTexts = [];
+    this.m_crateField.clear();
     this.m_bubbles = [];
-    this.m_fireworks = [];
-    this.m_rockets = [];
-    this.m_showFireworks = false;
+    this.m_fireworksFx.clear();
     this.generateTerrain();
     // A new battle is a new PLACE, not just a new heightmap: roll a fresh landscape (sky, strata
     // textures, weather, ambient tint) exactly as the original's level builder does per battle.
@@ -3822,9 +3498,7 @@ export class CGameController implements ShotWorld {
   /** Drop all taunt bubbles (leaving the standings → next battle or the menu). */
   clearTaunts(): void {
     this.m_bubbles = [];
-    this.m_fireworks = [];
-    this.m_rockets = [];
-    this.m_showFireworks = false;
+    this.m_fireworksFx.clear();
   }
 
   /** True once the war's final battle has been played (Deathmatch multi-battle);
@@ -3883,7 +3557,9 @@ export class CGameController implements ShotWorld {
       this.awardSurvivorCredit(this.m_creditRound);
       // Roll the Crates chance ONCE per ROUND (the setting is "chance each round"). It used to roll
       // on every turn hand-off, so an N-player round got N rolls → multiple crates per round.
-      this.maybeSpawnCrate();
+      this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k =>
+        this.crateWeaponFor(k),
+      );
     }
     this.awardSurvivorCredit(this.m_creditTurn);
 
@@ -3917,11 +3593,7 @@ export class CGameController implements ShotWorld {
     this.m_timers = [];
     this.m_battleEndTime = 0; // restart the winner-flag animation
     // Victory-only sky fireworks (war end, the human's team leads the final standings).
-    this.m_showFireworks = this.isHumanWarVictory();
-    this.m_fireworks = [];
-    this.m_rockets = [];
-    this.m_fireworkTimer = 0.35; // first burst shortly after the screen appears
-    if (this.m_showFireworks) CGameController.loadBurstPixels(); // warm the burst bmps
+    this.m_fireworksFx.setActive(this.isHumanWarVictory()); // arms + warms the burst bmps
 
     // The winner is the LEADING team — Deathmatch: most kills; Rounds/Points: most points
     // (Σ net damage), which may be an entirely dead team. Its representative names the
@@ -4680,238 +4352,41 @@ export class CGameController implements ShotWorld {
   private activeEconomy(): CEconomy {
     return this.economyFor(this.getCurrentTank());
   }
-
-  /** Does `econ` own any weapon of this extType? */
-  private botOwnsExt(econ: CEconomy, ext: number): boolean {
-    return WEAPON_DATABASE.some(w => (w.extType ?? 0) === ext && econ.getOwned(w.index) > 0);
-  }
-
-  /** Buy one random enabled weapon of `ext`, only if credits cover `afford ×` its cost (the
-   *  original guards support buys with a 2–2.5× affordability margin). Returns whether it bought. */
-  private botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boolean {
-    const cands = WEAPON_DATABASE.filter(
-      w =>
-        (w.extType ?? 0) === ext &&
-        w.cost > 0 &&
-        weaponEnabled(w.index) &&
-        econ.getCredits() >= w.cost * afford,
-    );
-    if (!cands.length) return false;
-    return econ.buy(cands[Math.floor(Math.random() * cands.length)].index);
-  }
-
-  /**
-   * The AI restock: a difficulty-gated DEFENSIVE front-load — shield/heal (L>5),
-   * armor (L>6), Death's-head (L>7), mine (L>4), move (L>3), each bought once only when the bot
-   * doesn't own it and the matching need-stat is low — then an offensive drain that stocks a varied
-   * assortment (conserving toward cheap filler at high level). Called at turn start when the bot's
-   * finite stock has run low, so higher-difficulty bots actually turtle up and vary their arsenal.
-   */
-  private aiRestock(tank: CTank, econ: CEconomy): void {
-    const L = this.m_difficulty;
+  /** The buyer's own condition, in the units botEconomy's rules test. */
+  private botBuyStats(tank: CTank): BotBuyStats {
     const h = tank.getHealth();
-    const maxLife = tank.getMaxLife();
-    if (L > 5 && !this.botOwnsExt(econ, 7) && h.nShield < BOT_SHIELD_NEED)
-      this.botBuyOneOfExt(econ, 7, 2);
-    if (L > 5 && !this.botOwnsExt(econ, 10) && h.nLife < maxLife * 0.7)
-      this.botBuyOneOfExt(econ, 10, 2);
-    if (L > 6 && !this.botOwnsExt(econ, 11) && h.nArmor === 0) this.botBuyOneOfExt(econ, 11, 2.5);
-    if (L > 7 && !this.botOwnsExt(econ, 12)) this.botBuyOneOfExt(econ, 12, 2.5);
-    if (L > 4 && !this.botOwnsExt(econ, 16)) this.botBuyOneOfExt(econ, 16, 2.5);
-    if (L > 3 && !this.botOwnsExt(econ, 3)) this.botBuyOneOfExt(econ, 3, 2.5);
-    // Offensive drain: high-level bots conserve (buy cheap filler), but ULTRA does NOT — it stocks a
-    // strong, varied arsenal so its expected-value planner actually has heavy/area/gas rounds to fire.
-    econ.autoBuy({conserve: L > 6 && L < AI_LEVEL_ULTRA});
-    // Re-sync the bot's SQUAD to its debited balance (each bot spends its own economy) — else a
-    // squad-mate's later earn would pool its stale, undebited balance back and refund the restock.
-    // No-op for a 1-tank team (the common case). Mirrors buyWeapon's poolActiveCredits (ECON-1).
-    this.poolTeamCredits(tank);
+    return {
+      life: h.nLife,
+      maxLife: tank.getMaxLife(),
+      shield: h.nShield,
+      armor: h.nArmor,
+      hazmat: h.nHazmat,
+      buried: tank.isBuried(),
+    };
   }
 
-  // ── ULTRA economy: buy the LEVERAGE weapons (nuke / beam / gas) and spend down, not hoard ────────
-  private static readonly ULTRA_CREDIT_RESERVE = 150; // small reserve; the rest gets spent on firepower
-  private static readonly ULTRA_OFFENSE_STOCK = 6; // keep this many offensive rounds on hand
-  private static readonly ULTRA_SURROUND_RADIUS = 260; // "surrounded" if ≥2 enemies within this (kamikaze)
-
-  /** A true NUKE — an expensive BALLISTIC blast worth reserving/ranging (not a mid-tier round like
-   *  Hercules/Roller, and not a beam/death/utility). Only these are ever measured with a Shell first. */
-  private isNukeWeapon(i: number): boolean {
-    const w = getWeapon(i);
-    const ext = WEAPON_DATABASE[i].extType ?? 0;
-    if (BOT_UTILITY_EXT.has(ext) || isBeamExt(w.getExtType())) return false; // not death/mine/utility/beam
-    // By DAMAGE, not cost — a $1200 seeker (dmg 200) is NOT a nuke; a.bomb/hydrogen/plutonium/uranium are.
-    return w.isNukeClass() || w.getDamage() >= CGameController.ULTRA_NUKE_DAMAGE;
-  }
-  private isBeamWeapon(i: number): boolean {
-    return isBeamExt(getWeapon(i).getExtType());
-  }
-  /** A sub-premium RADIATION/gas round (lays a fallout zone) — area denial that forces the foe to move. */
-  private isRadWeapon(i: number): boolean {
-    return getWeapon(i).getRadiation().dmg > 0 && !this.isNukeWeapon(i);
-  }
-  private botOwnsMatching(econ: CEconomy, pred: (i: number) => boolean): boolean {
-    return someWeapon(i => !econ.isUnlimited(i) && econ.getOwned(i) > 0 && pred(i));
+  /** Marshal the engine state botEconomy needs. `onSpent` re-pools the buyer's squad to its
+   *  debited balance so a team-mate's later earn can't refund the purchase (ECON-1). */
+  private botBuyCtx(tank: CTank, econ: CEconomy): BotBuyCtx {
+    return {
+      econ,
+      stats: this.botBuyStats(tank),
+      difficulty: this.m_difficulty,
+      rng: this.m_rng,
+      onSpent: () => this.poolTeamCredits(tank),
+    };
   }
 
-  /**
-   * Ultra's per-turn economy. It SPENDS to win, not hoard: minimal reactive defence, then a real
-   * arsenal of LEVERAGE weapons — a NUKE (big damage to force the issue), a BEAM (fire while buried),
-   * a GAS/RADIATION round (area denial that makes the foe move) — then fill with strong varied rounds
-   * until stocked, draining down to a tiny reserve. This is what makes two Ultra bots actually finish
-   * a fight instead of chipping + healing forever.
-   */
-  private ultraManageEconomy(tank: CTank, econ: CEconomy): void {
-    const h = tank.getHealth();
-    const maxLife = tank.getMaxLife();
-    const onRad = this.m_land.radiationAt(Math.floor(tank.getPosition().x));
-    const R = CGameController.ULTRA_CREDIT_RESERVE;
-    // BURIED — top priority, ahead of everything else: a pinned tank can't drive and can't fire a
-    // normal round without eating its own blast, so nothing else in the shop matters until it's out.
-    // A cleaner (earth-remover, no damage) is the clean way out, and bestCleanSelf can only pick one
-    // that's actually in stock — the economy never bought one, so that escape was dead on arrival.
-    // Ignores the reserve: being stuck costs far more than the credits do.
-    if (tank.isBuried() && !this.botOwnsMatching(econ, i => getWeapon(i).isCleaner()))
-      this.ultraBuyMatching(econ, i => getWeapon(i).isCleaner(), false);
-    // Buy a HEAL as soon as it's hurt (< 60%) and holds none — so a heal is in stock BEFORE it gets
-    // critical, and a bot with money always has the self-heal option the desperation curve will use.
-    if (h.nLife < maxLife * 0.6 && !this.botOwnsExt(econ, 10)) this.botBuyOneOfExt(econ, 10, 1); // heal
-    if (h.nArmor <= 0 && !this.botOwnsExt(econ, 11)) this.botBuyOneOfExt(econ, 11, 1); // armor
-    if (onRad && h.nHazmat <= 0 && !this.botOwnsExt(econ, 14)) this.botBuyOneOfExt(econ, 14, 1); // hazmat
-
-    // COUNTER-NUKE DOCTRINE. Weapons are visible, so read the other side's arsenal before spending:
-    // once they hold nuke-class ordnance, the answer is not to race them to a bigger one — it's to make
-    // their nuke miss. That means a BEAM (a straight ray that still reaches them once we're under the
-    // dirt, and the one weapon a buried tank can fire) and a cheap DIRT round to pull that dirt over
-    // ourselves with. Bought AHEAD of our own nuke savings, because a nuke we can't live long enough to
-    // fire is worth nothing. Skipped if they hold a beam too — then dirt hides us from nobody.
-    const threat = this.ultraThreatAgainst(tank);
-    if (threat.hasNuke && !threat.hasBeam) {
-      if (!this.botOwnsMatching(econ, i => this.isBeamWeapon(i)))
-        this.ultraBuyMatching(econ, i => this.isBeamWeapon(i), false);
-      // Only worth a dirt round if we actually got the beam — otherwise burying is just hiding in a hole.
-      if (
-        this.botOwnsMatching(econ, i => this.isBeamWeapon(i)) &&
-        !this.botOwnsMatching(econ, i => getWeapon(i).getEarth() >= SELF_BURY_MIN_EARTH)
-      )
-        this.ultraBuyMatching(econ, i => getWeapon(i).getEarth() >= SELF_BURY_MIN_EARTH, false);
-    }
-
-    // A DEATH (kamikaze) round FIRST when SURROUNDED — 2+ enemies close, so dying takes them with it.
-    // Priority (bought before the pricey nuke can drain the purse); pointless/skipped when spread out.
-    if (
-      econ.getCredits() > R &&
-      this.ultraEnemiesWithin(tank, CGameController.ULTRA_SURROUND_RADIUS) >= 2 &&
-      !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12)
-    )
-      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 12, false);
-
-    // Leverage weapons — a NUKE (cheapest true nuke, so it affords one AND keeps credits for variety —
-    // not blowing the whole purse on the single priciest), then a BEAM, then a GAS round.
-    if (econ.getCredits() > R && !this.ultraOwnsPremium(econ))
-      this.ultraBuyMatching(econ, i => this.isNukeWeapon(i), false);
-    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isBeamWeapon(i)))
-      this.ultraBuyMatching(econ, i => this.isBeamWeapon(i), false);
-    if (econ.getCredits() > R && !this.botOwnsMatching(econ, i => this.isRadWeapon(i)))
-      this.ultraBuyMatching(econ, i => this.isRadWeapon(i), false);
-    // A MINE for area denial (cheapest); one is enough.
-    if (
-      econ.getCredits() > R &&
-      !this.botOwnsMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16)
-    )
-      this.ultraBuyMatching(econ, i => (WEAPON_DATABASE[i].extType ?? 0) === 16, false);
-
-    // SAVE toward a nuke: if the bot doesn't hold a real nuke yet, STOP here — don't fritter credits on
-    // cheap fill; let the balance build up so it can buy a nuke ($4000+) in a turn or two. Only once a
-    // nuke is in the bag does it fill out with strong varied rounds (spending down to the small reserve).
-    let guard = 0;
-    while (
-      this.ultraOwnsPremium(econ) &&
-      this.ultraFiniteOffense(econ) < CGameController.ULTRA_OFFENSE_STOCK &&
-      econ.getCredits() > R &&
-      guard++ < 24
-    ) {
-      if (!this.ultraBuyBestOffense(econ, econ.getCredits())) break;
-    }
-    // Re-sync the squad to the debited balance (see aiRestock) so a teammate's earn can't refund this.
-    this.poolTeamCredits(tank);
-  }
-
-  /** Count of finite (non-Shell) OFFENSIVE rounds a bot holds — the "do I have real firepower?" gauge. */
-  private ultraFiniteOffense(econ: CEconomy): number {
-    let n = 0;
-    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
-      if (econ.isUnlimited(i) || econ.getOwned(i) <= 0) continue;
-      const w = WEAPON_DATABASE[i];
-      if ((w.damage ?? 0) > 0 && !BOT_UTILITY_EXT.has(w.extType ?? 0)) n += econ.getOwned(i);
-    }
-    return n;
-  }
-
-  /** Does the bot already hold a premium (nuke-class / pricey) round? */
-  private ultraOwnsPremium(econ: CEconomy): boolean {
-    return this.botOwnsMatching(econ, i => this.isNukeWeapon(i));
-  }
-
-  /** Buy the best affordable weapon matching `pred` — the strongest (highest damage) if `strongest`,
-   *  else the cheapest. Used to guarantee a specific class (nuke / beam / gas) actually gets bought,
-   *  unlike the weighted-random fill. Returns whether it bought. */
-  private ultraBuyMatching(
-    econ: CEconomy,
-    pred: (i: number) => boolean,
-    strongest: boolean,
-  ): boolean {
-    const cands = weaponIndices(i => {
-      const cost = WEAPON_DATABASE[i].cost ?? 0;
-      return cost > 0 && cost <= econ.getCredits() && weaponEnabled(i) && pred(i);
-    });
-    if (!cands.length) return false;
-    cands.sort((a, b) =>
-      strongest
-        ? (WEAPON_DATABASE[b].damage ?? 0) - (WEAPON_DATABASE[a].damage ?? 0)
-        : (WEAPON_DATABASE[a].cost ?? 0) - (WEAPON_DATABASE[b].cost ?? 0),
-    );
-    return econ.buy(cands[0]);
-  }
-
-  /** Buy an affordable OFFENSIVE weapon costing ≤ maxCost, picked at RANDOM but weighted toward higher
-   *  damage — so Ultra stocks a VARIED arsenal (not four of the single strongest round) and its firing
-   *  actually differs turn to turn. Skips utilities/self-buffs. Returns whether it bought. */
-  private ultraBuyBestOffense(econ: CEconomy, maxCost: number): boolean {
-    const cands = weaponIndices(i => {
-      const w = WEAPON_DATABASE[i];
-      const cost = w.cost ?? 0;
-      if (cost <= 0 || cost > maxCost || cost > econ.getCredits()) return false;
-      return weaponEnabled(i) && (w.damage ?? 0) > 0 && !BOT_UTILITY_EXT.has(w.extType ?? 0);
-    });
-    if (!cands.length) return false;
-    // Weight ∝ damage² so heavy rounds are favoured, but lighter ones still get bought — a real mix.
-    const weights = cands.map(i => Math.pow(WEAPON_DATABASE[i].damage ?? 1, 2));
-    let r = this.m_rng.float() * weights.reduce((a, b) => a + b, 0);
-    let pick = cands[cands.length - 1];
-    for (let k = 0; k < cands.length; k++) {
-      r -= weights[k];
-      if (r <= 0) {
-        pick = cands[k];
-        break;
-      }
-    }
-    return econ.buy(pick);
-  }
-
-  /** Owned weapon indices for a tank's inventory (the Shell staple always included). */
-  private ownedWeaponIndices(econ: CEconomy): number[] {
-    return weaponIndices(i => econ.getOwned(i) > 0);
-  }
-
-  /** Finite rounds a tank has in stock (excludes the unlimited Shell) — the restock trigger. */
-  private botFiniteStock(econ: CEconomy): number {
-    let n = 0;
-    for (let i = 0; i < WEAPON_DATABASE.length; i++) {
-      if (econ.isUnlimited(i)) continue;
-      const c = econ.getOwned(i);
-      if (Number.isFinite(c)) n += c;
-    }
-    return n;
+  /** …plus the three world reads only the Ultra doctrine consults. `enemiesNear` was evaluated
+   *  lazily inside the old inline version; it is a loop over at most 16 tanks once per bot turn,
+   *  so it is computed up front here rather than threaded through as a thunk. */
+  private ultraBuyCtx(tank: CTank, econ: CEconomy): UltraBuyCtx {
+    return {
+      ...this.botBuyCtx(tank, econ),
+      onRadiation: !!this.m_land.radiationAt(Math.floor(tank.getPosition().x)),
+      threat: this.ultraThreatAgainst(tank),
+      enemiesNear: this.ultraEnemiesWithin(tank, ULTRA_SURROUND_RADIUS),
+    };
   }
 
   private executeSentryTurn(): void {
@@ -4970,8 +4445,8 @@ export class CGameController implements ShotWorld {
     // toward a nuke — instead of hoarding thousands while it fires the free Shell.
     if (botTank.isBot()) {
       const econ = this.economyFor(botTank);
-      if (this.m_difficulty === AI_LEVEL_ULTRA) this.ultraManageEconomy(botTank, econ);
-      else if (this.botFiniteStock(econ) < 5) this.aiRestock(botTank, econ);
+      if (this.m_difficulty === AI_LEVEL_ULTRA) ultraManageEconomy(this.ultraBuyCtx(botTank, econ));
+      else if (botFiniteStock(econ) < 5) aiRestock(this.botBuyCtx(botTank, econ));
     }
 
     // ULTRA (level 11): a wholly different brain — score every possible action (best expected-value
@@ -5145,7 +4620,7 @@ export class CGameController implements ShotWorld {
     // when the solve missed, then a self-buff (shield/heal/armor/hazmat) when a stat is low.
     const h = botTank.getHealth();
     const weaponIndex = chooseBotWeapon(
-      this.ownedWeaponIndices(this.economyFor(botTank)),
+      ownedWeaponIndices(this.economyFor(botTank)),
       level,
       solutionFound,
       {
@@ -5263,7 +4738,7 @@ export class CGameController implements ShotWorld {
   ): {weaponIndex: number; angleDeg: number; power: number} {
     // Beams are hitscan STRAIGHT rays — never arced or ranged. Fire exactly as the planner aimed
     // (straight at the target, full power); reusing a ballistic record's angle would bend the ray.
-    if (this.isBeamWeapon(plan.weaponIndex))
+    if (isBeamWeapon(plan.weaponIndex))
       return {weaponIndex: plan.weaponIndex, angleDeg: plan.angleDeg, power: plan.power};
     // A SELF-targeted round (the planner's clean-self / dig-blast: fired near-vertically at our OWN
     // column to clear the dirt burying us) isn't a ranged shot at an enemy. An enemy standing close by
@@ -5318,8 +4793,8 @@ export class CGameController implements ShotWorld {
     // matched (angle, power) — terrain- and gust-aware. Only a CAUTIOUS bot spends ONE Shell to measure a
     // true nuke on a genuinely fresh target, and never when all-in (scarce ammo).
     const cautious = this.ultraWeightsFor(botTank).premiumWaste >= 5000;
-    const allIn = this.ultraFiniteOffense(this.economyFor(botTank)) <= 2;
-    const measureFirst = !sameTarget && cautious && !allIn && this.isNukeWeapon(plan.weaponIndex);
+    const allIn = ultraFiniteOffense(this.economyFor(botTank)) <= 2;
+    const measureFirst = !sameTarget && cautious && !allIn && isNukeWeapon(plan.weaponIndex);
     const wi = measureFirst ? getDefaultWeaponIndex() : plan.weaponIndex;
     return {weaponIndex: wi, angleDeg: plan.angleDeg, power: plan.power};
   }
@@ -5419,8 +4894,8 @@ export class CGameController implements ShotWorld {
       for (const def of this.arsenalOf(foe).slice(0, CGameController.ULTRA_VISIBLE_WEAPONS)) {
         const i = def.index;
         const w = getWeapon(i);
-        if (this.isNukeWeapon(i)) threat.hasNuke = true;
-        if (this.isBeamWeapon(i)) threat.hasBeam = true;
+        if (isNukeWeapon(i)) threat.hasNuke = true;
+        if (isBeamWeapon(i)) threat.hasBeam = true;
         if (w.getEarth() > 0) threat.hasEarth = true;
         if (w.isCleaner()) threat.hasCleaner = true;
         const dmg = w.getDamage();
@@ -5451,7 +4926,7 @@ export class CGameController implements ShotWorld {
     let best = 0;
     for (let i = 0; i < WEAPON_DATABASE.length; i++) {
       const cost = WEAPON_DATABASE[i].cost ?? 0;
-      if (cost <= 0 || cost > credits || !weaponEnabled(i) || !this.isNukeWeapon(i)) continue;
+      if (cost <= 0 || cost > credits || !weaponEnabled(i) || !isNukeWeapon(i)) continue;
       best = Math.max(best, getWeapon(i).getDamage());
     }
     return best;
@@ -5467,8 +4942,8 @@ export class CGameController implements ShotWorld {
       this.m_ultraEnemyFire.set(team, rec);
     }
     rec.shots++;
-    if (this.isNukeWeapon(weaponIndex)) rec.nukes++;
-    if (this.isBeamWeapon(weaponIndex)) rec.beams++;
+    if (isNukeWeapon(weaponIndex)) rec.nukes++;
+    if (isBeamWeapon(weaponIndex)) rec.beams++;
     if (getWeapon(weaponIndex).getEarth() > 0) rec.earth++;
   }
 
@@ -5581,7 +5056,9 @@ export class CGameController implements ShotWorld {
         };
       }),
       weapons,
-      crates: this.m_crates.map(c => ({x: c.x, kind: c.kind, amount: c.amount, landed: c.landed})),
+      crates: this.m_crateField
+        .list()
+        .map(c => ({x: c.x, kind: c.kind, amount: c.amount, landed: c.landed})),
       field: {
         heightAt: (x: number) => this.m_land.getHeightAt(x),
         width: this.m_land.width,
@@ -5622,7 +5099,6 @@ export class CGameController implements ShotWorld {
 
   // Weapon cost (credits) at/above which Ultra treats a round as premium ordnance to reserve.
   private static readonly ULTRA_PREMIUM_COST_VALUE = 1200; // only genuinely pricey ordnance is "premium"
-  private static readonly ULTRA_NUKE_DAMAGE = 350; // damage at/above which a round counts as a NUKE (a.bomb+)
   // Ultra bots field a bigger war chest so they can actually AFFORD a nuke (real ones cost $4000-8000;
   // the 3000 default purse never stretches to one). The floor for an Ultra bot's starting credits.
   private static readonly ULTRA_START_CREDITS = 9000;
@@ -5972,7 +5448,9 @@ export class CGameController implements ShotWorld {
   netAwardRoundCredit(): void {
     if (!this.m_netMode) return;
     this.awardSurvivorCredit(this.m_creditRound);
-    this.maybeSpawnCrate(); // seeded → identical crate (or none) on every client, once per round
+    this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k =>
+      this.crateWeaponFor(k),
+    ); // seeded → identical crate (or none) on every client, once per round
   }
 
   /** Show the battle-winner celebration (standings if the war is over). Idempotent — a second
@@ -6077,7 +5555,7 @@ export class CGameController implements ShotWorld {
       // Supply crates — authoritative so a reconnecting/keyframe client reproduces a crate already on
       // the field (else it'd miss the drop, then diverge when a health crate is picked up). id/phase
       // are cosmetic (local wobble/tracking) — regenerated on adopt.
-      crates: this.m_crates.map(c => ({
+      crates: this.m_crateField.list().map(c => ({
         x: c.x,
         y: c.y,
         vy: c.vy,
@@ -6168,17 +5646,18 @@ export class CGameController implements ShotWorld {
    */
   reconcileNetCrates(s: NetSnapshot): void {
     if (!Array.isArray(s.crates)) return;
-    this.m_crates = s.crates.map(c => ({
-      x: c.x,
-      y: c.y,
-      vy: c.vy,
-      kind: c.kind as CrateKind, // one of the 4 kinds (server-validated); an unknown kind is inert on pickup
-      amount: c.amount,
-      weaponIndex: c.weaponIndex,
-      landed: c.landed,
-      phase: 0,
-      id: ++this.m_crateSeq,
-    }));
+    this.m_crateField.adopt(
+      s.crates.map(c => ({
+        x: c.x,
+        y: c.y,
+        vy: c.vy,
+        // one of the 4 kinds (server-validated); an unknown kind is inert on pickup
+        kind: c.kind as CrateKind,
+        amount: c.amount,
+        weaponIndex: c.weaponIndex,
+        landed: c.landed,
+      })),
+    );
   }
 
   /** Depot sell-back refund fraction (0..1), live. */
@@ -6965,14 +6444,9 @@ export class CGameController implements ShotWorld {
   private m_blastCircles: {x: number; y: number; r: number; age: number}[] = [];
   // Victory fireworks (war-end, human wins). Spawned + aged during BattleEnd; drawn in
   // the sky behind the standings overlay. `m_showFireworks` is decided once at battle end.
-  private m_fireworks: Firework[] = [];
-  private m_rockets: FwRocket[] = [];
-  private m_fireworkTimer = 0;
-  private m_showFireworks = false;
+  private readonly m_fireworksFx = new CFireworks();
   // Supply crates on the field + their pickup messages, and a monotonic id counter.
-  private m_crates: Crate[] = [];
-  private m_floatTexts: FloatText[] = [];
-  private m_crateSeq = 0;
+  private readonly m_crateField = new CCrateField();
   // Live taunt speech bubbles (Chatter). One per speaker at a time; a new one replaces
   // the old. Aged in update(); rendered as DOM overlays via getActiveTaunts().
   private m_bubbles: TauntBubble[] = [];

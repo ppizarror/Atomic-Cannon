@@ -12,7 +12,7 @@ import type {CTank} from '../src/core/CTank';
 type Priv = {
   m_tanks: CTank[];
   m_mines: {x: number; owner: CTank | null; armed: number}[];
-  m_crates: {x: number; kind: string}[];
+  m_crateField: {list(): readonly {x: number; kind: string}[]};
   addCrate(x: number, forced?: string): void;
 };
 const priv = (gc: CGameController) => gc as unknown as Priv;
@@ -70,8 +70,8 @@ describe('crate net sync', () => {
     b.applyNetSnapshot(snap);
 
     expect(b.stateHash()).toBe(a.stateHash()); // crates are hashed → now identical
-    expect(priv(b).m_crates).toHaveLength(1);
-    expect(priv(b).m_crates[0]).toMatchObject({x: 321, kind: 'health'});
+    expect(priv(b).m_crateField.list()).toHaveLength(1);
+    expect(priv(b).m_crateField.list()[0]).toMatchObject({x: 321, kind: 'health'});
   });
 
   it('stateHash reflects a crate', () => {
