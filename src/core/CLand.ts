@@ -177,15 +177,19 @@ const RAD_GRAIN_DEPTH = 1;
 /** Past this many pixels of bounding box, plotting the dirt cloud into a buffer costs more to clear
  *  than the canvas calls it saves, so the per-chunk path is used instead. */
 const DEBRIS_BLIT_MAX_AREA = 1_600_000;
-/** How fast a soil compression wave travels outward (px/s) — fast enough to read as a shock rather
- *  than a slow sag, slow enough that you can watch it reach you. */
-const SHOCK_SPEED = 420;
+/** How fast a soil compression wave travels outward (px/s). Matched to the screen ripple the same
+ *  blast fires (`ShockwaveFilter` speed 900), so the ground gives way exactly under the visible
+ *  wavefront instead of lagging behind it as a second, slower event. */
+const SHOCK_SPEED = 900;
 /** Minimum depth of soil the wave squeezes — how far down the compression is visible before the
  *  strata return to their normal spacing. */
 const SHOCK_SQUASH = 70;
 /** Band depth as a multiple of the sink, when that is the larger of the two. 4 means the squeezed
  *  soil ends up at 3/4 of its original spacing however deep the ground drops. */
 const SHOCK_SQUASH_RATIO = 4;
+/** How fast a column pays off its queued subsidence (px/s). Low enough that the ground eases down
+ *  behind the wavefront instead of stepping, high enough to be finished within the blast. */
+const SINK_RATE = 55;
 /** Blotch scale of the wave's falloff — broad undulation in the compacted ground rather than
  *  column-to-column jitter, which just reads as noise on the surface line. */
 const SHOCK_CELL = 48;
@@ -243,24 +247,66 @@ const matSetRad = (b: number, rad: number, slot: number): number =>
  *  sparse coat the gain was tuned against. Above 1 the red channel of a fully-hot pixel clips, which
  *  is wanted — that is the coat reading as saturated rather than washed — while green and blue stay
  *  low, so it saturates toward its own hue instead of blowing out to white-gold. */
-const RAD_GLOW_GAIN = 1.5;
-const RAD_GLOW_SPREAD = 0.55;
-/** The soft kernel a hot pixel bleeds through — offsets out to ~2px with a gaussian falloff, rather
- *  than the four touching neighbours. One grain marks one pixel, so a four-neighbour cross draws the
- *  coat as exactly what it is underneath: a scatter of hard 1px dots. Spread over a couple of px
- *  each dot becomes a soft blob, neighbouring blobs overlap, and the sparse fringe of the coat reads
- *  as a fluffy carpet of contamination instead of pixel noise. Built once — the inner loop just
- *  walks it. */
-const RAD_GLOW_KERNEL = ((): {dx: number; dy: number; w: number}[] => {
-  const R = 2.2;
-  const k: {dx: number; dy: number; w: number}[] = [];
-  for (let dy = -2; dy <= 2; dy++)
-    for (let dx = -2; dx <= 2; dx++) {
-      const d = Math.hypot(dx, dy);
-      if (d === 0 || d > R) continue;
-      k.push({dx, dy, w: RAD_GLOW_SPREAD * Math.exp(-((d - 1) ** 2) / (2 * 0.85 ** 2))});
-    }
-  return k;
+/** How many phase groups the settled coat is scattered over. More = finer twinkle, at one extra
+ *  blit each; three already breaks up the "whole map breathing as one" read. */
+/** How much longer the fallout GLOWS than the weapon's raw irTime. The damage window is the same
+ *  number, so this is the ground staying visibly hot after it stops being dangerous. */
+const RAD_LINGER = 2.8;
+const RAD_PULSE_BUCKETS = 3;
+const RAD_PULSE_BASE = 0.72;
+const RAD_PULSE_AMP = 0.28;
+const RAD_PULSE_RATE = 2.6;
+const RAD_GLOW_GAIN = 3;
+const RAD_GLOW_SPREAD = 0.95;
+/** Bloom: how hard the glow layer is shrunk before being blown back up (bigger = softer, wider
+ *  halo) and how strongly that halo is added under the sharp specks. */
+const RAD_BLOOM_SHRINK = 10;
+const RAD_BLOOM_ALPHA = 0.85;
+/** Dot radii (px) the settled grains are drawn at, and how many steps between them. */
+const RAD_DOT_MIN = 1.5;
+const RAD_DOT_MAX = 5.5;
+const RAD_DOT_SIZES = 4;
+/** Share of hot pixels actually lit. Purely visual — the radiation channel stays solid underneath,
+ *  so `radiationAt` and burial are unaffected.
+ *
+ *  Has to be LOW because the coat is a solid BODY, not a surface: a nuke's spoil is contaminated
+ *  40-70px deep, so the dots stack in depth as well as across. A dot of radius r covers ~πr², so
+ *  the lit area runs at density × πr² ≈ density × 20 — at 0.4 that is 16× coverage and every dot
+ *  fuses into its neighbours, which is exactly the blob the size variety was invisible inside.
+ *  It trades against dot SIZE, since coverage is the product: shrinking the dots buys back room
+ *  for more of them at the same fused-ness. 0.06 with 3.6px dots read as individual specks but too
+ *  few of them; 0.17 with 2.9px is the same coverage carried by ~3x as many, which is what makes it
+ *  look like scattered fallout rather than a handful of blobs. */
+const RAD_DOT_DENSITY = 0.22;
+/** The soft kernels a hot grain bleeds through, one per SIZE. A grain marks a single pixel, so a
+ *  fixed kernel draws every grain the same and the coat comes out an even stipple — the original's
+ *  fallout was a scatter of chunky dots of visibly different sizes, and that variety is most of what
+ *  made it read as thrown material rather than as texture. Each grain picks a kernel by a
+ *  world-keyed hash, so its size is stable across rebuilds and identical on every client. Built once
+ *  — the inner loop just walks the one it is handed. */
+const RAD_GLOW_KERNELS = ((): {dx: number; dy: number; w: number}[][] => {
+  const kernels: {dx: number; dy: number; w: number}[][] = [];
+  for (let i = 0; i < RAD_DOT_SIZES; i++) {
+    // Radii spread across the range; the widest dots are also the softest, so a big grain reads as
+    // a bloom rather than a hard disc.
+    const R = RAD_DOT_MIN + (i * (RAD_DOT_MAX - RAD_DOT_MIN)) / Math.max(1, RAD_DOT_SIZES - 1);
+    const span = Math.ceil(R);
+    const k: {dx: number; dy: number; w: number}[] = [];
+    for (let dy = -span; dy <= span; dy++)
+      for (let dx = -span; dx <= span; dx++) {
+        const d = Math.hypot(dx, dy);
+        if (d === 0 || d > R) continue;
+        // Solid core, thin soft rim — NOT a gaussian. A gaussian dot is mostly falloff, so as soon
+        // as the coat gets dense the tails overlap and the specks melt into one smooth mass; the
+        // original's fallout stayed legible as individual grains even packed tight because each
+        // grain was a hard little mark. A flat core lets density go up without fusing.
+        const rim = Math.max(0.6, R - 1);
+        const w = d <= rim ? 1 : Math.max(0, 1 - (d - rim) / (R - rim + 0.001));
+        k.push({dx, dy, w: RAD_GLOW_SPREAD * w});
+      }
+    kernels.push(k);
+  }
+  return kernels;
 })();
 
 /** Blotch scale (px) that warps the soil coat's mixing zone. This octave does NOT cut the boundary
@@ -445,6 +491,8 @@ export class CLand {
     const W = this.m_nWidth;
     this.m_falls.length = 0; // drop any falling overburden blocks
     this.m_shocks.length = 0;
+    this.m_sinkX1 = -1;
+    this.m_sinkX0 = 0;
     this.m_particles.length = 0; // + any dirt debris still in flight
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
@@ -1121,7 +1169,7 @@ export class CLand {
     // The fallout lingers longer than the raw irTime and dims GRADUALLY.
     // Stretch the visible life ~1.6× so the radioactive ground glows for a
     // good while and decays slowly.
-    const dur = fDurationSeconds * 1.6;
+    const dur = fDurationSeconds * RAD_LINGER;
 
     // Gameplay damage zone (queried against tanks each frame) — invisible; the visible glow
     // is the specks. Damage-over-time for irTime, matching the original's fallout DOT.
@@ -1327,8 +1375,13 @@ export class CLand {
       // A slot's buffer is allocated on its first hot pixel, so the common single-crater case pays
       // for exactly one — same cost as the single shared buffer this replaced.
       const bufs: (Uint8ClampedArray | null)[] = [];
-      const bufFor = (slot: number): Uint8ClampedArray =>
-        (bufs[slot] ??= new Uint8ClampedArray(w * h * 4));
+      // …and split again by PHASE BUCKET. A baked layer can only pulse as a whole, so the coat lost
+      // the per-grain twinkle the loose specks had and went flat. Scattering the pixels over a few
+      // buckets by a world-keyed hash and blitting each on its own phase brings the shimmer back:
+      // neighbouring grains breathe out of step, which is what reads as alive, and it costs a
+      // handful of extra blits rather than a canvas call per grain.
+      const bufFor = (slot: number, bucket: number): Uint8ClampedArray =>
+        (bufs[slot * RAD_PULSE_BUCKETS + bucket] ??= new Uint8ClampedArray(w * h * 4));
       // Each hot pixel lights itself at its own strength and BLEEDS onto its four orthogonal
       // neighbours at a lower weight. The bleed is what the brightness used to come from: the old
       // carpet drew every grain as a 5-pixel additive cross, so overlapping grains stacked into a
@@ -1389,23 +1442,33 @@ export class CLand {
             continue;
           }
           gap = 0;
+          // Light only a SCATTER of the hot pixels, not all of them. The pile is solid by
+          // construction — a grain per pixel, packed contiguously — so lighting every one merges
+          // the dots into a continuous mass however large or varied they are, and the size variety
+          // above is invisible. The original's fallout read as individual chunky specks with ground
+          // showing between them; skipping most pixels restores that at the draw, leaving the
+          // channel underneath untouched, so damage and burial still see the solid body.
+          if (hashLattice(x - 3121, y + 7919) > RAD_DOT_DENSITY) continue;
           // The pixel's OWN blast, from the slot stamped into it — not the nearest live zone. Asked
           // per frame, every coat on the map takes the identity of whichever zone happens to be
           // closest and alive, so a blue crater turns red when a uranium blast lands beside it.
           const slot = matSlot(b);
           const c = this.m_radSlotRGB[slot] ?? [255, 46, 20];
-          const out = bufFor(slot);
+          const out = bufFor(slot, (hashLattice(x, y) * RAD_PULSE_BUCKETS) | 0);
           const zr = c[0],
             zg = c[1],
             zb = c[2];
           const k = (v / MAT_RAD_MAX) * RAD_GLOW_GAIN;
           add(out, x, y, zr, zg, zb, k);
-          for (const o of RAD_GLOW_KERNEL) bleed(out, x + o.dx, y + o.dy, zr, zg, zb, k * o.w);
+          // Size from a SECOND hash draw, independent of the phase bucket — grains must not end up
+          // with their size and their twinkle correlated, or the coat pulses in visible size bands.
+          const kern = RAD_GLOW_KERNELS[(hashLattice(x + 8191, y - 5077) * RAD_DOT_SIZES) | 0];
+          for (const oK of kern) bleed(out, x + oK.dx, y + oK.dy, zr, zg, zb, k * oK.w);
         }
       }
       this.m_radGlowCanvas.length = 0;
-      for (let slot = 0; slot < bufs.length; slot++) {
-        const buf = bufs[slot];
+      for (let idx = 0; idx < bufs.length; idx++) {
+        const buf = bufs[idx];
         if (!buf) continue;
         const cv = document.createElement('canvas');
         cv.width = w;
@@ -1415,7 +1478,7 @@ export class CLand {
         const img = g.createImageData(w, h);
         img.data.set(buf);
         g.putImageData(img, 0, 0);
-        this.m_radGlowCanvas[slot] = cv;
+        this.m_radGlowCanvas[idx] = cv;
       }
       this.m_radGlowX = x0;
       this.m_radGlowY = y0;
@@ -1428,14 +1491,37 @@ export class CLand {
       fades[z.slot] = Math.max(fades[z.slot] ?? 0, z.timeRemaining / Math.max(0.5, z.duration));
     const prevOp = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'lighter';
-    // One shimmer phase for the whole map, so neighbouring craters breathe together rather than
-    // beating against each other.
-    const pulse = 0.86 + 0.14 * Math.sin(this.m_radPulseT * 2.1);
-    for (let slot = 0; slot < this.m_radGlowCanvas.length; slot++) {
-      const cv = this.m_radGlowCanvas[slot];
+    for (let i = 0; i < this.m_radGlowCanvas.length; i++) {
+      const cv = this.m_radGlowCanvas[i];
+      if (!cv) continue;
+      const slot = (i / RAD_PULSE_BUCKETS) | 0;
       const fade = fades[slot] ?? 0;
-      if (!cv || fade <= 0) continue;
-      ctx.globalAlpha = clamp01(fade) * pulse;
+      if (fade <= 0) continue;
+      // Each bucket on its own phase — grains next to each other are in different buckets, so the
+      // coat shimmers instead of the whole map brightening and dimming as one.
+      const phase = (i % RAD_PULSE_BUCKETS) * ((2 * Math.PI) / RAD_PULSE_BUCKETS);
+      const pulse = RAD_PULSE_BASE + RAD_PULSE_AMP * Math.sin(this.m_radPulseT * RAD_PULSE_RATE + phase); // prettier-ignore
+      const a = clamp01(fade) * pulse;
+      // BLOOM first, then the sharp specks over it. The layer is drawn once shrunk hard and blown
+      // back up — the scaler's own filtering is the blur — so every speck sits in a soft halo of its
+      // own colour and the coat glows rather than looking like paint. Cheap: two more blits of an
+      // already-baked layer, no per-pixel work, and it reads as light because it IS the same light
+      // spread wider and dimmer.
+      const bw = Math.max(1, (cv.width / RAD_BLOOM_SHRINK) | 0),
+        bh = Math.max(1, (cv.height / RAD_BLOOM_SHRINK) | 0);
+      const bcv = this.bloomScratch(bw, bh);
+      if (bcv) {
+        const bg = bcv.getContext('2d');
+        if (bg) {
+          bg.clearRect(0, 0, bw, bh);
+          bg.imageSmoothingEnabled = true;
+          bg.drawImage(cv, 0, 0, bw, bh);
+          ctx.globalAlpha = a * RAD_BLOOM_ALPHA;
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(bcv, 0, 0, bw, bh, this.m_radGlowX, this.m_radGlowY, cv.width, cv.height);
+        }
+      }
+      ctx.globalAlpha = a;
       ctx.drawImage(cv, this.m_radGlowX, this.m_radGlowY);
     }
     ctx.globalAlpha = 1;
@@ -1548,7 +1634,11 @@ export class CLand {
         // Deterministic, which matters because this writes the heightmap in a lockstep match.
         const fall = (1 - t * t) * (0.6 + 0.4 * blotchNoise(c, 0, SHOCK_CELL));
         const sink = Math.round(sh.maxSink * fall);
-        if (sink > 0) this.compactColumn(c, sink);
+        // QUEUED, not applied. Compacting the column the instant the front reaches it drops the
+        // ground its whole depth in a single frame — a hard step travelling across the map. Soil
+        // under a shock settles over a moment, so the column owes this much and pays it off at
+        // `SINK_RATE` below, which turns the step into a subsidence you watch arrive.
+        if (sink > 0) this.queueSink(c, sink);
       }
       if (sh.front < sh.radius) this.m_shocks[w++] = sh;
     }
@@ -1631,6 +1721,54 @@ export class CLand {
     this.m_pixelsDirty = true;
     this.m_radGlowDirty = true;
     this.preBlast(col - 1, col + 1);
+  }
+
+  /** Reusable low-res scratch the glow layer is shrunk into to make its bloom. */
+  private bloomScratch(w: number, h: number): HTMLCanvasElement | null {
+    if (typeof document === 'undefined') return null;
+    let cv = this.m_bloomCanvas;
+    if (!cv) cv = this.m_bloomCanvas = document.createElement('canvas');
+    if (cv.width < w || cv.height < h) {
+      cv.width = Math.max(cv.width, w);
+      cv.height = Math.max(cv.height, h);
+    }
+    return cv;
+  }
+
+  /** Record that a column owes `px` of subsidence, to be paid off over the next moment. */
+  private queueSink(col: number, px: number): void {
+    if (!this.m_sinkOwed) this.m_sinkOwed = new Float32Array(this.m_nWidth);
+    this.m_sinkOwed[col] += px;
+    this.m_sinkX0 = Math.min(this.m_sinkX0, col);
+    this.m_sinkX1 = Math.max(this.m_sinkX1, col);
+  }
+
+  /**
+   * Pay off queued subsidence. Each column drops at a fixed rate rather than all at once, so ground
+   * the wave has passed keeps settling for a moment afterwards — and because the terrain is whole
+   * pixels, the debt is carried as a float and only spent when it crosses an integer, which is what
+   * lets a slow settle be slower than one pixel per frame.
+   */
+  private drainSink(dt: number): void {
+    const owed = this.m_sinkOwed;
+    if (!owed || this.m_sinkX1 < this.m_sinkX0) return;
+    const step = SINK_RATE * dt;
+    let lo = this.m_nWidth,
+      hi = -1;
+    for (let c = this.m_sinkX0; c <= this.m_sinkX1; c++) {
+      const left = owed[c];
+      if (left <= 0) continue;
+      const pay = Math.min(left, step);
+      const px = Math.floor(left) - Math.floor(left - pay);
+      owed[c] = left - pay;
+      if (px > 0) this.compactColumn(c, px);
+      if (owed[c] > 0) {
+        if (c < lo) lo = c;
+        if (c > hi) hi = c;
+      }
+    }
+    this.m_sinkX0 = lo;
+    this.m_sinkX1 = hi;
   }
 
   /** Grow the hot-earth extent to include this pixel. */
@@ -1849,6 +1987,7 @@ export class CLand {
 
     this.m_radPulseT += dt; // drives the sinusoidal glow shimmer on the radiation specks
     this.stepShocks(dt); // compression waves compacting the soil as they travel out
+    this.drainSink(dt); // …and the ground they passed over still settling
     this.stepFalls(dt); // advance any beam/digger overburden falling under gravity
 
     // Compact-forward removal (a write index), NOT splice(i,1): a nuke flings
@@ -2167,6 +2306,20 @@ export class CLand {
     gx.fillRect(0, 0, w, h);
     gx.globalCompositeOperation = 'destination-in'; // re-mask to the smoke's own alpha
     gx.drawImage(this.m_smokeSrc, 0, 0, w, h);
+    // …then dissolve the rim with a MONOTONIC falloff (still `destination-in`, so it multiplies the
+    // mask and leaves the texture intact). smoke.bmp's own mask ends in a hard edge, which makes
+    // every wisp read as a discrete pasted stamp however many overlap. Falling continuously from
+    // the centre leaves no radius at which an edge registers, so wisps blend into a haze. The curve
+    // must stay monotonic — a version with a flat opaque core just turns each wisp into a disc.
+    const cx = w / 2,
+      cy = h / 2;
+    const soft = gx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy));
+    soft.addColorStop(0, 'rgba(0,0,0,1)');
+    soft.addColorStop(0.4, 'rgba(0,0,0,0.75)');
+    soft.addColorStop(0.75, 'rgba(0,0,0,0.35)');
+    soft.addColorStop(1, 'rgba(0,0,0,0)');
+    gx.fillStyle = soft;
+    gx.fillRect(0, 0, w, h);
     gx.globalCompositeOperation = 'source-over';
     this.m_smokeTints.set(key, c);
     return c;
@@ -2647,6 +2800,7 @@ export class CLand {
       this.m_dirtSmoothDelay > 0 ||
       this.m_falls.length > 0 ||
       this.m_shocks.length > 0 ||
+      this.m_sinkX1 >= this.m_sinkX0 ||
       this.m_particles.length > 0 ||
       this.m_radSpecks.length > 0 ||
       this.m_radParticles.length > 0 ||
@@ -2660,7 +2814,12 @@ export class CLand {
   isSettling(): boolean {
     // A compression wave counts: it is still reshaping ground tanks are standing on, so the round
     // must not hand off the turn until it has passed.
-    return this.m_falls.length > 0 || this.m_shocks.length > 0 || this.m_particles.length > 0;
+    return (
+      this.m_falls.length > 0 ||
+      this.m_shocks.length > 0 ||
+      this.m_sinkX1 >= this.m_sinkX0 ||
+      this.m_particles.length > 0
+    );
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -2923,6 +3082,10 @@ export class CLand {
   // cap + earth above the cut) sliding DOWN under gravity to land on the substrate below.
   private m_falls: Fall[] = [];
   private m_shocks: Shock[] = [];
+  // Subsidence a column still owes, in px, paid off over time by `drainSink`.
+  private m_sinkOwed: Float32Array | null = null;
+  private m_sinkX0 = 0;
+  private m_sinkX1 = -1;
   // Terrain-slump erosion, scoped to the recently-disturbed span for a short window.
   private m_slumpTimer: number = 0;
   private m_slumpX0: number = 1e9;
@@ -2966,6 +3129,7 @@ export class CLand {
   private m_radGlowX = 0;
   private m_radGlowY = 0;
   private m_radGlowDirty = false;
+  private m_bloomCanvas: HTMLCanvasElement | null = null;
   // The colours those slots stand for, in stamp order. A blast claims the slot already holding its
   // colour, or the oldest one — so a fifth simultaneous hue recolours the least recent coat rather
   // than every coat on the map.

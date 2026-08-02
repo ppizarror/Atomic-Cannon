@@ -38,10 +38,11 @@ function bandedLand(W: number, H: number, surf: number): CLand {
   return land;
 }
 
-/** Run until every compression wave has passed. */
+/** Run until the ground has finished moving — the wave passing is not the end of it. A column owes
+ *  its subsidence when the front reaches it and pays it off over the following moment, so the last
+ *  ground to drop does so well after the last shock has expired. */
 function settle(land: CLand): void {
-  const p = land as unknown as Priv;
-  for (let i = 0; i < 600 && p.m_shocks.length > 0; i++) land.update(1 / 60);
+  for (let i = 0; i < 900 && land.isSettling(); i++) land.update(1 / 60);
 }
 
 /** Solid pixels in a column — the material it still holds. */

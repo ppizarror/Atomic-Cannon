@@ -142,8 +142,11 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
     land.blastIradiate(150, 150, 40, 12, 30, BLUE);
     settleFallout(land); // A ages while its fallout comes down
     const slotA = columnSlots(land, 150)[0];
-    const agedA = p.m_radParticles.find(z => z.slot === slotA)!.timeRemaining;
-    expect(agedA).toBeLessThan(30 * 1.6); // it really has decayed some
+    const zA = p.m_radParticles.find(z => z.slot === slotA)!;
+    const agedA = zA.timeRemaining;
+    // Against the zone's OWN duration, not a copy of the linger multiplier — the point is that time
+    // has passed, and pinning the expected total here just breaks when that constant is tuned.
+    expect(agedA).toBeLessThan(zA.duration);
 
     land.blastIradiate(600, 150, 40, 12, 30, BLUE);
 
