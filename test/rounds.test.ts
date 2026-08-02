@@ -8,20 +8,10 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController, EGameState, EGameType} from '../src/game/CGameController';
-import {CTank} from '../src/core/CTank';
 import {GameConfig} from '../src/core/CGameConfig';
-
-type GCInternals = {
-  m_tanks: CTank[];
-  m_gameState: EGameState;
-  m_currentRound: number;
-  m_timers: unknown[];
-  endTurn(): void;
-  endBattleIfDecided(): void;
-};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 function roundsGame(totalRounds: number): CGameController {
   const gc = new CGameController(makeCanvas());
@@ -71,7 +61,7 @@ describe('Rounds / Points mode', () => {
     gc.setHumanCount(1);
     gc.setGameType(EGameType.Deathmatch);
     gc.startGame(2);
-    const t = (gc as unknown as GCInternals).m_tanks;
+    const t = priv(gc).m_tanks;
     t[1].hit(999_999);
     expect(t[1].isAlive()).toBe(false); // lethal in Deathmatch
   });

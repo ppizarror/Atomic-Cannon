@@ -14,7 +14,8 @@
 import {useEffect, useRef, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Button} from './Button';
-import {openSettingsPage, uiClick, uiTyping} from './store';
+import {EditorDone} from './EditorDone';
+import {uiClick, uiTyping} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
 import {MAX_HUMANS} from './setupStore';
 import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
@@ -108,7 +109,7 @@ export function PlayersEditor() {
     <EditorScreen
       title={e.title}
       footer={<BmpText font="beijing-16-out" text={e.footer} />}
-      actions={<Button label={e.done} onClick={() => openSettingsPage('root')} />}
+      actions={<EditorDone label={e.done} class="" />}
     >
       <div class="player-card">
         <div class="player-head">

@@ -86,7 +86,6 @@ export class CChatter {
     return this.m_bubbles.length > 0;
   }
 
-  /** Live bubble count. */
   count(): number {
     return this.m_bubbles.length;
   }

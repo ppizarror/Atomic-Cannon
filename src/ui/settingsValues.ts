@@ -49,7 +49,6 @@ export const gameSettings = {
   creditTurn: (): number => num('eco.creditTurn'),
   /** Credits each survivor earns per round. */
   creditRound: (): number => num('eco.creditRound'),
-  /** Battles per match. */
   battles: (): number => num('gp.battles'),
   /** Rounds in a Point/Rounds game. */
   rounds: (): number => num('gp.rounds'),

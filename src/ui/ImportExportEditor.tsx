@@ -15,10 +15,11 @@ import {useRef, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {BmpParagraph} from './BmpParagraph';
 import {Button} from './Button';
+import {EditorDone} from './EditorDone';
 import {EditorScreen} from './EditorScreen';
 import {Modal} from './Modal';
 import {ModalButton} from './ModalButton';
-import {openSettingsPage, uiClick} from './store';
+import {uiClick} from './store';
 import {strings, fmt} from '../i18n';
 import {exportSettings, importSettings, resetAllSettings} from '../util/settingsBackup';
 
@@ -96,7 +97,7 @@ export function ImportExportEditor() {
             <Button label={e.import} onClick={onImport} />
             <Button label={e.export} onClick={onExport} />
             <Button label={e.reset} onClick={() => (uiClick(), setConfirmReset(true))} />
-            <Button label={e.done} onClick={() => openSettingsPage('root')} class="editor-exit" />
+            <EditorDone label={e.done} />
           </>
         }
       >

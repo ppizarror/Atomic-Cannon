@@ -43,19 +43,33 @@ export interface StatsSnapshot {
   updated: number; // epoch ms of the last write (0 if never)
 }
 
+/**
+ * The per-match play counters — the ONE list that drives the running tally, the upload delta and
+ * the caps. The client accumulates each during a match and uploads the difference since the last
+ * flush; the names are identical on both sides so nothing has to be mapped.
+ *
+ * Adding a counter here is the whole change: the tally type, the zeroing, the differencing and the
+ * delta all derive from it, so there is no second place to forget (which would have meant a stat
+ * that silently never uploads).
+ */
+export const MATCH_COUNTERS = [
+  'weaponsFired', // fire actions (one trigger pull, regardless of salvo size)
+  'shotsFired', // individual projectiles/rounds launched
+  'tanksDestroyed', // tank kills
+  'damageDealt', // total life removed across all hits
+  'nukesFired', // super-weapon (nuke-class) fires
+  'terrainCarved', // ground-carving blasts
+  'creditsSpent', // credits spent in the depot
+] as const;
+
+export type MatchCounter = (typeof MATCH_COUNTERS)[number];
+
 /** One incremental upload: everything played since the previous upload, plus the units of progress
  *  this flush closes (`wars` is 0/1 — a war only ends once). Every number is client-sent, so the
  *  server re-clamps all of them (see STAT_CAPS) instead of trusting any. */
-export interface StatsDelta {
+export interface StatsDelta extends Record<MatchCounter, number> {
   wars: number; // 1 when this flush closes the war, else 0
   battles: number; // battles completed by this flush
-  weaponsFired: number;
-  shotsFired: number;
-  tanksDestroyed: number;
-  damageDealt: number;
-  nukesFired: number;
-  terrainCarved: number;
-  creditsSpent: number;
   /** Seconds played since the previous flush → folded into playTimeSec. */
   playSec: number;
   /** The whole war's duration — sent ONLY on the war-closing flush (0 otherwise) → longestWarSec.

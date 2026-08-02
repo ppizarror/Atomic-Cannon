@@ -20,8 +20,6 @@ export type GameCommand =
   | {readonly t: 'cutJet'}
   | {readonly t: 'fire'};
 
-export type GameCommandType = GameCommand['t'];
-
 /**
  * The subset of the controller a command touches. CGameController satisfies this
  * structurally; depending on the interface (not the 165 KB class) keeps the

@@ -64,5 +64,3 @@ export class Vec2<T extends number = number> {
     return new Vec2(Math.cos(rad), -Math.sin(rad));
   }
 }
-
-export type Vec2f = Vec2<number>;

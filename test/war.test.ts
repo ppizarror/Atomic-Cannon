@@ -5,14 +5,12 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController, EGameType} from '../src/game/CGameController';
-import {CTank} from '../src/core/CTank';
 import {Roster} from '../src/core/CRoster';
 
 // Reach into the controller's privates the tests need to drive directly.
-type Priv = {m_tanks: CTank[]; endTurn(): void};
-
 // Three distinct-colour tanks = three teams (free-for-all).
 function newGame(): CGameController {
   Roster.players = [];
@@ -26,7 +24,7 @@ function newGame(): CGameController {
 describe('Winning the war', () => {
   it('aggregates stats into team rows led by the top-kills team', () => {
     const gc = newGame();
-    const t = (gc as unknown as Priv).m_tanks;
+    const t = priv(gc).m_tanks;
     // t[0] dominates: 5 kills, 10 shots, 8 hits, 800 dmg. t[1]: 2 kills. t[2]: none.
     for (let i = 0; i < 5; i++) t[0].addKill();
     for (let i = 0; i < 10; i++) t[0].addShot();
@@ -36,7 +34,7 @@ describe('Winning the war', () => {
     // Kill t[1] and t[2] so only t[0]'s team survives → battle ends.
     t[1].hit(999999);
     t[2].hit(999999);
-    (gc as unknown as Priv).endTurn();
+    priv(gc).endTurn();
 
     const s = gc.getWarStandings();
     expect(s.rows[0].isLeader).toBe(true);
@@ -52,7 +50,7 @@ describe('Winning the war', () => {
 
   it('reports negative damage/hit from friendly fire', () => {
     const gc = newGame();
-    const t = (gc as unknown as Priv).m_tanks;
+    const t = priv(gc).m_tanks;
     // One shot that only ever hit a teammate/self → net negative damage.
     t[0].addShot();
     t[0].addHit(-50); // friendly-fire contribution is stored negative
@@ -63,12 +61,12 @@ describe('Winning the war', () => {
 
   it('final battle → "wins the war!" + exit prompt', () => {
     const gc = newGame();
-    const t = (gc as unknown as Priv).m_tanks;
+    const t = priv(gc).m_tanks;
     gc.setTotalBattles(1); // single battle → this IS the final
     t[0].addKill();
     t[1].hit(999999);
     t[2].hit(999999);
-    (gc as unknown as Priv).endTurn();
+    priv(gc).endTurn();
     const s = gc.getWarStandings();
     expect(s.title).toBe(`${t[0].getName()} wins the war!`);
     expect(s.prompt).toContain('exit to menu');
@@ -78,7 +76,7 @@ describe('Winning the war', () => {
   it('rounds mode → "wins the battle!" with no war subtitle (scored by points)', () => {
     const gc = newGame();
     gc.setGameType(EGameType.Rounds);
-    const t = (gc as unknown as Priv).m_tanks;
+    const t = priv(gc).m_tanks;
     // Rounds/Points is decided by POINTS (net damage dealt), not kills or last-standing.
     t[0].addHit(300); // t[0]'s team leads the points table
     const s = gc.getWarStandings();
@@ -89,7 +87,7 @@ describe('Winning the war', () => {
 
   it('nextBattle keeps cumulative stats and advances the counter', () => {
     const gc = newGame();
-    const t = (gc as unknown as Priv).m_tanks;
+    const t = priv(gc).m_tanks;
     t[0].addKill();
     t[0].addKill();
     gc.nextBattle();

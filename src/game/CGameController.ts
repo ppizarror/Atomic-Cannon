@@ -12,7 +12,7 @@ import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
 import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
-import type {StatsDelta} from '../net/stats';
+import {MATCH_COUNTERS, type MatchCounter, type StatsDelta} from '../net/stats';
 import {CShot, REF_TIME_SCALE} from '../core/CShot';
 import {gustFactor} from '../core/wind';
 import {GameConfig, isWargame} from '../core/CGameConfig';
@@ -165,18 +165,10 @@ export interface WarStandings {
   warOver: boolean;
 }
 
-/** The running per-match play tallies the global-stat deltas are differenced from (`sec` is the
- *  match's elapsed play time; the rest mirror the same-named StatsDelta fields). */
-interface MatchStatTally {
-  weaponsFired: number;
-  shotsFired: number;
-  tanksDestroyed: number;
-  damageDealt: number;
-  nukesFired: number;
-  terrainCarved: number;
-  creditsSpent: number;
-  sec: number;
-}
+/** The running per-match play tallies the global-stat deltas are differenced from. The counters
+ *  come from net/stats' MATCH_COUNTERS (one list for tally, delta and caps); `sec` is this match's
+ *  elapsed play time, which is differenced the same way but isn't a counter. */
+type MatchStatTally = Record<MatchCounter, number> & {sec: number};
 
 /** The units of progress a stats flush CLOSES — stamped onto the drained delta (see takeStatsDelta).
  *  A plain `{}` flush (quitting to the menu, leaving the page) banks the play with no progress. */
@@ -380,16 +372,9 @@ export class CGameController implements ShotWorld {
 
   /** A zeroed per-player tally for one battle. */
   private static freshStatTally(): MatchStatTally {
-    return {
-      weaponsFired: 0,
-      shotsFired: 0,
-      tanksDestroyed: 0,
-      damageDealt: 0,
-      nukesFired: 0,
-      terrainCarved: 0,
-      creditsSpent: 0,
-      sec: 0,
-    };
+    const t = {sec: 0} as MatchStatTally;
+    for (const k of MATCH_COUNTERS) t[k] = 0;
+    return t;
   }
 
   /** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half subsampled
@@ -503,7 +488,6 @@ export class CGameController implements ShotWorld {
     // Only Deathmatch destroys tanks. CTank.hit()/applyRadiationDamage read this.
     GameConfig.lethalDamage = this.m_gameType === EGameType.Deathmatch;
 
-    // Reset state
     this.m_simAccum = 0; // fresh fixed-timestep accumulator
     this.stopMovementAudio(); // silence any tank-drive / jet loop from a match restarted mid-drive
     this.m_netShotResolving = false;
@@ -528,14 +512,7 @@ export class CGameController implements ShotWorld {
     this.m_camera.reset(); // no scroll position or Cinematic dwell carried across matches
     this.m_impactThisTurn = false; // no carried-over "a blast landed" flag
     // Fresh per-match stat tally (and its upload baseline — nothing of this match is banked yet).
-    this.m_stats = {
-      weaponsFired: 0,
-      shotsFired: 0,
-      nukesFired: 0,
-      tanksDestroyed: 0,
-      terrainCarved: 0,
-      creditsSpent: 0,
-    };
+    this.m_stats = CGameController.freshStatTally();
     this.m_statsBase = CGameController.freshStatTally();
     this.m_matchStartTime = this.m_time;
 
@@ -1206,7 +1183,9 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // CAMERA (large-map horizontal scroll)
+  // SCENE RENDER — the per-frame draw dispatch (world, overlay, minimap). Camera
+  // state and the minimap widget itself live in game/CCamera; what's here decides
+  // WHAT to follow (cameraFollowX) and paints the result.
   // ========================================================================
 
   /** Land-Size scale (1..5); world width = viewWidth × scale. */
@@ -1715,8 +1694,9 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // TAUNTS (Chatter) — see game/CChatter. The controller only supplies the
-  // world (who is speaking, the view to project into) and forwards the events.
+  // AIM & MOVE INDICATORS — the drag-aim arrow, the move-range band and the
+  // target crosshair. (Speech bubbles moved to game/CChatter; the few forwarding
+  // methods below are all that remain of them here.)
   // ========================================================================
 
   /** Forward a taunt event to the bubble system. */
@@ -2678,7 +2658,6 @@ export class CGameController implements ShotWorld {
     this.m_crateField.destroyWithin(pos.x, pos.y, radius);
   }
 
-  /** Handle tank destroyed event. */
   private handleTankDestroyed(tank: CTank): void {
     this.m_stats.tanksDestroyed++;
     const pos = tank.getPosition();
@@ -4984,17 +4963,16 @@ export class CGameController implements ShotWorld {
    *  damageDealt is summed from the tanks' cumulative net damage; the rest are live per-match
    *  counters, and `sec` is the whole war's elapsed play time (m_time is monotonic). */
   private statsSnapshot(): MatchStatTally {
-    const damageDealt = this.m_tanks.reduce((sum, t) => sum + Math.max(0, t.getDamageDealt()), 0);
-    return {
-      weaponsFired: this.m_stats.weaponsFired,
-      shotsFired: this.m_stats.shotsFired,
-      tanksDestroyed: this.m_stats.tanksDestroyed,
-      damageDealt: Math.round(damageDealt),
-      nukesFired: this.m_stats.nukesFired,
-      terrainCarved: this.m_stats.terrainCarved,
-      creditsSpent: this.m_stats.creditsSpent,
+    const snap = {
       sec: Math.max(0, Math.round(this.m_time - this.m_matchStartTime)),
-    };
+    } as MatchStatTally;
+    for (const k of MATCH_COUNTERS) snap[k] = this.m_stats[k];
+    // damageDealt is the only counter NOT accumulated as it happens — it is summed from the tanks,
+    // which already track their own dealt damage for the standings.
+    snap.damageDealt = Math.round(
+      this.m_tanks.reduce((sum, t) => sum + Math.max(0, t.getDamageDealt()), 0),
+    );
+    return snap;
   }
 
   /** Drain everything played since the last drain into an upload-ready delta, stamped with the
@@ -5006,23 +4984,16 @@ export class CGameController implements ShotWorld {
   takeStatsDelta(closed: StatsFlush = {}): StatsDelta {
     const cur = this.statsSnapshot();
     const base = this.m_statsBase;
-    const since = (k: Exclude<keyof MatchStatTally, 'sec'>): number =>
-      Math.max(0, cur[k] - base[k]);
     this.m_statsBase = cur;
-    return {
+    const delta = {
       wars: closed.warOver ? 1 : 0,
       battles: Math.max(0, Math.round(closed.battles ?? 0)),
-      weaponsFired: since('weaponsFired'),
-      shotsFired: since('shotsFired'),
-      tanksDestroyed: since('tanksDestroyed'),
-      damageDealt: since('damageDealt'),
-      nukesFired: since('nukesFired'),
-      terrainCarved: since('terrainCarved'),
-      creditsSpent: since('creditsSpent'),
       playSec: Math.max(0, cur.sec - base.sec),
       warSec: closed.warOver ? cur.sec : 0, // "longest war" spans every battle, not just this flush
       online: this.m_netMode,
-    };
+    } as StatsDelta;
+    for (const k of MATCH_COUNTERS) delta[k] = Math.max(0, cur[k] - base[k]);
+    return delta;
   }
 
   /** True while a turn's action is still resolving (shot in flight / settling) OR while the
@@ -5969,14 +5940,7 @@ export class CGameController implements ShotWorld {
   // Per-match play-stat tallies (uploaded INCREMENTALLY for the global About counters — see
   // takeStatsDelta). Reset in startGame; in a net match every client tallies (all simulate every
   // shot) but only ONE uploads.
-  private m_stats = {
-    weaponsFired: 0, // fire actions committed
-    shotsFired: 0, // individual projectiles/rounds launched
-    nukesFired: 0, // super-weapon (NUKE-class) fires
-    tanksDestroyed: 0, // tank kills
-    terrainCarved: 0, // ground-carving blasts (craters)
-    creditsSpent: 0, // depot spend
-  };
+  private m_stats: MatchStatTally = CGameController.freshStatTally();
   // The tallies as of the last stats drain — everything past this has yet to be uploaded.
   private m_statsBase: MatchStatTally = CGameController.freshStatTally();
   // Fired when a unit of progress completes (round / battle / war) so the UI can bank the delta.

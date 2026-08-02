@@ -10,8 +10,9 @@
  */
 import {BmpText} from './BmpText';
 import {Button} from './Button';
+import {EditorDone} from './EditorDone';
 import {EditorScreen} from './EditorScreen';
-import {openSettingsPage, uiClick} from './store';
+import {uiClick} from './store';
 import {
   TAUNT_CATEGORIES,
   tauntLines,
@@ -58,7 +59,7 @@ export function TauntEditor() {
             onClick={() => (uiClick(), resetTauntLines(cat))}
             class={tauntsEdited(cat) ? '' : 'editor-exit'}
           />
-          <Button label={e.done} onClick={() => openSettingsPage('root')} class="editor-exit" />
+          <EditorDone label={e.done} />
         </>
       }
     >

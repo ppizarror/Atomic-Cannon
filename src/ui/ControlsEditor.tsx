@@ -9,8 +9,9 @@
 import {useEffect, useState} from 'preact/hooks';
 import {BmpText} from './BmpText';
 import {Button} from './Button';
+import {EditorDone} from './EditorDone';
 import {EditorScreen} from './EditorScreen';
-import {openSettingsPage, uiClick} from './store';
+import {uiClick} from './store';
 import {ACTIONS, type ActionId, keyName} from '../core/CControls';
 import {bindings, rebind, unassign, resetDefaults} from './controlsStore';
 import {strings, fmt} from '../i18n';
@@ -86,7 +87,7 @@ export function ControlsEditor() {
             label={e.defaults}
             onClick={() => (uiClick(), setArmed(null), setSweep(false), resetDefaults())}
           />
-          <Button label={e.done} onClick={() => openSettingsPage('root')} class="editor-exit" />
+          <EditorDone label={e.done} />
         </>
       }
     >

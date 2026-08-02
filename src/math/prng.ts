@@ -40,7 +40,6 @@ export class Prng {
     return (this.m_state >>> 16) & 0x7fff;
   }
 
-  /** Uniform float in [0, 1). */
   float(): number {
     return this.nextRand() / 0x8000;
   }

@@ -8,7 +8,14 @@ import {makeCanvas} from './_dom';
 import {CGameController, EGameType, type StatsFlush} from '../src/game/CGameController';
 import {Roster} from '../src/core/CRoster';
 import type {CTank} from '../src/core/CTank';
-import {sanitizeDelta, STAT_CAPS, emptyDelta, isEmptyDelta, mergeDelta} from '../src/net/stats';
+import {
+  sanitizeDelta,
+  STAT_CAPS,
+  MATCH_COUNTERS,
+  emptyDelta,
+  isEmptyDelta,
+  mergeDelta,
+} from '../src/net/stats';
 import {flagEmoji, countryName} from '../src/ui/worldGeo';
 
 const ROSTER = [
@@ -199,5 +206,21 @@ describe('country display helpers', () => {
     expect(flagEmoji('cl')).toBe('🇨🇱'); // case-insensitive
     expect(flagEmoji('??')).toBe('🏳️'); // invalid → white flag
     expect(countryName('XX')).toBe('Unknown');
+  });
+});
+
+describe('MATCH_COUNTERS is the single source', () => {
+  it('every counter is capped, zeroed and merged', () => {
+    // STAT_CAPS is typed Record<keyof StatsDeltaNums, …>, so the compiler already forces a cap for
+    // each counter; this pins the runtime behaviour that used to be hand-written per field.
+    const zero = emptyDelta();
+    const one = {...emptyDelta(), ...Object.fromEntries(MATCH_COUNTERS.map(k => [k, 3]))};
+    for (const k of MATCH_COUNTERS) {
+      expect(STAT_CAPS[k], `${k} has no server cap`).toBeGreaterThan(0);
+      expect(zero[k], `${k} not zeroed by emptyDelta`).toBe(0);
+      expect(mergeDelta(one, one)[k], `${k} not summed by mergeDelta`).toBe(6);
+      expect(sanitizeDelta({...one, [k]: -5})[k], `${k} not floored at 0`).toBe(0);
+      expect(sanitizeDelta({...one, [k]: 1e12})[k], `${k} not capped`).toBe(STAT_CAPS[k]);
+    }
   });
 });

@@ -6,13 +6,11 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
-import {CTank} from '../src/core/CTank';
 import {Roster} from '../src/core/CRoster';
 import {setup, setSetup, playersOf, MAX_HUMANS, MAX_TANKS_PER_TEAM} from '../src/ui/setupStore';
-
-type Tanks = {m_tanks: CTank[]};
 
 describe('Play setup', () => {
   it('human count: the first N teams are human, the rest CPU (1 tank each)', () => {
@@ -21,7 +19,7 @@ describe('Play setup', () => {
     gc.setHumanCount(2);
     gc.setTanksPerTeam(1);
     gc.startGame(4);
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
     expect(t).toHaveLength(4); // four teams → four tanks
     expect(t[0].isHuman() && t[1].isHuman()).toBe(true); // first two are human
     expect(!t[2].isHuman() && !t[3].isHuman()).toBe(true); // the rest are CPU
@@ -31,7 +29,7 @@ describe('Play setup', () => {
     const gc = new CGameController(makeCanvas());
     gc.setHumanCount(0);
     gc.startGame(2);
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
     expect(!t[0].isHuman() && !t[1].isHuman()).toBe(true); // watch mode has no human
   });
 
@@ -40,7 +38,7 @@ describe('Play setup', () => {
     gc.setHumanCount(1);
     gc.setTanksPerTeam(3);
     gc.startGame(2); // 2 teams × 3 tanks = 6
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
     expect(t).toHaveLength(6); // 2 teams × 3 tanks = 6 tanks
     expect(t[0].isHuman() && t[1].isHuman() && t[2].isHuman()).toBe(true); // team 1's squad is human
     expect(!t[3].isHuman() && !t[4].isHuman() && !t[5].isHuman()).toBe(true); // team 2's squad is CPU
@@ -53,14 +51,14 @@ describe('Play setup', () => {
     const gc = new CGameController(makeCanvas());
     gc.setTanksPerTeam(5);
     gc.startGame(8);
-    expect((gc as unknown as Tanks).m_tanks).toHaveLength(40); // 8 teams × 5 tanks, none dropped
+    expect(priv(gc).m_tanks).toHaveLength(40); // 8 teams × 5 tanks, none dropped
 
     // The Play menu's own maximum (8 humans + 8 CPUs, 5 tanks each) spawns in full too.
     const big = new CGameController(makeCanvas());
     big.setHumanCount(8);
     big.setTanksPerTeam(5);
     big.startGame(16);
-    const bt = (big as unknown as Tanks).m_tanks;
+    const bt = priv(big).m_tanks;
     expect(bt).toHaveLength(80);
     // Both roster pools are drawn on in full, so all 16 players get their own colour/team —
     // the palette has exactly 16 entries and the two pools are 8 + 8.
@@ -98,7 +96,7 @@ describe('Play setup', () => {
     gc.setHumanCount(1);
     gc.setTanksPerTeam(4);
     gc.startGame(2);
-    const tanks = (gc as unknown as Tanks).m_tanks;
+    const tanks = priv(gc).m_tanks;
     const mine = tanks.filter(t => t.getTeamId() === tanks[0].getTeamId());
     expect(mine).toHaveLength(4);
 

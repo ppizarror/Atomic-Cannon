@@ -5,6 +5,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
@@ -14,9 +15,6 @@ import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {weaponEnabled} from '../src/core/CGameContent';
 import {setVal} from '../src/ui/settingsStore';
 import {applyGameSettings} from '../src/ui/applySettings';
-
-type GCInternals = {m_tanks: CTank[]; endTurn(): void};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 function humanGame(players = 2): CGameController {
   // Deterministic order + open depot for the Buy-Time tests (GameConfig is a shared
@@ -339,14 +337,14 @@ describe('Formerly-no-op Settings options', () => {
   it('a tank that dies still owning a Death weapon (Burial Mound) cooks it off — heaps earth', () => {
     const burial = WEAPON_DATABASE.findIndex(w => w.id === 'burial.mound');
     expect(burial).toBeGreaterThanOrEqual(0);
-    type Priv = {
+    type GCPriv = {
       m_tanks: CTank[];
       m_land: CLand;
       economyFor(t: CTank): {grant(i: number): void};
       handleTankDestroyed(t: CTank): void;
     };
     const kill = (owns: boolean): number => {
-      const p = humanGame(4) as unknown as Priv; // 4 teams → no BattleEnd when one dies
+      const p = humanGame(4) as unknown as GCPriv; // 4 teams → no BattleEnd when one dies
       const victim = p.m_tanks[1] as unknown as CTank & {m_bIsAlive: boolean; m_bExploded: boolean};
       if (owns) p.economyFor(victim).grant(burial); // still holds a Burial Mound on death
       const x = Math.floor(victim.getPosition().x);

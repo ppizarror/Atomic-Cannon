@@ -769,6 +769,15 @@ export const weapons = signal<WeaponDef[]>([]);
 // green→yellow→red colour, or null when there's no active countdown. Republished
 // only when the quantised width or colour changes, so the bar animates without
 // churning every frame.
+/** The three style props both turn-timer bars (desktop `Hud`, `MobileHud`) drive off the same
+ *  signal — width from the remaining fraction, colour from the state, and NO transition while a
+ *  shot charges (the fill must track the charge frame-by-frame, not ease behind it). */
+export const timerFillStyle = (t: {frac: number; color: string; charge?: boolean}) => ({
+  width: `${t.frac * 100}%`,
+  background: t.color,
+  transition: t.charge ? 'none' : undefined,
+});
+
 export const turnTimer = signal<{
   frac: number;
   color: string;

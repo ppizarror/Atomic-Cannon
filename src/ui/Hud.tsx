@@ -34,6 +34,7 @@ import {
   POWER_MAX,
   wrapAngle,
   turnTimer,
+  timerFillStyle,
   teamId,
   armor,
   hazmat,
@@ -211,14 +212,7 @@ function TurnTimerBar() {
   return (
     <div class="ov turn-timer" style={pos(R.timer)}>
       <div class="tt-track">
-        <div
-          class="tt-fill"
-          style={{
-            width: `${t.frac * 100}%`,
-            background: t.color,
-            transition: t.charge ? 'none' : undefined,
-          }}
-        />
+        <div class="tt-fill" style={timerFillStyle(t)} />
       </div>
     </div>
   );

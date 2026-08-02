@@ -29,6 +29,7 @@ import {
   canBuyNow,
   battleStatus,
   turnTimer,
+  timerFillStyle,
   game,
   uiClick,
   openDepot,
@@ -87,20 +88,7 @@ function Btn({
 // and shows an inert dark track otherwise.
 function MobileTimer() {
   const t = turnTimer.value;
-  return (
-    <div class="mtimer">
-      {t && (
-        <div
-          class="mtimer-fill"
-          style={{
-            width: `${t.frac * 100}%`,
-            background: t.color,
-            transition: t.charge ? 'none' : undefined,
-          }}
-        />
-      )}
-    </div>
-  );
+  return <div class="mtimer">{t && <div class="mtimer-fill" style={timerFillStyle(t)} />}</div>;
 }
 
 // The right-end cluster: a top row of per-player lights (green for whose turn it
