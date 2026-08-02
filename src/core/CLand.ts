@@ -1388,6 +1388,7 @@ export class CLand {
         h = y1 - y0 + 1;
       if (w <= 0 || h <= 0) return;
       const heights = this.m_arrHeights;
+      const glowPx = this.m_pixels; // solidity test for the bleed below
       // A slot's buffer is allocated on its first hot pixel, so the common single-crater case pays
       // for exactly one — same cost as the single shared buffer this replaced.
       const bufs: (Uint8ClampedArray | null)[] = [];
@@ -1435,6 +1436,13 @@ export class CLand {
       ): void => {
         if (x < 0 || x >= W || y < 0 || y >= this.m_nHeight) return;
         if (matRad(mat[y * W + x])) return;
+        // …and onto GROUND only. There cannot be radiation floating in air: a grain sitting on the
+        // surface would otherwise bleed its dot straight up into the sky, and on a cliff edge or a
+        // crater rim — where the ground ends abruptly and every grain along it is a surface grain —
+        // that reads as a band of glow hanging off the terrain with nothing under it. The bleed is
+        // there to soften the join between hot earth and the earth around it; there is no earth up
+        // there to soften into.
+        if (glowPx ? (glowPx[y * W + x] & 0xff000000) === 0 : heights && y < heights[x]) return;
         add(out, x, y, zr, zg, zb, k);
       };
       // Walked per COLUMN, downward from the surface, through the CONTIGUOUS run of hot earth —

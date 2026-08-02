@@ -5,10 +5,28 @@
 type AnyFn = (...a: unknown[]) => unknown;
 const noop: AnyFn = () => undefined;
 
-function mockCtx(): unknown {
-  // Any method call is a no-op; property reads/writes are tolerated. Draw code
-  // is never exercised by these tests, so exact behaviour doesn't matter.
-  const target: Record<string, unknown> = {canvas: {width: 900, height: 600}};
+function mockCtx(canvas?: MockCanvas): unknown {
+  // Any method call is a no-op; property reads/writes are tolerated — EXCEPT the
+  // ImageData pair, which is real. Draw code that composes a layer pixel by pixel
+  // (CLand's radiation glow) writes it through createImageData/putImageData, so a
+  // no-op there means the whole path is unexercised in tests and bugs in it are
+  // invisible to the suite. Capturing the image lets a test assert what was painted.
+  const target: Record<string, unknown> = {
+    canvas: canvas ?? {width: 900, height: 600},
+    createImageData: (w: number, h: number) => ({
+      width: w,
+      height: h,
+      data: new Uint8ClampedArray(w * h * 4),
+    }),
+    putImageData: (img: MockImage) => {
+      if (canvas) canvas.lastImage = img;
+    },
+    // Returns an object rather than undefined: callers immediately call `addColorStop` on it, so
+    // the bare no-op proxy throws the moment any gradient path is exercised.
+    createLinearGradient: () => ({addColorStop: noop}),
+    createRadialGradient: () => ({addColorStop: noop}),
+    createPattern: () => null,
+  };
   return new Proxy(target, {
     get: (t, k: string) => (k in t ? t[k] : noop),
     set: (t, k: string, v) => {
@@ -18,12 +36,20 @@ function mockCtx(): unknown {
   });
 }
 
+/** The last image `putImageData` wrote — how a test reads back a composed layer. */
+export interface MockImage {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
 class MockCanvas {
   width = 900;
   height = 600;
+  lastImage: MockImage | null = null;
 
   getContext(): unknown {
-    return mockCtx();
+    return mockCtx(this);
   }
 }
 

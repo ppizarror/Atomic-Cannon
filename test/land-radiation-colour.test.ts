@@ -21,7 +21,7 @@ type Priv = {
   m_radSpecks: unknown[];
   m_material: Uint8Array | null;
   m_radSlotRGB: [number, number, number][];
-  m_radParticles: {slot: number; timeRemaining: number}[];
+  m_radParticles: {slot: number; timeRemaining: number; duration: number}[];
   m_nWidth: number;
   m_nHeight: number;
 };
