@@ -8,11 +8,10 @@
  *  - a dead tank speaks only its death line, never an idle/gloat taunt (which would overwrite it).
  */
 import {describe, it, expect} from 'vitest';
-import {makeCanvas} from './_dom';
-import {CGameController, EGameState} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
 import {CLand} from '../src/core/CLand';
 import {GameConfig} from '../src/core/CGameConfig';
+import {CChatter} from '../src/game/CChatter';
 import {Taunts} from '../src/core/CTaunts';
 
 function flatLand(): CLand {
@@ -68,30 +67,23 @@ describe('CTank respawn / setNetState resets', () => {
   });
 });
 
-type TauntPriv = {
-  m_bubbles: {age: number; speaker: CTank; text: string; id: number}[];
-  m_gameState: EGameState;
-  m_tanks: CTank[];
-  updateTaunts(dt: number): void;
-  tryTaunt(cat: string, speaker: CTank | null, pct: number): void;
-};
-
 describe('taunt bubbles', () => {
-  function game(): TauntPriv {
-    const gc = new CGameController(makeCanvas());
-    gc.setHumanCount(1);
-    gc.startGame(2);
-    return gc as unknown as TauntPriv;
-  }
+  // The bubble system is its own object now (game/CChatter), so these drive it directly — no
+  // match, no controller. A speaker is anything with a name, a position and alive/sentry flags.
+  const speaker = (alive = true, sentry = false) => ({
+    isAlive: () => alive,
+    isSentry: () => sentry,
+    getName: () => 'Ada',
+    getPosition: () => ({x: 0, y: 0}),
+  });
 
   it('the victor gloat bubble persists on the standings screen (does not age in BattleEnd)', () => {
-    const p = game();
-    p.m_bubbles = [{id: 1, speaker: p.m_tanks[0], text: 'gg', age: 3.9}]; // near the 4s TAUNT_LIFE
-    p.m_gameState = EGameState.BattleEnd;
-
-    p.updateTaunts(1.0); // >TAUNT_LIFE of aging — would drop it if it aged
-
-    expect(p.m_bubbles.length).toBe(1); // still there beside the winner flag
+    const c = new CChatter();
+    c.say(speaker(), 'gg');
+    c.update(5, {ageing: false, idleSpeaker: null}); // > TAUNT.LIFE of standings time
+    expect(c.count()).toBe(1); // still there beside the winner flag
+    c.update(5, {ageing: true, idleSpeaker: null}); // …and it DOES age once play resumes
+    expect(c.count()).toBe(0);
   });
 
   it('a dead tank speaks its death line but never an idle taunt', () => {
@@ -100,16 +92,25 @@ describe('taunt bubbles', () => {
     Taunts.death = ['I regret nothing']; // seed a death line (lists are empty until i18n loads at boot)
     Taunts.taunt = ['You call that aim?'];
     try {
-      const p = game();
-      const t = p.m_tanks[0];
-      (t as unknown as {m_bIsAlive: boolean}).m_bIsAlive = false; // dead
-      p.m_bubbles = [];
+      const c = new CChatter();
+      const dead = speaker(false);
+      c.try('taunt', dead, 100); // idle/gloat — blocked for a dead tank
+      expect(c.count()).toBe(0);
+      c.try('death', dead, 100); // the death cry — allowed even though dead
+      expect(c.count()).toBe(1);
+    } finally {
+      GameConfig.chatter = prev;
+    }
+  });
 
-      p.tryTaunt('taunt', t, 100); // idle/gloat — blocked for a dead tank
-      expect(p.m_bubbles.length).toBe(0);
-
-      p.tryTaunt('death', t, 100); // the death cry — allowed even though dead
-      expect(p.m_bubbles.length).toBe(1);
+  it('a sentry never speaks', () => {
+    const prev = GameConfig.chatter;
+    GameConfig.chatter = true;
+    Taunts.taunt = ['beep'];
+    try {
+      const c = new CChatter();
+      c.try('taunt', speaker(true, true), 100);
+      expect(c.count()).toBe(0);
     } finally {
       GameConfig.chatter = prev;
     }

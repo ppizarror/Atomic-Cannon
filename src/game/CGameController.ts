@@ -40,6 +40,9 @@ import {
   type BotBuyStats,
   type UltraBuyCtx,
 } from '../core/botEconomy';
+import {CCamera, CAMERA, type CameraBounds} from './CCamera';
+import {CChatter, TAUNT, type ActiveTaunt} from './CChatter';
+export type {ActiveTaunt} from './CChatter';
 import {CFireworks, type FireworksEnv} from './CFireworks';
 import {
   CCrateField,
@@ -88,7 +91,6 @@ import {
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {clamp, clamp01, deg2rad, TWO_PI, wrapIndex} from '../math/num';
-import {between} from '../math/random';
 import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
 import type {MatchConfig} from '../net/protocol';
@@ -191,26 +193,6 @@ interface LandConfig {
 
 const LAND_DATA = landData as LandConfig[];
 
-/** A live speech bubble: the speaker (for its screen position) + the rendered
- *  "Name: line" text + its age. Kept controller-side (not on the tank) so a death
- *  bubble outlives its now-dead speaker. */
-interface TauntBubble {
-  id: number;
-  speaker: CTank;
-  text: string;
-  age: number;
-}
-
-/** A taunt bubble projected for the DOM overlay: fractional screen position (0..1 of
- *  the view) so it tracks the camera, plus a fade alpha. */
-export interface ActiveTaunt {
-  id: number;
-  text: string;
-  xPct: number;
-  yPct: number;
-  alpha: number;
-}
-
 /** Authoritative per-turn state shared between clients in a network match. */
 export interface NetSnapshot {
   tanks: {
@@ -263,25 +245,6 @@ const BEAM_COLLAPSE_DELAY = 1;
 
 /** A bot restocks a shield only when its current shield is below this (the original's autobuy
  *  shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading). */
-
-/**
- * How the view follows the action.
- */
-const CAMERA = {
-  /** Where the followed object sits in the view: 0.5 = dead centre. */
-  CENTER: 0.5,
-  /** Cinematic: how long the camera lingers on the impact before it pans away. */
-  DWELL_SEC: 0.8,
-  /** Pan speed (world px/sec) — the constant-speed ease toward the follow target (the original
-   *  scrolls at dt·gameSpeed·scrollSpeed; this is that budget in px/sec). Fast enough to keep a
-   *  shot roughly framed without whipping. */
-  SCROLL_SPEED: 1100,
-  /** Graphics → Camera: how the view moves to the next player when the turn hands off. Matches the
-   *  gfx.camera enum order (0 Smooth — the implicit default, just ease across / 1 Instant /
-   *  2 Cinematic). */
-  MODE_CINEMATIC: 2,
-  MODE_INSTANT: 1,
-} as const;
 
 /** TEMPORARY (explosion-FX testing): lock the weapon selection to one control weapon so it can be
  *  spammed to review effects. Set to null to restore the full arsenal. */
@@ -388,29 +351,6 @@ const STRUCTURE_SCALE = 0.45;
  *  flash on each salvo; faster bursts (cannon/shotgun ≈ 0.1) fire near-instantly and stay silent
  *  after the opener. Matches the original's `0.5 < sucSec` FX gate. */
 const SUCCESSION_LOUD_MAX_SEC = 0.5;
-
-/**
- * Taunt speech bubbles (Tank → Chatter). A bubble stays up `LIFE` seconds and fades over its last
- * `FADE`. Trigger chances match the original percent gate: 8% post-fire, 30% on death, 60% on the
- * idle interval.
- */
-const TAUNT = {
-  CHANCE_DEATH: 30,
-  CHANCE_IDLE: 60,
-  CHANCE_POSTFIRE: 8,
-  /** Own goal: a tank that drops a round on itself or its own squad occasionally has a word for
-   *  itself. */
-  CHANCE_SELF: 35,
-  FADE: 0.6,
-  /** The idle timer re-arms to a random gap in this range (seconds) each turn/attempt. */
-  IDLE: [7, 15],
-  LIFE: 4.0,
-  /** Screen-space height (px) the bubble's tail floats above the tank's centre — just clear of the
-   *  turret so the tail points right at the tank. */
-  RISE: 20,
-  /** A graze isn't worth a line — it has to have actually hurt. */
-  SELF_MIN_DAMAGE: 20,
-} as const;
 
 // ==========================================================================
 // CGameController CLASS
@@ -589,7 +529,7 @@ export class CGameController implements ShotWorld {
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
     this.m_crateField.clear();
-    this.m_bubbles = [];
+    this.m_chatter.clear();
     this.m_fireworksFx.clear();
     // Drop any deferred actions queued by the PREVIOUS match — e.g. a still-running Explode-Losers
     // cascade or a queued bot turn. m_time is monotonic (never reset), so a leftover closure whose
@@ -597,7 +537,7 @@ export class CGameController implements ShotWorld {
     this.m_timers = [];
     this.m_netAimDirty = false;
     this.m_lastImpactX = 0; // fresh camera focus (no stale prior-match impact)
-    this.m_camDwell = 0; // no Cinematic dwell carried across matches
+    this.m_camera.reset(); // no scroll position or Cinematic dwell carried across matches
     this.m_impactThisTurn = false; // no carried-over "a blast landed" flag
     // Fresh per-match stat tally (and its upload baseline — nothing of this match is banked yet).
     this.m_stats = {
@@ -821,8 +761,8 @@ export class CGameController implements ShotWorld {
     this.beginTurn();
     // Snap the camera onto the first player so a large map opens framed on them
     // (rather than panning in from the world's left edge).
-    this.m_manualScroll = false;
-    this.centerCameraOn(this.getCurrentTank().getPosition().x);
+    this.m_camera.releaseManualScroll();
+    this.m_camera.centerOn(this.getCurrentTank().getPosition().x, this.camBounds());
 
     // Warm the combat SFX set and start a random battle track.
     this.m_audio?.preloadCombat();
@@ -996,7 +936,9 @@ export class CGameController implements ShotWorld {
     // Always update terrain, wind and visual effects
     this.m_time += dt;
     this.updateEffectiveWind(dt); // fold Realistic-mode gusts onto the base wind → m_effWind
-    this.updateCamera(dt); // ease the large-map camera toward the shot / active tank
+    // Ease the large-map camera toward the shot / active tank. The controller picks WHAT to
+    // follow (cameraFollowX); the camera decides how it gets there.
+    this.m_camera.update(dt, this.cameraFollowX(), GameConfig.autoScroll, this.camBounds());
     if (this.m_damageNumbers.length) {
       for (const d of this.m_damageNumbers) d.age += dt;
       this.m_damageNumbers = this.m_damageNumbers.filter(d => d.age < HUD.DMG_NUM_LIFE);
@@ -1005,7 +947,12 @@ export class CGameController implements ShotWorld {
       for (const c of this.m_blastCircles) c.age += dt;
       this.m_blastCircles = this.m_blastCircles.filter(c => c.age < HUD.BLAST_CIRCLE_LIFE);
     }
-    this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
+    // Age speech bubbles + run the idle-taunt countdown. Ageing pauses on the standings screen so
+    // the victor's gloat persists beside the winner flag; the idle timer only ticks in a live turn.
+    this.m_chatter.update(dt, {
+      ageing: this.m_gameState !== EGameState.BattleEnd,
+      idleSpeaker: this.m_gameState === EGameState.Battle ? this.getCurrentTank() : null,
+    });
     this.m_crateField.update(dt, this.crateEnv()); // descend / land / collect supply crates + age pickup text
     this.m_land.update(dt, this.m_effWind);
     // Change Wind (Gameplay): only "Anytime" (3) drifts continuously; Per-game / After-round /
@@ -1065,7 +1012,7 @@ export class CGameController implements ShotWorld {
         return true; // the winner flag keeps raising / waving on the standings
     }
     if (this.m_screenShake.isActive()) return true;
-    if (this.m_camX !== this.m_camTargetX) return true; // camera still panning
+    if (this.m_camera.isPanning()) return true; // camera still panning
     if (this.m_screenFlash > 0) return true;
     if (this.m_particles.hasActiveExplosions()) return true;
     if (this.m_weather.isActive()) return true; // rain/snow/dust never rest
@@ -1314,18 +1261,34 @@ export class CGameController implements ShotWorld {
     return Math.sqrt(w * h) * c;
   }
 
-  /** Widest the camera can scroll; 0 when the world fits the view (no scroll). */
-  private maxCamX(): number {
-    return Math.max(0, this.m_worldWidth - this.m_viewW);
-  }
-
-  private clampCamX(x: number): number {
-    return clamp(x, 0, this.maxCamX());
-  }
-
   /** World X of the view's left edge — for input→world mapping and world draw. */
   getCameraX(): number {
-    return this.m_camX;
+    return this.m_camera.x();
+  }
+
+  /** World/view extents the camera measures itself against. */
+  private camBounds(): CameraBounds {
+    return {worldWidth: this.m_worldWidth, viewW: this.m_viewW, viewH: this.m_viewH};
+  }
+
+  /** Fraction of the view the battle-status text must clear to miss the minimap. */
+  getMinimapRightFrac(): number {
+    return this.m_camera.rightFrac(this.camBounds());
+  }
+
+  /** True when scene-pixel (px, py) is inside the minimap strip. */
+  hitMinimap(px: number, py: number): boolean {
+    return this.m_camera.hitStrip(px, py, this.camBounds());
+  }
+
+  /** True when (px, py) is on the minimap's draggable viewport handle. */
+  hitMinimapBox(px: number, py: number): boolean {
+    return this.m_camera.hitBox(px, py, this.camBounds());
+  }
+
+  /** Drag/click the minimap to pan the view. */
+  panFromMinimap(px: number): void {
+    if (this.m_camera.panFrom(px, this.camBounds())) this.markDirty();
   }
 
   /**
@@ -1360,7 +1323,7 @@ export class CGameController implements ShotWorld {
     if (
       this.m_gameState === EGameState.ShotFlying ||
       this.m_gameState === EGameState.Explosion ||
-      this.m_camDwell > 0
+      this.m_camera.isDwelling()
     ) {
       return this.m_lastImpactX;
     }
@@ -1371,33 +1334,6 @@ export class CGameController implements ShotWorld {
       if (winner) return winner.getPosition().x;
     }
     return this.getCurrentTank().getPosition().x;
-  }
-
-  /**
-   * Ease the camera toward its follow target — constant speed, snapping when within
-   * one step (matching the original, which is NOT a proportional lerp). Skipped
-   * while the player manually scrolls via the minimap or Auto Scroll is off; the
-   * result is always clamped to the world.
-   */
-  private updateCamera(dt: number): void {
-    if (this.m_camDwell > 0) this.m_camDwell -= dt; // Cinematic dwell on the impact, then release the pan
-    if (this.maxCamX() === 0) {
-      this.m_camX = this.m_camTargetX = 0;
-      return;
-    }
-    if (GameConfig.autoScroll && !this.m_manualScroll) {
-      this.m_camTargetX = this.clampCamX(this.cameraFollowX() - this.m_viewW * CAMERA.CENTER);
-      const step = CAMERA.SCROLL_SPEED * dt;
-      const d = this.m_camTargetX - this.m_camX;
-      this.m_camX = Math.abs(d) <= step ? this.m_camTargetX : this.m_camX + Math.sign(d) * step;
-    }
-    this.m_camX = this.clampCamX(this.m_camX);
-  }
-
-  /** Snap the camera to centre `worldX` immediately (battle start / recenter). */
-  private centerCameraOn(worldX: number): void {
-    this.m_camTargetX = this.clampCamX(worldX - this.m_viewW * CAMERA.CENTER);
-    this.m_camX = this.m_camTargetX;
   }
 
   /** Render frame to canvas - called every frame. */
@@ -1446,10 +1382,10 @@ export class CGameController implements ShotWorld {
     // scrolls under the fixed view (screen = world − cam). The backdrop above and
     // the notches/minimap below draw OUTSIDE this transform, in screen space.
     ctx.save();
-    ctx.translate(-this.m_camX, 0);
+    ctx.translate(-this.m_camera.x(), 0);
 
     // Draw terrain (mirror only the on-screen span → the terrain tile stays view-sized, not world-sized)
-    this.m_land.setViewport(this.m_camX, this.m_viewW);
+    this.m_land.setViewport(this.m_camera.x(), this.m_viewW);
     this.m_land.draw(ctx);
     // The radioactive heat haze belongs to the GROUND, so it paints here — right after the terrain
     // and under the tanks/aim overlay, the slot it occupied when CLand still owned the pool. The
@@ -1504,12 +1440,12 @@ export class CGameController implements ShotWorld {
     // transparent fx overlay would turn their black-bg sprites into black boxes.
     // Hand the view rect (world-X of the left edge + on-screen size) so the particle system can
     // off-screen-cull and render its smoke to a half-res buffer (perf under heavy strikes).
-    this.m_particles.setViewport(this.m_camX, this.m_viewW, this.m_viewH);
+    this.m_particles.setViewport(this.m_camera.x(), this.m_viewW, this.m_viewH);
     // The smoke layer is GPU-batched when a sink is wired (see ISmokeSink): the puffs are emitted
     // as world-space quads here instead of being blitted, and drawn in ONE call by the compositor.
     // Its transform has to match the world transform this canvas is under — camera and shake.
     this.m_smokeSink?.setSmokeTransform(
-      this.m_camX,
+      this.m_camera.x(),
       shakeOffset.x,
       shakeOffset.y,
       this.m_viewW,
@@ -1592,7 +1528,7 @@ export class CGameController implements ShotWorld {
     const shake = this.m_screenShake.getOffset();
     octx.translate(shake.x, shake.y);
     octx.save();
-    octx.translate(-this.m_camX, 0);
+    octx.translate(-this.m_camera.x(), 0);
 
     // Tank badges (name / life-shield-armour bars / hover stat lines), so a tank
     // low on screen shows its readouts over the HUD instead of being clipped.
@@ -1623,7 +1559,7 @@ export class CGameController implements ShotWorld {
     const W = this.m_worldWidth;
     if (W <= Vw) return; // no scroll → no minimap
     const Vh = this.m_viewH;
-    const r = this.minimapRect();
+    const r = this.m_camera.rect(this.camBounds());
     const {m, width, height} = r;
     const sx = width / W; // world → minimap X
     const sy = height / Vh; // world → minimap Y (Y doesn't scroll; worldH = viewH)
@@ -1636,7 +1572,7 @@ export class CGameController implements ShotWorld {
     ctx.fillRect(m, m, width, height);
 
     // Extents box: the slice of the world currently on screen (α 0x80).
-    const boxX = Math.round(this.m_camX * sx);
+    const boxX = Math.round(this.m_camera.x() * sx);
     const boxW = Math.round(Vw * sx);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillRect(m + boxX, m, boxW, height);
@@ -1677,67 +1613,6 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * How far (as a fraction of view width) the top-left status text must shift right
-   * to clear the minimap — 0 when there's no minimap. In the original the per-tank
-   * life lines sit to the RIGHT of the overview strip.
-   */
-  getMinimapRightFrac(): number {
-    if (this.m_worldWidth <= this.m_viewW) return 0;
-    const r = this.minimapRect();
-    return (r.m + r.width + 6) / this.m_viewW;
-  }
-
-  /** True when scene-pixel (px, py) is inside the minimap strip (false if no minimap). */
-  hitMinimap(px: number, py: number): boolean {
-    if (this.m_worldWidth <= this.m_viewW) return false;
-    const r = this.minimapRect();
-    return px >= r.m && px <= r.m + r.width && py >= r.m && py <= r.m + r.height;
-  }
-
-  /**
-   * True when scene-pixel (px, py) is inside the minimap's extents box — the
-   * draggable viewport handle (the translucent rectangle). This is what shows the
-   * grab cursor and starts a pan; the rest of the strip is inert.
-   */
-  hitMinimapBox(px: number, py: number): boolean {
-    if (this.m_worldWidth <= this.m_viewW) return false;
-    const r = this.minimapRect();
-    const sx = r.width / this.m_worldWidth;
-    const boxX = r.m + this.m_camX * sx;
-    const boxW = this.m_viewW * sx;
-    return px >= boxX && px <= boxX + boxW && py >= r.m && py <= r.m + r.height;
-  }
-
-  /**
-   * Drag/click the minimap to pan: a scene-pixel X on the strip snaps the camera so
-   * the picked world column is centred (`camX = ((mouseX − m)/width)·W − viewWidth/2`,
-   * clamped). Instant (no easing) and sets the manual-scroll override so auto-follow
-   * yields until the next fire/turn.
-   */
-  panFromMinimap(px: number): void {
-    if (this.m_worldWidth <= this.m_viewW) return;
-    const r = this.minimapRect();
-    const cam = ((px - r.m) / r.width) * this.m_worldWidth - this.m_viewW * CAMERA.CENTER;
-    this.m_camX = this.m_camTargetX = this.clampCamX(cam);
-    this.m_manualScroll = true;
-    this.markDirty();
-  }
-
-  /**
-   * Minimap strip rect (px) — top-left, ~half the view wide (`width = viewWidth/2 − 19`).
-   * For a wide (>320) view the strip is 48px tall, or 64px at large-display scale. Our
-   * canvas is always a large display, so we take the 64px height — 48 leaves the strip
-   * over-elongated.
-   */
-  private minimapRect(): {m: number; width: number; height: number} {
-    const Vw = this.m_viewW;
-    const m = Vw < 240 ? 2 : Vw > 320 ? 4 : 3;
-    const height = Vw < 240 ? 24 : Vw > 320 ? 64 : 29;
-    const width = Math.floor(Vw / 2 - (Vw < 240 ? 8 : 19));
-    return {m, width, height};
-  }
-
-  /**
    * Off-screen shot indicators — the "notch" markers (gated on the "Tracking"
    * graphics option). For every live projectile outside the view we draw an edge
    * marker: a top arrow at the shot's X when it's above the ceiling (pointing up
@@ -1762,7 +1637,7 @@ export class CGameController implements ShotWorld {
     for (const shot of live) {
       const p = shot.getPosition();
       const v = shot.getVelocity();
-      const sx = p.x - this.m_camX; // world → screen X (Y doesn't scroll)
+      const sx = p.x - this.m_camera.x(); // world → screen X (Y doesn't scroll)
       // Above the ceiling: top arrow at the shot's X (+y is downward, so v.y >= 0
       // means it's on the way down → the "descent" arrow).
       if (p.y < 0) {
@@ -1895,31 +1770,13 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // TAUNTS (Chatter) — contextual speech bubbles. Category is driven by the
-  // event (post-fire / death / idle); the line is a uniform random pick inside
-  // that category (see core/CTaunts). Rendered as DOM overlays (App → TauntLayer).
+  // TAUNTS (Chatter) — see game/CChatter. The controller only supplies the
+  // world (who is speaking, the view to project into) and forwards the events.
   // ========================================================================
 
-  /** Try to make `speaker` say a `cat` line: gated by the Chatter setting, the
-   *  Sentry exclusion, a live speaker, and a `chancePct` roll. On success a bubble
-   *  replaces any this speaker already has. */
+  /** Forward a taunt event to the bubble system. */
   private tryTaunt(cat: TauntCategory, speaker: CTank | null, chancePct: number): void {
-    if (!GameConfig.chatter || !speaker) return;
-    // A dead tank speaks ONLY its death line — never an idle/gloat 'taunt' (which would overwrite the
-    // death cry via the same-speaker filter below). Death cat is called from handleTankDestroyed after
-    // the tank is already marked dead, so it must be exempt from the alive check.
-    if (cat !== 'death' && !speaker.isAlive()) return;
-    if (speaker.isSentry()) return; // Sentries never taunt
-    if (Math.random() * 100 > chancePct) return;
-    const line = pickTaunt(cat);
-    if (!line) return; // list emptied in the editor → nothing to say
-    this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== speaker);
-    this.m_bubbles.push({
-      id: ++this.m_bubbleSeq,
-      speaker,
-      text: fmt(strings.value.game.bubble, {name: speaker.getName(), line}),
-      age: 0,
-    });
+    this.m_chatter.try(cat, speaker, chancePct);
   }
 
   /** The manual "Chat Taunt" key (bound to Enter): the human's current tank always
@@ -1930,41 +1787,12 @@ export class CGameController implements ShotWorld {
     if (tank.isHuman() && tank.isAlive()) this.tryTaunt('taunt', tank, 100);
   }
 
-  /** Age bubbles (dropping the expired) and run the idle-taunt countdown, which only
-   *  ticks while a live tank is waiting to fire (no shot in flight). */
-  private updateTaunts(dt: number): void {
-    // Age bubbles out — EXCEPT on the standings screen, where the victor's gloat bubble must persist
-    // beside the winner flag until the player advances (clearTaunts). It's created in finishBattle, so
-    // ageing it here would let it vanish after TAUNT.LIFE seconds mid-celebration.
-    if (this.m_gameState !== EGameState.BattleEnd && this.m_bubbles.length) {
-      for (const b of this.m_bubbles) b.age += dt;
-      this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT.LIFE);
-    }
-    if (this.m_gameState !== EGameState.Battle) return; // only during a live turn
-    this.m_tauntTimer -= dt;
-    if (this.m_tauntTimer <= 0) {
-      this.tryTaunt('taunt', this.getCurrentTank(), TAUNT.CHANCE_IDLE);
-      this.m_tauntTimer = between(...TAUNT.IDLE);
-    }
-  }
-
-  /** Active taunt bubbles projected to fractional screen coords (0..1 of the view),
-   *  so the DOM overlay tracks the speaker as the camera scrolls. `alpha` fades the
-   *  bubble over its final TAUNT.FADE seconds. */
+  /** Active bubbles in fractional view coords, for the DOM overlay (App → TauntLayer). */
   getActiveTaunts(): ActiveTaunt[] {
-    if (!this.m_bubbles.length) return [];
-    const vw = this.m_viewW,
-      vh = this.m_viewH;
-    return this.m_bubbles.map(b => {
-      const p = b.speaker.getPosition();
-      const remain = TAUNT.LIFE - b.age;
-      return {
-        id: b.id,
-        text: b.text,
-        xPct: (p.x - this.m_camX) / vw,
-        yPct: (p.y - TAUNT.RISE) / vh,
-        alpha: clamp01(remain / TAUNT.FADE),
-      };
+    return this.m_chatter.active({
+      camX: this.m_camera.x(),
+      viewW: this.m_viewW,
+      viewH: this.m_viewH,
     });
   }
 
@@ -2131,7 +1959,7 @@ export class CGameController implements ShotWorld {
     // old X, and the turn-end snapshot (detect-only once simulating) then flags a permanent desync.
     if (this.m_netMode && this.isLocalNetTurn()) this.m_onNetCommand?.({t: 'move', destX});
     this.m_turnTimerRunning = false;
-    this.m_manualScroll = false;
+    this.m_camera.releaseManualScroll();
     this.m_firedThisTurn = false; // a move isn't a shot → no post-fire gloat
     this.startTankMove(tank, destX);
   }
@@ -2247,7 +2075,7 @@ export class CGameController implements ShotWorld {
     // Plant on the side with screen room: if the tank sits on the RIGHT half of the view, put the
     // pole to its LEFT (dir=-1) so the flag can't run off the right edge and hide; otherwise to its
     // right. The cloth is mirrored by `dir` below so it always hangs AWAY from the hull.
-    const dir = pos.x - this.m_camX > this.m_viewW / 2 ? -1 : 1;
+    const dir = pos.x - this.m_camera.x() > this.m_viewW / 2 ? -1 : 1;
     const fx = pos.x + dir * (r + 30); // pole a little clear of the hull, on the roomy side
     // Plant the pole ON the terrain (a hair below the surface so it doesn't float),
     // sampling the ground column right under the pole.
@@ -2332,7 +2160,7 @@ export class CGameController implements ShotWorld {
   /** The per-frame world slice the victory display reads (camera, ground, wind, the boom). */
   private fireworksEnv(): FireworksEnv {
     return {
-      camX: this.m_camX,
+      camX: this.m_camera.x(),
       viewW: this.m_viewW,
       groundAt: x => this.m_land.getHeightAt(x),
       wind: this.m_effWind,
@@ -3318,7 +3146,7 @@ export class CGameController implements ShotWorld {
 
     // New turn: drop any minimap-scroll override so the camera eases to centre the
     // player whose turn it now is, and clear the shot the camera was tracking.
-    this.m_manualScroll = false;
+    this.m_camera.releaseManualScroll();
     this.m_activeShot = null;
     // Focus the player whose turn it is — Graphics → Camera picks the feel of the hand-off:
     //  • INSTANT   — if the active tank is OFF-SCREEN, snap onto it (the player must SEE whose turn it
@@ -3326,9 +3154,9 @@ export class CGameController implements ShotWorld {
     //  • SMOOTH    — never snap; updateCamera eases across to the new tank (no jarring jump).
     //  • CINEMATIC — hold on the impact for a beat (updateCamera counts m_camDwell down), then ease.
     const focusX = tank.getPosition().x;
-    const offScreen = focusX < this.m_camX || focusX > this.m_camX + this.m_viewW;
+    const offScreen = focusX < this.m_camera.x() || focusX > this.m_camera.x() + this.m_viewW;
     if (GameConfig.cameraMode === CAMERA.MODE_INSTANT && offScreen) {
-      this.centerCameraOn(focusX);
+      this.m_camera.centerOn(focusX, this.camBounds());
     } else if (
       GameConfig.cameraMode === CAMERA.MODE_CINEMATIC &&
       offScreen &&
@@ -3337,14 +3165,14 @@ export class CGameController implements ShotWorld {
       // Only linger if a blast actually landed on the turn that just ended — a shotless hand-off
       // (a shot-clock forfeit, a move-only turn) has no impact to dwell on, so we'd otherwise pan the
       // wrong way toward a stale/zero m_lastImpactX. Without an impact, fall through to the Smooth ease.
-      this.m_camDwell = CAMERA.DWELL_SEC;
+      this.m_camera.startDwell();
     }
     this.m_impactThisTurn = false; // re-arm for the new turn (set true again when this turn's shot lands)
 
     // Re-arm the taunt state for the new turn: no shot yet (gates the post-fire gloat)
     // and a fresh idle-taunt countdown.
     this.m_firedThisTurn = false;
-    this.m_tauntTimer = between(...TAUNT.IDLE);
+    this.m_chatter.armIdle();
 
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
@@ -3447,7 +3275,7 @@ export class CGameController implements ShotWorld {
     this.m_damageNumbers = [];
     this.m_blastCircles = [];
     this.m_crateField.clear();
-    this.m_bubbles = [];
+    this.m_chatter.clear();
     this.m_fireworksFx.clear();
     this.generateTerrain();
     // A new battle is a new PLACE, not just a new heightmap: roll a fresh landscape (sky, strata
@@ -3478,13 +3306,12 @@ export class CGameController implements ShotWorld {
     // coordinate (a wrong-way drift). Mirrors startGame's reset order. (Client-local; no net effect.)
     this.m_impactThisTurn = false;
     this.m_lastImpactX = 0;
-    this.m_camDwell = 0;
     this.beginTurn();
     // A new battle OPENS framed on the first player — like startGame, and regardless of the Camera
     // mode (which governs mid-battle turn hand-offs). Without this snap the default Smooth mode would
     // pan in across the fresh map from wherever BattleEnd left the camera (the winner) — slow on big maps.
-    this.m_manualScroll = false;
-    this.centerCameraOn(this.getCurrentTank().getPosition().x);
+    this.m_camera.releaseManualScroll();
+    this.m_camera.centerOn(this.getCurrentTank().getPosition().x, this.camBounds());
     // Start a fresh battle track. This also cuts the previous battle's win/lose
     // jingle (battleWon/battleLost, played once): starting a new looping bed
     // replaces whatever the music player was last asked to play, so the victory
@@ -3494,7 +3321,7 @@ export class CGameController implements ShotWorld {
 
   /** Drop all taunt bubbles (leaving the standings → next battle or the menu). */
   clearTaunts(): void {
-    this.m_bubbles = [];
+    this.m_chatter.clear();
     this.m_fireworksFx.clear();
   }
 
@@ -3608,13 +3435,7 @@ export class CGameController implements ShotWorld {
     const speaker = leader?.rep ?? null;
     const victorLine = pickTaunt('postFire');
     if (speaker && victorLine && GameConfig.chatter && !speaker.isSentry()) {
-      this.m_bubbles = this.m_bubbles.filter(b => b.speaker !== speaker);
-      this.m_bubbles.push({
-        id: ++this.m_bubbleSeq,
-        speaker,
-        text: fmt(strings.value.game.bubble, {name: speaker.getName(), line: victorLine}),
-        age: 0,
-      });
+      this.m_chatter.say(speaker, victorLine); // unconditional: the gate is right here
     }
     this.m_audio?.stopTankMove();
     // Win/lose jingle — victory if the leading team is the human's.
@@ -3851,7 +3672,7 @@ export class CGameController implements ShotWorld {
 
     this.m_turnTimerRunning = false; // committed to a shot — stop the clock
     this.m_charging = false; // a direct fire() (bot / net peer / post-charge) clears any wind-up
-    this.m_manualScroll = false; // fire → camera resumes auto-follow (chases the shot)
+    this.m_camera.releaseManualScroll(); // fire → camera resumes auto-follow (chases the shot)
     this.m_firedThisTurn = true; // a shot was taken → post-fire gloat is eligible at turn end
 
     // Network: this turn's action is now resolving — hold the next hand-off until it
@@ -6262,10 +6083,7 @@ export class CGameController implements ShotWorld {
   // eased); `m_camTargetX` = where it's heading. `m_manualScroll` = the player
   // dragged the minimap, which suppresses auto-follow until fire / turn change.
   private m_worldWidth = 0;
-  private m_camX = 0;
-  private m_camTargetX = 0;
-  private m_camDwell = 0; // Cinematic camera: seconds left lingering on the impact before the pan (see beginTurn)
-  private m_manualScroll = false;
+  private readonly m_camera = new CCamera();
   // The ONE shot the camera tracks this turn (latched to the first of a salvo, so it
   // doesn't zig-zag across a multi-missile volley — the original follows a single
   // active shot). Null once reset each turn; may point at a now-dead shot.
@@ -6410,9 +6228,7 @@ export class CGameController implements ShotWorld {
   private readonly m_crateField = new CCrateField();
   // Live taunt speech bubbles (Chatter). One per speaker at a time; a new one replaces
   // the old. Aged in update(); rendered as DOM overlays via getActiveTaunts().
-  private m_bubbles: TauntBubble[] = [];
-  private m_bubbleSeq = 0;
-  private m_tauntTimer: number = TAUNT.IDLE[0]; // idle-taunt countdown, re-armed each turn
+  private readonly m_chatter = new CChatter();
   private m_firedThisTurn = false; // gate post-fire taunts to turns where a shot was taken
   // Cached pixel data of structure bitmaps (bunker.bmp / wall.bmp) for buildStructure.
   private m_structImages = new Map<string, {width: number; height: number; data: Uint32Array}>();

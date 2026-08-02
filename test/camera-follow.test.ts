@@ -15,10 +15,9 @@ type Priv = {
   m_activeShot: unknown;
   m_shots: unknown[];
   m_gameState: EGameState;
-  m_camDwell: number;
   m_impactThisTurn: boolean;
   m_viewW: number;
-  m_camX: number;
+  m_camera: {reset(): void; isDwelling(): boolean};
   m_currentPlayerIndex: number;
   m_tanks: CTank[];
   cameraFollowX(): number;
@@ -56,27 +55,26 @@ describe('camera follow target', () => {
 });
 
 describe('camera hand-off mode (Graphics → Camera)', () => {
-  function dwellForMode(mode: number, impact = true): number {
+  function dwellForMode(mode: number, impact = true): boolean {
     const {p} = game();
     p.m_viewW = 1; // force the current tank off-screen so the hand-off branch runs
-    p.m_camX = 0;
-    p.m_camDwell = 0;
+    p.m_camera.reset();
     p.m_impactThisTurn = impact; // did a blast land on the turn that just ended?
     const prev = GameConfig.cameraMode;
     GameConfig.cameraMode = mode;
     try {
       p.beginTurn();
-      return p.m_camDwell;
+      return p.m_camera.isDwelling();
     } finally {
       GameConfig.cameraMode = prev;
     }
   }
 
   it('Cinematic dwells only after a blast landed; Smooth and Instant never dwell', () => {
-    expect(dwellForMode(2, true)).toBeGreaterThan(0); // Cinematic + a blast this turn → linger
-    expect(dwellForMode(2, false)).toBe(0); // Cinematic but a SHOTLESS turn → no wrong-way pan
-    expect(dwellForMode(0)).toBe(0); // Smooth — just eases, no dwell
-    expect(dwellForMode(1)).toBe(0); // Instant — snaps, no dwell
+    expect(dwellForMode(2, true)).toBe(true); // Cinematic + a blast this turn → linger
+    expect(dwellForMode(2, false)).toBe(false); // Cinematic but a SHOTLESS turn → no wrong-way pan
+    expect(dwellForMode(0)).toBe(false); // Smooth — just eases, no dwell
+    expect(dwellForMode(1)).toBe(false); // Instant — snaps, no dwell
   });
 });
 
@@ -85,7 +83,7 @@ describe('battle-over camera', () => {
     const {p} = game();
     p.m_activeShot = null;
     p.m_shots = [];
-    p.m_camDwell = 0;
+    p.m_camera.reset();
     const [a, b] = p.m_tanks;
     (a as unknown as {addKill(): void}).addKill(); // a's team leads
     (b as unknown as {hit(n: number): number}).hit(1e9); // the loser dies
