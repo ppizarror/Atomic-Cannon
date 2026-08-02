@@ -172,61 +172,100 @@ export type UltraPlan =
   | {action: 'buff'; weaponIndex: number; note: string}
   | {action: 'skip'; note: string};
 
-// ── Value model (all in ≈ life-damage units, so actions compare directly) ────────────────────────
-// Fixed weights (not personality-varied).
-const WEAPON_CRATE_VALUE = 260; // a free weapon pickup
-const RAD_FLEE_VALUE = 300; // escaping the fallout carpet (avoided DOT over the coming turns)
-const REPOSITION_VALUE = 140; // moving to set up a shot beats wasting a turn on a guaranteed miss
-const CRATE_CLOSE_TOL = 24; // a crate may pull the bot this much closer to an enemy, no more
-// Digging out of a bury with a cleaner. Moderate on purpose: a strong beam attack (esp. a kill, which
-// short-circuits earlier) outranks it, so a buried bot still shoots a weak enemy rather than dig.
-const DIG_OUT_VALUE = 400;
-// Effective damage at/above which a premium (nuke) shot is worth firing even without a kill/multi-hit —
-// a big hit is leverage. Below it, a nuke on a graze is wasteful and stays banked.
-const PREMIUM_MIN_VALUE = 250;
-// At/under this life fraction, a bot that CAN'T heal is desperate — it throws its premium ordnance with
-// no reservation (do-or-die). If it can heal, it heals instead (bestBuff's urgency curve wins).
-const DESPERATE_LIFE_FRAC = 0.3;
-// Against a BURIED enemy: penalise an explosive round — its crater (and a beam's carve) would FREE the
-// enemy to move. So the bot doesn't blast/beam a pinned enemy loose unless the shot outright kills.
-const UNBURY_PENALTY = 350;
-// Laying a mine in the enemy's zone (area denial). Modest — done when there's no strong attack, not
-// instead of one. Don't lay a second within MINE_SPACING of an existing one (redundant).
-const MINE_VALUE = 130;
-const MINE_SPACING = 90;
-// Relocating to cover when the enemy already has your range. Beats sitting still to be shelled, but a
-// real attack still outranks it.
-const COVER_VALUE = 175;
-const COVER_MARGIN = 40; // a candidate spot must beat the current one's cover by this much to bother
+// ==========================================================================
+// TUNING
+// ==========================================================================
 
-// ── Team play ────────────────────────────────────────────────────────────────────────────────────
-// Splash on a SQUADMATE costs more than the life it removes: the shooter earns no credit for it and a
-// friendly kill subtracts a kill from its tally on top. Priced above 1:1 so a shot that catches an ally
-// has to be genuinely devastating to the enemy before it's taken.
-const FRIENDLY_FIRE_COST = 2.2;
-const FRIENDLY_KILL_COST = 2000; // killing your own tank is a catastrophe, not a trade
-// Converging the squad on ONE target: everyone shooting the same tank turns chip damage into kills
-// (credits + a standings point) instead of leaving three enemies half-hurt and still firing back.
-const FOCUS_VALUE = 220;
-const FOCUS_TOL = 90; // an enemy within this of the focus point counts as "the focus target"
+/**
+ * Turtling: digging in under a dirt round rather than trading fire.
+ */
+const BURY = {
+  /** A dirt round must pile at least this much to be worth burying under. */
+  SELF_MIN_EARTH: 30,
+  /** Net life saved (after the round's own blast) below which it is not worth a turn. */
+  SELF_MIN_GAIN: 120,
+  /** How big an incoming round has to look before turtling is even considered, when the enemy holds
+   *  no outright nuke. Below this we just trade fire. */
+  SELF_MIN_THREAT: 260,
+  /** Fraction of an incoming ground-burst the dirt overhead soaks once we are buried: the round
+   *  detonates on the surface ABOVE the tank instead of on the hull, so the engine's distance
+   *  falloff does the work. */
+  SOAK_FRAC: 0.45,
+} as const;
 
-// ── Reading the opposition ───────────────────────────────────────────────────────────────────────
-// Fraction of an incoming ground-burst the dirt overhead soaks once we're buried: the round detonates
-// on the surface ABOVE the tank instead of on the hull, so the engine's distance falloff does the work.
-const BURY_SOAK_FRAC = 0.45;
-export const SELF_BURY_MIN_EARTH = 30; // a dirt round must pile at least this much to be worth burying under
-const SELF_BURY_MIN_GAIN = 120; // net life saved (after the round's own blast) below which it's not worth a turn
-// How big an incoming round has to look before turtling is even considered, when the enemy holds no
-// outright nuke. Below this we just trade fire.
-const SELF_BURY_MIN_THREAT = 260;
+/**
+ * What has to be true before the bot walks away from a shot.
+ */
+const PRIORITY = {
+  /** A non-attacking play (flee / buff / bury) must beat the best available SHOT by this factor to
+   *  take the turn instead of it. Ultra is here to win, not to potter about: with a real shot on
+   *  the table, wandering off has to be clearly better, not merely comparable. */
+  NON_ATTACK_MARGIN: 1.35,
+  /** Above this shot value the bot never takes a "cunning" setup play instead — a big hit is the
+   *  play. */
+  TRICK_MAX_SHOT_VALUE: 500,
+} as const;
 
-// ── Attack priority ──────────────────────────────────────────────────────────────────────────────
-// A non-attacking play (flee / buff / bury) must beat the best available SHOT by this factor to take
-// the turn instead of it. Ultra is here to win, not to potter about: with a real shot on the table,
-// wandering off has to be clearly better, not merely comparable.
-const NON_ATTACK_MARGIN = 1.35;
-// Above this shot value the bot never takes a "cunning" setup play instead — a big hit is the play.
-const TRICK_MAX_SHOT_VALUE = 500;
+/**
+ * Squad play. Splash on a SQUADMATE costs more than the life it removes: the shooter earns no
+ * credit for it and a friendly kill subtracts a kill from its tally on top.
+ */
+const TEAM = {
+  /** Converging the squad on ONE target: everyone shooting the same tank turns chip damage into
+   *  kills (credits + a standings point) instead of leaving three enemies half-hurt and still
+   *  firing back. */
+  FOCUS: 220,
+  /** An enemy within this of the focus point counts as "the focus target". */
+  FOCUS_TOL: 90,
+  /** Priced above 1:1 so a shot that catches an ally has to be genuinely devastating to the enemy
+   *  before it is taken. */
+  FRIENDLY_FIRE_COST: 2.2,
+  /** Killing your own tank is a catastrophe, not a trade. */
+  FRIENDLY_KILL_COST: 2000,
+} as const;
+
+/**
+ * What each non-shooting play is worth, so it can be ranked against a shot.
+ */
+const VALUE = {
+  /** Relocating to cover when the enemy already has your range. Beats sitting still to be shelled,
+   *  but a real attack still outranks it. */
+  COVER: 175,
+  /** A candidate spot must beat the current one's cover by this much to bother. */
+  COVER_MARGIN: 40,
+  /** A crate may pull the bot this much closer to an enemy, no more. */
+  CRATE_CLOSE_TOL: 24,
+  /** At/under this life fraction, a bot that CAN'T heal is desperate — it throws its premium
+   *  ordnance with no reservation (do-or-die). If it can heal, it heals instead (bestBuff's urgency
+   *  curve wins). */
+  DESPERATE_LIFE_FRAC: 0.3,
+  /** Digging out of a bury with a cleaner. Moderate on purpose: a strong beam attack (esp. a kill,
+   *  which short-circuits earlier) outranks it, so a buried bot still shoots a weak enemy rather
+   *  than dig. */
+  DIG_OUT: 400,
+  /** Laying a mine in the enemy's zone (area denial). Modest — done when there is no strong attack,
+   *  not instead of one. */
+  MINE: 130,
+  /** Don't lay a second within this of an existing one (redundant). */
+  MINE_SPACING: 90,
+  /** Effective damage at/above which a premium (nuke) shot is worth firing even without a
+   *  kill/multi-hit — a big hit is leverage. Below it, a nuke on a graze is wasteful and stays
+   *  banked. */
+  PREMIUM_MIN: 250,
+  /** Escaping the fallout carpet (avoided DOT over the coming turns). */
+  RAD_FLEE: 300,
+  /** Moving to set up a shot beats wasting a turn on a guaranteed miss. */
+  REPOSITION: 140,
+  /** Against a BURIED enemy: penalise an explosive round — its crater (and a beam's carve) would
+   *  FREE the enemy to move. So the bot doesn't blast/beam a pinned enemy loose unless the shot
+   *  outright kills. */
+  UNBURY_PENALTY: 350,
+  /** A free weapon pickup. */
+  WEAPON_CRATE: 260,
+} as const;
+
+/** Re-exported for the controller's autobuy, which shops for a dirt round big enough to hide under. */
+export const SELF_BURY_MIN_EARTH = BURY.SELF_MIN_EARTH;
 
 /**
  * PERSONALITY weights — the knobs that make one Ultra bot play differently from another, so two of
@@ -418,8 +457,8 @@ function scoreBlast(
     // disturbing WHICH weapon we pick for the job.
     value += weakness(e) * wt.finisherBonus;
     // FOCUS: the squad's agreed target. Converging turns three wounded enemies into one dead one.
-    if (focusX !== undefined && Math.abs(e.x - focusX) <= FOCUS_TOL)
-      value += FOCUS_VALUE * wt.teamplay;
+    if (focusX !== undefined && Math.abs(e.x - focusX) <= TEAM.FOCUS_TOL)
+      value += TEAM.FOCUS * wt.teamplay;
     if (raw >= hp) {
       kills++;
       value += wt.killBonus;
@@ -447,8 +486,8 @@ function scoreBlast(
     value += h * (dealt + weakness(a) * wt.finisherBonus);
     if (raw >= hp) value += h * wt.killBonus;
     // …and what it costs us while they're still a teammate.
-    value -= friend * dealt * FRIENDLY_FIRE_COST;
-    if (raw >= hp) value -= friend * FRIENDLY_KILL_COST;
+    value -= friend * dealt * TEAM.FRIENDLY_FIRE_COST;
+    if (raw >= hp) value -= friend * TEAM.FRIENDLY_KILL_COST;
   }
   return {value, kills, hits, allyHits, damage};
 }
@@ -481,7 +520,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
 
   // Desperate = near death AND can't heal → drop premium reservation and throw everything.
   const canHeal = weapons.some(w => w.ext === 10 && w.count > 0);
-  const desperate = ctx.self.life < ctx.self.maxLife * DESPERATE_LIFE_FRAC && !canHeal;
+  const desperate = ctx.self.life < ctx.self.maxLife * VALUE.DESPERATE_LIFE_FRAC && !canHeal;
 
   const cands: ShotPlan[] = [];
   const consider = (p: ShotPlan) => cands.push(p);
@@ -565,7 +604,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
       if (w.earth > 0 && s.kills === 0 && enemyIsWeak(enemies, cx, cy)) value += wt.buryBonus;
       // Don't blast a BURIED enemy free: an explosive round's crater un-buries it — unless it KILLS
       // (then who cares). Penalise it so a beam is preferred while the enemy is pinned.
-      if (e.buried && s.kills === 0 && w.earth <= 0) value -= UNBURY_PENALTY;
+      if (e.buried && s.kills === 0 && w.earth <= 0) value -= VALUE.UNBURY_PENALTY;
       consider({
         weaponIndex: w.index,
         angleDeg: arc.angleDeg,
@@ -646,7 +685,7 @@ function adjustForPremium(
   // The "is this shot big enough to be worth a nuke?" test reads raw DAMAGE on purpose: the composite
   // value carries positional bonuses (finisher/focus) that say nothing about whether the round itself
   // landed hard, and letting those inflate it past the bar would spend nukes on grazes.
-  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || damage >= PREMIUM_MIN_VALUE)
+  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || damage >= VALUE.PREMIUM_MIN)
     return value;
   return value - wt.premiumWaste;
 }
@@ -698,12 +737,12 @@ function bestCrateGrab(ctx: UltraCtx): {destX: number; value: number; note: stri
     if (!c.landed) continue; // still under its chute — not where it'll settle; wait for it to land
     if (Math.abs(c.x - self.x) > moveMaxDist) continue; // out of drive range
     if (c.kind === 'bomb') continue; // a trap — never a grab
-    if (distToEnemies(c.x) < dNow - CRATE_CLOSE_TOL) continue; // don't close on the enemy for loot
+    if (distToEnemies(c.x) < dNow - VALUE.CRATE_CLOSE_TOL) continue; // don't close on the enemy for loot
     if (unsafeMoveTo(ctx, c.x)) continue; // don't drive over a mine / into fallout for loot
     let value: number;
     if (c.kind === 'credits') value = c.amount * (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).creditValue;
     else if (c.kind === 'health') value = Math.min(c.amount, self.maxLife - self.life);
-    else value = WEAPON_CRATE_VALUE; // weapon
+    else value = VALUE.WEAPON_CRATE; // weapon
     // Net of the dose we'd take standing on that ground: a crate sitting in fallout is worth grabbing
     // only if the payload beats the health it costs us.
     value -= radPenalty(ctx, c.x);
@@ -731,7 +770,7 @@ function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note
   const value =
     dose !== undefined && dose > 0
       ? dose * urgency
-      : RAD_FLEE_VALUE * Math.max(0.12, (1 - lifeFrac) * 1.4);
+      : VALUE.RAD_FLEE * Math.max(0.12, (1 - lifeFrac) * 1.4);
   // When it DOES flee, prefer escaping TOWARD a reachable crate — ONE move both flees and grabs the
   // loot. Same value as a plain flee (the crate is a free bonus of the destination, not a reason to run
   // when healthy), so it never overrides a shot the low base wouldn't.
@@ -765,7 +804,7 @@ function bestReposition(ctx: UltraCtx): {destX: number; value: number; note: str
   const destX = clampX(self.x + dir * moveMaxDist, field);
   if (Math.abs(destX - self.x) < 4) return null; // already as close as we can get
   if (unsafeMoveTo(ctx, destX)) return null; // don't drive over a mine / into fallout
-  const value = REPOSITION_VALUE - radPenalty(ctx, destX); // net of the dose waiting at the new spot
+  const value = VALUE.REPOSITION - radPenalty(ctx, destX); // net of the dose waiting at the new spot
   return value > 0 ? {destX, value, note: 'reposition'} : null;
 }
 
@@ -828,10 +867,11 @@ function bestCoverMove(ctx: UltraCtx): {destX: number; value: number; note: stri
       // A ridge that shields us is worth less if we have to stand in fallout to get behind it — price
       // the dose against the cover before deciding this spot is "safer".
       const cover = coverScore(x, ex, field) - radPenalty(ctx, x);
-      if (cover > here + COVER_MARGIN && (!best || cover > best.cover)) best = {destX: x, cover};
+      if (cover > here + VALUE.COVER_MARGIN && (!best || cover > best.cover))
+        best = {destX: x, cover};
     }
   }
-  return best ? {destX: best.destX, value: COVER_VALUE, note: 'cover'} : null;
+  return best ? {destX: best.destX, value: VALUE.COVER, note: 'cover'} : null;
 }
 
 /**
@@ -853,17 +893,17 @@ function bestSelfBury(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
   if (self.buried || wt.paranoia <= 0) return null;
   if (threat.hasBeam) return null; // they can shoot us through the dirt — a hole is just a hole
   const incoming = threat.bigBlastDamage;
-  if (!threat.hasNuke && incoming < SELF_BURY_MIN_THREAT) return null;
+  if (!threat.hasNuke && incoming < BURY.SELF_MIN_THREAT) return null;
   if (!ctx.weapons.some(w => w.isBeam && w.count > 0)) return null; // nothing to fight back with
   // The dirt round to drop on ourselves: enough earth to actually cover the hull, and of those the one
   // that hurts us least (it detonates on our own hull, so its damage is paid in full).
   const dirt = ctx.weapons
-    .filter(w => w.earth >= SELF_BURY_MIN_EARTH && w.count > 0)
+    .filter(w => w.earth >= BURY.SELF_MIN_EARTH && w.count > 0)
     .sort((a, b) => a.damage - b.damage || a.cost - b.cost)[0];
   if (!dirt) return null;
-  const saved = incoming * BURY_SOAK_FRAC * wt.paranoia;
+  const saved = incoming * BURY.SOAK_FRAC * wt.paranoia;
   const value = saved - dirt.damage;
-  if (value < SELF_BURY_MIN_GAIN) return null;
+  if (value < BURY.SELF_MIN_GAIN) return null;
   return {
     plan: {
       action: 'fire',
@@ -885,7 +925,7 @@ function bestMineLay(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
   if (!mine || !ctx.enemies.length) return null;
   const e = nearestEnemy(ctx);
   // Pointless to lay another mine where one already pins the enemy — one is enough.
-  if (ctx.mines.some(mx => Math.abs(mx - e.x) < MINE_SPACING)) return null;
+  if (ctx.mines.some(mx => Math.abs(mx - e.x) < VALUE.MINE_SPACING)) return null;
   const arc = bestAim(ctx.muzzleFor, {x: e.x, y: e.y}, ctx.wind, ctx.field, ctx.gustT0);
   return {
     plan: {
@@ -896,7 +936,7 @@ function bestMineLay(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
       targetX: e.x,
       note: 'mine',
     },
-    value: MINE_VALUE,
+    value: VALUE.MINE,
   };
 }
 
@@ -946,7 +986,7 @@ function bestCleanSelf(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
       targetX: ctx.self.x,
       note: 'clean-self',
     },
-    value: DIG_OUT_VALUE,
+    value: VALUE.DIG_OUT,
   };
 }
 
@@ -957,7 +997,7 @@ function bestCleanSelf(ctx: UltraCtx): {plan: UltraPlan; value: number} | null {
  * battle. Fire the CHEAPEST offensive round it holds (never burn a nuke on a shot this hopeless):
  *  • BURIED — straight up at its own column. The muzzle is inside the dirt, so the round detonates
  *    right there and blasts the tank free. It eats that blast, which is why a cleaner (no damage,
- *    scored at DIG_OUT_VALUE) always wins when one is in stock — but taking the hit beats being
+ *    scored at VALUE.DIG_OUT) always wins when one is in stock — but taking the hit beats being
  *    pinned forever. This is the self-rescue levels 1..10 get for free by always firing.
  *  • otherwise — the solved arc at the nearest enemy even though it scored no hit: a round that lands
  *    SOMEWHERE reshapes the ground and feeds the cross-turn ranging correction, so the next turn is
@@ -1015,7 +1055,7 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   // ATTACK FIRST. With a real shot on the table, every alternative has to CLEARLY beat it — not merely
   // match it — before the bot spends its turn on anything else. A tank that answers fire with fire wins
   // games; one that keeps repositioning to a marginally better hill loses them slowly.
-  const attackFloor = canHit ? shot!.value * NON_ATTACK_MARGIN : 0;
+  const attackFloor = canHit ? shot!.value * PRIORITY.NON_ATTACK_MARGIN : 0;
   const offer = (plan: UltraPlan, value: number, trick = false): void => {
     if (value > attackFloor) cands.push({plan, value, trick});
   };
@@ -1060,7 +1100,7 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   // raw-best shot — but never pass up a kill, and never instead of a genuinely BIG hit. Being unpredictable
   // is worth a little expected value; passing on a shot that would take a third of someone's health is not.
   const trickChance = (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).trickChance;
-  const bigHit = (shot?.value ?? 0) >= TRICK_MAX_SHOT_VALUE;
+  const bigHit = (shot?.value ?? 0) >= PRIORITY.TRICK_MAX_SHOT_VALUE;
   if (
     top.plan.action === 'fire' &&
     !bigHit &&

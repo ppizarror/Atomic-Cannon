@@ -70,7 +70,7 @@ import {
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
 import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
-import {plusMinus} from '../math/random';
+import {between, plusMinus} from '../math/random';
 import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
 import type {MatchConfig} from '../net/protocol';
@@ -108,6 +108,10 @@ export enum EGameType {
 
 /** One team's Battle Heroes submission: the callsign plus both board values (kills for
  *  Deathmatch, average damage-per-tank "score" for Points games). */
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 export interface BattleHeroTeam {
   name: string;
   score: number;
@@ -153,17 +157,6 @@ interface MatchStatTally {
   sec: number;
 }
 
-const freshStatTally = (): MatchStatTally => ({
-  weaponsFired: 0,
-  shotsFired: 0,
-  tanksDestroyed: 0,
-  damageDealt: 0,
-  nukesFired: 0,
-  terrainCarved: 0,
-  creditsSpent: 0,
-  sec: 0,
-});
-
 /** The units of progress a stats flush CLOSES — stamped onto the drained delta (see takeStatsDelta).
  *  A plain `{}` flush (quitting to the menu, leaving the page) banks the play with no progress. */
 export interface StatsFlush {
@@ -179,207 +172,6 @@ interface LandConfig {
 }
 
 const LAND_DATA = landData as LandConfig[];
-
-// TEMPORARY (explosion-FX testing): lock the weapon selection to one control
-// weapon so it can be spammed to review effects. Set to null to restore the
-// full arsenal.
-const CONTROL_WEAPON: string | null = null;
-
-// A beam holds on screen for ~this long, then the earth collapses (the removed dirt
-// falls/settles over the following ~second). Keep it just under the beam's on-screen
-// life so the ground drops as the ray fades — "beam holds → earth falls".
-const BEAM_COLLAPSE_DELAY = 1;
-
-// Minimum rocket motor burn (seconds from launch). Fume/flare emit for max(this, time-to-apex):
-// arced shots keep the authentic apex cutoff, but downward/flat shots — which never ascend — still
-// get an initial exhaust plume instead of nothing.
-const ROCKET_MIN_BURN = 0.7;
-
-// Gravity (px/s²) a deployed mine falls under when the ground beneath it is carved away — so a mine
-// left floating over a fresh hole drops onto the new surface instead of hanging in mid-air. Mirrors
-// the tank fall in CTank.update().
-const MINE_GRAVITY = 400;
-
-// Safety ceiling on live tracer ranging pins (they clear on the next shot; this only
-// bounds a single turn's repeated tracer volleys). Well above any one volley's count.
-const MAX_AIM_MARKERS = 16;
-
-// Bunker/Wall structure draw scale (× Player Size). The original scales the structure
-// bitmap down rather than stamping it at native size; this reads proportionate to the tank
-// (bunker.bmp 40×118 → ~18×53, wall.bmp 30×200 → ~14×90 — a barrier a tank hides behind).
-const STRUCTURE_SCALE = 0.45;
-
-const controlWeaponIndex = (): number =>
-  CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
-
-// Sentry turrets ONE player (team) may hold on the field at a time, past which deploySentry
-// no-ops. Deliberately per-player rather than a shared field budget: a single pool lets the first
-// deployer starve everyone else, and it shrinks per head as the match grows (at 16 players a pool
-// of 8 is under one each), so every player gets the same allowance whatever the roster size. Some
-// ceiling is still needed — a sentry weapon under free-fire has unlimited ammo, so an ungated
-// deploy would grow the field every turn. Sentries are cleared at the start of each battle.
-const MAX_SENTRIES_PER_PLAYER = 8;
-// The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the
-// rapid Machine Gun (Minigun variant). The Turret uses the Shell staple; the Minigun looks
-// the Machine Gun up by its STABLE id (never the localised display name) — falling back to
-// the Shell if the Machine Gun is disabled/absent.
-const sentryMachineGunIndex = (): number => {
-  const i = WEAPON_DATABASE.findIndex(w => w.id === 'machine.gun');
-  return i >= 0 ? i : getDefaultWeaponIndex();
-};
-// A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve.
-const SENTRY_FIRE_POWER = 1000;
-
-// The deployed Sentry's own hull art. Same naming CTank.getRequiredSprites builds, but a Sentry
-// only exists once one is deployed, so startGame preloads these by name to keep the first turret
-// from popping in as a vector-hull placeholder.
-const SENTRY_SPRITES = ['body', 'wreck', 'turret'].map(part => ({
-  name: `tanks/Sentry ${part}`,
-  file: `/assets/tanks/Sentry ${part}.bmp`,
-}));
-
-// Opening angle + power drawn per tank at each battle start (the original's ranges). The angle
-// spans the whole upward half-circle — 0 = flat right, 90 = straight up, 180 = flat left; the
-// below-horizon half (181..359) is excluded, since a tank would open the battle pointing into dirt.
-const START_AIM_MIN = 0;
-const START_AIM_MAX = 180;
-const START_POWER_MIN = 200;
-const START_POWER_MAX = 699;
-
-// DEATH-class weapon indices (Six Under, Burial Mound, Cremation, Ashes, Toxic Grave), in database
-// order. When a tank is destroyed while it still OWNS one of these, the FIRST is detonated on the
-// corpse (posthumous "cook-off"). Memoised — the database is immutable after load.
-let g_deathWeaponIndices: number[] | null = null;
-function deathWeaponIndices(): number[] {
-  if (!g_deathWeaponIndices) {
-    g_deathWeaponIndices = [];
-    for (let i = 0; i < WEAPON_DATABASE.length; i++)
-      if (getWeapon(i).getExtType() === EXT.DEATH) g_deathWeaponIndices.push(i);
-  }
-  return g_deathWeaponIndices;
-}
-
-// Min seconds between live-aim relays to spectators in a net match (~16/s) — smooth turret
-// tracking without flooding the socket on a fast angle/power drag.
-const NET_AIM_INTERVAL = 0.06;
-
-// A bot restocks a shield only when its current shield is below this (the original's autobuy
-// shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading).
-const BOT_SHIELD_NEED = 500;
-
-// Succession bursts louder than this `sucSec` (reference units) re-bark their report +
-// muzzle flash on each salvo; faster bursts (cannon/shotgun ≈ 0.1) fire near-instantly
-// and stay silent after the opener. Matches the original's `0.5 < sucSec` FX gate.
-const SUCCESSION_LOUD_MAX_SEC = 0.5;
-
-// Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the
-// radius that maps to ×1. The original scales the kick by the per-explosion size (not damage
-// alone), so a bigger crater shoves harder for equal life removed — a nuke launches a tank a
-// shell only nudges. The size factor is clamped so bullets still barely budge and nukes don't
-// fling absurdly.
-const KICK_BASE = 240;
-const KICK_REF_RADIUS = 50;
-const KICK_SIZE_MIN = 0.3;
-const KICK_SIZE_MAX = 3.5;
-
-// Camera pan speed (world px/sec) — the constant-speed ease toward the follow
-// target (the original scrolls at dt·gameSpeed·scrollSpeed; this is that budget
-// in px/sec). Fast enough to keep a shot roughly framed without whipping.
-const CAMERA_SCROLL_SPEED = 1100;
-// Where the followed object sits in the view: 0.5 = dead centre.
-const CAMERA_CENTER = 0.5;
-// Graphics → Camera: how the view moves to the next player when the turn hands off. Matches the
-// gfx.camera enum order (0 Smooth — the implicit default, just ease across / 1 Instant / 2 Cinematic).
-const CAM_INSTANT = 1;
-const CAM_CINEMATIC = 2;
-const CAM_DWELL_SEC = 0.8; // Cinematic: how long the camera lingers on the impact before it pans away
-
-// "Show Points" floating damage numbers: life (s) and rise distance over that life
-// (px). Spawn jitter (px) matches the original (±20 / ±12).
-const DMG_NUM_LIFE = 1.1;
-const DMG_NUM_RISE = 28;
-// "Show Blast Circles": how long each explosion ring lingers (s).
-const BLAST_CIRCLE_LIFE = 1.4;
-
-// Taunt speech bubbles (Tank → Chatter). A bubble stays up TAUNT_LIFE seconds and
-// fades over its last TAUNT_FADE. Trigger chances match the original percent gate:
-// 8% post-fire, 30% on death, 60% on the idle interval. The idle timer re-arms to a
-// random gap in [TAUNT_IDLE_MIN, TAUNT_IDLE_MAX] seconds each turn/attempt.
-const TAUNT_LIFE = 4.0;
-const TAUNT_FADE = 0.6;
-const TAUNT_CHANCE_POSTFIRE = 8;
-const TAUNT_CHANCE_DEATH = 30;
-const TAUNT_CHANCE_IDLE = 60;
-// Own goal: a tank that drops a round on itself or its own squad occasionally has a word for itself.
-const TAUNT_CHANCE_SELF = 35;
-const SELF_TAUNT_MIN_DAMAGE = 20; // a graze isn't worth a line — it has to have actually hurt
-const TAUNT_IDLE_MIN = 7;
-const TAUNT_IDLE_MAX = 15;
-// Screen-space height (px) the bubble's tail floats above the tank's centre — just
-// clear of the turret so the tail points right at the tank.
-const TAUNT_RISE = 20;
-
-// Victory fireworks (war-end Victory only). A burst appears at a random sky point on a
-// randomized interval; it's one of the 8 `bursts/*.bmp` shapes (circle/ring/star/delta/…),
-// emitting one spark per lit pixel — coloured by that pixel — that flies radially outward
-// then arcs down under gravity + wind and fades. The shape is visible at t=0, then rains
-// down. Speed is uniform (rand01 × scale), so many sparks barely move and hold the shape
-// while a few fly out; positions are at native bmp scale (the wide look comes from the
-// expansion, not upscaling); alpha holds full for the first 60% of life then falls
-// linearly to 0. Particle life is kept short so sparks fade in air on the fixed camera.
-const FW_LIFE = 2.8; // particle lifetime (s)
-const FW_SPEED = 52; // radial launch speed scale (px/s); per-spark speed = rand01 × this
-const FW_GRAVITY = 95; // downward accel (px/s²) — the burst rains down (semi-implicit Euler, no drag)
-const FW_SCALE = 1; // native bmp scale (no position multiplier)
-const FW_HOLD = 0.6; // fraction of life at full alpha before the linear fade begins
-const FW_INTERVAL_MIN = 0.12; // gap between bursts ≈ uniform(0, max)
-const FW_INTERVAL_MAX = 2.4;
-// Launch trail (a deliberate embellishment over the legacy, which just pops the burst
-// in): a rocket rises from the ground trailing sparks, then detonates into the burst.
-const FW_ROCKET_SPEED = 320; // rocket rise speed (px/s)
-const FW_TRAIL_LIFE = 0.4; // launch-trail spark lifetime (s)
-// The 8 shape templates (bursts/<name>.bmp). Loaded + sampled once into `burstPixels`.
-const BURST_NAMES = ['circle', 'ring', 'star1', 'star2', 'delta', 'pentagon', 'hexagon', 'octagon'];
-// Per-shape sampled lit pixels: offset from the sprite centre + that pixel's colour.
-// null until the bmp loads; filled asynchronously by loadBurstPixels().
-const burstPixels: ({dx: number; dy: number; color: string}[] | null)[] = BURST_NAMES.map(
-  () => null,
-);
-let burstLoadStarted = false;
-
-/** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half
- *  subsampled for particle count) into `burstPixels`. Browser-only (uses Image/canvas). */
-function loadBurstPixels(): void {
-  if (burstLoadStarted || typeof document === 'undefined') return;
-  burstLoadStarted = true;
-  BURST_NAMES.forEach((name, idx) => {
-    const img = new Image();
-    img.onload = () => {
-      const cv = document.createElement('canvas');
-      cv.width = img.width;
-      cv.height = img.height;
-      const g = cv.getContext('2d', {willReadFrequently: true})!;
-      g.drawImage(img, 0, 0);
-      const {data} = g.getImageData(0, 0, img.width, img.height);
-      const hw = img.width / 2,
-        hh = img.height / 2;
-      const pts: {dx: number; dy: number; color: string}[] = [];
-      for (let y = 0; y < img.height; y++) {
-        for (let x = 0; x < img.width; x++) {
-          const i = (y * img.width + x) * 4; // sample every lit pixel — many fine sparks
-          const r = data[i],
-            gg = data[i + 1],
-            b = data[i + 2];
-          if (r > 200 && gg < 80 && b > 200) continue; // magenta colour-key
-          if (r + gg + b < 30) continue; // (near-)black background
-          pts.push({dx: x - hw, dy: y - hh, color: `rgb(${r},${gg},${b})`});
-        }
-      }
-      burstPixels[idx] = pts;
-    };
-    img.src = `/assets/bursts/${name}.bmp`;
-  });
-}
 
 /** One firework spark: world position + velocity, its (bmp-pixel) colour, and age/life. */
 interface Firework {
@@ -400,21 +192,6 @@ interface FwRocket {
   vy: number;
   targetY: number;
 }
-
-// Supply crates (Gameplay → Crates). On a per-ROUND chance a parachute crate drops from
-// the top of the map, descends at a constant speed with a ±5° pendulum wobble, lands on
-// the terrain, and is collected by any tank that comes within reach — granting credits,
-// health, or a weapon. Descent speed, wobble, and the contents split match the original.
-const CRATE_DESCENT = 90; // constant chute descent speed (px/s)
-// Sideways drift per unit of wind for a descending parachute crate (px/s), Realistic mode only.
-// High vs the descent speed because a chute is nearly all sail — at full wind (±5) it drifts ~±70 px/s
-// against a 90 px/s fall, a clear ~38° slant. Eased near the ground by the wind altitude profile.
-const CRATE_WIND_DRIFT = 14;
-const CRATE_GRAVITY = 95; // free-fall accel if the chute ever detaches (px/s²)
-const CRATE_WOBBLE_DEG = 5; // pendulum amplitude (±deg), pivot at the canopy top
-const CRATE_WOBBLE_SPEED = 200; // deg/s of the sine argument (≈1.8 s per swing)
-const CRATE_BOX = 32; // landed crate size (px); the pickup reach is CRATE_BOX/2 + tank radius
-const FLOAT_TEXT_LIFE = 2.0; // crate-pickup message lifetime (s)
 
 type CrateKind = 'weapon' | 'credits' | 'health' | 'bomb';
 
@@ -461,17 +238,6 @@ export interface ActiveTaunt {
   alpha: number;
 }
 
-/**
- * The world simulates at a FIXED logical resolution and the compositor stretches that scene
- * to each display. NET_VIEW_H is the shared DESIGN HEIGHT for BOTH solo and net, so tank +
- * terrain sizes stay consistent on every window (a big monitor doesn't shrink them). Solo
- * derives its logical WIDTH from the display aspect; a net match forces NET_VIEW_W so every
- * client builds a byte-identical world regardless of window size or local settings.
- */
-const NET_VIEW_W = 1280;
-const NET_VIEW_H = 720;
-const NET_LAND_SCALE = 2; // default net world width until the host picks a map size
-
 /** Authoritative per-turn state shared between clients in a network match. */
 export interface NetSnapshot {
   tanks: {
@@ -513,10 +279,319 @@ export interface NetSnapshot {
   }[];
 }
 
+// ==========================================================================
+// TUNING
+// ==========================================================================
+
+/** A beam holds on screen for ~this long, then the earth collapses (the removed dirt falls/settles
+ *  over the following ~second). Keep it just under the beam's on-screen life so the ground drops as
+ *  the ray fades — "beam holds → earth falls". */
+const BEAM_COLLAPSE_DELAY = 1;
+
+/** A bot restocks a shield only when its current shield is below this (the original's autobuy
+ *  shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading). */
+const BOT_SHIELD_NEED = 500;
+
 /**
- * CGameController - Main game controller
+ * How the view follows the action.
  */
+const CAMERA = {
+  /** Where the followed object sits in the view: 0.5 = dead centre. */
+  CENTER: 0.5,
+  /** Cinematic: how long the camera lingers on the impact before it pans away. */
+  DWELL_SEC: 0.8,
+  /** Pan speed (world px/sec) — the constant-speed ease toward the follow target (the original
+   *  scrolls at dt·gameSpeed·scrollSpeed; this is that budget in px/sec). Fast enough to keep a
+   *  shot roughly framed without whipping. */
+  SCROLL_SPEED: 1100,
+  /** Graphics → Camera: how the view moves to the next player when the turn hands off. Matches the
+   *  gfx.camera enum order (0 Smooth — the implicit default, just ease across / 1 Instant /
+   *  2 Cinematic). */
+  MODE_CINEMATIC: 2,
+  MODE_INSTANT: 1,
+} as const;
+
+/** TEMPORARY (explosion-FX testing): lock the weapon selection to one control weapon so it can be
+ *  spammed to review effects. Set to null to restore the full arsenal. */
+const CONTROL_WEAPON: string | null = null;
+
+/**
+ * Supply crates (Gameplay → Crates). On a per-ROUND chance a parachute crate drops from the top of
+ * the map, descends at a constant speed with a ±5° pendulum wobble, lands on the terrain, and is
+ * collected by any tank that comes within reach — granting credits, health, or a weapon. Descent
+ * speed, wobble, and the contents split match the original.
+ */
+const CRATE = {
+  /** Landed crate size (px); the pickup reach is `BOX / 2 + tank radius`. */
+  BOX: 32,
+  /** Constant chute descent speed (px/s). */
+  DESCENT: 90,
+  /** Pickup message lifetime (s). */
+  FLOAT_TEXT_LIFE: 2.0,
+  /** Free-fall accel if the chute ever detaches (px/s²). */
+  GRAVITY: 95,
+  /** Sideways drift per unit of wind while descending (px/s), Realistic mode only. High vs the
+   *  descent speed because a chute is nearly all sail — at full wind (±5) it drifts ~±70 px/s
+   *  against a 90 px/s fall, a clear ~38° slant. Eased near the ground by the wind altitude
+   *  profile. */
+  WIND_DRIFT: 14,
+  /** Pendulum amplitude (±deg), pivot at the canopy top. */
+  WOBBLE_DEG: 5,
+  /** deg/s of the sine argument (≈1.8 s per swing). */
+  WOBBLE_SPEED: 200,
+} as const;
+
+/**
+ * Victory fireworks (war-end Victory only). A burst appears at a random sky point on a randomized
+ * interval; it's one of the 8 `bursts/*.bmp` shapes (circle/ring/star/delta/…), emitting one spark
+ * per lit pixel — coloured by that pixel — that flies radially outward then arcs down under gravity
+ * + wind and fades. The shape is visible at t=0, then rains down. Speed is uniform (rand01 × scale),
+ * so many sparks barely move and hold the shape while a few fly out; positions are at native bmp
+ * scale (the wide look comes from the expansion, not upscaling); alpha holds full for the first 60%
+ * of life then falls linearly to 0. Particle life is kept short so sparks fade in air on the fixed
+ * camera.
+ */
+const FW = {
+  /** Downward accel (px/s²) — the burst rains down (semi-implicit Euler, no drag). */
+  GRAVITY: 95,
+  /** Fraction of life at full alpha before the linear fade begins. */
+  HOLD: 0.6,
+  /** Gap between bursts ≈ uniform(min, max) seconds. */
+  INTERVAL: [0.12, 2.4],
+  /** Particle lifetime (s). */
+  LIFE: 2.8,
+  /** The 8 shape templates (`bursts/<name>.bmp`), loaded + sampled once into `burstPixels`. */
+  NAMES: ['circle', 'ring', 'star1', 'star2', 'delta', 'pentagon', 'hexagon', 'octagon'],
+  /** Launch trail (a deliberate embellishment over the legacy, which just pops the burst in): a
+   *  rocket rises from the ground trailing sparks, then detonates into the burst. This is its rise
+   *  speed (px/s). */
+  ROCKET_SPEED: 320,
+  /** Native bmp scale (no position multiplier). */
+  SCALE: 1,
+  /** Radial launch speed scale (px/s); per-spark speed = rand01 × this. */
+  SPEED: 52,
+  /** Launch-trail spark lifetime (s). */
+  TRAIL_LIFE: 0.4,
+} as const;
+
+/**
+ * On-screen readouts the Graphics options can switch on.
+ */
+const HUD = {
+  /** "Show Blast Circles": how long each explosion ring lingers (s). */
+  BLAST_CIRCLE_LIFE: 1.4,
+  /** "Show Points" floating damage numbers: life (s) and rise distance over that life (px). Spawn
+   *  jitter (px) matches the original (±20 / ±12). */
+  DMG_NUM_LIFE: 1.1,
+  DMG_NUM_RISE: 28,
+} as const;
+
+/**
+ * Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the radius
+ * that maps to ×1. The original scales the kick by the per-explosion size (not damage alone), so a
+ * bigger crater shoves harder for equal life removed — a nuke launches a tank a shell only nudges.
+ * The size factor is clamped so bullets still barely budge and nukes don't fling absurdly.
+ */
+const KICK = {
+  BASE: 240,
+  REF_RADIUS: 50,
+  /** Clamp on that size factor. */
+  SIZE: [0.3, 3.5],
+} as const;
+
+/** Safety ceiling on live tracer ranging pins (they clear on the next shot; this only bounds a
+ *  single turn's repeated tracer volleys). Well above any one volley's count. */
+const MAX_AIM_MARKERS = 16;
+
+/** Gravity (px/s²) a deployed mine falls under when the ground beneath it is carved away — so a
+ *  mine left floating over a fresh hole drops onto the new surface instead of hanging in mid-air.
+ *  Mirrors the tank fall in CTank.update(). */
+const MINE_GRAVITY = 400;
+
+/**
+ * The world simulates at a FIXED logical resolution and the compositor stretches that scene to each
+ * display. `VIEW_H` is the shared DESIGN HEIGHT for BOTH solo and net, so tank + terrain sizes stay
+ * consistent on every window (a big monitor doesn't shrink them). Solo derives its logical WIDTH
+ * from the display aspect; a net match forces `VIEW_W` so every client builds a byte-identical world
+ * regardless of window size or local settings.
+ */
+const NET = {
+  /** Min seconds between live-aim relays to spectators (~16/s) — smooth turret tracking without
+   *  flooding the socket on a fast angle/power drag. */
+  AIM_INTERVAL: 0.06,
+  /** Default net world width until the host picks a map size. */
+  LAND_SCALE: 2,
+  VIEW_H: 720,
+  VIEW_W: 1280,
+} as const;
+
+/** Minimum rocket motor burn (seconds from launch). Fume/flare emit for max(this, time-to-apex):
+ *  arced shots keep the authentic apex cutoff, but downward/flat shots — which never ascend — still
+ *  get an initial exhaust plume instead of nothing. */
+const ROCKET_MIN_BURN = 0.7;
+
+/**
+ * Sentry turrets (auto-firing deployables).
+ */
+const SENTRY = {
+  /** A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve. */
+  FIRE_POWER: 1000,
+  /** How many ONE player (team) may hold on the field at a time, past which deploySentry no-ops.
+   *  Deliberately per-player rather than a shared field budget: a single pool lets the first
+   *  deployer starve everyone else, and it shrinks per head as the match grows (at 16 players a
+   *  pool of 8 is under one each), so every player gets the same allowance whatever the roster
+   *  size. Some ceiling is still needed — a sentry weapon under free-fire has unlimited ammo, so an
+   *  ungated deploy would grow the field every turn. Sentries are cleared at the start of each
+   *  battle. */
+  MAX_PER_PLAYER: 8,
+  /** The deployed Sentry's own hull art. Same naming CTank.getRequiredSprites builds, but a Sentry
+   *  only exists once one is deployed, so startGame preloads these by name to keep the first turret
+   *  from popping in as a vector-hull placeholder. */
+  SPRITES: ['body', 'wreck', 'turret'].map(part => ({
+    name: `tanks/Sentry ${part}`,
+    file: `/assets/tanks/Sentry ${part}.bmp`,
+  })),
+} as const;
+
+/**
+ * Opening angle + power drawn per tank at each battle start (the original's ranges).
+ */
+const START = {
+  /** The angle spans the whole upward half-circle — 0 = flat right, 90 = straight up, 180 = flat
+   *  left; the below-horizon half (181..359) is excluded, since a tank would open the battle
+   *  pointing into dirt. */
+  AIM: [0, 180],
+  POWER: [200, 699],
+} as const;
+
+/** Bunker/Wall structure draw scale (× Player Size). The original scales the structure bitmap down
+ *  rather than stamping it at native size; this reads proportionate to the tank (bunker.bmp 40×118
+ *  → ~18×53, wall.bmp 30×200 → ~14×90 — a barrier a tank hides behind). */
+const STRUCTURE_SCALE = 0.45;
+
+/** Succession bursts louder than this `sucSec` (reference units) re-bark their report + muzzle
+ *  flash on each salvo; faster bursts (cannon/shotgun ≈ 0.1) fire near-instantly and stay silent
+ *  after the opener. Matches the original's `0.5 < sucSec` FX gate. */
+const SUCCESSION_LOUD_MAX_SEC = 0.5;
+
+/**
+ * Taunt speech bubbles (Tank → Chatter). A bubble stays up `LIFE` seconds and fades over its last
+ * `FADE`. Trigger chances match the original percent gate: 8% post-fire, 30% on death, 60% on the
+ * idle interval.
+ */
+const TAUNT = {
+  CHANCE_DEATH: 30,
+  CHANCE_IDLE: 60,
+  CHANCE_POSTFIRE: 8,
+  /** Own goal: a tank that drops a round on itself or its own squad occasionally has a word for
+   *  itself. */
+  CHANCE_SELF: 35,
+  FADE: 0.6,
+  /** The idle timer re-arms to a random gap in this range (seconds) each turn/attempt. */
+  IDLE: [7, 15],
+  LIFE: 4.0,
+  /** Screen-space height (px) the bubble's tail floats above the tank's centre — just clear of the
+   *  turret so the tail points right at the tank. */
+  RISE: 20,
+  /** A graze isn't worth a line — it has to have actually hurt. */
+  SELF_MIN_DAMAGE: 20,
+} as const;
+
+// ==========================================================================
+// CGameController CLASS
+// ==========================================================================
+
 export class CGameController implements ShotWorld {
+  // ========================================================================
+  // STATIC HELPERS
+  //
+  // Pure lookups, plus two that memoise: the arsenal and the burst sprites are
+  // both immutable once loaded, so each is resolved once and kept.
+  // ========================================================================
+
+  /** Per-shape sampled lit pixels: offset from the sprite centre + that pixel's colour. Null until
+   *  the bmp loads; filled asynchronously by `CGameController.loadBurstPixels`. */
+  private static burstPixels: ({dx: number; dy: number; color: string}[] | null)[] = FW.NAMES.map(
+    () => null,
+  );
+  private static burstLoadStarted = false;
+  private static deathWeapons: number[] | null = null;
+
+  private static controlWeaponIndex(): number {
+    return CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
+  }
+
+  /** DEATH-class weapon indices (Six Under, Burial Mound, Cremation, Ashes, Toxic Grave), in
+   *  database order. When a tank is destroyed while it still OWNS one of these, the FIRST is
+   *  detonated on the corpse (posthumous "cook-off"). Memoised — the database is immutable after
+   *  load. */
+  private static deathWeaponIndices(): number[] {
+    let out = CGameController.deathWeapons;
+    if (!out) {
+      out = CGameController.deathWeapons = [];
+      for (let i = 0; i < WEAPON_DATABASE.length; i++)
+        if (getWeapon(i).getExtType() === EXT.DEATH) out.push(i);
+    }
+    return out;
+  }
+
+  /** A zeroed per-player tally for one battle. */
+  private static freshStatTally(): MatchStatTally {
+    return {
+      weaponsFired: 0,
+      shotsFired: 0,
+      tanksDestroyed: 0,
+      damageDealt: 0,
+      nukesFired: 0,
+      terrainCarved: 0,
+      creditsSpent: 0,
+      sec: 0,
+    };
+  }
+
+  /** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half subsampled
+   *  for particle count) into `CGameController.burstPixels`. Browser-only (uses Image/canvas). */
+  private static loadBurstPixels(): void {
+    if (CGameController.burstLoadStarted || typeof document === 'undefined') return;
+    CGameController.burstLoadStarted = true;
+    FW.NAMES.forEach((name, idx) => {
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas');
+        cv.width = img.width;
+        cv.height = img.height;
+        const g = cv.getContext('2d', {willReadFrequently: true})!;
+        g.drawImage(img, 0, 0);
+        const {data} = g.getImageData(0, 0, img.width, img.height);
+        const hw = img.width / 2,
+          hh = img.height / 2;
+        const pts: {dx: number; dy: number; color: string}[] = [];
+        for (let y = 0; y < img.height; y++) {
+          for (let x = 0; x < img.width; x++) {
+            const i = (y * img.width + x) * 4; // sample every lit pixel — many fine sparks
+            const r = data[i],
+              gg = data[i + 1],
+              b = data[i + 2];
+            if (r > 200 && gg < 80 && b > 200) continue; // magenta colour-key
+            if (r + gg + b < 30) continue; // (near-)black background
+            pts.push({dx: x - hw, dy: y - hh, color: `rgb(${r},${gg},${b})`});
+          }
+        }
+        CGameController.burstPixels[idx] = pts;
+      };
+      img.src = `/assets/bursts/${name}.bmp`;
+    });
+  }
+
+  /** The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the rapid
+   *  Machine Gun (Minigun variant). The Turret uses the Shell staple; the Minigun looks the Machine
+   *  Gun up by its STABLE id (never the localised display name) — falling back to the Shell if the
+   *  Machine Gun is disabled/absent. */
+  private static sentryMachineGunIndex(): number {
+    const i = WEAPON_DATABASE.findIndex(w => w.id === 'machine.gun');
+    return i >= 0 ? i : getDefaultWeaponIndex();
+  }
+
   // ========================================================================
   // CONSTRUCTION & INITIALIZATION
   // ========================================================================
@@ -561,7 +636,9 @@ export class CGameController implements ShotWorld {
     // Initialize weapon list (index into WEAPON_DATABASE). The control-weapon
     // override (if set) forces the FX-test weapon.
     this.m_currentWeaponIndex =
-      controlWeaponIndex() >= 0 ? controlWeaponIndex() : getDefaultWeaponIndex();
+      CGameController.controlWeaponIndex() >= 0
+        ? CGameController.controlWeaponIndex()
+        : getDefaultWeaponIndex();
 
     // Wind: positive = right, negative = left
     this.m_wind = new Vec2(0, 0);
@@ -653,7 +730,7 @@ export class CGameController implements ShotWorld {
       terrainCarved: 0,
       creditsSpent: 0,
     };
-    this.m_statsBase = freshStatTally();
+    this.m_statsBase = CGameController.freshStatTally();
     this.m_matchStartTime = this.m_time;
 
     // Land Size (Play menu): the world may be several viewports wide. Rebuild the
@@ -831,7 +908,7 @@ export class CGameController implements ShotWorld {
     // born mid-battle, and CTank.draw falls back to the crude vector hull until its sprites decode —
     // so loading them at deploy time flashed a placeholder turret for the first frames. The loop
     // above only covers tanks already on the field, and no Sentry exists yet.
-    for (const s of SENTRY_SPRITES) this.m_assets.loadSprite(s.name, s.file);
+    for (const s of SENTRY.SPRITES) this.m_assets.loadSprite(s.name, s.file);
 
     // Particle FX sprites (the real game art): grey smoke puff (magenta-keyed)
     // and the additive starburst flare used for trail plumes / fireballs.
@@ -1043,11 +1120,11 @@ export class CGameController implements ShotWorld {
     this.updateCamera(dt); // ease the large-map camera toward the shot / active tank
     if (this.m_damageNumbers.length) {
       for (const d of this.m_damageNumbers) d.age += dt;
-      this.m_damageNumbers = this.m_damageNumbers.filter(d => d.age < DMG_NUM_LIFE);
+      this.m_damageNumbers = this.m_damageNumbers.filter(d => d.age < HUD.DMG_NUM_LIFE);
     }
     if (this.m_blastCircles.length) {
       for (const c of this.m_blastCircles) c.age += dt;
-      this.m_blastCircles = this.m_blastCircles.filter(c => c.age < BLAST_CIRCLE_LIFE);
+      this.m_blastCircles = this.m_blastCircles.filter(c => c.age < HUD.BLAST_CIRCLE_LIFE);
     }
     this.updateTaunts(dt); // age speech bubbles + run the idle-taunt countdown
     this.updateCrates(dt); // descend / land / collect supply crates + age pickup text
@@ -1431,8 +1508,8 @@ export class CGameController implements ShotWorld {
       return;
     }
     if (GameConfig.autoScroll && !this.m_manualScroll) {
-      this.m_camTargetX = this.clampCamX(this.cameraFollowX() - this.m_viewW * CAMERA_CENTER);
-      const step = CAMERA_SCROLL_SPEED * dt;
+      this.m_camTargetX = this.clampCamX(this.cameraFollowX() - this.m_viewW * CAMERA.CENTER);
+      const step = CAMERA.SCROLL_SPEED * dt;
       const d = this.m_camTargetX - this.m_camX;
       this.m_camX = Math.abs(d) <= step ? this.m_camTargetX : this.m_camX + Math.sign(d) * step;
     }
@@ -1441,7 +1518,7 @@ export class CGameController implements ShotWorld {
 
   /** Snap the camera to centre `worldX` immediately (battle start / recenter). */
   private centerCameraOn(worldX: number): void {
-    this.m_camTargetX = this.clampCamX(worldX - this.m_viewW * CAMERA_CENTER);
+    this.m_camTargetX = this.clampCamX(worldX - this.m_viewW * CAMERA.CENTER);
     this.m_camX = this.m_camTargetX;
   }
 
@@ -1762,7 +1839,7 @@ export class CGameController implements ShotWorld {
   panFromMinimap(px: number): void {
     if (this.m_worldWidth <= this.m_viewW) return;
     const r = this.minimapRect();
-    const cam = ((px - r.m) / r.width) * this.m_worldWidth - this.m_viewW * CAMERA_CENTER;
+    const cam = ((px - r.m) / r.width) * this.m_worldWidth - this.m_viewW * CAMERA.CENTER;
     this.m_camX = this.m_camTargetX = this.clampCamX(cam);
     this.m_manualScroll = true;
     this.markDirty();
@@ -1903,15 +1980,15 @@ export class CGameController implements ShotWorld {
    */
   private drawDamageNumbers(ctx: CanvasRenderingContext2D): void {
     for (const d of this.m_damageNumbers) {
-      const t = d.age / DMG_NUM_LIFE;
-      this.drawBmpCentered(ctx, 'beijing-16-out', d.text, d.x, d.y - t * DMG_NUM_RISE, 1 - t);
+      const t = d.age / HUD.DMG_NUM_LIFE;
+      this.drawBmpCentered(ctx, 'beijing-16-out', d.text, d.x, d.y - t * HUD.DMG_NUM_RISE, 1 - t);
     }
   }
 
   /** Show Blast Circles: a fading ring at each explosion's damage radius. */
   private drawBlastCircles(ctx: CanvasRenderingContext2D): void {
     for (const c of this.m_blastCircles) {
-      const a = Math.max(0, 1 - c.age / BLAST_CIRCLE_LIFE);
+      const a = Math.max(0, 1 - c.age / HUD.BLAST_CIRCLE_LIFE);
       ctx.save();
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = `rgba(0,0,0,${0.5 * a})`;
@@ -1980,35 +2057,35 @@ export class CGameController implements ShotWorld {
   private updateTaunts(dt: number): void {
     // Age bubbles out — EXCEPT on the standings screen, where the victor's gloat bubble must persist
     // beside the winner flag until the player advances (clearTaunts). It's created in finishBattle, so
-    // ageing it here would let it vanish after TAUNT_LIFE seconds mid-celebration.
+    // ageing it here would let it vanish after TAUNT.LIFE seconds mid-celebration.
     if (this.m_gameState !== EGameState.BattleEnd && this.m_bubbles.length) {
       for (const b of this.m_bubbles) b.age += dt;
-      this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT_LIFE);
+      this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT.LIFE);
     }
     if (this.m_gameState !== EGameState.Battle) return; // only during a live turn
     this.m_tauntTimer -= dt;
     if (this.m_tauntTimer <= 0) {
-      this.tryTaunt('taunt', this.getCurrentTank(), TAUNT_CHANCE_IDLE);
-      this.m_tauntTimer = TAUNT_IDLE_MIN + Math.random() * (TAUNT_IDLE_MAX - TAUNT_IDLE_MIN);
+      this.tryTaunt('taunt', this.getCurrentTank(), TAUNT.CHANCE_IDLE);
+      this.m_tauntTimer = between(...TAUNT.IDLE);
     }
   }
 
   /** Active taunt bubbles projected to fractional screen coords (0..1 of the view),
    *  so the DOM overlay tracks the speaker as the camera scrolls. `alpha` fades the
-   *  bubble over its final TAUNT_FADE seconds. */
+   *  bubble over its final TAUNT.FADE seconds. */
   getActiveTaunts(): ActiveTaunt[] {
     if (!this.m_bubbles.length) return [];
     const vw = this.m_viewW,
       vh = this.m_viewH;
     return this.m_bubbles.map(b => {
       const p = b.speaker.getPosition();
-      const remain = TAUNT_LIFE - b.age;
+      const remain = TAUNT.LIFE - b.age;
       return {
         id: b.id,
         text: b.text,
         xPct: (p.x - this.m_camX) / vw,
-        yPct: (p.y - TAUNT_RISE) / vh,
-        alpha: clamp01(remain / TAUNT_FADE),
+        yPct: (p.y - TAUNT.RISE) / vh,
+        alpha: clamp01(remain / TAUNT.FADE),
       };
     });
   }
@@ -2383,36 +2460,38 @@ export class CGameController implements ShotWorld {
   /** Launch a firework: pick a random sky target above the terrain and send a rocket up
    *  from the ground toward it (it detonates into the burst on arrival). */
   private launchFirework(): void {
-    if (!burstPixels.some(Boolean)) {
-      loadBurstPixels(); // shapes not sampled yet — kick off the load and skip this beat
+    if (!CGameController.burstPixels.some(Boolean)) {
+      CGameController.loadBurstPixels(); // shapes not sampled yet — kick off the load and skip this beat
       return;
     }
     const vw = this.m_viewW;
-    const margin = 32 * FW_SCALE; // keep the whole 64px burst on screen
+    const margin = 32 * FW.SCALE; // keep the whole 64px burst on screen
     const cx = this.m_camX + margin + Math.random() * Math.max(1, vw - 2 * margin);
     const ground = this.m_land.getHeightAt(cx); // terrain surface — the launch pad
     const ceil = Math.max(24, ground - 24);
     const targetY = 14 + Math.random() * ceil * 0.5; // upper sky
-    this.m_rockets.push({x: cx, y: ground, vy: -FW_ROCKET_SPEED, targetY});
+    this.m_rockets.push({x: cx, y: ground, vy: -FW.ROCKET_SPEED, targetY});
   }
 
   /** Detonate a burst at (cx, cy): one spark per lit pixel of a random burst bmp, coloured
    *  by that pixel, flying radially out at a uniform-random speed (rand01 × scale). */
   private explodeFirework(cx: number, cy: number): void {
-    const ready = burstPixels.filter((p): p is {dx: number; dy: number; color: string}[] => !!p);
+    const ready = CGameController.burstPixels.filter(
+      (p): p is {dx: number; dy: number; color: string}[] => !!p,
+    );
     if (!ready.length) return;
     const pts = ready[Math.floor(Math.random() * ready.length)];
     for (const p of pts) {
       const dist = Math.hypot(p.dx, p.dy) || 1;
-      const sp = Math.random() * FW_SPEED; // uniform radial speed (rand01 × scale)
+      const sp = Math.random() * FW.SPEED; // uniform radial speed (rand01 × scale)
       this.m_fireworks.push({
-        x: cx + p.dx * FW_SCALE,
-        y: cy + p.dy * FW_SCALE,
+        x: cx + p.dx * FW.SCALE,
+        y: cy + p.dy * FW.SCALE,
         vx: (p.dx / dist) * sp,
         vy: (p.dy / dist) * sp,
         color: p.color, // the bmp pixel's own colour
         age: 0,
-        life: FW_LIFE * (0.8 + Math.random() * 0.4),
+        life: FW.LIFE * (0.8 + Math.random() * 0.4),
       });
     }
     this.m_audio?.firework(cx); // Slapthunder1/2.wav (the boom); pan spans the WORLD, so pass world-X
@@ -2426,7 +2505,7 @@ export class CGameController implements ShotWorld {
     this.m_fireworkTimer -= dt;
     if (this.m_fireworkTimer <= 0) {
       this.launchFirework();
-      this.m_fireworkTimer = FW_INTERVAL_MIN + Math.random() * (FW_INTERVAL_MAX - FW_INTERVAL_MIN);
+      this.m_fireworkTimer = FW.INTERVAL[0] + Math.random() * (FW.INTERVAL[1] - FW.INTERVAL[0]);
     }
     const wx = this.m_effWind.x * 0.7,
       wy = this.m_effWind.y * 0.7;
@@ -2444,7 +2523,7 @@ export class CGameController implements ShotWorld {
           vy: plusMinus(8) + 6,
           color: 'rgb(255,226,150)', // warm launch spark
           age: 0,
-          life: FW_TRAIL_LIFE * (0.6 + Math.random() * 0.6),
+          life: FW.TRAIL_LIFE * (0.6 + Math.random() * 0.6),
         });
         if (r.y <= r.targetY) this.explodeFirework(r.x, r.targetY);
         else rising.push(r);
@@ -2460,7 +2539,7 @@ export class CGameController implements ShotWorld {
         const wf = windProfile(this.m_land.getHeightAt(p.x) - p.y);
         p.age += dt;
         p.vx += wx * wf * dt;
-        p.vy += (FW_GRAVITY + wy * wf) * dt;
+        p.vy += (FW.GRAVITY + wy * wf) * dt;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
       }
@@ -2473,7 +2552,7 @@ export class CGameController implements ShotWorld {
   /** Draw the fireworks as small glowing sparks coloured by the burst pixel. Additive
    *  ('lighter') so they read as bright fireworks on any sky (the legacy screenshots show
    *  bright, glowing sparks — the raw disc primitive is nominally alpha-blended, but the
-   *  particles render as flares). Alpha holds full for the first FW_HOLD of life, then
+   *  particles render as flares). Alpha holds full for the first FW.HOLD of life, then
    *  falls linearly to 0. A brighter core over a soft glow gives each spark some bloom. */
   private drawFireworks(ctx: CanvasRenderingContext2D): void {
     if (!this.m_fireworks.length && !this.m_rockets.length) return;
@@ -2482,7 +2561,7 @@ export class CGameController implements ShotWorld {
     // Fine sparks: a 1px bright core over a faint 2px bloom.
     for (const p of this.m_fireworks) {
       const t = p.age / p.life;
-      const alpha = t <= FW_HOLD ? 1 : 1 - (t - FW_HOLD) / (1 - FW_HOLD);
+      const alpha = t <= FW.HOLD ? 1 : 1 - (t - FW.HOLD) / (1 - FW.HOLD);
       if (alpha <= 0) continue;
       const x = Math.round(p.x),
         y = Math.round(p.y);
@@ -2571,14 +2650,14 @@ export class CGameController implements ShotWorld {
         const ground = this.m_land.getHeightAt(c.x);
         if (c.y < ground) {
           if (!c.landed) {
-            c.y += CRATE_DESCENT * dt; // constant chute descent
+            c.y += CRATE.DESCENT * dt; // constant chute descent
             // Realistic wind: a parachute is almost all sail, so it drifts strongly downwind. The
             // altitude profile eases the drift as it nears the ground (windProfile → 0 at the soil),
             // so it settles rather than skating along the surface. Linear mode → 0 (falls straight).
             const wf = windProfile(ground - c.y);
-            c.x = clamp(c.x + this.m_effWind.x * CRATE_WIND_DRIFT * wf * dt, 0, this.m_worldWidth);
+            c.x = clamp(c.x + this.m_effWind.x * CRATE.WIND_DRIFT * wf * dt, 0, this.m_worldWidth);
           } else {
-            c.vy += CRATE_GRAVITY * dt; // detached chute → free-fall (rarely used)
+            c.vy += CRATE.GRAVITY * dt; // detached chute → free-fall (rarely used)
             c.y += c.vy * dt;
           }
         } else {
@@ -2589,7 +2668,7 @@ export class CGameController implements ShotWorld {
         // Pickup: any live tank whose centre is within (crate box + tank radius).
         const taker = this.m_tanks.find(t => {
           if (!t.isAlive()) return false;
-          const r = CRATE_BOX / 2 + t.getHitRadius();
+          const r = CRATE.BOX / 2 + t.getHitRadius();
           return t.distanceTo(c.x, c.y) <= r;
         });
         if (taker) this.collectCrate(c, taker);
@@ -2599,7 +2678,7 @@ export class CGameController implements ShotWorld {
     }
     if (this.m_floatTexts.length) {
       for (const f of this.m_floatTexts) f.age += dt;
-      this.m_floatTexts = this.m_floatTexts.filter(f => f.age < FLOAT_TEXT_LIFE);
+      this.m_floatTexts = this.m_floatTexts.filter(f => f.age < CRATE.FLOAT_TEXT_LIFE);
     }
   }
 
@@ -2648,7 +2727,7 @@ export class CGameController implements ShotWorld {
         // Pendulum: swing the whole assembly about its canopy top. The crate box hangs
         // at the bottom, so anchor the sprite's bottom near (x, y) and rotate about top.
         const rot =
-          Math.sin(deg2rad(this.m_time * CRATE_WOBBLE_SPEED + c.phase)) * deg2rad(CRATE_WOBBLE_DEG);
+          Math.sin(deg2rad(this.m_time * CRATE.WOBBLE_SPEED + c.phase)) * deg2rad(CRATE.WOBBLE_DEG);
         ctx.save();
         ctx.imageSmoothingEnabled = false;
         ctx.translate(c.x, c.y - h); // canopy-top pivot
@@ -2675,7 +2754,7 @@ export class CGameController implements ShotWorld {
   /** Draw the floating crate-pickup messages (rising + fading), in a bitmap font. */
   private drawFloatTexts(ctx: CanvasRenderingContext2D): void {
     for (const f of this.m_floatTexts) {
-      const t = f.age / FLOAT_TEXT_LIFE;
+      const t = f.age / CRATE.FLOAT_TEXT_LIFE;
       this.drawBmpCentered(ctx, 'beijing-16-out', f.text, f.x, f.y - t * 26, 1 - t);
     }
   }
@@ -3102,7 +3181,7 @@ export class CGameController implements ShotWorld {
     // allowance is identical for everyone whether the match has 2 players or 16.
     let deployed = 0;
     for (const t of this.m_tanks) if (t.isSentry() && t.getTeamId() === team) deployed++;
-    if (deployed >= MAX_SENTRIES_PER_PLAYER) return;
+    if (deployed >= SENTRY.MAX_PER_PLAYER) return;
     const w = getWeapon(weaponIndex);
     const minigun = w.getId() === 'sentry.minigun';
     // The badge shows the OWNER's name (a sentry inherits its deployer's display name);
@@ -3256,13 +3335,13 @@ export class CGameController implements ShotWorld {
     // SELF-TAUNT: a round that lands on your own side is the one moment a tank has something to say
     // about ITSELF. Once per blast (not per victim), so a wide own-goal doesn't start a chorus, and
     // only when it actually hurt — a harmless graze isn't worth a line.
-    if (ownGoal >= SELF_TAUNT_MIN_DAMAGE) this.tryTaunt('taunt', owner, TAUNT_CHANCE_SELF);
+    if (ownGoal >= TAUNT.SELF_MIN_DAMAGE) this.tryTaunt('taunt', owner, TAUNT.CHANCE_SELF);
 
     // Any supply crate whose centre is within the blast is destroyed — the original
     // clears crates in the crater's radius and simply removes them (no reward is spilled,
     // no debris, no sound; the blast's own fireball is the only visual).
     if (this.m_crates.length) {
-      const reach = Math.max(radius, 20) + CRATE_BOX / 2; // crater/outer-field reach
+      const reach = Math.max(radius, 20) + CRATE.BOX / 2; // crater/outer-field reach
       this.m_crates = this.m_crates.filter(c => Math.hypot(c.x - pos.x, c.y - pos.y) > reach);
     }
   }
@@ -3284,7 +3363,7 @@ export class CGameController implements ShotWorld {
     this.awardKillCredit(tank);
 
     // The dying tank cries out a random death line (Chatter, 30% chance).
-    this.tryTaunt('death', tank, TAUNT_CHANCE_DEATH);
+    this.tryTaunt('death', tank, TAUNT.CHANCE_DEATH);
 
     // Create explosion at tank position
     this.m_particles.tankDeath(pos.x, pos.y + 12);
@@ -3306,7 +3385,7 @@ export class CGameController implements ShotWorld {
   private detonateDeathWeapon(tank: CTank): void {
     if (tank.isSentry()) return;
     const econ = this.economyFor(tank);
-    const idx = deathWeaponIndices().find(i => econ.hasStock(i));
+    const idx = CGameController.deathWeaponIndices().find(i => econ.hasStock(i));
     if (idx === undefined) return;
     const weapon = getWeapon(idx);
     econ.consume(idx); // fired → consumed, so it can't detonate twice
@@ -3382,14 +3461,14 @@ export class CGameController implements ShotWorld {
   private kickTank(tank: CTank, fromX: number, removed: number, radiusPx: number): void {
     // Explosion-size dependence: scale the impulse by the blast radius (the port's proxy for
     // the original's per-explosion kick size) so bigger blasts shove harder for equal damage.
-    const sizeFactor = clamp(radiusPx / KICK_REF_RADIUS, KICK_SIZE_MIN, KICK_SIZE_MAX);
+    const sizeFactor = clamp(radiusPx / KICK.REF_RADIUS, KICK.SIZE[0], KICK.SIZE[1]);
     // Per-shot RANDOM horizontal lean (the original draws a fresh lateral each blast rather
     // than a fixed lean); sign points away from the blast centre, magnitude varies the launch.
     const away = tank.getPosition().x - fromX >= 0 ? 1 : -1;
     const dir = new Vec2(away * (0.25 + this.m_rng.float() * 0.7), -1).normalize();
     tank.kick(
       dir,
-      Math.min(1, removed * 0.001) * KICK_BASE * sizeFactor * GameConfig.kickbackScale,
+      Math.min(1, removed * 0.001) * KICK.BASE * sizeFactor * GameConfig.kickbackScale,
     );
   }
 
@@ -3577,20 +3656,24 @@ export class CGameController implements ShotWorld {
     //  • CINEMATIC — hold on the impact for a beat (updateCamera counts m_camDwell down), then ease.
     const focusX = tank.getPosition().x;
     const offScreen = focusX < this.m_camX || focusX > this.m_camX + this.m_viewW;
-    if (GameConfig.cameraMode === CAM_INSTANT && offScreen) {
+    if (GameConfig.cameraMode === CAMERA.MODE_INSTANT && offScreen) {
       this.centerCameraOn(focusX);
-    } else if (GameConfig.cameraMode === CAM_CINEMATIC && offScreen && this.m_impactThisTurn) {
+    } else if (
+      GameConfig.cameraMode === CAMERA.MODE_CINEMATIC &&
+      offScreen &&
+      this.m_impactThisTurn
+    ) {
       // Only linger if a blast actually landed on the turn that just ended — a shotless hand-off
       // (a shot-clock forfeit, a move-only turn) has no impact to dwell on, so we'd otherwise pan the
       // wrong way toward a stale/zero m_lastImpactX. Without an impact, fall through to the Smooth ease.
-      this.m_camDwell = CAM_DWELL_SEC;
+      this.m_camDwell = CAMERA.DWELL_SEC;
     }
     this.m_impactThisTurn = false; // re-arm for the new turn (set true again when this turn's shot lands)
 
     // Re-arm the taunt state for the new turn: no shot yet (gates the post-fire gloat)
     // and a fresh idle-taunt countdown.
     this.m_firedThisTurn = false;
-    this.m_tauntTimer = TAUNT_IDLE_MIN + Math.random() * (TAUNT_IDLE_MAX - TAUNT_IDLE_MIN);
+    this.m_tauntTimer = between(...TAUNT.IDLE);
 
     // Arm the shot-time countdown for a human turn (bots fire on a schedule and
     // never time out). Reset the clock either way so it never leaks across turns.
@@ -3655,8 +3738,8 @@ export class CGameController implements ShotWorld {
    *  last-shot fields follow the draw — the panel's Reset button is documented to return to the
    *  starting aim before the first shot, so it must not snap back to a 45°/500 never held. */
   private randomizeStartAim(tank: CTank): void {
-    const deg = this.m_rng.rangeInt(START_AIM_MIN, START_AIM_MAX);
-    const power = this.m_rng.rangeInt(START_POWER_MIN, START_POWER_MAX);
+    const deg = this.m_rng.rangeInt(START.AIM[0], START.AIM[1]);
+    const power = this.m_rng.rangeInt(START.POWER[0], START.POWER[1]);
     tank.setAimAngle(deg);
     tank.setTurretAngle(deg);
     tank.setPower(power);
@@ -3794,7 +3877,7 @@ export class CGameController implements ShotWorld {
     // Post-fire gloat: as the turn passes on after a shot, the tank that just fired
     // may taunt a random post-fire line (Chatter, 8% chance, on the turn hand-off).
     // Only after an actual shot, never a timed-out forfeit.
-    if (this.m_firedThisTurn) this.tryTaunt('postFire', actor, TAUNT_CHANCE_POSTFIRE);
+    if (this.m_firedThisTurn) this.tryTaunt('postFire', actor, TAUNT.CHANCE_POSTFIRE);
 
     // Hand off, then pay the between-turn credits. A completed round (turn order
     // wrapped) pays Credit Round to every survivor first, then Credit Turn every
@@ -3843,7 +3926,7 @@ export class CGameController implements ShotWorld {
     this.m_fireworks = [];
     this.m_rockets = [];
     this.m_fireworkTimer = 0.35; // first burst shortly after the screen appears
-    if (this.m_showFireworks) loadBurstPixels(); // warm the burst bmps
+    if (this.m_showFireworks) CGameController.loadBurstPixels(); // warm the burst bmps
 
     // The winner is the LEADING team — Deathmatch: most kills; Rounds/Points: most points
     // (Σ net damage), which may be an entirely dead team. Its representative names the
@@ -4859,8 +4942,10 @@ export class CGameController implements ShotWorld {
 
     // Aim straight at the target, then commit the aim + weapon (as a bot would).
     const norm = this.aimDegToward(sentry.getTurretPivot(), target.getPosition());
-    this.commitAim(sentry, norm, SENTRY_FIRE_POWER);
-    const wi = this.m_sentryMinigun.has(sentry) ? sentryMachineGunIndex() : getDefaultWeaponIndex();
+    this.commitAim(sentry, norm, SENTRY.FIRE_POWER);
+    const wi = this.m_sentryMinigun.has(sentry)
+      ? CGameController.sentryMachineGunIndex()
+      : getDefaultWeaponIndex();
     this.setCurrentWeapon(sentry, wi);
 
     // Fire after a brief beat; the shot resolving hands the turn on (as for a bot).
@@ -5099,7 +5184,7 @@ export class CGameController implements ShotWorld {
     } else if (isBeamExt(ext)) {
       // Beams are hitscan: point straight at the target (no ballistic solve), fire at full power.
       angleDeg = this.aimDegToward(botTank.getTurretPivot(), tp);
-      power = SENTRY_FIRE_POWER;
+      power = SENTRY.FIRE_POWER;
     } else {
       // Ballistic: the solved (or stale) arc + the difficulty angle scatter (angle only).
       angleDeg = ballisticAngle + angleError(level);
@@ -6213,12 +6298,12 @@ export class CGameController implements ShotWorld {
     if (this.m_netMode && this.isLocalNetTurn()) this.m_netAimDirty = true;
   }
 
-  /** Stream the local player's live aim to spectators, throttled per NET_AIM_INTERVAL so a drag
+  /** Stream the local player's live aim to spectators, throttled per NET.AIM_INTERVAL so a drag
    *  can't flood the socket. Cosmetic only — fire() re-sends the FINAL aim before the shot, so the
    *  deterministic outcome never depends on these. Called each frame while a battle turn is live. */
   private relayLiveAim(): void {
     if (!this.m_netMode || !this.isLocalNetTurn() || !this.m_netAimDirty) return;
-    if (this.m_time - this.m_lastAimSentTime < NET_AIM_INTERVAL) return;
+    if (this.m_time - this.m_lastAimSentTime < NET.AIM_INTERVAL) return;
     this.m_netAimDirty = false;
     this.m_lastAimSentTime = this.m_time;
     this.m_onNetCommand?.({t: 'aim', angle: this.m_angle, power: this.m_power});
@@ -6265,7 +6350,7 @@ export class CGameController implements ShotWorld {
     // The control-weapon lock only restricts the HUMAN's own list. During a bot's
     // turn (or normal play) the full arsenal is shown, so the HUD reflects the
     // weapon the active player is actually using rather than the locked one.
-    const ci = controlWeaponIndex();
+    const ci = CGameController.controlWeaponIndex();
     if (ci >= 0 && this.isPlayerTurn()) return [WEAPON_DATABASE[ci]];
     // Hide weapons disabled in Game Content; the staple (Shell) is always available.
     const staple = getDefaultWeaponIndex();
@@ -6749,9 +6834,9 @@ export class CGameController implements ShotWorld {
   // setJetInput (key auto-repeat) doesn't spam the wire — only real CHANGES relay. Reset per flight.
   private m_lastJetRelay: {up: boolean; left: boolean; right: boolean} | null = null;
   private m_bootingNet = false; // true only while startNetworkGame drives startGame
-  private m_netLandScale = NET_LAND_SCALE; // host-chosen net world width (viewport-widths)
-  private m_netViewW = NET_VIEW_W; // shared net logical size = the HOST's view size
-  private m_netViewH = NET_VIEW_H;
+  private m_netLandScale: number = NET.LAND_SCALE; // host-chosen net world width (viewport-widths)
+  private m_netViewW: number = NET.VIEW_W; // shared net logical size = the HOST's view size
+  private m_netViewH: number = NET.VIEW_H;
   private m_netTanksPerTeam = 1; // squad size in net → maps active tank index to its owner
   // netMode: a turn's action (shot/move/utility) is mid-resolution. The net bridge holds
   // the server's next `turnBegin` until this clears, so a late hand-off can't interrupt
@@ -6780,7 +6865,7 @@ export class CGameController implements ShotWorld {
     creditsSpent: 0, // depot spend
   };
   // The tallies as of the last stats drain — everything past this has yet to be uploaded.
-  private m_statsBase: MatchStatTally = freshStatTally();
+  private m_statsBase: MatchStatTally = CGameController.freshStatTally();
   // Fired when a unit of progress completes (round / battle / war) so the UI can bank the delta.
   private m_onStats: ((closed: StatsFlush) => void) | null = null;
   private m_matchStartTime = 0; // m_time captured at startGame → this match's play seconds
@@ -6844,9 +6929,9 @@ export class CGameController implements ShotWorld {
   // Marks which live sentry tanks are the Minigun variant (→ fire "Machine Gun", not Shell).
   private m_sentryMinigun: WeakSet<CTank> = new WeakSet();
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
-  // Floating "Show Points" damage numbers (world pos + age); rise + fade over DMG_NUM_LIFE.
+  // Floating "Show Points" damage numbers (world pos + age); rise + fade over HUD.DMG_NUM_LIFE.
   private m_damageNumbers: {x: number; y: number; text: string; age: number}[] = [];
-  // "Show Blast Circles": a ring per explosion at its damage radius; fades over BLAST_CIRCLE_LIFE.
+  // "Show Blast Circles": a ring per explosion at its damage radius; fades over HUD.BLAST_CIRCLE_LIFE.
   private m_blastCircles: {x: number; y: number; r: number; age: number}[] = [];
   // Victory fireworks (war-end, human wins). Spawned + aged during BattleEnd; drawn in
   // the sky behind the standings overlay. `m_showFireworks` is decided once at battle end.
@@ -6862,7 +6947,7 @@ export class CGameController implements ShotWorld {
   // the old. Aged in update(); rendered as DOM overlays via getActiveTaunts().
   private m_bubbles: TauntBubble[] = [];
   private m_bubbleSeq = 0;
-  private m_tauntTimer = TAUNT_IDLE_MIN; // idle-taunt countdown, re-armed each turn
+  private m_tauntTimer: number = TAUNT.IDLE[0]; // idle-taunt countdown, re-armed each turn
   private m_firedThisTurn = false; // gate post-fire taunts to turns where a shot was taken
   // Cached pixel data of structure bitmaps (bunker.bmp / wall.bmp) for buildStructure.
   private m_structImages = new Map<string, {width: number; height: number; data: Uint32Array}>();

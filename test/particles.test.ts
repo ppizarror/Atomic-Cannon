@@ -3,7 +3,7 @@
  */
 import {describe, it, expect} from 'vitest';
 
-import {CParticleSystem, EXHAUST_PUFFS} from '../src/core/CParticleSystem';
+import {CParticleSystem, EXHAUST} from '../src/core/CParticleSystem';
 import {EXP} from '../src/core/weapons/ExpType';
 import {ScreenShake} from '../src/core/rendering/ScreenShake';
 import {Vec2} from '../src/math/Vec2';
@@ -268,7 +268,7 @@ describe('Particle system', () => {
   });
 
   // The BAKED exhaust path: when the atlas is available, one sub-step emits a single 'exhaust'
-  // cluster carrying the whole cohort instead of EXHAUST_PUFFS separate 'smoke' puffs — the 5×
+  // cluster carrying the whole cohort instead of EXHAUST.PUFFS separate 'smoke' puffs — the 5×
   // draw-call reduction the bake exists for. There is no canvas here (this file drops the stub
   // `document`), so stand a fake atlas in to select the branch.
   const withFakeAtlas = (ps: CParticleSystem): void => {
@@ -290,10 +290,10 @@ describe('Particle system', () => {
       (ps as unknown as {m_particles: {kind: string}[]}).m_particles;
     expect(kinds(live).every(p => p.kind === 'smoke')).toBe(true);
     expect(kinds(baked).every(p => p.kind === 'exhaust')).toBe(true);
-    // Same number of sub-steps; the baked path collapses each sub-step's whole EXHAUST_PUFFS
+    // Same number of sub-steps; the baked path collapses each sub-step's whole EXHAUST.PUFFS
     // cohort into ONE particle, so it emits exactly that factor fewer.
     expect(baked.count()).toBeGreaterThan(0);
-    expect(live.count()).toBe(baked.count() * EXHAUST_PUFFS);
+    expect(live.count()).toBe(baked.count() * EXHAUST.PUFFS);
   });
 
   it('a blast disperses BAKED exhaust the same as loose smoke (it is the same trail smoke)', () => {

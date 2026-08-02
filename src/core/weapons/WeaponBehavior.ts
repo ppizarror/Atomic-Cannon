@@ -15,37 +15,49 @@ import {GameConfig} from '../CGameConfig';
 import {EXT, isBeamExt} from './ExtType';
 import {type ExpType} from './ExpType';
 
-// `EXT` / `ExtType` / `toExtType` — the authoritative behaviour-selector table — live in
-// ./ExtType so `CWeapon.getExtType()` can return the typed value without a circular import.
-// Re-exported here because this dispatcher is the natural place callers look for them.
 export {EXT, isBeamExt} from './ExtType';
 export type {ExtType} from './ExtType';
 
-// Submunition launch power = 0.5x firing power.
-const CLUSTER_POWER = 0.5;
-// Roller surface speed (px/s in our space).
-const ROLL_SPEED = 260;
-// Max shot lifetime before it self-detonates (10.0s).
-const MAX_LIFE = 10;
-// Swept-collision resolution: a single Euler step can span 35-50px on big maps vs a ~16px tank hit
-// radius, so the endpoint point-sample can tunnel through a tank / thin ridge the path crossed. We
-// walk the frame's segment in sub-steps ≤ CCD_STEP px apart; CCD_MAX_SUBS bounds the loop (a real
-// step never exceeds ~50px, so ~13 sub-steps; the cap is a runaway guard).
-const CCD_STEP = 4;
-const CCD_MAX_SUBS = 16;
-/** Share of its own crater a blast throws back in as spoil: a small base every cratering weapon
- *  returns, plus the part its `fodder` earns — and `fodder` carries most of it, because that is the
- *  field that says how much dirt this weapon kicks up.
+/**
+ * Swept-collision resolution: a single Euler step can span 35-50px on big maps vs a ~16px tank hit
+ * radius, so the endpoint point-sample can tunnel through a tank / thin ridge the path crossed. We
+ * walk the frame's segment in sub-steps ≤ `STEP` px apart.
+ */
+const CCD = {
+  /** Bounds the loop — a real step never exceeds ~50px, so ~13 sub-steps; this is a runaway guard. */
+  MAX_SUBS: 16,
+  STEP: 4,
+} as const;
+
+/**
+ * Share of its own crater a blast throws back in as spoil: a small base every cratering weapon
+ * returns, plus the part its `fodder` earns — and `fodder` carries most of it, because that is the
+ * field that says how much dirt this weapon kicks up.
  *
- *  The base is deliberately LOW. At 0.35 even a fodder-0.1 shot put back nearly 40% of its bowl,
- *  which is most of a small crater's depth once the spoil lands mostly inside it — digging with
- *  anything but a nuke was impossible, and `fodder` barely mattered because the base dwarfed it.
- *  Now a plain shell keeps ~85% of the hole it dug and a nuke still buries a third of its own. */
-const EJECTA_FILL_BASE = 0.08;
-const EJECTA_FILL_FODDER = 0.7;
-/** Ceiling on airborne dirt chunks per blast. Volume beyond it is bought by deepening what each
- *  chunk lays down on landing, so a nuke's spoil costs no more frame time than a bomb's. */
-const EJECTA_MAX_CHUNKS = 20000;
+ * The base is deliberately LOW. At 0.35 even a fodder-0.1 shot put back nearly 40% of its bowl,
+ * which is most of a small crater's depth once the spoil lands mostly inside it — digging with
+ * anything but a nuke was impossible, and `fodder` barely mattered because the base dwarfed it.
+ * Now a plain shell keeps ~85% of the hole it dug and a nuke still buries a third of its own.
+ */
+const EJECTA = {
+  FILL_BASE: 0.08,
+  FILL_FODDER: 0.7,
+  /** Ceiling on airborne dirt chunks per blast. Volume beyond it is bought by deepening what each
+   *  chunk lays down on landing, so a nuke's spoil costs no more frame time than a bomb's. */
+  MAX_CHUNKS: 20000,
+} as const;
+
+/**
+ * The shot itself.
+ */
+const SHOT = {
+  /** Submunition launch power = this × firing power. */
+  CLUSTER_POWER: 0.5,
+  /** Max lifetime (s) before it self-detonates. */
+  MAX_LIFE: 10,
+  /** Roller surface speed (px/s in our space). */
+  ROLL_SPEED: 260,
+} as const;
 
 /** The world a shot behaves against — implemented by the game controller. */
 export interface ShotWorld {
@@ -157,7 +169,7 @@ export function weaponFlyStep(
   const segX = p.x - prev.x;
   const segY = p.y - prev.y;
   const segLen = Math.hypot(segX, segY);
-  const subs = segLen > CCD_STEP ? Math.min(CCD_MAX_SUBS, Math.ceil(segLen / CCD_STEP)) : 1;
+  const subs = segLen > CCD.STEP ? Math.min(CCD.MAX_SUBS, Math.ceil(segLen / CCD.STEP)) : 1;
 
   // Earliest TANK contact along the path (k=subs is the endpoint, so this subsumes the old point
   // test). Snap the shot to that point so the blast centres on the impact, not a step beyond it.
@@ -181,7 +193,7 @@ export function weaponFlyStep(
   const belowSurface = p.y >= surfaceY - 4;
 
   // Lifetime cap (rebound/roller can loop) — detonate rather than fly forever.
-  if (shot.getAge() > MAX_LIFE) return 'detonate';
+  if (shot.getAge() > SHOT.MAX_LIFE) return 'detonate';
 
   switch (ext) {
     case EXT.BEAM:
@@ -378,7 +390,7 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
   const ahead = dir > 0 ? right : left;
   if (ahead < surfaceY - 1) return 'detonate';
 
-  shot.setVelocity(dir * ROLL_SPEED, 0);
+  shot.setVelocity(dir * SHOT.ROLL_SPEED, 0);
   return 'continue';
 }
 
@@ -570,11 +582,11 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // scaling fixes: being linear in r it wins for every SMALL weapon, so those went on refilling a
     // fixed depth of a crater that is only so deep — a low-fodder shot threw back nearly everything
     // it dug and could not make a hole at all. Area alone, all the way down.
-    const volume = Math.round(craterVol * (EJECTA_FILL_BASE + fodder * EJECTA_FILL_FODDER));
+    const volume = Math.round(craterVol * (EJECTA.FILL_BASE + fodder * EJECTA.FILL_FODDER));
     // Past a few thousand, extra chunks cost frame time without reading as more dirt — so buy the
     // remaining volume with DEPTH per chunk rather than with more of them (the same trade the
     // fallout grains make). Below the cap this is 1px/chunk, exactly as before.
-    const perChunk = Math.max(1, Math.ceil(volume / EJECTA_MAX_CHUNKS));
+    const perChunk = Math.max(1, Math.ceil(volume / EJECTA.MAX_CHUNKS));
     land.addShowerParticles(
       Math.floor(pos.x),
       Math.floor(Math.min(pos.y, surfaceY)),
@@ -659,7 +671,7 @@ export function spawnCluster(parent: CShot, weapon: CWeapon, world: ShotWorld, p
   const [startDeg, endDeg] = weapon.getClusterSpread();
   const step = (endDeg - startDeg) / cluNum;
   const basePower = parent.getBasePower(); // the firing power, unchanged down the chain
-  const childPower = Math.max(1, basePower * CLUSTER_POWER);
+  const childPower = Math.max(1, basePower * SHOT.CLUSTER_POWER);
   const speed = launchSpeed(childPower);
 
   for (let k = 0; k < cluNum; k++) {

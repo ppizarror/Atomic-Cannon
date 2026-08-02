@@ -11,10 +11,12 @@ import {hexToRgb} from '../math/color';
 import {CLand} from './CLand';
 import {GameConfig, isWargame} from './CGameConfig';
 
-// Wargame Detail preset — tanks drawn as flat tactical-map silhouettes in this pale blue.
-const WARGAME_TINT = '#8ed1ec';
 import {getFont} from './rendering/BitmapFont';
 import type {Sprite, ISpriteSource} from './rendering/sprites';
+
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
 
 /** A drawable image plus its dimensions. */
 // Tank variants
@@ -44,89 +46,6 @@ export const TEAM_COLORS: Record<number, string> = {
  *  wherever an unresolved team index is mapped to a colour. */
 export const DEFAULT_TEAM_COLOR = TEAM_COLORS[0];
 
-// --- per-tank body recolour: BLEND the chosen colour over each pixel rather than replacing it,
-// so the original sprite's own texture/hue still reads through and the team colour is only a tint.
-// The tint target is the chosen colour modulated by the pixel's luminance (shading preserved); we
-// then mix that with the untouched original pixel by TINT_STRENGTH. A full replace (strength 1)
-// washed the texture out — the metallic detail vanished under a flat colour. Cached per sprite+colour.
-const tintCache = new Map<string, HTMLCanvasElement>();
-
-// How strongly the team colour tints the hull (0 = original sprite, 1 = full monochrome recolour).
-// ~0.4 keeps the sprite's own texture clearly visible while still reading as the team's colour.
-const TINT_STRENGTH = 0.4;
-
-// Cap the sprite-derivation caches (oldest-evicted). Keyed by (hull|colour); the Players editor's
-// custom-colour picker can mint arbitrary keys, so bound them like the BitmapFont / particle caches.
-const SPRITE_CACHE_MAX = 128;
-function capSpriteCache(
-  map: Map<string, HTMLCanvasElement>,
-  key: string,
-  cv: HTMLCanvasElement,
-): void {
-  map.set(key, cv);
-  if (map.size > SPRITE_CACHE_MAX) {
-    const oldest = map.keys().next().value as string | undefined;
-    if (oldest !== undefined) map.delete(oldest);
-  }
-}
-
-// Perceptual luminance of a pixel (0..1).
-const lumaOf = (r: number, g: number, b: number): number =>
-  (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-function tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElement {
-  const cached = tintCache.get(key);
-  if (cached) return cached;
-  const {r: tr, g: tg, b: tb} = hexToRgb(hex);
-  const cv = document.createElement('canvas');
-  cv.width = sprite.width;
-  cv.height = sprite.height;
-  const g = cv.getContext('2d', {willReadFrequently: true})!;
-  g.imageSmoothingEnabled = false;
-  g.drawImage(sprite.bitmap, 0, 0);
-  const im = g.getImageData(0, 0, cv.width, cv.height);
-  const px = im.data;
-  // Pass 1: brightest opaque pixel — it maps to the exact chosen colour.
-  let maxL = 0.001;
-  for (let i = 0; i < px.length; i += 4) {
-    if (px[i + 3] === 0) continue;
-    const l = lumaOf(px[i], px[i + 1], px[i + 2]);
-    if (l > maxL) maxL = l;
-  }
-  // Pass 2: tint = target colour scaled by each pixel's relative luminance (shading preserved),
-  // then blended over the ORIGINAL pixel by TINT_STRENGTH so the sprite's texture stays visible.
-  const s = TINT_STRENGTH;
-  for (let i = 0; i < px.length; i += 4) {
-    if (px[i + 3] === 0) continue; // keep transparency
-    const f = Math.min(1, lumaOf(px[i], px[i + 1], px[i + 2]) / maxL);
-    px[i] = Math.round(px[i] * (1 - s) + tr * f * s);
-    px[i + 1] = Math.round(px[i + 1] * (1 - s) + tg * f * s);
-    px[i + 2] = Math.round(px[i + 2] * (1 - s) + tb * f * s);
-  }
-  g.putImageData(im, 0, 0);
-  capSpriteCache(tintCache, key, cv);
-  return cv;
-}
-
-// Solid-colour silhouette of a sprite (all opaque pixels → `color`), cached. Used to
-// stamp a white outline behind the hull for High Contrast.
-const silCache = new Map<string, HTMLCanvasElement>();
-function silhouette(sprite: Sprite, color: string, key: string): HTMLCanvasElement {
-  const hit = silCache.get(key);
-  if (hit) return hit;
-  const cv = document.createElement('canvas');
-  cv.width = sprite.width;
-  cv.height = sprite.height;
-  const g = cv.getContext('2d')!;
-  g.imageSmoothingEnabled = false;
-  g.drawImage(sprite.bitmap, 0, 0);
-  g.globalCompositeOperation = 'source-in'; // recolour every opaque pixel
-  g.fillStyle = color;
-  g.fillRect(0, 0, cv.width, cv.height);
-  capSpriteCache(silCache, key, cv);
-  return cv;
-}
-
 /**
  * Tank health/shield status structure
  */
@@ -138,13 +57,221 @@ export interface STankHealth {
   fRadiation: number; // Radiation damage over time
 }
 
+// ==========================================================================
+// TUNING
+// ==========================================================================
+
 /**
- * Tank state flags/members:
- * - Moving state ("Tank is moving")
- * - Underground detection ("underground")
- * - Can move / Can't move messages
+ * Native bitmap facts about the hull art. Kept as static tables because the muzzle/aim geometry
+ * runs with no sprite handy (bot sim); the values must track the `tanks/*.bmp` files.
  */
+const ART: {
+  NATIVE: Record<string, {body: number; turret: number}>;
+  TURRET_HGT: Record<string, number>;
+} = {
+  /** Native bitmap widths per tank type (px): `body` sets the shared blit scale, `turret` sets the
+   *  barrel length. The original blits hull AND turret at ONE native-size scale, so their
+   *  proportions come straight from the art. We mirror that: both are drawn at `tankBlitScale`, and
+   *  the barrel length (= muzzle offset) follows the turret bitmap's own width instead of a fixed
+   *  constant. */
+  NATIVE: {
+    Standard: {body: 64, turret: 40},
+    Green: {body: 68, turret: 32},
+    MA1: {body: 68, turret: 50},
+    MSPO: {body: 70, turret: 50},
+    'Atomic Cannon': {body: 70, turret: 61},
+    Sentry: {body: 37, turret: 32},
+  },
+  /** Turret pivot height above the ground line, where it differs from `SIZE.THGT`. That default
+   *  nests the pivot inside every hull EXCEPT the short "Atomic Cannon" one (drawn body-top ≈ 13px
+   *  < 15), where it floats — so that hull gets a lower pivot that seats the barrel back on it.
+   *  Taller hulls keep the default, so they are unchanged. */
+  TURRET_HGT: {
+    'Atomic Cannon': 11,
+  },
+};
+
+/**
+ * Jet pack. Thrust is expressed as MULTIPLES of `TANK.GRAVITY`, which is how it was tuned: up is
+ * -1.2g (a net -0.2g rise while held) and each side is ∓0.1g.
+ */
+const JET = {
+  /** Screen-Y the climb stops at — the map top. */
+  CEILING: 8,
+  SIDE_G: -0.1,
+  UP_G: -1.2,
+} as const;
+
+/**
+ * Base tank geometry (px), before Player Size scaling.
+ */
+const SIZE = {
+  /** Approximate height. */
+  H: 24,
+  /** Half-width of the collision box. */
+  R: 16,
+  /** Native width of the REFERENCE hull bitmap (the standard tanks are ~64–70). Every hull is drawn
+   *  `W` wide, EXCEPT sprites narrower than this reference — e.g. the compact Sentry (37px) — which
+   *  keep their true proportion instead of being scaled up to full tank width. Wider sprites still
+   *  clamp to `W`, so the player hulls are unchanged. */
+  REF_HULL_W: 64,
+  /** Turret pivot height above the ground line (see `ART.TURRET_HGT` for the exception). */
+  THGT: 15,
+  /** On-screen hull width. */
+  W: 46,
+} as const;
+
+/**
+ * How a tank moves under its own power and under gravity.
+ */
+const TANK = {
+  /** Ground-drive crawl speed (px/s) — climbs ANY terrain, no steepness gate. */
+  DRIVE_SPEED: 70,
+  /** Fall acceleration when unsupported (px/s²). */
+  GRAVITY: 400,
+} as const;
+
+/**
+ * Per-tank body recolour: BLEND the chosen colour over each pixel rather than replacing it, so the
+ * original sprite's own texture/hue still reads through and the team colour is only a tint. The
+ * tint target is the chosen colour modulated by the pixel's luminance (shading preserved); that is
+ * then mixed with the untouched original pixel by `STRENGTH`. A full replace (strength 1) washed
+ * the texture out — the metallic detail vanished under a flat colour. Cached per sprite+colour.
+ */
+const TINT = {
+  /** Cap on the sprite-derivation caches (oldest-evicted). Keyed by (hull|colour); the Players
+   *  editor's custom-colour picker can mint arbitrary keys, so bound them like the BitmapFont /
+   *  particle caches. */
+  CACHE_MAX: 128,
+  /** How strongly the team colour tints the hull (0 = original sprite, 1 = full monochrome
+   *  recolour). ~0.4 keeps the sprite's own texture clearly visible while still reading as the
+   *  team's colour. */
+  STRENGTH: 0.4,
+  /** Wargame Detail preset — tanks drawn as flat tactical-map silhouettes in this pale blue. */
+  WARGAME: '#8ed1ec',
+} as const;
+
+// ==========================================================================
+// CTank CLASS
+// ==========================================================================
+
 export class CTank {
+  // ========================================================================
+  // STATIC HELPERS
+  //
+  // Geometry accessors (raw `SIZE` px × the Player Size scale, read live from
+  // GameConfig) and the two sprite-derivation caches.
+  // ========================================================================
+
+  private static readonly silCache = new Map<string, HTMLCanvasElement>();
+  private static readonly tintCache = new Map<string, HTMLCanvasElement>();
+
+  private static capSpriteCache(
+    map: Map<string, HTMLCanvasElement>,
+    key: string,
+    cv: HTMLCanvasElement,
+  ): void {
+    map.set(key, cv);
+    if (map.size > TINT.CACHE_MAX) {
+      const oldest = map.keys().next().value as string | undefined;
+      if (oldest !== undefined) map.delete(oldest);
+    }
+  }
+
+  /** Hull draw width — clamped so sprites narrower than the reference keep their proportion. */
+  private static hullDrawWidth(sprite: {width: number}): number {
+    return CTank.tankWidth() * Math.min(1, sprite.width / SIZE.REF_HULL_W);
+  }
+
+  /** Perceptual luminance of a pixel (0..1). */
+  private static lumaOf(r: number, g: number, b: number): number {
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+
+  /** Solid-colour silhouette of a sprite (all opaque pixels → `color`), cached. Used to stamp a
+   *  white outline behind the hull for High Contrast. */
+  private static silhouette(sprite: Sprite, color: string, key: string): HTMLCanvasElement {
+    const hit = CTank.silCache.get(key);
+    if (hit) return hit;
+    const cv = document.createElement('canvas');
+    cv.width = sprite.width;
+    cv.height = sprite.height;
+    const g = cv.getContext('2d')!;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(sprite.bitmap, 0, 0);
+    g.globalCompositeOperation = 'source-in'; // recolour every opaque pixel
+    g.fillStyle = color;
+    g.fillRect(0, 0, cv.width, cv.height);
+    CTank.capSpriteCache(CTank.silCache, key, cv);
+    return cv;
+  }
+
+  private static tankArt(type: string): {body: number; turret: number} {
+    return ART.NATIVE[type] ?? ART.NATIVE.Standard;
+  }
+
+  /** Scale at which BOTH hull and turret bitmaps are blitted (native px × this). Matches
+   *  `hullDrawWidth` exactly for the body, so the barrel base tracks the drawn hull. */
+  private static tankBlitScale(type: string): number {
+    const bodyW = CTank.tankArt(type).body;
+    return (CTank.tankWidth() * Math.min(1, bodyW / SIZE.REF_HULL_W)) / bodyW;
+  }
+
+  private static tankHeight(): number {
+    return SIZE.H * GameConfig.tankSizeScale;
+  }
+
+  private static tankRadius(): number {
+    return SIZE.R * GameConfig.tankSizeScale;
+  }
+
+  private static tankWidth(): number {
+    return SIZE.W * GameConfig.tankSizeScale;
+  }
+
+  private static tintToColor(sprite: Sprite, hex: string, key: string): HTMLCanvasElement {
+    const cached = CTank.tintCache.get(key);
+    if (cached) return cached;
+    const {r: tr, g: tg, b: tb} = hexToRgb(hex);
+    const cv = document.createElement('canvas');
+    cv.width = sprite.width;
+    cv.height = sprite.height;
+    const g = cv.getContext('2d', {willReadFrequently: true})!;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(sprite.bitmap, 0, 0);
+    const im = g.getImageData(0, 0, cv.width, cv.height);
+    const px = im.data;
+    // Pass 1: brightest opaque pixel — it maps to the exact chosen colour.
+    let maxL = 0.001;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] === 0) continue;
+      const l = CTank.lumaOf(px[i], px[i + 1], px[i + 2]);
+      if (l > maxL) maxL = l;
+    }
+    // Pass 2: tint = target colour scaled by each pixel's relative luminance (shading preserved),
+    // then blended over the ORIGINAL pixel by TINT.STRENGTH so the sprite's texture stays visible.
+    const s = TINT.STRENGTH;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i + 3] === 0) continue; // keep transparency
+      const f = Math.min(1, CTank.lumaOf(px[i], px[i + 1], px[i + 2]) / maxL);
+      px[i] = Math.round(px[i] * (1 - s) + tr * f * s);
+      px[i + 1] = Math.round(px[i + 1] * (1 - s) + tg * f * s);
+      px[i + 2] = Math.round(px[i + 2] * (1 - s) + tb * f * s);
+    }
+    g.putImageData(im, 0, 0);
+    CTank.capSpriteCache(CTank.tintCache, key, cv);
+    return cv;
+  }
+
+  /** On-screen barrel length = muzzle offset = native turret width × the shared blit scale. */
+  private static turretDrawLen(type: string): number {
+    return CTank.tankArt(type).turret * CTank.tankBlitScale(type);
+  }
+
+  private static turretHgt(type: string): number {
+    return (ART.TURRET_HGT[type] ?? SIZE.THGT) * GameConfig.tankSizeScale;
+  }
+
   // ========================================================================
   // CONSTRUCTION & INITIALIZATION
   // ========================================================================
@@ -286,7 +413,7 @@ export class CTank {
 
   /** Shot-collision radius (scales with Player Size). */
   getHitRadius(): number {
-    return tankRadius();
+    return CTank.tankRadius();
   }
 
   /** Compute tank's Y position based on terrain surface (called each frame). */
@@ -296,7 +423,7 @@ export class CTank {
     const nTerrainHeight = pLand.getHeightAt(Math.floor(this.m_vPos.x));
 
     // Tank sits on top of terrain
-    this.m_vPos.y = nTerrainHeight - tankHeight();
+    this.m_vPos.y = nTerrainHeight - CTank.tankHeight();
 
     // Align the body to the local slope immediately — so a freshly-placed tank already rests
     // TILTED to the terrain under it (the original does this on placement), not flat at 0° until
@@ -313,7 +440,7 @@ export class CTank {
    *  of jittering on bumps. 0 on flat ground. */
   private computeBodyTilt(pLand: CLand): number {
     const cx = Math.floor(this.m_vPos.x);
-    const half = Math.max(2, Math.round(tankRadius())); // half the tread footprint
+    const half = Math.max(2, Math.round(CTank.tankRadius())); // half the tread footprint
     let nx = 0,
       ny = 0;
     for (let c = cx - half; c <= cx + half; c++) {
@@ -334,7 +461,7 @@ export class CTank {
 
     // Where the tank rests when sitting on the current terrain surface.
     const surf = pLand.getHeightAt(Math.floor(this.m_vPos.x));
-    const fRestY = surf - tankHeight();
+    const fRestY = surf - CTank.tankHeight();
 
     // BURIED / underground: only with Bury Tanks on, and only when the surface has risen ABOVE the
     // tank's TOP — i.e. the whole hull is under the dirt. A few px of blast EJECTA lapping the hull
@@ -354,24 +481,24 @@ export class CTank {
 
       if (airborne || up) {
         // Semi-implicit Euler: gravity, then thrust, then integrate.
-        this.m_vVel.y += TANK_GRAVITY * dt;
-        if (up) this.m_vVel.y += JET_UP_ACCEL * dt; // -1.2g
-        if (left) this.m_vVel.x += JET_SIDE_ACCEL * dt; // -0.1g
-        if (right) this.m_vVel.x -= JET_SIDE_ACCEL * dt; // +0.1g
+        this.m_vVel.y += TANK.GRAVITY * dt;
+        if (up) this.m_vVel.y += JET.UP_G * TANK.GRAVITY * dt; // -1.2g
+        if (left) this.m_vVel.x += JET.SIDE_G * TANK.GRAVITY * dt; // -0.1g
+        if (right) this.m_vVel.x -= JET.SIDE_G * TANK.GRAVITY * dt; // +0.1g
         this.m_vPos.x += this.m_vVel.x * dt;
         this.m_vPos.y += this.m_vVel.y * dt;
         this.m_bFalling = true;
         this.m_bIsMoving = true;
 
         // Ceiling clamp at the top of the map.
-        if (this.m_vPos.y < JET_CEILING) {
-          this.m_vPos.y = JET_CEILING;
+        if (this.m_vPos.y < JET.CEILING) {
+          this.m_vPos.y = JET.CEILING;
           if (this.m_vVel.y < 0) this.m_vVel.y = 0;
         }
-        this.m_vPos.x = clamp(this.m_vPos.x, tankRadius(), pLand.width - tankRadius());
+        this.m_vPos.x = clamp(this.m_vPos.x, CTank.tankRadius(), pLand.width - CTank.tankRadius());
 
         // Land when descending onto the surface (keeps fuel for re-lift).
-        const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
+        const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
         if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
           this.m_vPos.y = fLandY;
           this.m_vVel = new Vec2(0, 0);
@@ -395,15 +522,15 @@ export class CTank {
 
     if (this.m_vPos.y < fRestY - 0.5 || bKicked) {
       // Fly under gravity, carrying any kick velocity, until we land.
-      this.m_vVel.y += TANK_GRAVITY * dt;
+      this.m_vVel.y += TANK.GRAVITY * dt;
       this.m_vPos.x += this.m_vVel.x * dt;
       this.m_vPos.y += this.m_vVel.y * dt;
       this.m_bFalling = true;
 
       // Keep within the battlefield.
-      this.m_vPos.x = clamp(this.m_vPos.x, tankRadius(), pLand.width - tankRadius());
+      this.m_vPos.x = clamp(this.m_vPos.x, CTank.tankRadius(), pLand.width - CTank.tankRadius());
 
-      const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
+      const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
       if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
         this.m_vPos.y = fLandY;
         this.m_vVel = new Vec2(0, 0);
@@ -434,7 +561,7 @@ export class CTank {
     const nX = Math.floor(this.m_vPos.x);
 
     // Check bounds (against the real map width, not a hardcoded 800)
-    if (nX < tankRadius() || nX > pLand.width - tankRadius()) {
+    if (nX < CTank.tankRadius() || nX > pLand.width - CTank.tankRadius()) {
       return false;
     }
 
@@ -483,11 +610,11 @@ export class CTank {
       return;
     }
 
-    const stepPx = Math.min(Math.abs(target - this.m_vPos.x), TANK_DRIVE_SPEED * dt);
+    const stepPx = Math.min(Math.abs(target - this.m_vPos.x), TANK.DRIVE_SPEED * dt);
     const newX = this.m_vPos.x + dir * stepPx;
 
     // Stop at the battlefield edge.
-    if (newX < tankRadius() || newX > pLand.width - tankRadius()) {
+    if (newX < CTank.tankRadius() || newX > pLand.width - CTank.tankRadius()) {
       this.endDrive(pLand);
       return;
     }
@@ -497,7 +624,7 @@ export class CTank {
     // slope check halted the crawl on ordinary bumpy terrain (natural columns differ by several
     // px, more than a sub-pixel step allows), so the tank barely moved. Just follow the surface.
     this.m_vPos.x = newX;
-    this.m_vPos.y = pLand.getHeightAt(Math.floor(newX)) - tankHeight();
+    this.m_vPos.y = pLand.getHeightAt(Math.floor(newX)) - CTank.tankHeight();
     this.m_bIsMoving = true;
     if (Math.abs(newX - target) < 0.5) this.endDrive(pLand);
   }
@@ -505,7 +632,7 @@ export class CTank {
   private endDrive(pLand: CLand): void {
     this.m_driveTargetX = null;
     this.m_bIsMoving = false;
-    this.m_vPos.y = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - tankHeight();
+    this.m_vPos.y = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
   }
 
   // ── Jet flight (extType 17) ──────────────────────────────────────────────
@@ -668,7 +795,7 @@ export class CTank {
     if (!this.m_bIsAlive && !this.m_bExploded) return;
 
     const cx = this.m_vPos.x;
-    const surfaceY = this.m_vPos.y + tankHeight(); // ground contact line
+    const surfaceY = this.m_vPos.y + CTank.tankHeight(); // ground contact line
 
     const bodyKey = `tanks/${this.m_sTankType} ${this.m_bExploded ? 'wreck' : 'body'}`;
     const sprite = assets?.getSprite(bodyKey) ?? null;
@@ -679,7 +806,7 @@ export class CTank {
     if (this.m_bIsAlive && !this.m_bExploded && this.isThrustingUp()) {
       const jet = assets?.getSprite('gui/jet');
       if (jet) {
-        const fw = tankWidth() * 0.7;
+        const fw = CTank.tankWidth() * 0.7;
         const fh = (jet.height / jet.width) * fw;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -693,23 +820,29 @@ export class CTank {
     ctx.rotate(this.m_fAngle); // tilt to terrain slope
 
     if (sprite) {
-      const w = hullDrawWidth(sprite);
+      const w = CTank.hullDrawWidth(sprite);
       const h = (sprite.height / sprite.width) * w;
       // Recolour the hull (not the wreck) to the tank's own colour, keeping its
       // shading (Tank → Colorize Team).
       const img =
         this.m_bExploded || !GameConfig.colorizeTeam
           ? sprite.bitmap
-          : tintToColor(sprite, this.m_sColor, `${bodyKey}|${this.m_sColor}`);
+          : CTank.tintToColor(sprite, this.m_sColor, `${bodyKey}|${this.m_sColor}`);
       // Wargame Detail preset: draw the hull as a flat pale-blue silhouette (tactical-map
       // look), not the textured/coloured sprite.
       if (isWargame() && !this.m_bExploded) {
-        ctx.drawImage(silhouette(sprite, WARGAME_TINT, `${bodyKey}|wargame`), -w / 2, -h, w, h);
+        ctx.drawImage(
+          CTank.silhouette(sprite, TINT.WARGAME, `${bodyKey}|wargame`),
+          -w / 2,
+          -h,
+          w,
+          h,
+        );
       } else {
         // High Contrast: stamp a white silhouette at 8 offsets behind the hull so the
         // tank reads as white-outlined against busy terrain.
         if (GameConfig.highContrast && !this.m_bExploded) {
-          const sil = silhouette(sprite, '#ffffff', `${bodyKey}|white`);
+          const sil = CTank.silhouette(sprite, '#ffffff', `${bodyKey}|white`);
           const o = Math.max(1.5, w * 0.045);
           for (const [ox, oy] of [
             [-o, 0],
@@ -735,7 +868,9 @@ export class CTank {
     // The body is drawn rotated about its GROUND-CONTACT pivot (cx, surfaceY), so on a slope its
     // sprite centre swings out — track that rotated centre so the bubble stays concentric.
     if (this.m_bIsAlive && this.m_health.nShield > 0) {
-      const bodyH = sprite ? (sprite.height / sprite.width) * hullDrawWidth(sprite) : tankHeight();
+      const bodyH = sprite
+        ? (sprite.height / sprite.width) * CTank.hullDrawWidth(sprite)
+        : CTank.tankHeight();
       const halfH = bodyH * 0.5;
       const a = this.m_fAngle;
       this.drawShieldDome(ctx, cx + halfH * Math.sin(a), surfaceY - halfH * Math.cos(a));
@@ -757,7 +892,7 @@ export class CTank {
    *  on screen render over the HUD instead of being clipped at the world's edge. */
   paintBadge(ctx: CanvasRenderingContext2D, showDetail: boolean, assets?: ISpriteSource): void {
     if (this.m_bExploded || !this.m_bIsAlive) return;
-    this.drawBadge(ctx, this.m_vPos.y + tankHeight(), showDetail, assets);
+    this.drawBadge(ctx, this.m_vPos.y + CTank.tankHeight(), showDetail, assets);
   }
 
   /**
@@ -771,7 +906,7 @@ export class CTank {
     // Base ring radius is proportional to the tank's on-screen radius (the original uses ~2.5×,
     // but its exact base is unrecoverable); feeding our chunkier collision radius at 2.5× made the
     // bubble too big, so the base is tuned to hug the hull like the original.
-    const r = tankRadius() * 1.7; // snug base ring radius
+    const r = CTank.tankRadius() * 1.7; // snug base ring radius
     const rings: [number, number][] = [[r - 1, 100]]; // the always-on inner ring
     if (shield > 200) rings.push([r + 1, 150]);
     if (shield > 400) rings.push([r + 3, 200]);
@@ -792,7 +927,7 @@ export class CTank {
   /** Simple colour silhouette used until the hull sprite loads. */
   private drawVectorHull(ctx: CanvasRenderingContext2D): void {
     const color = this.m_sColor;
-    const w = tankWidth();
+    const w = CTank.tankWidth();
 
     ctx.fillStyle = this.m_bExploded ? '#333333' : color;
     ctx.beginPath();
@@ -820,16 +955,16 @@ export class CTank {
     const turret = assets?.getSprite(`tanks/${this.m_sTankType} turret`) ?? null;
     if (turret) {
       // Blit at the SAME scale as the hull so the barrel's length + thickness come from the
-      // art (native turret bitmap), not a fixed size. The tip lands at turretDrawLen(), which
+      // art (native turret bitmap), not a fixed size. The tip lands at CTank.turretDrawLen(), which
       // getMuzzlePosition() also uses, so the drawn barrel and the shot-spawn point coincide.
-      const scale = tankBlitScale(this.m_sTankType);
+      const scale = CTank.tankBlitScale(this.m_sTankType);
       const tw = turret.width * scale,
         th = turret.height * scale;
       const turretKey = `tanks/${this.m_sTankType} turret`;
       const img = isWargame()
-        ? silhouette(turret, WARGAME_TINT, `${turretKey}|wargame`) // tactical-map silhouette
+        ? CTank.silhouette(turret, TINT.WARGAME, `${turretKey}|wargame`) // tactical-map silhouette
         : GameConfig.colorizeTeam
-          ? tintToColor(turret, this.m_sColor, `${turretKey}|${this.m_sColor}`)
+          ? CTank.tintToColor(turret, this.m_sColor, `${turretKey}|${this.m_sColor}`)
           : turret.bitmap;
       ctx.save();
       ctx.translate(pivot.x, pivot.y);
@@ -864,7 +999,7 @@ export class CTank {
     showDetail: boolean,
     assets?: ISpriteSource,
   ): void {
-    const w = Math.round(tankWidth() * 0.8); // bars a little narrower than the hull
+    const w = Math.round(CTank.tankWidth() * 0.8); // bars a little narrower than the hull
     const cx = this.m_vPos.x;
     const team = this.m_sColor;
     const life = clamp01(this.m_health.nLife / this.m_maxLife);
@@ -1037,8 +1172,8 @@ export class CTank {
    */
   getTurretPivot(): Vec2 {
     const groundX = this.m_vPos.x;
-    const groundY = this.m_vPos.y + tankHeight(); // ground-contact line
-    const up = turretHgt(this.m_sTankType); // turret height above ground (per-hull)
+    const groundY = this.m_vPos.y + CTank.tankHeight(); // ground-contact line
+    const up = CTank.turretHgt(this.m_sTankType); // turret height above ground (per-hull)
     const s = Math.sin(this.m_fAngle),
       c = Math.cos(this.m_fAngle);
     return new Vec2(groundX + up * s, groundY - up * c); // (0,-up) rotated by body tilt
@@ -1048,7 +1183,7 @@ export class CTank {
   getMuzzlePosition(): Vec2 {
     const pivot = this.getTurretPivot();
     const aim = this.aimUnit();
-    const len = turretDrawLen(this.m_sTankType);
+    const len = CTank.turretDrawLen(this.m_sTankType);
     return new Vec2(pivot.x + aim.x * len, pivot.y + aim.y * len);
   }
 
@@ -1060,7 +1195,7 @@ export class CTank {
     const r = (deg * Math.PI) / 180;
     const aim = new Vec2(Math.cos(r), -Math.sin(r));
     const pivot = this.getTurretPivot();
-    const len = turretDrawLen(this.m_sTankType);
+    const len = CTank.turretDrawLen(this.m_sTankType);
     return new Vec2(pivot.x + aim.x * len, pivot.y + aim.y * len);
   }
 
@@ -1228,8 +1363,8 @@ export class CTank {
   /** Screen/world hit-test for hover (badge detail). */
   isPointInside(px: number, py: number): boolean {
     const dx = px - this.m_vPos.x,
-      dy = py - (this.m_vPos.y + tankHeight() / 2);
-    return dx * dx + dy * dy < (tankRadius() + 8) * (tankRadius() + 8);
+      dy = py - (this.m_vPos.y + CTank.tankHeight() / 2);
+    return dx * dx + dy * dy < (CTank.tankRadius() + 8) * (CTank.tankRadius() + 8);
   }
 
   getPosition(): Vec2 {
@@ -1285,14 +1420,14 @@ export class CTank {
 
   distanceTo(x: number, y: number): number {
     const dx = x - this.m_vPos.x;
-    const dy = y - (this.m_vPos.y + tankHeight() / 2);
+    const dy = y - (this.m_vPos.y + CTank.tankHeight() / 2);
     return Math.sqrt(dx * dx + dy * dy);
   }
 
   /** The tank's collision CENTRE — the point `distanceTo` measures from, and what a shot/beam should
    *  aim AT (its `getPosition` is the top of the hull, so aiming there grazes high). */
   getBodyCenter(): Vec2 {
-    return new Vec2(this.m_vPos.x, this.m_vPos.y + tankHeight() / 2);
+    return new Vec2(this.m_vPos.x, this.m_vPos.y + CTank.tankHeight() / 2);
   }
 
   // ========================================================================
@@ -1353,66 +1488,3 @@ export class CTank {
   private m_bBuried: boolean = false; // trapped below the surface (Bury Tanks) → can't drive/fly
   public m_bExploded: boolean = false;
 }
-
-// ==========================================================================
-// CONSTANTS
-// ==========================================================================
-
-// Base tank geometry (px). Player Size (Settings → Tank) scales all of it uniformly
-// via GameConfig at read time, so a Small/Large tank draws, sits and collides at the
-// chosen size. Accessors below are used everywhere in place of the raw constants.
-const TSZ_R = 16; // Half-width of tank collision box
-const TSZ_H = 24; // Approximate height in pixels
-const TSZ_THGT = 15; // Turret pivot height above the ground line
-const TSZ_W = 46; // On-screen hull width in pixels
-// Native width (px) of the reference hull bitmap (the standard tanks are ~64–70). Every
-// hull is drawn at TSZ_W wide, EXCEPT sprites narrower than this reference — e.g. the
-// compact Sentry (37px) — which keep their true proportion instead of being scaled up to
-// full tank width. Wider sprites still clamp to TSZ_W, so the player hulls are unchanged.
-const REF_HULL_W = 64;
-const hullDrawWidth = (sprite: {width: number}) =>
-  tankWidth() * Math.min(1, sprite.width / REF_HULL_W);
-const tankRadius = () => TSZ_R * GameConfig.tankSizeScale;
-const tankHeight = () => TSZ_H * GameConfig.tankSizeScale;
-// Native bitmap widths per tank type (px): `body` sets the shared blit scale, `turret`
-// sets the barrel length. The original blits hull AND turret at ONE native-size scale, so
-// their proportions come straight from the art. We mirror that: both are drawn at
-// `tankBlitScale`, and the barrel length (= muzzle offset) follows the turret bitmap's own
-// width instead of a fixed constant. Kept as a static table because the muzzle/aim geometry
-// runs with no sprite handy (bot sim). Values must track the tanks/*.bmp files.
-const TANK_ART: Record<string, {body: number; turret: number}> = {
-  Standard: {body: 64, turret: 40},
-  Green: {body: 68, turret: 32},
-  MA1: {body: 68, turret: 50},
-  MSPO: {body: 70, turret: 50},
-  'Atomic Cannon': {body: 70, turret: 61},
-  Sentry: {body: 37, turret: 32},
-};
-const tankArt = (type: string) => TANK_ART[type] ?? TANK_ART.Standard;
-// Scale at which BOTH hull and turret bitmaps are blitted (native px × this). Matches
-// hullDrawWidth() exactly for the body, so the barrel base tracks the drawn hull.
-const tankBlitScale = (type: string) => {
-  const bodyW = tankArt(type).body;
-  return (tankWidth() * Math.min(1, bodyW / REF_HULL_W)) / bodyW;
-};
-// On-screen barrel length = muzzle offset = native turret width × the shared blit scale.
-const turretDrawLen = (type: string) => tankArt(type).turret * tankBlitScale(type);
-// Turret pivot height above the ground line. Default TSZ_THGT nests the pivot inside every hull
-// EXCEPT the short "Atomic Cannon" one (drawn body-top ≈ 13px < 15), where it floats — so that hull
-// gets a lower pivot that seats the barrel back on it. Taller hulls keep the default, so they're
-// unchanged. Keyed on tank type (the muzzle/aim path has no sprite handy, so this is a static fact
-// about the art, not read from the bitmap each call).
-const TURRET_HGT_BY_TYPE: Record<string, number> = {
-  'Atomic Cannon': 11,
-};
-const turretHgt = (type: string) =>
-  (TURRET_HGT_BY_TYPE[type] ?? TSZ_THGT) * GameConfig.tankSizeScale;
-const tankWidth = () => TSZ_W * GameConfig.tankSizeScale;
-const TANK_GRAVITY = 400; // Fall acceleration when unsupported (px/s^2)
-const TANK_DRIVE_SPEED = 70; // Ground-drive crawl speed (px/s) — climbs ANY terrain, no steepness gate
-
-// Jet thrust as multiples of gravity.
-// UP = -1.2g (net -0.2g up while held); L/R = ∓0.1g. Ceiling at the map top.
-const JET_UP_ACCEL = -1.2 * TANK_GRAVITY;
-const JET_SIDE_ACCEL = -0.1 * TANK_GRAVITY;
-const JET_CEILING = 8;

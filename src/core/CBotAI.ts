@@ -61,13 +61,20 @@ export const AI_DEFAULT_LEVEL = 5;
 /** The top difficulty: routes the turn to the Ultra planner instead of the scatter-degraded solve. */
 export const AI_LEVEL_ULTRA = 11;
 
-// Aim search bounds (power in the game's 10..1000 scale; the sweep covers 100+).
-const P_MIN = 100;
-const P_MAX = 1000;
-const COARSE_A = 5; // deg
-const COARSE_P = 70; // power
-const FINE_A = 1;
-const FINE_P = 15;
+/**
+ * Aim search bounds. Power is in the game's 10..1000 scale; the sweep covers 100+. The solve is two
+ * passes — a COARSE sweep to find the neighbourhood, then a FINE one to land it.
+ */
+const AIM = {
+  /** Angle step (deg) / power step of the coarse pass. */
+  COARSE_A: 5,
+  COARSE_P: 70,
+  /** …and of the fine pass. */
+  FINE_A: 1,
+  FINE_P: 15,
+  /** Power sweep bounds. */
+  POWER: [100, 1000],
+} as const;
 
 export interface Pt {
   x: number;
@@ -228,21 +235,21 @@ export function bestAim(
     for (let a = a0; a <= a1; a += aStep) {
       const o = muzzleFor(a);
       for (let p = p0; p <= p1; p += pStep) {
-        if (p < P_MIN || p > P_MAX) continue;
+        if (p < AIM.POWER[0] || p > AIM.POWER[1]) continue;
         const d = simulateMiss(o, a, p, wind, field, target, gustT0);
         if (d < best.dist) best = {angleDeg: a, power: p, dist: d};
       }
     }
   };
 
-  scan(loA, hiA, COARSE_A, P_MIN, P_MAX, COARSE_P); // coarse basin
+  scan(loA, hiA, AIM.COARSE_A, AIM.POWER[0], AIM.POWER[1], AIM.COARSE_P); // coarse basin
   scan(
-    best.angleDeg - COARSE_A,
-    best.angleDeg + COARSE_A,
-    FINE_A, // refine
-    best.power - COARSE_P,
-    best.power + COARSE_P,
-    FINE_P,
+    best.angleDeg - AIM.COARSE_A,
+    best.angleDeg + AIM.COARSE_A,
+    AIM.FINE_A, // refine
+    best.power - AIM.COARSE_P,
+    best.power + AIM.COARSE_P,
+    AIM.FINE_P,
   );
   return best;
 }
