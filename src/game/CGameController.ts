@@ -1190,7 +1190,7 @@ export class CGameController implements ShotWorld {
     const frac = Math.min(1, Math.hypot(dx, dy) / CGameController.AIM_MAX_DRAG);
     const power = 10 + frac * 990; // POWER_MIN(10)..POWER_MAX(1000)
 
-    this.setAngle(Math.round(angleDeg));
+    this.setAngle(angleDeg);
     this.setPower(Math.round(power));
   }
 

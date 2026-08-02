@@ -273,7 +273,9 @@ function DialGrab() {
   const drag = useRef<{x: number; a: number; seq: number} | null>(null);
   const handlers = usePointerDrag<HTMLDivElement>({
     onStart: e => {
-      drag.current = {x: e.clientX, a: game().getAngle(), seq: game().turnSeq()};
+      // Round the base so the dial scrubs the whole-degree grid even when the aim came
+      // from a mouse drag (which keeps sub-degree precision).
+      drag.current = {x: e.clientX, a: Math.round(game().getAngle()), seq: game().turnSeq()};
     },
     onMove: e => {
       const d = drag.current;
@@ -402,7 +404,9 @@ function WeaponList() {
 function ControlPanel() {
   const g = () => game();
   const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
-  const dA = (d: number) => g().setAngle(wrapAngle(g().getAngle() + d));
+  // Step off the ROUNDED angle: a mouse drag can leave a fractional aim (e.g. 170.5), and
+  // the button must land on the whole degree the readout shows (171), not 171.5.
+  const dA = (d: number) => g().setAngle(wrapAngle(Math.round(g().getAngle()) + d));
   // ▲/▼ step through the displayed list with wrap-around (see stepWeapon), the
   // same path the list's mouse-wheel uses.
   const dW = stepWeapon;

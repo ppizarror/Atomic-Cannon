@@ -302,12 +302,11 @@ async function main(): Promise<void> {
         e.preventDefault();
         gameController.requestFire();
         break;
-      // Aim left = increase angle (CCW), aim right = decrease; both wrap at 0/359.
       case 'aimLeft':
-        gameController.setAngle(wrapAngle(gameController.getAngle() + 2));
+        gameController.setAngle(wrapAngle(Math.round(gameController.getAngle()) + 2));
         break;
       case 'aimRight':
-        gameController.setAngle(wrapAngle(gameController.getAngle() - 2));
+        gameController.setAngle(wrapAngle(Math.round(gameController.getAngle()) - 2));
         break;
       case 'powerUp':
         gameController.setPower(Math.min(POWER_MAX, gameController.getPower() + 50));

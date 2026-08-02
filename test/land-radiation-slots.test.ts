@@ -19,6 +19,7 @@ import {describe, it, expect} from 'vitest';
 
 import {CLand} from '../src/core/CLand';
 import {CShot} from '../src/core/CShot';
+import {type CTank} from '../src/core/CTank';
 import {WEAPON_DATABASE, getWeapon, weaponName, type CWeapon} from '../src/core/CWeapon';
 import {Vec2} from '../src/math/Vec2';
 import {weaponDetonate, type ShotWorld} from '../src/core/weapons/WeaponBehavior';
@@ -54,6 +55,7 @@ function land(): CLand {
 class World implements ShotWorld {
   spawned: CShot[] = [];
   blastScale = 1;
+  tanks: CTank[] = []; // no tanks in these tests — the radiation lands on bare terrain
 
   constructor(public land: CLand) {}
 

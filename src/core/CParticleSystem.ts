@@ -318,7 +318,7 @@ const EXHAUST_ATLAS = (() => {
  */
 const FUME = {
   /** Seconds to reach full opacity after birth. */
-  FADE_IN: 0.35,
+  FADE_IN: 0.22,
   /** Mild buoyancy (vs the trail's -0.12) so each generation drifts gently UP off the dirt and
    *  fades — a steady rising stream — without ballooning to the top of the screen. */
   GRAV: -0.048,
@@ -344,7 +344,7 @@ const FUME = {
    *  ~60% nearly transparent, so its effective footprint is well under its drawn diameter. That
    *  coverage has to be bought back with SIZE and COUNT, not with opacity — raising opacity instead
    *  thins the cloud out into visibly separate bubbles. */
-  RATE: 5,
+  RATE: 6,
   /** How much of its size a puff gives up across the tail fade (0 = none, 1 = shrinks to nothing).
    *  Mirrors the exhaust puffs, which contract as they dissolve — see the draw path for why a puff
    *  that fades at CONSTANT size is what exposes its own outline as the cloud dies. */
@@ -359,15 +359,20 @@ const FUME = {
   SIZE_BASE: 1.5,
   SIZE_R: 0.013,
   SIZE_VAR: [0.65, 1.55],
+  /** Where a puff is born relative to the carved surface, in px: negative is above the dirt,
+   *  positive is inside it. Mostly BELOW, so a puff spends its fade-in climbing out of the soil and
+   *  is at full opacity by the time it clears the surface — smoke seeps out of the ground instead of
+   *  appearing in mid-air a dozen px above it. */
+  SEEP_DEPTH: [-2, 7],
   /** Soot. A detonation's first smoke is unburnt and nearly black; as the fire dies the plume pales
    *  to ordinary grey. `SHADE_RAMP` is the fraction of the emission window over which that happens,
    *  and `SHADE_VAR` is the per-puff spread that stops any one generation reading as a flat block. */
   SHADE_DARK: 62,
   SHADE_LIGHT: 232,
-  SHADE_RAMP: 0.78,
+  SHADE_RAMP: 0.62,
   /** Exponent on the soot→grey ramp. Above 1 the smoke HOLDS its dark early and pales late, which
    *  is how a fire actually dies down; a linear ramp reads as a wash straight through to grey. */
-  SHADE_EASE: 1.6,
+  SHADE_EASE: 1.25,
   SHADE_VAR: 26,
   /** Seconds for a puff to reach ~63% of its swell. A fume puff's swell and fade run on ABSOLUTE
    *  age against these time constants, NOT on the normalised age/life. Life scales with the crater
@@ -1371,7 +1376,7 @@ export class CParticleSystem {
     // Fume only from SOIL. Where the ground has been eroded down to the world floor (surface at the
     // view height → no land left in this column), there's nothing to smoke — don't puff into the void.
     if (this.m_groundAt && this.m_viewH > 0 && surf >= this.m_viewH) return;
-    const fy = surf - between(0, 4); // just at the dirt
+    const fy = surf + between(...FUME.SEEP_DEPTH); // born in the dirt, seeps out as it fades in
     // SOOT: the first smoke off a detonation is unburnt and nearly black, paling to ordinary grey
     // as the fire dies. `prog` is how far through its emission window the vent is, so the colour
     // belongs to the GENERATION rather than to the puff's own age — a late puff is grey the moment
