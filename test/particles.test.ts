@@ -381,26 +381,32 @@ describe('Particle system', () => {
     expect(flares.length > 0 && greenish > flares.length * 0.5).toBe(true);
   });
 
-  it('a crater-cutting blast vents a WHITE fume curtain across the crater width', () => {
+  it('the fume curtain SPREADS from one point to the whole crater width', () => {
     const ps = new CParticleSystem();
     ps.setBounds(1600, 1200);
     const cx = 800,
       cy = 600,
       r = 50;
     ps.blast(cx, cy, r, '#ff8c22', false);
-    // The vent stays silent until VENT_DELAY (fumes rise AFTER the blast), so step past it first.
-    for (let i = 0; i < 60; i++) ps.update(1 / 60); // ~1s > VENT_DELAY
-    const parts = particlesPriv(ps).m_particles;
-    // The vent fumes are the only 'smoke' emitter spread across the crater width, WHITE (near-255) —
-    // the original's crater streamers are white.
-    const curtain = parts.filter(
-      p => p.kind === 'fume' && Math.abs(p.x - cx) > r * 0.5 && p.vy < 0,
-    );
-    expect(curtain.length).toBeGreaterThan(0); // white fume curtain is emitted
-    // It lines the crater on BOTH sides — a spread row, not a point.
-    expect(curtain.some(p => p.x < cx) && curtain.some(p => p.x > cx)).toBe(true);
+    const fumes = () => particlesPriv(ps).m_particles.filter(p => p.kind === 'fume');
+    const span = () => {
+      const xs = fumes().map(p => p.x);
+      return xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
+    };
+    // The vent stays silent until its delay (fumes rise AFTER the blast), so step past that first.
+    for (let i = 0; i < 90; i++) ps.update(1 / 60); // ~1.5s > delay
+    expect(fumes().length).toBeGreaterThan(0);
+    // It lights at ONE column and creeps outward, so early on it covers only part of the width.
+    const early = span();
+    expect(early).toBeLessThan(r * 1.7);
+
+    // Given the whole spread window it reaches across the crater, both sides of centre.
+    for (let i = 0; i < 300; i++) ps.update(1 / 60);
+    const wide = fumes().filter(p => Math.abs(p.x - cx) > r * 0.5);
+    expect(span()).toBeGreaterThan(early);
+    expect(wide.some(p => p.x < cx) && wide.some(p => p.x > cx)).toBe(true);
     // They RISE off the bowl (vy < 0) — a fume curtain, not settling debris.
-    expect(curtain.every(p => p.vy < 0)).toBe(true);
+    expect(wide.every(p => p.vy < 0)).toBe(true);
   });
 
   it('a CLEANER blast (Earth Destroy) also vents the crater fume curtain', () => {

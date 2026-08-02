@@ -124,6 +124,7 @@ interface CraterVent {
   age: number; // total time since the blast — only the silent delay is measured against this
   delay: number; // silent period before venting can start (∝ radius: a nuke's bloom lasts longer)
   ramp: number; // seconds to build from a wisp to full emission (∝ radius)
+  seed: number; // where along the crater this vent lit first, as a fraction of r in [-0.85, 0.85]
   wait: number; // time spent HELD because the ground was still moving (capped by FUME.VENT.MAX_WAIT)
   emit: number; // emission clock — advances only while actually venting, so a hold costs no window
   window: number; // how long this crater vents once it starts (∝ radius)
@@ -327,10 +328,46 @@ const FUME = {
    *  a tall rounded plume floating above it, which is why the cloud stopped covering the crater it
    *  came from (emission across the width is uniform — measured at 0% skipped, evenly bucketed — so
    *  the drift, not the spawn, is what empties the ends). */
-  LIFE_BASE: 0.75,
+  LIFE_BASE: 1,
   LIFE_R: [0.018, 0.034],
   /** Peak opacity of a single crater-fume puff. */
-  OP: 0.1,
+  OP: 0.125,
+  /** Puffs emitted per second per unit radius, while venting (tapers to 0 over the window). HIGH so
+   *  the many small puffs overlap into a TIGHT, dense cloud (the legacy look), not spaced distinct
+   *  blobs. Raised together with `GROW`: a puff's SOFT falloff (see `whiteSmoke`) leaves its outer
+   *  ~60% nearly transparent, so its effective footprint is well under its drawn diameter. That
+   *  coverage has to be bought back with SIZE and COUNT, not with opacity — raising opacity instead
+   *  thins the cloud out into visibly separate bubbles. */
+  RATE: 5,
+  /** How much of its size a puff gives up across the tail fade (0 = none, 1 = shrinks to nothing).
+   *  Mirrors the exhaust puffs, which contract as they dissolve — see the draw path for why a puff
+   *  that fades at CONSTANT size is what exposes its own outline as the cloud dies. */
+  SHRINK: 0.35,
+  /** Puff size scales with the BLAST RADIUS, as in the original: its crater streamers take their
+   *  size from `(rand + base) * radius`, so a small round throws small smoke. The scaling is what
+   *  keeps the cloud reading as a cloud at both ends — a flat size in the `between(2.5, 7)` range
+   *  makes one puff ~105% of the crater width at r=30 (a few giant blobs) while measuring only 13%
+   *  at r=250. The BASE term is our own: a pure ratio leaves a grenade's puffs at ~5px, and these
+   *  are soft blobs rather than the original's fire streamers, so they need a floor to stay
+   *  legible. */
+  SIZE_BASE: 1.5,
+  SIZE_R: 0.013,
+  SIZE_VAR: [0.65, 1.55],
+  /** Soot. A detonation's first smoke is unburnt and nearly black; as the fire dies the plume pales
+   *  to ordinary grey. `SHADE_RAMP` is the fraction of the emission window over which that happens,
+   *  and `SHADE_VAR` is the per-puff spread that stops any one generation reading as a flat block. */
+  SHADE_DARK: 62,
+  SHADE_LIGHT: 232,
+  SHADE_RAMP: 0.38,
+  SHADE_VAR: 26,
+  /** Seconds for a puff to reach ~63% of its swell. A fume puff's swell and fade run on ABSOLUTE
+   *  age against these time constants, NOT on the normalised age/life. Life scales with the crater
+   *  (measured: 3.7s at r=90, 8.6s at r=250), so a curve spread across it swells the puff by only
+   *  ~2× over eight seconds — far too slow to register as motion, leaving a big crater's cloud
+   *  looking frozen despite a healthy frame rate. Pinning the swell to a fixed ~1s constant means
+   *  every puff visibly blooms as it leaves the dirt regardless of how long it then drifts, and the
+   *  long life still carries the tall plume. */
+  SWELL_TAU: 0.9,
   /** The EMITTER: when a crater starts smoking, how hard, and for how long. Kept as a sub-group
    *  rather than a second top-level object — a vent and its fumes are one effect, and splitting them
    *  had the emission RATE sitting on the particle side. */
@@ -344,6 +381,11 @@ const FUME = {
      *  moving — spoil raining down, overburden collapsing, the surface sinking — so smoke rises off
      *  earth that has come to rest. Capped, so a map that never fully settles still gets its smoke. */
     MAX_WAIT: 8,
+    /** How far through the window the emission FRONT takes to reach the full crater width. Each vent
+     *  picks a random column to start from and spreads outward from there, so the crater catches
+     *  light at one point and the smoke creeps along it — instead of the entire rim igniting on the
+     *  same frame. A port embellishment: the original seeds every column in one pass at detonation. */
+    SPREAD: 0.4,
     /** Seconds to ramp emission 0 → full (`RAMP + radius · RAMP_R`). Without it the vent switched on
      *  at full rate and read as a chimney being lit; a crater should start with a wisp and build. */
     RAMP: 0.9,
@@ -352,33 +394,6 @@ const FUME = {
     WIN_BASE: 7.5,
     WIN_R: 0.02,
   },
-  /** Puffs emitted per second per unit radius, while venting (tapers to 0 over the window). HIGH so
-   *  the many small puffs overlap into a TIGHT, dense cloud (the legacy look), not spaced distinct
-   *  blobs. Raised together with `GROW`: a puff's SOFT falloff (see `whiteSmoke`) leaves its outer
-   *  ~60% nearly transparent, so its effective footprint is well under its drawn diameter. That
-   *  coverage has to be bought back with SIZE and COUNT, not with opacity — otherwise the cloud
-   *  thins out into visibly separate bubbles, which is exactly what happened when the falloff first
-   *  went in. */
-  RATE: 5,
-  /** How much of its size a puff gives up across the tail fade (0 = none, 1 = shrinks to nothing).
-   *  Mirrors the exhaust puffs, which contract as they dissolve — see the draw path for why a puff
-   *  that fades at CONSTANT size is what exposes its own outline as the cloud dies. */
-  SHRINK: 0.25,
-  /** Soot. A detonation's first smoke is unburnt and nearly black; as the fire dies the plume pales
-   *  to ordinary grey. `SHADE_RAMP` is the fraction of the emission window over which that happens,
-   *  and `SHADE_VAR` is the per-puff spread that stops any one generation reading as a flat block. */
-  SHADE_DARK: 62,
-  SHADE_LIGHT: 232,
-  SHADE_RAMP: 0.38,
-  SHADE_VAR: 26,
-  /** Seconds for a puff to reach ~63% of its swell. A fume puff's swell and fade run on ABSOLUTE
-   *  age against these time constants, NOT on the normalised age/life. Life scales with the crater
-   *  (measured: 3.7s at r=90, 8.6s at r=250), so a curve spread across it billowed the puff by ~2×
-   *  over eight seconds — far too slow to register as motion, which is why a big crater's cloud
-   *  looked frozen despite a healthy frame rate. Pinning the swell to a fixed ~1s constant means
-   *  every puff visibly blooms as it leaves the dirt regardless of how long it then drifts, and the
-   *  long life still carries the tall plume. */
-  SWELL_TAU: 0.9,
 } as const;
 
 /** How much a radioactive heat wisp widens over its life. Modest: the haze is meant to read as a
@@ -409,7 +424,7 @@ const KIND: {GRAV: Record<RenderKind, number>; WIND: Record<RenderKind, number>}
     disc: 0.15,
     flare: 0.5,
     flash: 0,
-    smoke: 1.1, // was 1.6 — the original's grey smoke rides wind at ×1; 1.6 shoved it unnaturally hard
+    smoke: 1.1, // the original's grey smoke rides wind at ×1; much past that shoves it unnaturally hard
     plume: 0.4,
     exhaust: 1.1, // ditto — wind acts on the cluster; the intra-cluster drift is baked
     heat: 0, // ground haze carries its own sideways drift; wind must not smear it off the fallout
@@ -696,10 +711,10 @@ export class CParticleSystem {
 
   /**
    * The MONOTONIC alpha falloff every tinted smoke puff's rim gets. Its shape matters more than
-   * the fact of feathering: a ramp with a FLAT CORE (opaque out to ~0.45r, then falling) was
-   * tried first and made things WORSE — it turns each puff into a clean circular disc, so the
-   * cloud reads as a heap of balls. Falling continuously from the centre leaves no radius at
-   * which an edge can be perceived, so overlaps merge. Keep it monotonic.
+   * the fact of feathering: a ramp with a FLAT CORE (opaque out to ~0.45r, then falling) turns each
+   * puff into a clean circular disc, so the cloud reads as a heap of balls. Falling continuously
+   * from the centre leaves no radius at which an edge can be perceived, so overlaps merge. Keep it
+   * monotonic.
    *
    * (`m_puffCache`'s master uses a similar but separately-tuned curve — deliberately NOT shared:
    * its stops aren't a scaled copy of these, so folding them would change how the trail reads.)
@@ -864,8 +879,8 @@ export class CParticleSystem {
     const c = preset
       ? {r: preset.colorr, g: preset.colorg, b: preset.colorb}
       : CParticleSystem.parseColor(color);
-    // Floor low so a small round (machine gun r8, shotgun r4) stays a small puff —
-    // the old floor of 12 forced every blast to grenade size, so bullets "exploded".
+    // Floor low so a small round (machine gun r8, shotgun r4) stays a small puff — a floor up at
+    // grenade radius would force every blast to grenade size and make bullets "explode".
     const r = Math.max(4, radiusPx);
     // A blast disperses/consumes any smoke in its area — so a later close explosion wipes the
     // intermediate smoke (only the after-settle smoke remains), and a Cleaner that removes the dirt
@@ -955,8 +970,8 @@ export class CParticleSystem {
         );
       } else {
         // Spark spray, speed scaled by the crater for the same reason as emitFireballRing: a fixed
-        // 90 px/s threw a small blast's sparks clear of its own hole. `r` reproduces the old reach
-        // at r ≈ 90 and stays proportional below/above it.
+        // px/s throws a small blast's sparks clear of its own hole. Feeding `r` in as the speed
+        // gives ~90 px/s of reach at r ≈ 90 and stays proportional below and above it.
         this.emitBox(
           x,
           y,
@@ -973,9 +988,8 @@ export class CParticleSystem {
 
     // WHITE fume curtain over the fresh crater FLOOR — for ANY crater-cutting blast (a fiery bomb OR
     // a Cleaner like Earth Destroy; the original gates it on fire-detail + blast size, NOT weapon
-    // type). An immediate DENSE cohort lays down the packed white crescent lining the bowl, and the
-    // The crater smoke emerges AFTER the flash (delayed vent), not during it. Skipped for tiny rounds
-    // and pure deposits (deposits vent above).
+    // type). The crater smoke emerges AFTER the flash (delayed vent), not during it. Skipped for
+    // tiny rounds and pure deposits (deposits vent above).
     if (!small && !deposit) {
       this.ventCrater(x, y, r);
     }
@@ -1066,19 +1080,20 @@ export class CParticleSystem {
    *  SPEED scaled by the blast radius (the original scales its flare speed ∝ blast magnitude).
    *  Shared by the dirt-deposit blast and the fiery non-preset blast so the magic tail can't drift.
    *
-   *  The speeds used to be fixed px/s, which made the spray's REACH a constant while the crater
-   *  scaled: 200 px/s over a 0.7 s life throws a spark 140 px, i.e. 1.5·r out of a 90-radius hole
-   *  but 2.3·r out of a 60-radius one. That is the "offside sparks" a Plasma (r 60) flung into the
-   *  sky while a Plasma Bomb (r 90) — same style, same sprite — looked contained. Scaling on r
-   *  keeps the spray at ~0.3..1.5·r for every weapon; the factors are calibrated at r = 90 so the
-   *  sizes that already read correctly are unchanged. */
+   *  The speeds must stay proportional to r. A fixed px/s makes the spray's REACH a constant while
+   *  the crater scales: 200 px/s over a 0.7 s life throws a spark 140 px, i.e. 1.5·r out of a
+   *  90-radius hole but 2.3·r out of a 60-radius one — a Plasma (r 60) then flings offside sparks
+   *  into the sky while a Plasma Bomb (r 90), same style and same sprite, reads as contained.
+   *  Scaling on r keeps the spray at ~0.3..1.5·r for every weapon; the factors are calibrated at
+   *  r = 90. */
   private emitFireballRing(x: number, y: number, r: number, count: number, c: RGB): void {
     const tail = CParticleSystem.toward255(c, 0.3);
-    // Ember SIZE is a radius fed to the glow blit, which scales it by 1.7 — so the old `r·0.14 + 2`
-    // drew each ember at 0.30·r, i.e. one "spark" nearly as wide as the crater itself, and 33 of
-    // them read as floating orbs rather than a fireball. `r·0.045` puts a member at ~0.12·r.
-    // SPEED tops out at r·1.4 so the furthest ember travels ≈ r over its 0.7 s life and the fireball
-    // stays in the hole it fills; r·2.2 let the tail carry 1.5·r past the rim.
+    // Ember SIZE is a radius fed to the glow blit, which scales it by 1.7, so `r·0.045` puts an
+    // ember at ~0.12·r. The coefficient has to stay that small: at `r·0.14` each ember draws at
+    // 0.30·r — one "spark" nearly as wide as the crater itself — and 33 of them read as floating
+    // orbs rather than a fireball. SPEED tops out at r·1.4 so the furthest ember travels ≈ r over
+    // its 0.7 s life and the fireball stays in the hole it fills; at r·2.2 the tail carries 1.5·r
+    // past the rim.
     const size = r * 0.045 + 1.5; // floor keeps a tiny blast's embers visible
     this.emitRadial(x, y, count, r * 0.5, r * 1.4, 0.35, 0.7, size, tail, 'flare');
   }
@@ -1274,8 +1289,8 @@ export class CParticleSystem {
    * Muzzle SPARK burst — the original's `muzzleSmoke` emitter: a FIXED ~30-particle burst at the
    * barrel, each spark thrown with a random velocity spread of ±(muzzleSmoke·speed) on BOTH axes
    * (the field scales the SPREAD, not the count), in randomized WARM colours. Additive and
-   * short-lived, so it reads as a hot muzzle spray. (Was a grey smoke puff — an interpretation;
-   * this matches the original emitter.) The caller schedules it a beat AFTER `muzzleFlash`.
+   * short-lived, so it reads as a hot muzzle spray rather than a grey smoke puff. The caller
+   * schedules it a beat AFTER `muzzleFlash`.
    */
   muzzleSmoke(x: number, y: number, _dx: number, _dy: number, smoke: number, color: string): void {
     if (smoke <= 0) return;
@@ -1315,8 +1330,14 @@ export class CParticleSystem {
   /** One white smoke puff rising off the disturbed dirt across the crater width. Spawned at the
    *  REAL post-carve surface (so it comes from the earth), white, gently rising and fading — one of
    *  many successive generations the vent keeps producing while it smokes. */
-  private spawnVentPuff(x: number, y: number, r: number, prog = 1): void {
-    const dx = between(-r * 0.85, r * 0.85); // across the disturbed strip (stay off the far rim)
+  private spawnVentPuff(x: number, y: number, r: number, prog = 1, seed = 0): void {
+    // The emission FRONT: puffs start clustered at this vent's seed column and the window widens
+    // with progress until it spans the whole disturbed strip, so the crater lights at a point and
+    // spreads. Clamped to ±0.85r either side, which keeps it off the far rim as before.
+    const reach = 1.7 * Math.min(1, prog / FUME.VENT.SPREAD);
+    const lo = Math.max(-0.85, seed - reach),
+      hi = Math.min(0.85, seed + reach);
+    const dx = between(lo, hi) * r; // across the disturbed strip (stay off the far rim)
     const fx = x + dx + between(-3, 3);
     // The actual carved surface at this column = the dirt the smoke rises from (fallback: bowl arc).
     const surf = this.m_groundAt
@@ -1334,11 +1355,12 @@ export class CParticleSystem {
     const shade = FUME.SHADE_DARK + (FUME.SHADE_LIGHT - FUME.SHADE_DARK) * k;
     const v = clamp(Math.round(shade + between(-FUME.SHADE_VAR, FUME.SHADE_VAR)), 12, 255);
     const life = FUME.LIFE_BASE + r * between(...FUME.LIFE_R); // ∝ radius
+    const size = (FUME.SIZE_BASE + r * FUME.SIZE_R) * between(...FUME.SIZE_VAR); // ∝ radius
     // Small, near-white, FAINT puffs (FUME.OP) — many of these, packed tightly by the high emission
     // rate, overlap into a dense fine-grained cloud (the legacy tight-puff look); the density comes
     // from the stacking, not from any one puff. Gentle rise + mild buoyancy (FUME.GRAV) so each
     // generation drifts up off the dirt and fades.
-    this.add(fx, fy, between(-5, 5), -between(5, 26), {r: v, g: v, b: v}, life, between(2.5, 7), 'fume', undefined, FUME.GROW, FUME.OP, FUME.GRAV); // prettier-ignore
+    this.add(fx, fy, between(-5, 5), -between(5, 26), {r: v, g: v, b: v}, life, size, 'fume', undefined, FUME.GROW, FUME.OP, FUME.GRAV); // prettier-ignore
   }
 
   // Soot-shaded copies of the white fume sprite, bucketed 5 bits deep — only the 2D fallback needs
@@ -1511,6 +1533,7 @@ export class CParticleSystem {
       age: 0,
       delay: FUME.VENT.DELAY + r * FUME.VENT.DELAY_R,
       ramp: FUME.VENT.RAMP + r * FUME.VENT.RAMP_R,
+      seed: between(-0.85, 0.85),
       wait: 0,
       emit: 0,
       window: FUME.VENT.WIN_BASE + r * FUME.VENT.WIN_R, // how long this crater smokes (∝ radius)
@@ -1634,7 +1657,7 @@ export class CParticleSystem {
   //
   // CLand owns the fallout map and the terrain surface, so it decides WHERE and IN WHAT COLOUR a
   // wisp rises. Everything after that decision — the pool, the physics, the sprite cache, the draw
-  // — is particle work and lives here, so CLand no longer runs a private particle system of its own.
+  // — is particle work and lives here, so CLand runs no private particle system of its own.
   // ========================================================================
 
   /** Drop every heat wisp — the land is being regenerated, so its haze goes with it. */
@@ -1661,9 +1684,8 @@ export class CParticleSystem {
 
   /**
    * Draw the radioactive heat haze. Kept OUT of `draw()` on purpose: these wisps belong visually to
-   * the ground, and used to be painted inside CLand.draw() — under the tanks and the aim overlay.
-   * A separate entry point lets the controller call it in exactly that slot, so moving the pool out
-   * of CLand changes the ownership without changing the frame.
+   * the ground, so the controller calls this immediately after the terrain — under the tanks and
+   * the aim overlay — rather than with the rest of the particle pool, which paints over both.
    */
   drawHeat(ctx: CanvasRenderingContext2D): void {
     const fallback = this.heatFallback();
@@ -1810,7 +1832,7 @@ export class CParticleSystem {
       v.acc += v.r * FUME.RATE * env * dt;
       while (v.acc >= 1) {
         v.acc -= 1;
-        this.spawnVentPuff(v.x, v.y, v.r, prog);
+        this.spawnVentPuff(v.x, v.y, v.r, prog, v.seed);
       }
       this.m_craterVents[vw++] = v;
     }
@@ -1908,8 +1930,8 @@ export class CParticleSystem {
           : (1 - t) * 0.5; // softer, so overlapping flares keep their hue
       if (glow <= 0 || alpha <= 0) continue;
 
-      // Blit the pre-baked glow (its baked 0.4 midpoint matches the old 3-stop
-      // gradient); fall back to the gradient only where no canvas exists (tests).
+      // Blit the pre-baked glow (its baked 0.4 midpoint is the 3-stop gradient's);
+      // fall back to a live gradient only where no canvas exists (tests).
       this.blitGlow(ctx, p.x, p.y, glow, p.r, p.g, p.b, alpha);
     }
 
@@ -2133,9 +2155,9 @@ export class CParticleSystem {
 
   /** Render all particles. Additive kinds are batched to set the blend once. */
   private drawSmokeLayer(ctx: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
-    // GPU path: hand the puffs to the compositor as quads and let one batched draw call replace
-    // the thousands of drawImage calls this layer used to cost. The 2D path below stays for
-    // headless tests and for any host without a smoke sink.
+    // GPU path: hand the puffs to the compositor as quads so one batched draw call stands in for
+    // the thousands of drawImage calls this layer would otherwise cost. The 2D path below covers
+    // headless tests and any host without a smoke sink.
     if (this.m_smokeSink) {
       this.emitSmokeQuads(this.m_smokeSink, cullMin, cullMax);
       return;
@@ -2286,14 +2308,13 @@ export class CParticleSystem {
   // MEMBER VARIABLES
   // ========================================================================
 
-  // Pre-baked soft radial glow. The old draw path allocated a fresh
-  // createRadialGradient (+3 addColorStop) for EVERY flare/flash/plume/smoke
-  // fallback, every frame — hundreds of allocations per blast frame. Instead we
-  // bake one white glow sprite once, tint it per colour into a small cache, and
-  // blit it with drawImage — the hot path then allocates nothing.
+  // Pre-baked soft radial glow. Drawing each flare/flash/plume/smoke fallback from a live
+  // createRadialGradient (+3 addColorStop) costs one allocation per particle per frame — hundreds
+  // per blast frame. Instead one white glow sprite is baked once, tinted per colour into a small
+  // cache, and blitted with drawImage, so the hot path allocates nothing.
   private static readonly GLOW_SRC = 32; // master glow radius (px); scaled up per particle
-  // The master glow's falloff mirrors the old flare/flash gradient exactly — solid core,
-  // half-alpha midpoint, transparent rim — so blitting it under 'lighter' reproduces the look.
+  // The master glow's falloff is the flare/flash gradient — solid core, half-alpha midpoint,
+  // transparent rim — so blitting it under 'lighter' gives exactly the gradient's look.
   // Tinting quantises to 4 bits/channel (see TintedSpriteCache): a preset's jittered tints
   // (e.g. an eOrange cluster) fold to a handful of buckets while distinct weapon colours stay
   // apart — invisible on a soft additive glow, and it keeps the count under the cache cap.
