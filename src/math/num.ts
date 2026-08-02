@@ -25,3 +25,13 @@ export const rad2deg = (rad: number): number => rad / DEG;
  * Works for angles (`wrapIndex(deg, 360)`) and list indices alike.
  */
 export const wrapIndex = (i: number, n: number): number => ((i % n) + n) % n;
+
+/** Linear interpolation from `a` to `b` at `t` (unclamped). */
+export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+/**
+ * Hermite ease `3t² − 2t³` on an ALREADY-normalised `t` — flat at both 0 and 1, so a value eased
+ * through it arrives and departs without a visible crease. Inlined as `t * t * (3 - 2 * t)` at four
+ * sites in CLand alone (noise interpolation, coat coverage, scorch falloff).
+ */
+export const smoothstep = (t: number): number => t * t * (3 - 2 * t);

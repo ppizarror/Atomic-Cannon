@@ -705,6 +705,10 @@ export const winner = signal('');
 // Between-battles "winning the war" standings (null during normal play).
 export const warStandings = signal<WarStandings | null>(null);
 
+/** Minimum time the loading plate stays up on a between-battles hand-off (ms) — short enough to
+ *  read as a cut, long enough that a cached landscape doesn't flash it. */
+const BATTLE_COVER_MIN_MS = 300;
+
 /** Advance from the standings screen: the next battle, or exit to the menu when the
  *  war is over (click anywhere on the standings). */
 export function advanceWar(): void {
@@ -716,9 +720,33 @@ export function advanceWar(): void {
   // Nothing is RECORDED here any more: the Battle Heroes boards and the global counters are both
   // written the moment the war ends (see the stats hook in setController), not when the player
   // finally clicks past the standings — leaving that screen open used to throw the match away.
-  if (s.warOver) goToMenu();
-  else game().nextBattle();
+  if (s.warOver) {
+    goToMenu();
+    return;
+  }
+  game().nextBattle();
+  // A new battle rolls a fresh LANDSCAPE (sky + strata + weather), not just fresh heights, so it
+  // gets the same texture hold as a launch: cover the world and freeze the sim until the new
+  // climate is decoded. Without it the battle opens on one frame of new terrain still wearing the
+  // previous map's skin — and the render gate would then HOLD that frame (a frozen sim redraws
+  // only on invalidation), so the mismatch sits there for the whole load. Skipped in net play,
+  // where the server drives the advance (netNextBattle) and a local freeze would stall the
+  // netcode. See enterBattle.
+  if (game().isNetBattleActive()) return;
+  const token = ++launchToken;
+  loading.value = true;
+  freezeSim();
+  void Promise.all([
+    game().assetsReady(),
+    // Floor the cover so an already-cached landscape can't strobe the plate for two frames.
+    new Promise(r => setTimeout(r, BATTLE_COVER_MIN_MS)),
+  ]).then(() => {
+    if (token !== launchToken) return; // superseded (a new launch) — drop the reveal
+    loading.value = false;
+    if (!showPause.value && !showDepot.value && !showHelp.value) unfreezeSim();
+  });
 }
+
 export const screenFlash = signal(0); // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff'); // flash tint (the bomb's colour)
 

@@ -38,9 +38,12 @@ describe('turn hand-off waits for the explosion, not the smoke', () => {
     const ps = new CParticleSystem();
     ps.setBounds(800, 600);
 
-    // Only cosmetic smoke + plume in the pool → the explosion is over.
+    // Only cosmetic smoke + plume in the pool → the explosion is over. 'exhaust' is the BAKED
+    // rocket-trail cluster: still just trail smoke, so it must not hold the turn either — a
+    // Stingers volley leaves thousands of frames' worth of it drifting after the round lands.
     addKind(ps, 'smoke');
     addKind(ps, 'plume');
+    addKind(ps, 'exhaust');
     expect(ps.hasActiveExplosions()).toBe(true); // something is still on screen (keeps drawing)
     expect(ps.hasActiveBlast()).toBe(false); // …but it's only smoke → the turn may hand off
 

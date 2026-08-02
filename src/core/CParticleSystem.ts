@@ -175,7 +175,7 @@ const VENT_WIN_BASE = 7.5;
 const VENT_WIN_R = 0.02;
 // Puffs emitted per second per unit radius, while venting (tapers to 0 over the window). HIGH so the
 // many small puffs overlap into a TIGHT, dense cloud (the legacy look), not spaced distinct blobs.
-const FUME_RATE = 3.2;
+const FUME_RATE = 5;
 // Smoke swell for crater fumes — low so puffs stay small and pack tightly (vs SMOKE_GROW=5.5 exhaust).
 const FUME_GROW = 2.0;
 // Per-puff lifetime ∝ radius: FUME_LIFE_BASE + radius·[min,max]. Each generation rises and fades
@@ -186,12 +186,36 @@ const FUME_LIFE_MAX = 0.04;
 // Crater smoke has mild buoyancy (vs the trail's -0.12) so each generation drifts gently UP off the
 // dirt and fades — a steady rising stream — without ballooning to the top of the screen.
 const FUME_GRAV = -0.05;
+// Peak opacity of a single crater-fume puff. This is what decides whether the cloud reads as smoke
+// or as a pile of separate blobs, and it has to be LOW because the puffs stack so deeply: measured
+// nearest-neighbour spacing is only ~0.25× a puff's drawn diameter, i.e. any given pixel is covered
+// several puffs over. Coverage compounds as 1-(1-op)^N, so at the old 0.6 just four overlapping
+// puffs already reached 0.97 — the interior blew out to flat white and the only thing still legible
+// was the individual puffs around the rim, which is exactly the "too separated" read. At ~0.3 the
+// same stack spans 0.5→0.9, so density builds as a gradient and the cloud holds together.
+const FUME_OP = 0.22;
+// A fume puff's swell and fade run on ABSOLUTE age against these time constants, NOT on the
+// normalised age/life. Life scales with the crater (measured: 3.7s at r=90, 8.6s at r=250), so a
+// curve spread across it billowed the puff by ~2× over eight seconds — far too slow to register as
+// motion, which is why a big crater's cloud looked frozen despite a healthy frame rate. Pinning the
+// swell to a fixed ~1s constant means every puff visibly blooms as it leaves the dirt regardless of
+// how long it then drifts, and the long life still carries the tall plume.
+const FUME_SWELL_TAU = 0.9; // seconds; puff reaches ~63% of its swell in this long
+const FUME_FADE_IN = 0.35; // seconds to reach full opacity after birth
+const FUME_HOLD = 0.55; // fraction of life held at full opacity before the tail fade begins
+// How much of its size a puff gives up across the tail fade (0 = none, 1 = shrinks to nothing).
+// Mirrors the exhaust puffs, which contract as they dissolve — see the draw path for why a puff
+// that fades at CONSTANT size is what exposes its own outline as the cloud dies.
+const FUME_SHRINK = 0.55;
 
 // Rocket-exhaust trail: each puff picks a random angle in the backward spread cone that sets BOTH
 // its perpendicular DRIFT (which side of the tube it settles on) and its gui/rocket plume.bmp ROW
 // (its colour). So the outer edge reads the light UPPER rows and the inner edge the dark LOWER rows
 // — a coherent graded TUBE that emerges statistically (grounded: row = the emission-angle fraction).
-const EXHAUST_PUFFS = 10; // small puffs per sub-step (dense — the trail is many overlapping puffs)
+// Small puffs per sub-step (dense — the trail is many overlapping puffs). On the BAKED path these
+// are free: the whole cohort is one blit whatever this says, so it costs only load-time bake work.
+// Exported so the tests track the knob instead of pinning a literal that tuning would break.
+export const EXHAUST_PUFFS = 10;
 const EXHAUST_PERP = 16; // perpendicular drift speed (px/s) → puffs SPREAD apart as they age (tube widens toward the tail)
 const EXHAUST_HALF = 1; // initial perpendicular half-offset (px) → puffs START close together at the nozzle
 // Per-puff size range and the billow curve's peak — shared by the live path and the bake, so the
@@ -407,8 +431,17 @@ export class CParticleSystem {
 
   /** Lazily build a bright, COOL-tinted copy of the smoke sprite for crater fumes — the grey
    *  `smoke.bmp` lifted toward a light blue-grey-white with `screen` (NOT a flat white fill), so its
-   *  internal fluffy TEXTURE survives: highlights near-white, crevices a cool blue-grey. That shading
-   *  is what makes the packed puffs read as distinct 3-D tufts rather than one flat white blob. */
+   *  internal fluffy TEXTURE survives: highlights near-white, crevices a cool blue-grey.
+   *
+   *  Its alpha is then multiplied by a MONOTONIC radial falloff — the same curve the rocket-trail
+   *  puffs use (see m_puffCache), which is why that trail reads as one blended ribbon while raw
+   *  smoke.bmp reads as pasted-on stamps: the bitmap's own mask ends in a hard edge, so every puff
+   *  keeps a legible outline no matter how densely they pack.
+   *
+   *  The shape matters more than the fact of feathering. A ramp with a FLAT CORE (opaque out to
+   *  ~0.45r, then falling) was tried first and made things WORSE — it turns each puff into a clean
+   *  circular disc, so the cloud reads as a heap of balls. Falling continuously from the centre has
+   *  no radius at which an edge can be perceived, so overlaps merge. Keep this curve monotonic. */
   private whiteSmoke(): HTMLCanvasElement | null {
     if (this.m_whiteSmoke) return this.m_whiteSmoke;
     if (typeof document === 'undefined') return null; // headless (tests): no canvas to tint
@@ -426,6 +459,17 @@ export class CParticleSystem {
     g.fillRect(0, 0, w, h);
     g.globalCompositeOperation = 'destination-in'; // re-mask to the sprite's own alpha shape
     g.drawImage(spr.bitmap, 0, 0, w, h);
+    // …then dissolve the edge with the rocket puff's own falloff (still `destination-in`, so this
+    // multiplies the mask rather than painting over the texture).
+    const cx = w / 2,
+      cy = h / 2;
+    const soft = g.createRadialGradient(cx, cy, 0, cx, cy, Math.min(cx, cy));
+    soft.addColorStop(0, 'rgba(0,0,0,1)');
+    soft.addColorStop(0.4, 'rgba(0,0,0,0.75)');
+    soft.addColorStop(0.75, 'rgba(0,0,0,0.35)');
+    soft.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = soft;
+    g.fillRect(0, 0, w, h);
     g.globalCompositeOperation = 'source-over';
     this.m_whiteSmoke = c;
     return this.m_whiteSmoke;
@@ -895,10 +939,11 @@ export class CParticleSystem {
     const fy = surf - between(0, 4); // just at the dirt
     const v = 225 + Math.floor(rnd() * 28); // near-white 225..253
     const life = FUME_LIFE_BASE + r * between(FUME_LIFE_MIN, FUME_LIFE_MAX); // ∝ radius
-    // Small, near-white puffs (0.6 opacity) — many of these, packed tightly by the high emission
-    // rate, overlap into a dense fine-grained cloud (the legacy tight-puff look). Gentle rise + mild
-    // buoyancy (FUME_GRAV) so each generation drifts up off the dirt and fades.
-    this.add(fx, fy, between(-5, 5), -between(8, 18), {r: v, g: v, b: v}, life, between(3, 5), 'smoke', undefined, FUME_GROW, 0.6, FUME_GRAV); // prettier-ignore
+    // Small, near-white, FAINT puffs (FUME_OP) — many of these, packed tightly by the high emission
+    // rate, overlap into a dense fine-grained cloud (the legacy tight-puff look); the density comes
+    // from the stacking, not from any one puff. Gentle rise + mild buoyancy (FUME_GRAV) so each
+    // generation drifts up off the dirt and fades.
+    this.add(fx, fy, between(-5, 5), -between(8, 18), {r: v, g: v, b: v}, life, between(3, 5), 'smoke', undefined, FUME_GROW, FUME_OP, FUME_GRAV); // prettier-ignore
   }
 
   /**
@@ -1416,10 +1461,26 @@ export class CParticleSystem {
           this.blitGlow(g, p.x, p.y, de / 2, cr, cg, cb, ea);
         }
       } else if (smokeSpr) {
-        // White = CRATER FUMES: the soft white sprite.
-        g.globalAlpha = alpha;
-        g.drawImage(this.whiteSmoke() ?? smokeSpr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
-        g.globalAlpha = 1;
+        // White = CRATER FUMES: the soft white sprite, swelling and fading on ABSOLUTE age so the
+        // motion reads the same whether the puff lives 1.5s (small crater) or 9s (a nuke) — see
+        // FUME_SWELL_TAU. The normalised `t` is used only for the tail fade, which SHOULD stretch
+        // with life: that is what keeps a big crater's plume hanging in the sky.
+        const swell = 0.9 + p.grow * (1 - Math.exp(-p.age / FUME_SWELL_TAU));
+        const tail = Math.min(1, (1 - t) / (1 - FUME_HOLD)); // 1 → 0 across the tail
+        // CONTRACT while fading, the way the exhaust puffs do. A puff that keeps its full size and
+        // merely fades stays a big disc all the way out, so the very last thing left on screen is
+        // its own outline — that is what makes a dying crater cloud break up into visibly separate
+        // circles. Pulling the size in as the alpha goes means each puff dissolves instead.
+        const fd = p.size * swell * (1 - FUME_SHRINK * (1 - tail)) * 2;
+        const fa =
+          Math.min(1, p.age / FUME_FADE_IN) * // bloom in fast off the dirt
+          tail * // hold, then fade out over the tail
+          p.op;
+        if (fa > 0.01) {
+          g.globalAlpha = fa;
+          g.drawImage(this.whiteSmoke() ?? smokeSpr.bitmap, p.x - fd / 2, p.y - fd / 2, fd, fd);
+          g.globalAlpha = 1;
+        }
       } else {
         this.blitGlow(g, p.x, p.y, d / 2, p.r, p.g, p.b, alpha);
       }

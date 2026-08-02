@@ -525,9 +525,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // leaves no burn; a nuke (0.7) scorches wide. Scaled by crackle, skipped when it's 0.
     scorchRim(craterR);
     // DEBRIS/ejecta count is driven by the weapon's `fodder` (how much dirt it kicks up) — a
-    // Shell (fodder 0) throws almost none, a nuke (0.5) throws a huge spray. The chunks fly out and
-    // settle, each RAISING its landing column → rim mounds (the smoothing pass rounds them).
-    const chunks = Math.min(6500, Math.round(fodder * radiusPx * 100 + radiusPx * 0.8));
+    // Shell (fodder 0) throws almost none, a nuke (0.5) throws a huge spray. Each chunk settles
+    // RAISING its landing column 1px, so this count IS the volume of earth thrown back: it is what
+    // decides how far the crater refills, not just how busy the spray looks. In the original a
+    // crater's own ejecta drops most of the way back in; at the old count barely a tenth of the
+    // depth returned and a nuke left a clean pit. Doubled to put ~a quarter of the depth back.
+    const chunks = Math.min(20000, Math.round(fodder * radiusPx * 290 + radiusPx * 2));
     land.addShowerParticles(
       Math.floor(pos.x),
       Math.floor(Math.min(pos.y, surfaceY)),
@@ -560,12 +563,15 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // `dist = rand01 * radius` and the density is ∝ radius. So the zone spreads within
   // the BLAST RADIUS, never a separate scale. `iradiate` is only the on/off gate
   // (tested as `threshold < iradiate`, already covered by rad.time/rad.dmg > 0 here) —
-  // it is NOT a spatial radius, so it must not size the zone. Nukes throw a slightly
-  // wider field, tracking their heavier (×1.35) crater.
+  // it is NOT a spatial radius, so it must not size the zone.
   const rad = weapon.getRadiation();
   if (rad.time > 0 && rad.dmg > 0) {
     const big = weapon.isNukeClass();
-    const zoneR = Math.round(radiusPx * (big ? 1.4 : 1));
+    // MATCHES THE CRATER exactly (nukes cut ×1.35, everything else ×1). The fallout lines the hole
+    // the same blast just dug, so a zone even slightly wider than the crater puts glowing ground
+    // outside the earth the explosion turned over — visible as a rim of fallout on undisturbed
+    // terrain. This was ×1.4 against a ×1.35 crater, which is precisely that overhang.
+    const zoneR = Math.round(radiusPx * (big ? 1.35 : 1));
     // The damage zone + ground glow settle on the SURFACE; but for an airburst the fallout is
     // thrown from the mid-air burst point and RAINS down onto the ground (not up out of a crater).
     land.blastIradiate(

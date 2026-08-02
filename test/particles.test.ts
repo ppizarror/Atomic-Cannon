@@ -3,7 +3,7 @@
  */
 import {describe, it, expect} from 'vitest';
 
-import {CParticleSystem} from '../src/core/CParticleSystem';
+import {CParticleSystem, EXHAUST_PUFFS} from '../src/core/CParticleSystem';
 import {EXP} from '../src/core/weapons/ExpType';
 import {ScreenShake} from '../src/core/rendering/ScreenShake';
 import {Vec2} from '../src/math/Vec2';
@@ -265,6 +265,47 @@ describe('Particle system', () => {
     lo.trail(2000, 1000, '#ffffff', 120, 0, 2); // slow rocket (trailType 2)
     hi.trail(2000, 1000, '#ffffff', 950, 0, 2); // fast (high-power) rocket
     expect(hi.count()).toBeGreaterThan(lo.count()); // faster shot emits more trail smoke
+  });
+
+  // The BAKED exhaust path: when the atlas is available, one sub-step emits a single 'exhaust'
+  // cluster carrying the whole cohort instead of EXHAUST_PUFFS separate 'smoke' puffs — the 5×
+  // draw-call reduction the bake exists for. There is no canvas here (this file drops the stub
+  // `document`), so stand a fake atlas in to select the branch.
+  const withFakeAtlas = (ps: CParticleSystem): void => {
+    (ps as unknown as {exhaustAtlas(): unknown}).exhaustAtlas = () => ({width: 1, height: 1});
+  };
+
+  it('the baked path emits ONE cluster per sub-step where the live path emits a cohort', () => {
+    const live = new CParticleSystem();
+    live.setBounds(4000, 2000);
+    const baked = new CParticleSystem();
+    baked.setBounds(4000, 2000);
+    withFakeAtlas(baked);
+
+    // Identical rocket, identical sub-stepping.
+    live.trail(2000, 1000, '#cccccc', 300, -300, 2, 40, 1 / 60, true);
+    baked.trail(2000, 1000, '#cccccc', 300, -300, 2, 40, 1 / 60, true);
+
+    const kinds = (ps: CParticleSystem) =>
+      (ps as unknown as {m_particles: {kind: string}[]}).m_particles;
+    expect(kinds(live).every(p => p.kind === 'smoke')).toBe(true);
+    expect(kinds(baked).every(p => p.kind === 'exhaust')).toBe(true);
+    // Same number of sub-steps; the baked path collapses each sub-step's whole EXHAUST_PUFFS
+    // cohort into ONE particle, so it emits exactly that factor fewer.
+    expect(baked.count()).toBeGreaterThan(0);
+    expect(live.count()).toBe(baked.count() * EXHAUST_PUFFS);
+  });
+
+  it('a blast disperses BAKED exhaust the same as loose smoke (it is the same trail smoke)', () => {
+    const ps = new CParticleSystem();
+    ps.setBounds(4000, 2000);
+    withFakeAtlas(ps);
+    ps.trail(2000, 1000, '#cccccc', 300, -300, 2, 40, 1 / 60, true);
+    expect(ps.count()).toBeGreaterThan(0);
+    // A detonation on top of the trail clears the smoke in its area — clusters included, or a
+    // rocket flying into its own blast would leave its exhaust hanging through the fireball.
+    (ps as unknown as {clearSmoke(x: number, y: number, r: number): void}).clearSmoke(2000, 1000, 90); // prettier-ignore
+    expect(ps.count()).toBe(0);
   });
 
   // Helper: the live 'smoke' particles of a system.

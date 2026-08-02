@@ -97,4 +97,29 @@ describe('Winning the war', () => {
     expect(t[0].getKills()).toBe(2); // kills carry across battles
     expect(t[0].isAlive() && t[1].isAlive() && t[2].isAlive()).toBe(true); // respawned full
   });
+
+  // Regression: a new battle regenerated only the HEIGHTMAP — the landscape (sky, strata
+  // textures, weather, ambient tint) was picked once at startGame and then held for the whole
+  // war, so every battle was fought in the same place. The original rebuilds the whole level per
+  // battle (`FUN_004259c0(this, -1, …)`: roll a random enabled background → its land.txt block).
+  it('nextBattle rolls a fresh landscape, not just fresh terrain', () => {
+    const gc = newGame();
+    const priv = gc as unknown as {pickLandscapeIndex(): number; m_loadPromise: Promise<void>};
+    // Count the rolls: headless can't decode the art (the Image mock never fires onload), so the
+    // pick itself — not the applied sky/strata — is what's observable here.
+    let picks = 0;
+    const pick = priv.pickLandscapeIndex.bind(gc);
+    priv.pickLandscapeIndex = () => {
+      picks++;
+      return pick();
+    };
+    const loadBefore = priv.m_loadPromise;
+
+    gc.nextBattle();
+    expect(picks).toBe(1); // exactly one landscape rolled for the new battle
+    expect(priv.m_loadPromise).not.toBe(loadBefore); // …and its load re-armed for assetsReady()
+
+    gc.nextBattle();
+    expect(picks).toBe(2); // every battle, not just the first hand-off
+  });
 });

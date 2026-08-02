@@ -879,9 +879,36 @@ export class CGameController implements ShotWorld {
   /**
    * Pick a random landscape from land.json and load its background + depth-sorted
    * terrain textures. Fire-and-forget: the terrain shows a gradient until ready.
+   *
+   * Called at every LEVEL build — match start AND each new battle of a war — because that is
+   * what the original does: the war's next battle runs the whole level builder again
+   * (`FUN_004259c0(this, -1, …)`), whose `-1` means "roll a random ENABLED background", and the
+   * chosen background is also the key into `land.txt` for the strata textures + weather. So a
+   * new battle is a new CLIMATE, not just a new heightmap.
    */
   private async loadLandscape(): Promise<void> {
     const cfg = LAND_DATA[this.pickLandscapeIndex()];
+
+    // Load every asset BEFORE touching the live scene (the swap block below is synchronous), so a
+    // between-battles change never shows a half-applied climate: the outgoing map keeps its sky,
+    // strata and weather until the incoming one is fully decoded.
+    //
+    // The sky is keyed by its FILE, not a fixed 'bg' slot — CAssetManager dedupes by NAME, so a
+    // reused slot would resolve instantly against the FIRST battle's image and pin that sky for
+    // the whole war. Per-file keys also make revisiting a landscape free.
+    const bgKey = 'bg:' + cfg.bg;
+    await this.m_assets.loadImage(bgKey, '/assets/' + cfg.bg);
+
+    await Promise.all([
+      ...cfg.layers.map(l => this.m_assets.loadImage('tile:' + l.tile, '/assets/' + l.tile)),
+      // Bare-earth texture for de-grassed craters + the raised radiation deposit: a
+      // single dirt bitmap (`ldirt1.bmp`), loaded explicitly and used everywhere
+      // craters expose / fallout deposits earth — a consistent brown dirt regardless
+      // of the landscape (which may be mossy rock, marble, …).
+      this.m_assets.loadImage('tile:land/ldirt1.bmp', '/assets/land/ldirt1.bmp'),
+    ]);
+
+    this.m_bgKey = bgKey;
     this.m_ambient = hexToRgb(cfg.ambient); // per-map mood tint for Ambient Lighting (from land.json)
 
     // Precipitation / blowing sand declared by this map (snow, rain, hail, dust). Size the weather
@@ -889,7 +916,7 @@ export class CGameController implements ShotWorld {
     // from m_viewW/H on a net match (host resolution) or after a pre-Play window resize, otherwise
     // leaving a strip of sky with no precipitation or a visible toroidal-wrap seam inside the view.
     this.m_weather.setBounds(this.m_viewW, this.m_viewH);
-    this.m_weather.configure(cfg.weather);
+    this.m_weather.configure(cfg.weather); // replaces the previous battle's bands outright
 
     // A themed name for the depot footer, derived from the map's dominant weather (localised).
     const wx = new Set((cfg.weather ?? []).map(w => w.type));
@@ -904,12 +931,6 @@ export class CGameController implements ShotWorld {
             ? mapNames.hail
             : mapNames.default;
 
-    await this.m_assets.loadImage('bg', '/assets/' + cfg.bg);
-
-    await Promise.all(
-      cfg.layers.map(l => this.m_assets.loadImage('tile:' + l.tile, '/assets/' + l.tile)),
-    );
-
     const layers = cfg.layers
       .map(l => {
         const sprite = this.m_assets.getSprite('tile:' + l.tile);
@@ -917,11 +938,6 @@ export class CGameController implements ShotWorld {
       })
       .filter((x): x is {image: CanvasImageSource; depth: number} => x !== null);
 
-    // Bare-earth texture for de-grassed craters + the raised radiation deposit: a
-    // single dirt bitmap (`ldirt1.bmp`), loaded explicitly and used everywhere
-    // craters expose / fallout deposits earth — a consistent brown dirt regardless
-    // of the landscape (which may be mossy rock, marble, …).
-    await this.m_assets.loadImage('tile:land/ldirt1.bmp', '/assets/land/ldirt1.bmp');
     const bareTile =
       cfg.layers.find(l => /dirt|sand|mud|clay/i.test(l.tile)) ??
       cfg.layers.find(l => !/grass/i.test(l.tile)) ??
@@ -1445,7 +1461,7 @@ export class CGameController implements ShotWorld {
     ctx.translate(shakeOffset.x, shakeOffset.y);
 
     // Backdrop: real background image once loaded, else a night-sky gradient.
-    const bg = this.m_assets.getSprite('bg');
+    const bg = this.m_bgKey ? this.m_assets.getSprite(this.m_bgKey) : null;
     if (bg) {
       ctx.drawImage(bg.bitmap, 0, 0, this.m_viewW, this.m_viewH);
     } else {
@@ -3614,9 +3630,9 @@ export class CGameController implements ShotWorld {
     );
   }
 
-  /** Start the next battle of a war: fresh terrain, tanks respawned (cumulative war
-   *  stats + credits kept), turn order reset. No-op once the war is over (the caller
-   *  exits to the menu instead). */
+  /** Start the next battle of a war: fresh LANDSCAPE (climate + terrain), tanks respawned
+   *  (cumulative war stats + credits kept), turn order reset. No-op once the war is over (the
+   *  caller exits to the menu instead). */
   nextBattle(): void {
     if (this.getWarOver()) return;
     this.m_currentBattle++;
@@ -3640,6 +3656,13 @@ export class CGameController implements ShotWorld {
     this.m_rockets = [];
     this.m_showFireworks = false;
     this.generateTerrain();
+    // A new battle is a new PLACE, not just a new heightmap: roll a fresh landscape (sky, strata
+    // textures, weather, ambient tint) exactly as the original's level builder does per battle.
+    // Kept in m_loadPromise so the caller can hold the standings/loading screen up until the new
+    // climate is decoded (see assetsReady + advanceWar) rather than popping it in mid-battle.
+    // NET: pickLandscapeIndex draws from the seeded RNG here, and netNextBattle reseeds it from the
+    // server's per-battle seed right before this call — so every client rolls the same landscape.
+    this.m_loadPromise = this.loadLandscape();
     // Sentries are per-battle: clear last battle's deployed turrets before respawning.
     this.m_tanks = this.m_tanks.filter(t => !t.isSentry());
     const n = this.m_tanks.length;
@@ -6594,6 +6617,10 @@ export class CGameController implements ShotWorld {
       };
       poll();
     });
+    // The sprites the particle system bakes from (gui/rocket plume.bmp) are loaded now, so build
+    // the exhaust atlas here rather than letting it build lazily on the first rocket — that would
+    // put its one-off cost on the frame the shot is fired (the "first fire is laggy" class of hitch).
+    this.m_particles.prewarm();
   }
 
   /** True while the human is jet-flying (Flying state). */
@@ -7014,8 +7041,13 @@ export class CGameController implements ShotWorld {
   // until the player actually starts a match (Play / Quick Play / a dev URL flag).
   private m_started = false;
   // The in-flight landscape load for the current match (bg + terrain layers). assetsReady()
-  // awaits it so the loading screen lifts only once the world is textured.
+  // awaits it so the loading screen lifts only once the world is textured. Re-armed by every
+  // battle of a war, which rolls a fresh landscape (see loadLandscape).
   private m_loadPromise: Promise<void> = Promise.resolve();
+  // Asset key of the CURRENT battle's sky ('bg:<file>'), empty until the first one decodes (the
+  // draw falls back to the gradient sky). Swapped only once the new image is in the cache, so a
+  // battle change cuts straight from one sky to the next.
+  private m_bgKey = '';
   private m_currentPlayerIndex: number = 0;
 
   // Firing controls

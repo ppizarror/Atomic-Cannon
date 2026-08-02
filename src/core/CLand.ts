@@ -3,7 +3,9 @@
  */
 
 import {Vec2} from '../math/Vec2';
-import {clamp, clamp01, TWO_PI} from '../math/num';
+import {clamp, clamp01, smoothstep, TWO_PI} from '../math/num';
+import {blotchNoise, hashLattice} from '../math/noise';
+import {between, plusMinus} from '../math/random';
 import {GameConfig} from './CGameConfig';
 import {isRealisticWind, windProfile} from './wind';
 
@@ -57,6 +59,9 @@ interface RadSpeck {
   settled: boolean;
   size: number;
   rise: number; // height ABOVE the surface once settled (position within the fallout pile)
+  zx: number; // x of the blast that threw this grain — how far out it LANDS sets its coat depth
+  zr: number; // that blast's zone radius (the depth taper is measured against it)
+  raining: boolean; // thrown from a mid-air burst: it has no crater to stay inside, so it may spread
   phase: number; // random glow-pulse phase (so specks shimmer INDEPENDENTLY, no coherent wave)
   pw: number; // random glow-pulse angular rate (each speck breathes at its own speed)
   r: number;
@@ -89,7 +94,9 @@ interface Fall {
   target: number;
   vel: number;
   colors: Uint32Array;
-  mats: Uint8Array; // material tag per captured pixel (kept in sync so the block isn't stale in debug)
+  // Packed material byte per captured pixel: the dirt tag AND how radioactive that earth is, so a
+  // sliding cliff carries its fallout down with it instead of leaving it hanging where it used to be.
+  mats: Uint8Array;
 }
 
 // ==========================================================================
@@ -115,6 +122,10 @@ const DIRT_THROW_UP_SPAN = 70; // varied arc heights → staggered landings (no 
 /** Chunks are born across a disc of `radius × this`, so the pile is BROAD (a wide dome) rather than a
  *  tall spire — the legacy Mountain is a broad hill. Wider disc → wider base, lower peak (same volume). */
 const DIRT_DISC_SPREAD = 2.0;
+/** Share of a crater's DEPOSITING ejecta thrown on the wide radial arc instead of nearly straight
+ *  up — the clods that sail out and land well away from the blast. They deposit where they fall, so
+ *  this is earth genuinely carried off the crater: enough to watch, not enough to empty the hole. */
+const EJECTA_FLUNG_FRACTION = 0.15;
 /** Max deposit height: dirt cannot pile above this screen-Y (a fraction of world height from the
  *  top). A chunk landing on a capped column is discarded, so tall stacks (Land Fill) FLAT-TOP into a
  *  mesa instead of spiking — matching the original's deposit-height settle gate. */
@@ -123,32 +134,83 @@ const DIRT_CAP_FRACTION = 0.16;
  *  this far above where it landed — it reads as buried under the fresh dirt, not glowing on top.
  *  Comfortably above per-frame slump jitter so post-crater repose doesn't flicker the crater-face
  *  coat; well below the tens of px a Dirt weapon piles, so a real fill always buries it. */
-const RAD_BURY_MARGIN = 6;
+/** How hot one landed grain makes its pixel, drawn up to full. Piling means each pixel is marked by
+ *  exactly ONE grain, so a weak stamp leaves the entire coat dim rather than shading it — the
+ *  variation that used to come from grains overlapping has to come from the draw instead. */
+const RAD_STAMP_MIN = 70;
+/** How far below a column's surface counts as "standing on radioactive ground" for damage. The
+ *  coat is packed against the surface, so this only has to cover the contact layer. */
+const RAD_CONTACT_DEPTH = 10;
+/** Upward launch (px/s) of ground-burst fallout. Against RAD_GRAV this buys ~2.5-4s of airtime, so
+ *  the grains come down AFTER a crater's ejecta has finished refilling the hole (which it does by
+ *  ~2.2s). The windows must not overlap: a grain landing while the floor is still rising gets built
+ *  over, and its pile ends up measured from a surface that no longer exists — which shows up as a
+ *  second, deeper cluster in the coat. Sized off the ejecta's own settle time, not by eye. */
+/** Deepest a column's fallout pile may grow. A cap, not a shape — the shape comes from how many
+ *  grains actually landed. */
+const RAD_PILE_MAX = 40;
+const RAD_UP_MIN = 200;
+const RAD_UP_MAX = 340;
+/** How far below its column's surface radioactive earth still lights up. Past this it is buried:
+ *  the ground above it is opaque, so lighting it would show the glow through solid terrain — which
+ *  is how an OLD coat, covered by a later blast's fill, used to draw a second arc hanging over the
+ *  hole. Set just past the pile's own reach so a fresh coat is shown whole and only genuinely
+ *  buried radiation is hidden. */
+const RAD_GLOW_DEPTH = 28;
+/** Brightness of one fully-hot pixel of ground, and how much of it bleeds onto each orthogonal
+ *  neighbour. Together they stand in for the 5-pixel additive cross the loose specks used to draw:
+ *  the coat's glow came from those crosses overlapping, so a flat one-pixel-per-grain field reads
+ *  far duller than the carpet it replaced. The gain is BELOW 1 now only because piling made every
+ *  marked pixel near-full strength — at the old weak stamp it had to be 1.35 just to be seen, and
+ *  leaving it there washed the coat out to pale instead of a saturated hue. */
+/** The material byte packs TWO properties of a pixel of earth. Bit 0 is the dirt tag (deposited
+ *  fill vs native land, what the scorch reads so it burns both alike); bits 1-7 are how radioactive
+ *  that earth is, 0-127. Radioactivity wanted a per-pixel home and this byte had seven bits spare —
+ *  a second full-world buffer would have cost another W×H for nothing, and those are already the
+ *  largest steady-state allocation here. Packing them also makes the coupling FREE: every terrain
+ *  edit already rewrites this byte, so earth arriving is clean and earth leaving takes its
+ *  radioactivity with it without a single line spent saying so. */
+const MAT_RAD_MAX = 127;
+const matRad = (b: number): number => b >>> 1;
+const matSetRad = (b: number, rad: number): number => (b & 1) | (Math.min(MAT_RAD_MAX, rad) << 1);
 
-/** Deterministic 0..1 hash of a lattice point — the source of the scorch blotch field. */
-function hashLattice(x: number, y: number): number {
-  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+const RAD_GLOW_GAIN = 0.8;
+const RAD_GLOW_SPREAD = 0.55;
+
+/** Blotch scale (px) that warps the soil coat's mixing zone. This octave does NOT cut the boundary
+ *  (the per-pixel dither does that) — it only makes the mix well deeper in some places than others,
+ *  so the transition wanders instead of fading out at one even rate. */
+const DIRT_COAT_CELL = 9;
+/** Fraction of the soil band that is turned over SOLIDLY before the fringe starts to break up.
+ *  Without it the crater's own face gets holes in it, which reads as a chewed rim, not a soft one. */
+const DIRT_COAT_SKIN = 0.5;
+
+/**
+ * How much earth a blast of radius `r` turns over under the detonation — the thickness at ground
+ * zero of the layer it disturbs. The layer thins from here toward the rim (`coatDepth`).
+ *
+ * ONE figure for the whole blast, shared by everything that lines the new crater face. The soil
+ * coat and the fallout that settles into it are two views of the same disturbed ground, so they
+ * have to agree on how deep it goes: when the fallout ran on its own, larger figure it reached
+ * about twice as far down as the earth it was supposedly lying in, and the glow read as a
+ * separate, deeper shape hanging below the crater rather than a coating of it.
+ */
+function coatFullDepth(r: number): number {
+  return clamp(Math.round(r * 0.22), 12, 40);
 }
 
-/** Smooth value noise (0..1) sampled on a `cell`-px lattice — soft blotches rather than per-pixel
- *  speckle. Keyed to WORLD coordinates, so every scorch that touches a spot agrees on its value and
- *  overlapping burns merge into one continuous patch instead of reading as stacked discs. */
-function blotchNoise(x: number, y: number, cell: number): number {
-  const fx = x / cell,
-    fy = y / cell;
-  const ix = Math.floor(fx),
-    iy = Math.floor(fy);
-  let tx = fx - ix,
-    ty = fy - iy;
-  tx = tx * tx * (3 - 2 * tx); // smoothstep the interpolation → no lattice creases
-  ty = ty * ty * (3 - 2 * ty);
-  const a = hashLattice(ix, iy),
-    b = hashLattice(ix + 1, iy),
-    c = hashLattice(ix, iy + 1),
-    d = hashLattice(ix + 1, iy + 1);
-  return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+/**
+ * The shared profile for anything a blast COATS onto the crater face — how thick the layer is at
+ * horizontal offset `dx` from a blast of radius `r`, given its thickness `full` at ground zero.
+ *
+ * `full` under the detonation easing to a few px at the rim, so a coat piles up where the blast
+ * was and runs out as it climbs the bowl. Both the soil the carve lays down and the fallout that
+ * settles on it run through here: they cover the same hole, so a coat with its own private
+ * thickness curve reads as a second, unrelated shape drawn over the first.
+ */
+function coatDepth(dx: number, r: number, full: number): number {
+  const t = r > 0 ? Math.min(1, Math.abs(dx) / r) : 1;
+  return 4 + (full - 4) * (1 - t * t);
 }
 
 export class CLand {
@@ -285,6 +347,7 @@ export class CLand {
     this.m_terrainImage = this.m_debugImage = null;
     this.m_pixels = null;
     this.m_material = null;
+    this.m_radBoxX1 = this.m_radBoxY1 = -1; // hot-earth extent goes with it
     this.m_dirtTile = null;
   }
 
@@ -444,6 +507,9 @@ export class CLand {
         // on the substrate below, filling the cut — the "upper section falls down".
         const colors = new Uint32Array(overThick);
         const mats = new Uint8Array(overThick);
+        // The block's radioactivity travels WITH it. Captured here and cleared below like the
+        // pixels, so a cliff sliding down does not leave its fallout hanging in the air where the
+        // cliff used to be — the block is the same earth, just lower.
         for (let i = 0; i < overThick; i++) {
           colors[i] = px[(surf + i) * W + col];
           if (mat) mats[i] = mat[(surf + i) * W + col];
@@ -452,6 +518,7 @@ export class CLand {
           px[yy * W + col] = 0;
           if (mat) mat[yy * W + col] = 0;
         }
+        this.m_radGlowDirty = true;
         this.m_falls.push({col, y: surf, thick: overThick, target: surf + removed, vel: 0, colors, mats}); // prettier-ignore
         h[col] = surf; // surface = the falling block's (current) top
       } else {
@@ -487,8 +554,12 @@ export class CLand {
     for (let k = 0; k < f.thick; k++) {
       const idx = (top + k) * W + f.col;
       px[idx] = draw ? f.colors[k] : 0;
-      if (mat) mat[idx] = draw ? f.mats[k] : 0;
+      if (mat) {
+        mat[idx] = draw ? f.mats[k] : 0;
+        if (draw && matRad(f.mats[k])) this.growRadBox(f.col, top + k); // it moved, so did its glow
+      }
     }
+    this.m_radGlowDirty = true;
   }
 
   /** Advance falling overburden blocks (beam/digger collapse): each slid-down cap accelerates
@@ -635,7 +706,10 @@ export class CLand {
     const px = this.m_pixels;
     const W = this.m_nWidth;
     const heights = this.m_arrHeights;
-    const dirtBand = clamp(Math.round(r * 0.22), 12, 40);
+    // Thickness of the soil coat AT THE CENTRE of the bowl; it thins toward the rim on the shared
+    // `coatDepth` curve, the same one the fallout settles on. A flat band all the way round made
+    // the two layers disagree about the shape of the hole they both line.
+    const dirtFull = coatFullDepth(r);
     // `ragged`: a gentle wobble on the disc radius so an EXPLOSION crater reads as a rough hole (what
     // the old blastCircle gave). Two out-of-phase sines (random per-crater phases) → an irregular but
     // SMOOTH profile; every column is still CUT (varying depth → wavy floor), so it does NOT strand
@@ -656,13 +730,37 @@ export class CLand {
       // surface until the block lands, and coating the void there would strand floating dirt.
       if (coatDirt && px && base > 2 && heights[c] > before) {
         const mat = this.m_material;
-        const bandBot = Math.min(this.m_nHeight, heights[c] + dirtBand);
-        for (let yy = heights[c]; yy < bandBot; yy++) {
+        const top = heights[c];
+        const band = coatDepth(dx, r, dirtFull); // thins toward the rim (shared with the fallout)
+        const bandBot = Math.min(this.m_nHeight, top + Math.ceil(band));
+        for (let yy = top; yy < bandBot; yy++) {
           const i = yy * W + c;
-          if ((px[i] & 0xff000000) !== 0) {
-            px[i] = this.dirtColorAt(c, yy);
-            if (mat) mat[i] = CLand.MAT_DIRT;
+          if ((px[i] & 0xff000000) === 0) continue;
+          const v = (yy - top) / band; // 0 at the face → 1 at the band floor
+          // The face itself is turned over SOLIDLY — the blast scoured it. Only below DIRT_COAT_SKIN
+          // does coverage fall away, so the coat dissolves into the native strata with depth instead
+          // of stopping on a ruled line. The radial thinning lives entirely in `band` above: taking
+          // it out of coverage as well would eat holes in the crater's own edge, which reads as the
+          // rim breaking into blobs rather than as a soft boundary.
+          let cover = 1;
+          if (v > DIRT_COAT_SKIN) {
+            const u = (1 - v) / (1 - DIRT_COAT_SKIN);
+            cover = smoothstep(u); // eased to zero at the band floor
+            // Decide each pixel INDEPENDENTLY, on a per-pixel dither. Thresholding a smooth noise
+            // field instead makes the two materials meet along a contour — the soil ends on a wavy
+            // line and the fringe combs into vertical spikes — whereas dithering interleaves them
+            // grain by grain, so the turned earth and the ground it came from genuinely mix.
+            // The coherent octave only WARPS the threshold, so the mixing zone wanders and wells
+            // deeper in places; dither alone dissolves in a perfectly even haze that reads as
+            // machine-made. World-keyed, so overlapping craters agree where they meet.
+            const w = cover * (0.5 + blotchNoise(c, yy, DIRT_COAT_CELL));
+            if (hashLattice(c, yy) > w) continue;
           }
+          px[i] = this.dirtColorAt(c, yy);
+          // Tag it churned soil while KEEPING its radioactivity: this is earth the carve left in
+          // place, only re-textured, so wiping the bits here would decontaminate ground the blast
+          // never removed — the same mistake the old disc-wide clear made.
+          if (mat) mat[i] = (mat[i] & ~1) | CLand.MAT_DIRT;
         }
       }
     }
@@ -694,6 +792,10 @@ export class CLand {
       this.m_radParticles = this.m_radParticles.filter(z => outside(z.x, z.y));
     if (this.m_heat.length) this.m_heat = this.m_heat.filter(h => outside(h.x, h.y));
     if (this.m_radSpecks.length) this.m_radSpecks = this.m_radSpecks.filter(s => outside(s.x, s.y));
+    // NOT the radiation channel. The carve already cleared every pixel it actually removed, via
+    // `setColumnTop`; wiping the disc on top of that scrubs radioactivity off earth that SURVIVED
+    // the blast — which is the old guess-what-happened behaviour this channel replaced, and reads
+    // as a new explosion mysteriously decontaminating the ground around it.
   }
 
   /**
@@ -902,12 +1004,6 @@ export class CLand {
     // Nukes/DOT ship no explicit irRGB → glow a hot radioactive red-orange.
     const [r, g, b] = rgb && (rgb[0] || rgb[1] || rgb[2]) ? rgb : [255, 46, 20];
 
-    // How DEEP the settled specks scatter into the crater face. The original's nominal band is
-    // ~11px, but on a big steep bowl the red should coat the WHOLE face — over the dirt band and
-    // a little below it — so it reads like the reference (red filling the bowl), not a thin surface
-    // line. Radius-driven so it tracks the dirt band (`radius·0.22`) and covers it.
-    this.m_radBandDepth = Math.max(12, Math.round(nRadius * 0.32));
-
     // The fallout lingers longer than the raw irTime and dims GRADUALLY.
     // Stretch the visible life ~1.6× so the radioactive ground glows for a
     // good while and decays slowly.
@@ -934,16 +1030,29 @@ export class CLand {
     // POOL densely — the on-surface tint should read as a solid irradiated carpet (the reference
     // shows a deep red band, not a thin surface line), so the density carries the whole effect
     // (radiation writes NO terrain pixels — there is no baked recolour to fall back on).
-    const n = clamp(Math.round(nRadius * 40), 700, 16000);
+    // This count IS the coat's thickness now. A grain settles onto the pile already in its column,
+    // one pixel at a time, so however many land on a spot is how deep the fallout goes there —
+    // there is no separate depth to tune, and raising or lowering this moves the whole profile
+    // together instead of leaving a count and a curve to disagree.
+    const n = clamp(Math.round(nRadius * 82), 900, 20000);
     const pool = this.m_speckPool;
     for (let i = 0; i < n; i++) {
       const ang = Math.random() * TWO_PI;
-      const dist = Math.random() * nRadius; // spawn spread across the whole radius (faithful)
-      // The original scatters each grain across the blast radius (`pos = center + rand·radius·dir`)
-      // and gives it only a SMALL radial velocity (`rand·8+2` in the source's units). The visible
-      // fall comes from the SPREAD — grains that land high in the upper half of the disc drop back
-      // down under gravity — NOT from a big launch. So: full-radius spawn + a gentle radial nudge.
-      const speed = 20 + Math.random() * 65; // small radial launch (the spread does the spreading)
+      // Radial placement: UNIFORM OVER THE DISC's area, `sqrt(u)·radius`, so the grains cover the
+      // blast footprint at one even density — the same way the carve coats every column of the
+      // bowl face it cuts. The original's flat `rand·radius` looks like it spreads evenly but does
+      // not: a ring at distance d holds grains ∝ d·dd of area yet receives a constant share of the
+      // draw, so density runs as 1/d and heaps into a bell at ground zero. That hump is what read
+      // as a mound of fallout sitting inside the crater instead of a lining of it.
+      //
+      // Note this is NOT the radial falloff tried earlier and reverted: it does not thin the edge.
+      // Grains still reach the full radius, so the glow ends where the crater does. The only taper
+      // the fallout carries is into the soil (see `radBandDepth`), matching the coat.
+      const dist = Math.sqrt(Math.random()) * nRadius;
+      // Velocity stays as the original had it: only a SMALL radial nudge (`rand·8+2` in the
+      // source's units). The visible fall comes from the SPREAD — grains that land high in the
+      // upper half of the disc drop back down under gravity — NOT from a big launch.
+      const speed = between(20, 85); // small radial launch (the spread does the spreading)
       // Reuse a faded speck from the free pool — up to 12000 per nuke, so this is
       // the biggest allocation sink; pooling makes a warm blast allocate zero.
       const s: RadSpeck = pool.pop() ?? {
@@ -956,6 +1065,9 @@ export class CLand {
         settled: false,
         size: 0,
         rise: 0,
+        zx: 0,
+        zr: 0,
+        raining: false,
         phase: 0,
         pw: 0,
         r: 0,
@@ -972,29 +1084,237 @@ export class CLand {
       // Ground blast: radial nudge (half up, half down) — the up ones arc a touch, the down ones
       // and the low-spawned ones settle quickly, matching the original's radial launch. Airburst
       // (raining): biased DOWN so the disc rains from the mid-air burst point onto the ground.
+      // A GROUND burst throws its fallout UP with the earth, so it arcs and rains back down AFTER
+      // the heavier clods have finished piling into the hole — which is the ordering everything else
+      // here depends on. Launched flat, the fallout was fully settled at ~1.5s while dirt kept
+      // landing until ~2.25s, so the refill buried the coat it had just laid and the crater came out
+      // with a sterile layer through it. Making the thrown earth radioactive to compensate only
+      // moved the problem: every fresh layer re-lit, so the glow climbed with the rising floor
+      // instead of settling. Landing LAST needs no compensation — the fallout simply coats whatever
+      // the ground finally is. An AIRBURST is unchanged: it rains from a mid-air burst point and was
+      // never thrown up in the first place.
       s.vy = raining
-        ? Math.abs(Math.sin(ang)) * speed + (25 + Math.random() * 55)
-        : Math.sin(ang) * speed;
+        ? Math.abs(Math.sin(ang)) * speed + between(25, 80)
+        : Math.sin(ang) * speed - between(RAD_UP_MIN, RAD_UP_MAX);
       s.age = 0;
-      s.life = dur * (0.85 + Math.random() * 0.2); // lingers ~the stretched irTime
+      s.life = dur * between(0.85, 1.05); // lingers ~the stretched irTime
       s.settled = false;
-      s.size = 0.85 + Math.random() * 1.4; // small grains (1.8–3.2px dots) — the old size read as big boxes
+      s.size = between(0.85, 2.25); // small grains (1.8–3.2px dots) — the old size read as big boxes
       s.phase = Math.random() * TWO_PI; // independent glow phase (no coherent wave/banding)
-      s.pw = 3 + Math.random() * 4.5; // independent glow rate (each speck breathes at its own speed)
+      s.pw = between(3, 7.5); // independent glow rate (each speck breathes at its own speed)
       s.rise = 0;
-      // ONE shared brightness factor per grain: the cloud ranges dark→bright (the original's natural
-      // fallout sparkle) while KEEPING the weapon's HUE. Randomising each channel INDEPENDENTLY (the
-      // previous bug) scatters any multi-channel irRGB into a rainbow — plasma [128,0,128] read as
-      // random red/blue/magenta, defiled.pig [128,100,64] as red/yellow/green confetti. Integer
-      // channels: the draw packs them into a colour key + rgb().
-      const f = 0.3 + Math.random() * 0.7; // 0.3..1.0 — dark grains stay on-hue, never black
+      // Remember which blast threw this grain, so the coat depth it digs on landing can be measured
+      // against THAT zone. Carried per grain rather than read off the land at settle time: a grain
+      // still in the air when the next blast goes off would otherwise take the new zone's depth.
+      s.zx = x;
+      s.zr = nRadius;
+      s.raining = raining;
+      const f = between(0.3, 1); // 0.3..1.0 — dark grains stay on-hue, never black
       s.r = (r * f) | 0;
       s.g = (g * f) | 0;
       s.b = (b * f) | 0;
       this.m_radSpecks.push(s);
     }
+    // Global ceiling. Deliberately NOT raised alongside the per-blast count above: this bounds the
+    // per-frame draw (two fillRects per grain), which measures ~0.8µs a grain, so the ceiling —
+    // not the per-blast count — is what sets the worst-case frame cost. A single zone gets its
+    // denser coat; a screen already saturated with fallout stays as cheap as it was.
     if (this.m_radSpecks.length > 17000)
       this.m_radSpecks.splice(0, this.m_radSpecks.length - 17000);
+  }
+
+  /**
+   * Mark one pixel of earth radioactive — where a fallout grain came to rest. Additive and
+   * saturating, so overlapping blasts and the grains of a single one BUILD UP a hotter patch
+   * rather than each overwriting the last.
+   */
+  private stampRadiation(
+    col: number,
+    y: number,
+    amount = between(RAD_STAMP_MIN, MAT_RAD_MAX),
+  ): void {
+    // Allocated on first use, and deliberately NOT conditioned on the pixel buffer: radioactivity
+    // is terrain STATE, not colour. A land that never ran `bakeTerrain` (headless sim, a net client
+    // mid-boot, tests) still has a heightmap and still has to answer `radiationAt`, or fallout
+    // silently stops dealing damage wherever there is nothing to draw.
+    let mat = this.m_material;
+    if (!mat) mat = this.m_material = new Uint8Array(this.m_nWidth * this.m_nHeight);
+    if (col < 0 || col >= this.m_nWidth) return;
+    // Clamped to at-or-below the surface: only EARTH can be radioactive. The settle scatter reaches
+    // a few px above the ground line, which is empty space — marking it would put glow in mid-air,
+    // and worse, `setColumnTop` never touches those pixels, so a carve that took the ground away
+    // would leave that glow hanging exactly where the old speck model used to strand fallout.
+    const top = this.m_arrHeights ? this.m_arrHeights[col] : 0;
+    const yy = Math.max(top, Math.floor(y));
+    if (yy < 0 || yy >= this.m_nHeight) return;
+    const i = yy * this.m_nWidth + col;
+    mat[i] = matSetRad(mat[i], matRad(mat[i]) + amount);
+    this.growRadBox(col, yy);
+    this.m_radGlowDirty = true;
+  }
+
+  /**
+   * Draw the radioactive GROUND — the settled coat — from the terrain's radiation channel.
+   *
+   * The channel says which earth is hot; the live zones (`m_radParticles`) say what colour and how
+   * brightly, each on its own clock. Keeping those apart is what lets two blasts of different ages
+   * overlap and still fade independently, and it means the glow is rebuilt only when the EARTH
+   * changes — a fade is just the alpha on the blit, so it stays perfectly smooth between rebuilds
+   * rather than stepping the way a periodically re-baked layer does.
+   */
+  private drawRadGlow(ctx: CanvasRenderingContext2D): void {
+    const mat = this.m_material;
+    if (!mat || !this.m_radParticles.length || typeof document === 'undefined') return;
+    const W = this.m_nWidth;
+    if (this.m_radGlowDirty || !this.m_radGlowCanvas) {
+      this.m_radGlowDirty = false;
+      // Bounds of the HOT EARTH itself (+1 for the neighbour spread below), never the zones'.
+      if (this.m_radBoxX1 < this.m_radBoxX0) return; // nothing has been irradiated yet
+      let x0 = this.m_radBoxX0 - 1,
+        x1 = this.m_radBoxX1 + 1,
+        y0 = this.m_radBoxY0 - 1,
+        y1 = this.m_radBoxY1 + 1;
+      x0 = clamp(x0, 0, W - 1);
+      x1 = clamp(x1, 0, W - 1);
+      y0 = clamp(y0, 0, this.m_nHeight - 1);
+      y1 = clamp(y1, 0, this.m_nHeight - 1);
+      const w = x1 - x0 + 1,
+        h = y1 - y0 + 1;
+      if (w <= 0 || h <= 0) return;
+      let cv = this.m_radGlowCanvas;
+      if (!cv) cv = this.m_radGlowCanvas = document.createElement('canvas');
+      if (cv.width !== w || cv.height !== h) {
+        cv.width = w;
+        cv.height = h;
+      }
+      const g = cv.getContext('2d');
+      if (!g) return;
+      const heights = this.m_arrHeights;
+      const img = g.createImageData(w, h);
+      const out = img.data;
+      // Each hot pixel takes the colour of the nearest zone covering it, scaled by how hot it is,
+      // and SPREADS onto its four orthogonal neighbours at a lower weight. The spread is what the
+      // brightness used to come from: the old carpet drew every grain as a 5-pixel additive cross,
+      // so overlapping grains stacked into a saturated glow. One pixel per grain lit a fraction of
+      // that and the coat came out dull. Contributions accumulate and clip, matching how the
+      // crosses piled up. The zone's own fade is NOT applied here — that rides on the blit alpha
+      // below, so decay stays continuous even though this buffer only rebuilds when earth changes.
+      const add = (x: number, y: number, zr: number, zg: number, zb: number, k: number): void => {
+        if (x < x0 || x > x1 || y < y0 || y > y1) return;
+        const o = ((y - y0) * w + (x - x0)) * 4;
+        out[o] = Math.min(255, out[o] + zr * k);
+        out[o + 1] = Math.min(255, out[o + 1] + zg * k);
+        out[o + 2] = Math.min(255, out[o + 2] + zb * k);
+        out[o + 3] = 255;
+      };
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const v = matRad(mat[y * W + x]);
+          if (!v) continue;
+          // Only the coat AT THE SURFACE is drawn. Radioactivity deeper than this is buried under
+          // earth, and the glow composites OVER the terrain — so drawing it lit the old coat
+          // straight through the fill piled on top of it, as a second arc following the bowl the
+          // crater used to have. Detached from the ground and floating over the hole where the fill
+          // was thin. It stays in the channel (dig back down and it is still hot, still damaging),
+          // it simply is not lit through solid ground.
+          if (y - (heights ? heights[x] : 0) > RAD_GLOW_DEPTH) continue;
+          let zr = 0,
+            zg = 0,
+            zb = 0,
+            best = Infinity;
+          for (const z of this.m_radParticles) {
+            const dx = x - z.x,
+              dy = y - z.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < best) {
+              best = d2;
+              zr = z.r;
+              zg = z.g;
+              zb = z.b;
+            }
+          }
+          const k = (v / MAT_RAD_MAX) * RAD_GLOW_GAIN;
+          add(x, y, zr, zg, zb, k);
+          add(x - 1, y, zr, zg, zb, k * RAD_GLOW_SPREAD);
+          add(x + 1, y, zr, zg, zb, k * RAD_GLOW_SPREAD);
+          add(x, y - 1, zr, zg, zb, k * RAD_GLOW_SPREAD);
+          add(x, y + 1, zr, zg, zb, k * RAD_GLOW_SPREAD);
+        }
+      }
+      g.putImageData(img, 0, 0);
+      this.m_radGlowX = x0;
+      this.m_radGlowY = y0;
+    }
+    const cv = this.m_radGlowCanvas;
+    if (!cv) return;
+    // The longest-lived zone drives the blit, with a shimmer so the ground keeps breathing the way
+    // the loose specks used to. Additive, so the coat stacks over the terrain as the cloud did.
+    let fade = 0;
+    for (const z of this.m_radParticles)
+      fade = Math.max(fade, z.timeRemaining / Math.max(0.5, z.duration));
+    if (fade <= 0) return;
+    const prevOp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = clamp01(fade) * (0.86 + 0.14 * Math.sin(this.m_radPulseT * 2.1));
+    ctx.drawImage(cv, this.m_radGlowX, this.m_radGlowY);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = prevOp;
+  }
+
+  /**
+   * The first pixel in this column that fallout has NOT reached yet — the top of the pile, counting
+   * down from the surface through the grains already settled there. A landing grain goes here, so
+   * the coat grows a grain at a time and its thickness is just how much fell on that spot.
+   */
+  private radPileTop(col: number): number {
+    const mat = this.m_material;
+    const top = this.m_arrHeights ? this.m_arrHeights[col] : 0;
+    if (!mat) return top;
+    const W = this.m_nWidth;
+    let y = top;
+    // Bounded: a column cannot absorb more than the deepest coat we would ever want to see, and
+    // without a stop a heavily-shelled spot would drill the pile down through the whole map.
+    const limit = Math.min(this.m_nHeight - 1, top + RAD_PILE_MAX);
+    while (y < limit && matRad(mat[y * W + col])) y++;
+    return y;
+  }
+
+  /** Grow the hot-earth extent to include this pixel. */
+  private growRadBox(x: number, y: number): void {
+    if (this.m_radBoxX1 < this.m_radBoxX0) {
+      this.m_radBoxX0 = this.m_radBoxX1 = x;
+      this.m_radBoxY0 = this.m_radBoxY1 = y;
+      return;
+    }
+    if (x < this.m_radBoxX0) this.m_radBoxX0 = x;
+    if (x > this.m_radBoxX1) this.m_radBoxX1 = x;
+    if (y < this.m_radBoxY0) this.m_radBoxY0 = y;
+    if (y > this.m_radBoxY1) this.m_radBoxY1 = y;
+  }
+
+  /** Clear the radiation channel inside a disc — the zone decayed, so this earth is no longer hot.
+   *  Without it the marks outlive their zone and a later blast overlapping the spot would relight
+   *  ground that stopped glowing turns ago. */
+  private coolRadiation(cx: number, cy: number, r: number): void {
+    const mat = this.m_material;
+    if (!mat) return;
+    const W = this.m_nWidth;
+    const [x0, x1] = this.clampCols(Math.floor(cx - r), Math.ceil(cx + r));
+    const y0 = Math.max(0, Math.floor(cy - r)),
+      y1 = Math.min(this.m_nHeight - 1, Math.ceil(cy + r));
+    const r2 = r * r;
+    for (let y = y0; y <= y1; y++) {
+      const dy = y - cy;
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx;
+        if (dx * dx + dy * dy > r2) continue;
+        const i = y * W + x;
+        if (matRad(mat[i])) {
+          mat[i] &= 1; // keep the dirt tag, drop the radioactivity
+          this.m_radGlowDirty = true;
+        }
+      }
+    }
   }
 
   /** Arm the angle-of-repose slump over a span for a few seconds — it runs in `update()`
@@ -1081,16 +1401,51 @@ export class CLand {
         age: 0,
         deposit: true,
       };
-      p.x = x + (r() * 2 - 1) * radius;
-      p.y = y + (r() * 2 - 1) * radius * 0.4;
-      p.vx = Math.cos(ang) * speed;
-      p.vy = gentle ? r() * 12 : Math.sin(ang) * speed * 0.7 - up; // gentle drop vs up-and-out
+      // Born across the blast DISC (uniform over its area, no central spike), not a box.
+      const bd = Math.sqrt(r()) * radius;
+      p.x = x + Math.cos(ang) * bd;
+      p.y = y + Math.sin(ang) * bd * 0.4;
+      // The throw splits in two. MOST of the earth goes nearly straight up and rains back into the
+      // hole it came out of — the launch `depositDirt` uses, and what the original does far more
+      // literally (its debris leaves the rim at [2,10] px/s, barely more than a spill). Throwing all
+      // of it outward at `radius·2.4` sprayed the earth clear of the crater, so a nuke left a bare
+      // pit: only ~0.09 R of the depth it dug ever came back.
+      //
+      // A minority is still FLUNG on the wide radial arc, because that is the part you watch: clods
+      // sailing out and thudding down across the map, well away from the blast. They deposit where
+      // they land, so this is real earth carried off, not decoration — which is why it is a minority
+      // and not the default. Cosmetic spray (`deposit` false — beam/digger dust) is always flung:
+      // nothing lands, so where it flies is purely a matter of looks.
+      //
+      // NOTE every draw here is `r()`, not the module random helpers: depositing ejecta writes the
+      // heightmap, so each client must generate the same throw or the match desyncs.
+      const flung = !deposit || r() < EJECTA_FLUNG_FRACTION;
+      p.vx = flung ? Math.cos(ang) * speed : (r() * 2 - 1) * DIRT_THROW_SCATTER;
+      p.vy = gentle
+        ? r() * 12
+        : flung
+          ? Math.sin(ang) * speed * 0.7 - up
+          : -(DIRT_THROW_UP_MIN + r() * DIRT_THROW_UP_SPAN) - up * 0.35;
       p.color = this.dirtColor(v);
       p.size = 1; // the original plots each chunk as a single 1px pixel — no 2px squares
       p.spin = 0;
       p.age = 0;
       p.deposit = deposit;
       this.m_particles.push(p);
+    }
+    // Arm the rounding pass over the landing zone, exactly as `depositDirt` does. Ejecta lands one
+    // 1px column at a time, so a big throw leaves the fill as a comb of spikes; the crater's own
+    // slump is armed at CARVE time and has largely run out by the time the last chunks come down.
+    // Without this the refilled bowl reads as bristles rather than as settled earth.
+    if (deposit && count > 0) {
+      if (this.m_dirtSmoothPasses <= 0 && this.m_dirtSmoothDelay <= 0) {
+        this.m_dirtSmoothX0 = this.m_nWidth;
+        this.m_dirtSmoothX1 = 0;
+      }
+      this.m_dirtSmoothDelay = DIRT_SMOOTH_DELAY;
+      this.m_dirtSmoothPasses = DIRT_SMOOTH_PASSES;
+      this.m_dirtSmoothX0 = Math.min(this.m_dirtSmoothX0, Math.round(x - radius - 10));
+      this.m_dirtSmoothX1 = Math.max(this.m_dirtSmoothX1, Math.round(x + radius + 10));
     }
   }
 
@@ -1177,14 +1532,14 @@ export class CLand {
         // Height cap: dirt can't pile above `capY`. A chunk on a capped column is discarded, so tall
         // stacks (Land Fill) FLAT-TOP into a mesa instead of spiking (orig settle gate `0x60 <= y`).
         if (this.m_arrHeights[dcol] > this.m_nHeight * DIRT_CAP_FRACTION) {
-          // Raise the column 1px, then TINT that pixel with a random brightness — the original stamps
-          // each chunk's own colour, so deposited dirt has small brightness VARIATIONS, not one flat tone.
+          // Raise the column 1px. The stamp is `setColumnTop`'s own dirt sampler — the SAME source
+          // the crater's soil coat draws from — so thrown earth and the earth lining the bowl are
+          // one material. Overwriting it with a flat (v, v/2, 0) ramp instead made a blast leave two
+          // visibly different soils in the same hole: a textured coat around the rim and a bright
+          // orange granular fill in the bottom. The original's debris carries the colour of the
+          // pixel it was excavated from, which is exactly why its deposits are indistinguishable
+          // from the ground around them.
           this.setColumnTop(dcol, this.m_arrHeights[dcol] - 1);
-          const px = this.m_pixels;
-          if (px) {
-            const v = 30 + ((Math.random() * 100) | 0); // [30,129] = the original's `rand%100 + 30`
-            px[this.m_arrHeights[dcol] * this.m_nWidth + dcol] = this.packSolid(v, v >> 1, 0); // (v,v/2,0)
-          }
           if (this.m_baseHeights)
             this.m_baseHeights[dcol] = Math.min(this.m_baseHeights[dcol], this.m_arrHeights[dcol]);
           this.preBlast(dcol - 1, dcol + 1);
@@ -1215,9 +1570,13 @@ export class CLand {
       }
     }
 
-    // Round Dirt-weapon piles into smooth mounds once their debris has finished landing.
+    // Round Dirt-weapon piles into smooth mounds once their debris has finished landing. HELD while
+    // any overburden block is still falling: those columns report the block's transient mid-air top,
+    // so smoothing against it stamps dirt at a height the ground is about to vacate and leaves it
+    // floating once the block lands. The pass has passes to spare — waiting out the collapse costs
+    // nothing, and the same hazard applies to every caller that arms it.
     if (this.m_dirtSmoothDelay > 0) this.m_dirtSmoothDelay -= dt;
-    else if (this.m_dirtSmoothPasses > 0 && this.m_arrHeights) {
+    else if (this.m_dirtSmoothPasses > 0 && !this.m_falls.length && this.m_arrHeights) {
       this.smoothDirtSpan(this.m_dirtSmoothX0, this.m_dirtSmoothX1);
       this.m_dirtSmoothPasses--;
     }
@@ -1226,7 +1585,10 @@ export class CLand {
     for (let i = 0; i < this.m_radParticles.length; i++) {
       const r = this.m_radParticles[i];
       r.timeRemaining -= dt;
-      if (r.timeRemaining <= 0) continue; // zone expired → drop
+      if (r.timeRemaining <= 0) {
+        this.coolRadiation(r.x, r.y, r.radius); // decayed → the earth here is clean again
+        continue; // zone expired → drop
+      }
       this.m_radParticles[rw++] = r;
     }
     this.m_radParticles.length = rw;
@@ -1235,8 +1597,6 @@ export class CLand {
     const RAD_GRAV = 320;
     // A settled speck is culled once a crater drops the ground more than this far below it (it would
     // otherwise hang in the air). Wider than the +3px top of the settle scatter so the coat's surface
-    // line survives — only a genuine crater lowering triggers it.
-    const RAD_STRAND_MARGIN = 4;
     let sw = 0;
     for (let i = 0; i < this.m_radSpecks.length; i++) {
       const s = this.m_radSpecks[i];
@@ -1246,7 +1606,7 @@ export class CLand {
         continue;
       } // faded out → recycle
 
-      if (!s.settled) {
+      {
         // Wind drift on the still-falling ash (Realistic mode) — eased near the ground by the profile
         // so the plume leans downwind aloft but still settles onto its zone. foutX/Y are 0 in Linear.
         if (foutX !== 0 || foutY !== 0) {
@@ -1264,8 +1624,6 @@ export class CLand {
           continue;
         } // left the field → recycle
         if (s.vy > 0 && s.y >= this.getHeightAt(col)) {
-          s.settled = true;
-          s.vx = s.vy = 0;
           // Faithful settle scatter (the original, on settle, offsets x by −2..+1 columns and sets
           // y to `impactRow + (rand%12 − 2)` — i.e. a granular band from 2px ABOVE the surface to
           // 9px BELOW it). That ~11px scatter is what gives the coat its thickness — NOT a deep
@@ -1274,27 +1632,35 @@ export class CLand {
           // the speck's y is FIXED from here (the original sets it once and never re-reads the ground).
           const jx = Math.floor(Math.random() * 4) - 2; // −2..+1 columns
           const c2 = clamp(col + jx, 0, this.m_nWidth - 1);
-          s.x = c2;
-          // Scatter DEEP into the crater face so the red coats the whole bowl (over the dirt band
-          // and a bit below) — a few px above the surface down to −m_radBandDepth. Biased toward
-          // the deeper end so the face fills rather than crowding the surface line.
-          s.rise = 3 - Math.floor(Math.random() * (this.m_radBandDepth + 4));
-          s.y = this.getHeightAt(c2) - s.rise;
-        }
-      } else {
-        // A settled speck holds its ABSOLUTE position — the original fixes y at settle and never
-        // re-reads the surface (so the fallout can be buried or stranded, it never RIDES the ground).
-        // If a crater later drops the surface well BELOW the speck (it would hang in mid-air), cull it
-        // — the original removes a settled speck the moment the ground falls out from under it.
-        const col = Math.floor(s.x);
-        if (col >= 0 && col < this.m_nWidth && s.y < this.getHeightAt(col) - RAD_STRAND_MARGIN) {
+          // Grains launch with a small radial nudge and then fall, so a grain thrown from near the
+          // rim drifts tens of px further out before it lands — and the ones flung outward over
+          // undisturbed ground are exactly the ones that come to rest OUTSIDE the hole. Drop them:
+          // the fallout must not reach past the earth the same blast turned over, or it reads as a
+          // glow spilling onto ground the explosion never touched. Ground bursts only — an airburst
+          // (`raining`) has no crater to stay inside and is meant to spread.
+          if (!s.raining && Math.abs(c2 - s.zx) > s.zr) {
+            this.m_speckPool.push(s);
+            continue;
+          }
+          // LANDED. The grain stops being a particle here and becomes radioactivity IN THE EARTH:
+          // it stamps the terrain's radiation channel and is recycled. That is what couples the two
+          // — from this instant the fallout is a property of these pixels, so it is carved out with
+          // them, buried by dirt piled over them, and cannot strand on ground that merely survived.
+          //
+          // WHERE it stamps is not a formula: the grain settles onto the fallout already lying in
+          // this column, one grain deep at a time. The coat's whole profile falls out of that. It is
+          // thick under the detonation and thins to nothing at the rim because that is simply where
+          // more or fewer grains came down — the same distribution that put them there. Depth used
+          // to be dictated by a radial curve with the position inside it drawn from another curve,
+          // which had to be re-tuned every time the spray changed; a pile needs no tuning and cannot
+          // disagree with the spray, because it IS the spray. It also self-maintains: carve the coat
+          // away and the pile is gone with it, so the next grain starts from the surface again.
+          this.stampRadiation(c2, this.radPileTop(c2));
           this.m_speckPool.push(s);
           continue;
         }
-        // A fill that RAISES the ground over the speck buries it in place — it stays here (hidden on
-        // draw), it does NOT climb onto the fresh dirt. No reposition needed: y is already fixed.
       }
-      this.m_radSpecks[sw++] = s; // still live → keep
+      this.m_radSpecks[sw++] = s; // still falling → keep
     }
     this.m_radSpecks.length = sw;
 
@@ -1319,11 +1685,11 @@ export class CLand {
           const col = Math.floor(z.x - rr + Math.random() * rr * 2);
           if (col < 0 || col >= this.m_nWidth) continue; // spawn anywhere in the zone, off the surface
           this.m_heat.push({
-            x: col + Math.random() * 2 - 1,
+            x: col + plusMinus(1),
             y: this.getHeightAt(col) - Math.random() * 4,
             age: 0,
-            life: 0.7 + Math.random() * 0.8,
-            size: 5 + Math.random() * 7,
+            life: between(0.7, 1.5),
+            size: between(5, 12),
             vx: (Math.random() - 0.5) * 12,
             rot: Math.random() * TWO_PI,
             spin: (Math.random() - 0.5) * 1.6,
@@ -1409,10 +1775,16 @@ export class CLand {
    * circle — especially airbursts drifting down a slope), instead of an invisible fixed radius.
    */
   radiationAt(x: number, margin = 12): boolean {
-    const specks = this.m_radSpecks;
-    for (let i = 0; i < specks.length; i++) {
-      const s = specks[i];
-      if (s.settled && Math.abs(s.x - x) <= margin) return true;
+    const mat = this.m_material;
+    if (!mat || !this.m_arrHeights) return false;
+    const W = this.m_nWidth;
+    const [lo, hi] = this.clampCols(Math.floor(x - margin), Math.ceil(x + margin));
+    // Only the top of each column can be stood on, and the coat is packed against the surface, so
+    // a shallow probe answers this — no need to sweep the whole depth of the band.
+    for (let c = lo; c <= hi; c++) {
+      const top = this.m_arrHeights[c];
+      const bot = Math.min(this.m_nHeight - 1, top + RAD_CONTACT_DEPTH);
+      for (let y = top; y <= bot; y++) if (matRad(mat[y * W + c])) return true;
     }
     return false;
   }
@@ -1504,22 +1876,27 @@ export class CLand {
     const px = this.m_pixels;
     if (px) {
       const W = this.m_nWidth;
-      const mat = this.m_material;
-      // A raise with no colorFn deposits DIRT (tag 1); a colorFn raise carries a real cap/surface
-      // colour (native land, tag 0). A lower clears to sky (tag 0).
-      const tag = colorFn ? 0 : CLand.MAT_DIRT;
       if (nt < old) {
-        for (let y = nt; y < old; y++) {
-          const i = y * W + col;
-          px[i] = colorFn ? colorFn(col, y) : this.dirtColorAt(col, y);
-          if (mat) mat[i] = tag;
-        }
+        for (let y = nt; y < old; y++)
+          px[y * W + col] = colorFn ? colorFn(col, y) : this.dirtColorAt(col, y);
       } else if (nt > old) {
-        for (let y = old; y < nt; y++) {
-          const i = y * W + col;
-          px[i] = 0;
-          if (mat) mat[i] = 0;
-        }
+        for (let y = old; y < nt; y++) px[y * W + col] = 0;
+      }
+    }
+    // The material byte is rewritten OUTSIDE the pixel guard: it is terrain state, so it has to stay
+    // correct on a land with no colour buffer (headless sim, net client mid-boot) too. Writing the
+    // dirt tag also zeroes the radiation bits, which is the whole coupling in one stroke — earth
+    // arriving is clean, earth leaving takes its radioactivity with it, and a fill covering fallout
+    // and a crater cutting it out are the same statement about the same byte.
+    const matB = this.m_material;
+    if (matB) {
+      const W = this.m_nWidth;
+      const tagB = nt < old && colorFn ? 0 : nt < old ? CLand.MAT_DIRT : 0;
+      const [ya, yb] = nt < old ? [nt, old] : [old, nt];
+      for (let y = ya; y < yb; y++) {
+        const i = y * W + col;
+        if (matRad(matB[i])) this.m_radGlowDirty = true;
+        matB[i] = tagB;
       }
     }
     h[col] = nt;
@@ -1577,7 +1954,7 @@ export class CLand {
         // neither a hot pinprick at the centre nor an edge to see where the burn runs out.
         const u = t <= CORE ? 1 : (1 - t) / (1 - CORE);
         // The mid-scale octave then eats into it, the way fire leaves patches barely touched.
-        const a = Math.min(1, u * u * (3 - 2 * u) * (0.86 + 0.2 * blotchNoise(x, y, mottleCell)));
+        const a = Math.min(1, smoothstep(u) * (0.86 + 0.2 * blotchNoise(x, y, mottleCell)));
         const sr = c & 0xff,
           sg = (c >> 8) & 0xff,
           sb = (c >> 16) & 0xff;
@@ -1632,6 +2009,7 @@ export class CLand {
     this.m_terrainImage = null;
     this.m_pixels = null;
     this.m_material = null;
+    this.m_radBoxX1 = this.m_radBoxY1 = -1; // hot-earth extent goes with it
     // Paint the strata into a TRANSIENT world-sized scratch, snapshot it, then free it. The
     // persistent display canvas is only VIEW-sized (`m_terrainCanvas`, the on-screen tile), so the
     // full-world RGBA never lives on past the bake — the largest steady-state buffer at big Land
@@ -1676,7 +2054,7 @@ export class CLand {
     this.m_terrainImage = g.getImageData(0, 0, W, H);
     scratch.width = scratch.height = 0; // free the world-sized scratch backing store immediately
     this.m_pixels = new Uint32Array(this.m_terrainImage.data.buffer);
-    this.m_material = new Uint8Array(W * H); // fresh strata = all native land (tag 0)
+    this.m_material = new Uint8Array(W * H); // fresh strata: native land (tag 0), not hot
     // Enforce a CRISP surface: canvas antialiases the SLOPED strata fill edge into faint
     // partial-alpha pixels a row or two ABOVE the true surface. Once a crater lowers the
     // ground those fringe pixels are left floating as "dots" tracing the old shape (only on
@@ -1781,7 +2159,7 @@ export class CLand {
           out[i] = SKY;
           continue;
         }
-        if (mat && mat[i] === CLand.MAT_DIRT) {
+        if (mat && (mat[i] & 1) === CLand.MAT_DIRT) {
           out[i] = DIRT;
           continue;
         }
@@ -1931,10 +2309,13 @@ export class CLand {
       }
     }
 
-    // Radiation specks — the original draws each as a 5-pixel ADDITIVE CROSS (centre + 4
-    // orthogonal neighbours) tinted by irRGB, fading LINEARLY to black over its life. Where
-    // many overlap they stack brighter (saturating add) → the dense red band coating the
-    // crater. Two fillRects make the plus (the centre is drawn twice → brightest).
+    // Radioactive GROUND: the settled coat, read straight out of the terrain's radiation channel.
+    this.drawRadGlow(ctx);
+
+    // Radiation specks — fallout still IN THE AIR. The original draws each as a 5-pixel ADDITIVE
+    // CROSS (centre + 4 orthogonal neighbours) tinted by irRGB, fading LINEARLY to black over its
+    // life. Two fillRects make the plus (the centre is drawn twice → brightest). Once a grain
+    // lands it stops being drawn here and becomes part of the ground above.
     if (this.m_radSpecks.length) {
       const prevOp = ctx.globalCompositeOperation;
       const dbg = CLand.debugMaterials; // ?skiptexture: solid RED specks (no additive wash)
@@ -1948,12 +2329,6 @@ export class CLand {
       for (const s of this.m_radSpecks) {
         const fade = 1 - s.age / s.life; // linear: contribution = irRGB · (1 − age/life)
         if (fade <= 0) continue;
-        // BURIED-by-fill: a settled speck holds its absolute y, so a deposit that raised the ground
-        // well ABOVE where it landed (`s.y + s.rise` = the surface at settle) has covered it — hide it
-        // so the fallout reads as buried under the fresh dirt, not glowing on top. Non-destructive:
-        // if the fill is later dug back out, the speck shows again (until a carve clears it outright).
-        if (s.settled && this.getHeightAt(Math.floor(s.x)) < s.y + s.rise - RAD_BURY_MARGIN)
-          continue;
         if (!dbg) {
           const key = (s.r << 16) | (s.g << 8) | s.b;
           if (key !== lastKey) {
@@ -2028,7 +2403,6 @@ export class CLand {
   private m_radParticles: RadParticle[] = [];
   private m_radSpecks: RadSpeck[] = [];
   private m_radPulseT = 0; // clock for the sinusoidal glow shimmer on the fallout
-  private m_radBandDepth = 10; // how deep settled specks scatter into the crater face (radius-driven)
   // Free lists of dead particle objects, refilled on removal and drained on emit, so a
   // repeat blast reuses objects instead of allocating thousands (kills the GC hitch).
   private m_particlePool: LandParticle[] = [];
@@ -2079,6 +2453,22 @@ export class CLand {
   // Per-pixel MATERIAL tag for the ?skiptexture debug view. Only DIRT needs marking (=1); a solid
   // pixel with tag 0 is native land, an empty pixel (m_pixels alpha 0) is sky. Parallel to m_pixels.
   private m_material: Uint8Array | null = null;
+  // Cached glow layer built from `m_radField`; rebuilt only when the hot EARTH changes, never for a
+  // fade (that is the blit alpha), so the decay cannot step.
+  private m_radGlowCanvas: HTMLCanvasElement | null = null;
+  private m_radGlowX = 0;
+  private m_radGlowY = 0;
+  private m_radGlowDirty = false;
+  // Extent of the HOT EARTH, grown as the channel is written. The glow layer is sized from this and
+  // never from the zones' radii: the coat reaches the crater FLOOR, which lies below `z.y + radius`,
+  // so a zone-sized layer sliced the bottom off the coat with a flat horizontal cap — and when a
+  // nearby blast dropped a zone, the layer shrank away from earth that was still radioactive and the
+  // old glow simply disappeared. Only ever grown (a clear leaves it conservative), which costs a few
+  // wasted pixels in the layer and saves rescanning the field.
+  private m_radBoxX0 = 0;
+  private m_radBoxX1 = -1;
+  private m_radBoxY0 = 0;
+  private m_radBoxY1 = -1;
   private m_debugImage: ImageData | null = null; // scratch RGBA for the debug render
   private m_debugCanvas: HTMLCanvasElement | null = null;
 
