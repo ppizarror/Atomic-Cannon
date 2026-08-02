@@ -60,13 +60,15 @@ describe('CLand — erasing terrain clears its radiation', () => {
     // Fire a cleaner (earth-remover: blastCircle with coatDirt=false) right over the zone.
     land.carveDiscCollapse(150, surf, 44);
 
-    // The damage zone is gone → tanks stop taking fallout damage there…
-    expect(land.getRadiationZones().length).toBe(0);
-    expect(p.m_radParticles.length).toBe(0);
+    // The hot EARTH is gone → tanks stop taking fallout damage there. Asserted on the ground, not
+    // on the zone list: the zone is the blast's CLOCK and outlives its earth on purpose (deleting it
+    // whenever a later shell landed on it was what darkened the coat all around the new crater).
+    expect(land.radiationAt(150)).toBe(false);
     // …the existing wisps over the cleared span are wiped…
     expect(p.m_heat.length).toBe(0);
 
-    // …and, crucially, NO new smoke spawns on later frames (the zone can't respawn it).
+    // …and, crucially, NO new smoke spawns on later frames — a wisp needs hot ground under it, and
+    // the cleaner took the ground.
     for (let i = 0; i < 120; i++) land.update(1 / 60);
     expect(p.m_heat.length).toBe(0);
   });
@@ -132,13 +134,17 @@ describe('CLand — erasing terrain clears its radiation', () => {
       cx = 300,
       cy = surf; // blast disc: centre (300, 200), radius 60
 
-    // Two specks the blast REACHES (inside the disc) and two it does NOT — same x-band but outside
-    // the sphere: one deep in the soil below the blast, one out past the arc near the span edge.
+    // Two specks the blast REACHES (inside the disc) and two it does NOT — the second pair sits in
+    // the same x-band but BELOW the blast line and outside the sphere, which is soil the explosion
+    // never touched. (Above the blast line the x-band IS cleared, whether or not it is inside the
+    // sphere: the fireball erupts up through that column and takes the settling ash with it. Without
+    // that, ash still in the air when a shot lands simply carries on down and re-coats the crater
+    // that was meant to have swept it away.)
     specks.push(
       mk(cx, cy), // centre — dist 0 → inside → cleared
       mk(cx + 5, cy - 5), // ~7px from centre → inside → cleared
       mk(cx, cy + 2 * R), // 120px straight down → soil the blast never reached → KEPT
-      mk(cx - R * 0.95, cy - R * 0.95), // ~81px away (in the x-band [240,360] but outside the disc) → KEPT
+      mk(cx - R * 0.95, cy + R * 0.95), // ~81px away, below the blast line (x-band [240,360]) → KEPT
     );
 
     land.carveDiscCollapse(cx, cy, R, true, true, true);

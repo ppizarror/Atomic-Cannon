@@ -63,6 +63,9 @@ const CATALOG = {
   'gp.updateScale': {default: 10},
   'gp.rcFires': {default: true},
   'gp.radiationDamage': {default: true}, // fallout hurts tanks on it (on) vs cosmetic-only (off, legacy)
+  // Off by default: it reshapes ground beyond the crater, so it changes where tanks end up
+  // standing — a tactical change, not a visual one, and not something legacy did.
+  'gp.soilCompaction': {default: false},
 
   // ── Graphics ──
   'gfx.tracking': {default: true},

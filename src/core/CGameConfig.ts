@@ -72,6 +72,7 @@ export const GameConfig = {
   crateChance: TYPE_INT, // Crates: % chance to drop a supply crate each ROUND (0 = off)
   rightClickFires: TYPE_BOOL, // Right Click Fires (RMB launches the shot)
   radiationDamage: TYPE_BOOL, // A tank standing on the visible fallout carpet takes damage-over-time
+  soilCompaction: TYPE_BOOL, // Nuke-class blasts send a compression wave that COMPACTS the soil around them
 
   // Graphics
   tracking: TYPE_BOOL, // Tracking (off-screen shot notches)

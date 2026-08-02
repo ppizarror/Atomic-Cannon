@@ -175,17 +175,26 @@ const VENT_WIN_BASE = 7.5;
 const VENT_WIN_R = 0.02;
 // Puffs emitted per second per unit radius, while venting (tapers to 0 over the window). HIGH so the
 // many small puffs overlap into a TIGHT, dense cloud (the legacy look), not spaced distinct blobs.
-const FUME_RATE = 5;
-// Smoke swell for crater fumes — low so puffs stay small and pack tightly (vs SMOKE_GROW=5.5 exhaust).
-const FUME_GROW = 2.0;
+// Raised together with FUME_GROW: a puff's SOFT falloff (see `whiteSmoke`) leaves its outer ~60%
+// nearly transparent, so its effective footprint is well under its drawn diameter. That coverage has
+// to be bought back with SIZE and COUNT, not with opacity — otherwise the cloud thins out into
+// visibly separate bubbles, which is exactly what happened when the falloff first went in.
+const FUME_RATE = 16;
+// Smoke swell for crater fumes. Deliberately targets GROWTH rather than birth size: the gaps open up
+// in the dispersed, aged part of the cloud, while fresh puffs at the vent are already packed tight.
+const FUME_GROW = 3.6;
 // Per-puff lifetime ∝ radius: FUME_LIFE_BASE + radius·[min,max]. Each generation rises and fades
 // over this; new generations keep coming for the whole emission window.
-const FUME_LIFE_BASE = 1.0;
-const FUME_LIFE_MIN = 0.02;
-const FUME_LIFE_MAX = 0.04;
+// Kept SHORT on purpose. With a long life the puffs simply outlive the crater: they rise clear of
+// the bowl and consolidate into a tall rounded plume floating above it, which is why the cloud
+// stopped covering the crater it came from (emission across the width is uniform — measured at 0%
+// skipped, evenly bucketed — so the drift, not the spawn, is what empties the ends).
+const FUME_LIFE_BASE = 0.7;
+const FUME_LIFE_MIN = 0.01;
+const FUME_LIFE_MAX = 0.02;
 // Crater smoke has mild buoyancy (vs the trail's -0.12) so each generation drifts gently UP off the
 // dirt and fades — a steady rising stream — without ballooning to the top of the screen.
-const FUME_GRAV = -0.05;
+const FUME_GRAV = -0.048;
 // Peak opacity of a single crater-fume puff. This is what decides whether the cloud reads as smoke
 // or as a pile of separate blobs, and it has to be LOW because the puffs stack so deeply: measured
 // nearest-neighbour spacing is only ~0.25× a puff's drawn diameter, i.e. any given pixel is covered
@@ -193,7 +202,7 @@ const FUME_GRAV = -0.05;
 // puffs already reached 0.97 — the interior blew out to flat white and the only thing still legible
 // was the individual puffs around the rim, which is exactly the "too separated" read. At ~0.3 the
 // same stack spans 0.5→0.9, so density builds as a gradient and the cloud holds together.
-const FUME_OP = 0.22;
+const FUME_OP = 0.18;
 // A fume puff's swell and fade run on ABSOLUTE age against these time constants, NOT on the
 // normalised age/life. Life scales with the crater (measured: 3.7s at r=90, 8.6s at r=250), so a
 // curve spread across it billowed the puff by ~2× over eight seconds — far too slow to register as
@@ -206,7 +215,7 @@ const FUME_HOLD = 0.55; // fraction of life held at full opacity before the tail
 // How much of its size a puff gives up across the tail fade (0 = none, 1 = shrinks to nothing).
 // Mirrors the exhaust puffs, which contract as they dissolve — see the draw path for why a puff
 // that fades at CONSTANT size is what exposes its own outline as the cloud dies.
-const FUME_SHRINK = 0.55;
+const FUME_SHRINK = 0.25;
 
 // Rocket-exhaust trail: each puff picks a random angle in the backward spread cone that sets BOTH
 // its perpendicular DRIFT (which side of the tube it settles on) and its gui/rocket plume.bmp ROW

@@ -39,6 +39,7 @@ export const gameSettings = {
   variance: (): boolean => getVal('gp.variance') !== 0,
   /** Radiation fallout deals damage-over-time to tanks standing on it (on) vs cosmetic-only (off). */
   radiationDamage: (): boolean => getVal('gp.radiationDamage') !== 0,
+  soilCompaction: (): boolean => getVal('gp.soilCompaction') !== 0,
   /** Game-speed multiplier (Update Scale 10 → 1.0 normal). */
   gameSpeed: (): number => getVal('gp.updateScale') / 10,
   /** Wind strength scalar (0 = disabled). */

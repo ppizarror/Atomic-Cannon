@@ -596,6 +596,10 @@ export const en: Strings = {
         label: 'Radiation Damage',
         tip: 'On: tanks standing on radioactive fallout take damage. Off: fallout is cosmetic only (legacy)',
       },
+      soilCompaction: {
+        label: 'Soil Compaction',
+        tip: 'On: a nuke sends a shock through the ground that compacts the soil around its crater, sinking the land and the tanks standing on it',
+      },
     },
     graphics: {
       header: 'Adjust graphics settings',

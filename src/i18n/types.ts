@@ -457,6 +457,7 @@ export interface Strings {
       updateScale: RowCopy;
       rcFires: RowCopy;
       radiation: RowCopy;
+      soilCompaction: RowCopy;
     };
     graphics: {
       header: string;

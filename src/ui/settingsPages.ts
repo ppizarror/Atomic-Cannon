@@ -148,6 +148,7 @@ function gameplayRows(): Widget[] {
     stepper(s.updateScale, 'gp.updateScale', 1, 30, 1),
     toggle(s.rcFires, 'gp.rcFires'),
     toggle(s.radiation, 'gp.radiationDamage'),
+    toggle(s.soilCompaction, 'gp.soilCompaction'),
   ];
 }
 

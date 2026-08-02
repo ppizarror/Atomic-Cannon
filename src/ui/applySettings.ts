@@ -49,6 +49,7 @@ export function applyGameConfig(): void {
   GameConfig.crateChance = S.crateChance();
   GameConfig.rightClickFires = S.rightClickFires();
   GameConfig.radiationDamage = S.radiationDamage(); // fallout DOT vs cosmetic-only (shared in net via MatchConfig)
+  GameConfig.soilCompaction = S.soilCompaction(); // nukes compact the soil around their crater
   GameConfig.buyTime = S.buyTime();
   // Graphics
   GameConfig.tracking = S.tracking();

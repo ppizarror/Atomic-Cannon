@@ -616,6 +616,10 @@ export const es: Strings = {
         label: 'Daño por Radiación',
         tip: 'Activado: los tanques sobre la lluvia radiactiva reciben daño. Desactivado: la lluvia es solo cosmética (legado)',
       },
+      soilCompaction: {
+        label: 'Compactación del suelo',
+        tip: 'Activado: una bomba nuclear envía una onda por el terreno que compacta la tierra alrededor de su cráter, hundiendo el suelo y los tanques que están encima',
+      },
     },
     graphics: {
       header: 'Ajusta la configuración gráfica',
