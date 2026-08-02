@@ -423,6 +423,9 @@ export class CGameController implements ShotWorld {
     // Radiation heat haze: the land decides where the fallout fumes, the particle system owns the
     // resulting particles (it used to run its own pool inside CLand).
     this.m_land.setFxSink(this.m_particles);
+    // Crater fumes are the AFTERMATH: they hold until the ground stops moving (spoil landed,
+    // collapses done) rather than rising through the blast's own falling debris.
+    this.m_particles.setSettleProvider(() => this.m_land.isSettling());
     // Weather fills the VIEW (rain/snow are screen-space), not the world.
     this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_economy = new CEconomy();

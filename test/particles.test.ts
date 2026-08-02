@@ -285,6 +285,11 @@ describe('Particle system', () => {
   const smokeOf = (ps: CParticleSystem) =>
     particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke');
 
+  /** Crater fumes are their OWN kind now — they used to be 'smoke' told apart by brightness
+   *  (r >= 200), which is exactly what blocked them from ever being soot-dark. */
+  const fumesOf = (ps: CParticleSystem) =>
+    particlesPriv(ps).m_particles.filter(p => p.kind === 'fume');
+
   it('a ROCKET (trailType≥2) fumes only while the MOTOR is burning — then coasts silently', () => {
     const on = new CParticleSystem();
     on.setBounds(4000, 2000);
@@ -319,9 +324,11 @@ describe('Particle system', () => {
     cr.setBounds(1600, 1200);
     cr.blast(800, 600, 50, '#ff8c22', false);
     for (let i = 0; i < 60; i++) cr.update(1 / 60); // past VENT_DELAY — fumes rising
-    const fumes = smokeOf(cr);
+    const fumes = fumesOf(cr);
     expect(fumes.length).toBeGreaterThan(0);
-    expect(fumes.every(p => p.r >= 200)).toBe(true); // earth fumes are white
+    // Fumes start SOOT-dark and pale toward grey across the vent's window, so brightness is no
+    // longer what identifies them — the kind is.
+    expect(fumes.every(p => p.kind === 'fume')).toBe(true);
   });
 
   it('the crater vent builds a DENSE cloud (many overlapping puffs alive at once)', () => {
@@ -331,7 +338,7 @@ describe('Particle system', () => {
     let maxAlive = 0;
     for (let i = 0; i < 180; i++) {
       ps.update(1 / 60);
-      maxAlive = Math.max(maxAlive, smokeOf(ps).length);
+      maxAlive = Math.max(maxAlive, fumesOf(ps).length);
     }
     expect(maxAlive).toBeGreaterThan(30); // dense: dozens of fume puffs coexist
   });
@@ -360,7 +367,7 @@ describe('Particle system', () => {
     ground.setGroundProvider(() => 1000);
     ground.blast(1000, 1000, 150, '#ff0000', false); // same blast AT the surface
     for (let i = 0; i < 90; i++) ground.update(1 / 60);
-    expect(smokeOf(ground).length).toBeGreaterThan(0); // a blast in soil DOES vent fumes
+    expect(fumesOf(ground).length).toBeGreaterThan(0); // a blast in soil DOES vent fumes
   });
 
   it('a named preset drives explosion colour (eGreen → green fireball particles)', () => {
@@ -387,7 +394,7 @@ describe('Particle system', () => {
     // The vent fumes are the only 'smoke' emitter spread across the crater width, WHITE (near-255) —
     // the original's crater streamers are white.
     const curtain = parts.filter(
-      p => p.kind === 'smoke' && Math.abs(p.x - cx) > r * 0.5 && p.vy < 0 && p.r > 200,
+      p => p.kind === 'fume' && Math.abs(p.x - cx) > r * 0.5 && p.vy < 0,
     );
     expect(curtain.length).toBeGreaterThan(0); // white fume curtain is emitted
     // It lines the crater on BOTH sides — a spread row, not a point.
@@ -406,7 +413,7 @@ describe('Particle system', () => {
     ps.blast(cx, cy, r, '#ffffff', false, undefined, undefined, undefined, false, true);
     for (let i = 0; i < 60; i++) ps.update(1 / 60); // past VENT_DELAY — fumes rise after the blast
     const parts = particlesPriv(ps).m_particles;
-    const curtain = parts.filter(p => p.kind === 'smoke' && p.r > 200);
+    const curtain = parts.filter(p => p.kind === 'fume');
     expect(curtain.length).toBeGreaterThan(0); // cleaners now get the white curtain too
   });
 
@@ -414,7 +421,7 @@ describe('Particle system', () => {
     const ps = new CParticleSystem();
     ps.setBounds(1600, 1200);
     ps.blast(800, 600, 60, '#ff8c22', false);
-    const kind = () => particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke').length;
+    const kind = () => particlesPriv(ps).m_particles.filter(p => p.kind === 'fume').length;
     // Let the immediate curtain fully age out (puff life ≤1.6s), then confirm NEW fumes exist —
     // proof the vent re-emitted rather than firing a single one-shot burst.
     stepN(ps, 120, 1 / 60); // 2.0s: past one puff-life, still within VENT_LIFE (2.6s)

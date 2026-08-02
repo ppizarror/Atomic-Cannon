@@ -78,7 +78,9 @@ describe('turn hand-off waits for the explosion, not the smoke', () => {
     if (ps.hasActiveExplosions()) {
       // Whatever is left must be purely cosmetic smoke/plume…
       const parts = (ps as unknown as Priv).m_particles;
-      expect(parts.every(p => p.kind === 'smoke' || p.kind === 'plume')).toBe(true);
+      expect(parts.every(p => p.kind === 'smoke' || p.kind === 'plume' || p.kind === 'fume')).toBe(
+        true,
+      );
       // …so the blast gate is already clear (the turn would have handed off).
       expect(ps.hasActiveBlast()).toBe(false);
     }
