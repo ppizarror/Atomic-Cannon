@@ -55,7 +55,6 @@ import {
 } from './CCrateField';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem, type ISmokeSink} from '../core/CParticleSystem';
-import {ScreenShake} from '../core/rendering/ScreenShake';
 import {RenderGate} from './RenderGate';
 import {CWeather} from '../core/CWeather';
 import {
@@ -442,7 +441,6 @@ export class CGameController implements ShotWorld {
     // Weather fills the VIEW (rain/snow are screen-space), not the world.
     this.m_weather = new CWeather(canvas.width, canvas.height);
     this.m_economy = new CEconomy();
-    this.m_screenShake = new ScreenShake();
     this.m_assets = new CAssetManager();
 
     // Initialize weapon list (index into WEAPON_DATABASE). The control-weapon
@@ -908,7 +906,7 @@ export class CGameController implements ShotWorld {
         // smoke keeps drifting into the next player's aim phase (it's purely visual).
         if (
           !this.m_particles.hasActiveBlast() &&
-          !this.m_screenShake.isActive() &&
+          !this.m_camera.isShaking() &&
           !this.m_land.isSettling() &&
           !this.m_tanks.some(t => t.isAlive() && (t.isFalling() || t.isMoving()))
         ) {
@@ -994,7 +992,7 @@ export class CGameController implements ShotWorld {
       case EGameState.BattleEnd:
         return true; // the winner flag keeps raising / waving on the standings
     }
-    if (this.m_screenShake.isActive()) return true;
+    if (this.m_camera.isShaking()) return true;
     if (this.m_camera.isPanning()) return true; // camera still panning
     if (this.m_screenFlash > 0) return true;
     if (this.m_particles.hasActiveExplosions()) return true;
@@ -1334,7 +1332,7 @@ export class CGameController implements ShotWorld {
     // to the display (GPU, linear-filtered — no CPU-scale moiré on the pixel terrain).
 
     // Apply screen shake offset
-    const shakeOffset = this.m_screenShake.getOffset();
+    const shakeOffset = this.m_camera.shakeOffset();
     ctx.save();
     ctx.translate(shakeOffset.x, shakeOffset.y);
 
@@ -1513,7 +1511,7 @@ export class CGameController implements ShotWorld {
     // window, but the world maps only to the container region above the HUD, so the
     // scale must use the container size — done in the caller, not here).
     octx.save();
-    const shake = this.m_screenShake.getOffset();
+    const shake = this.m_camera.shakeOffset();
     octx.translate(shake.x, shake.y);
     octx.save();
     octx.translate(-this.m_camera.x(), 0);
@@ -2436,7 +2434,7 @@ export class CGameController implements ShotWorld {
   }
 
   shake(mag: number, dur: number): void {
-    this.m_screenShake.trigger(mag, dur);
+    this.m_camera.shake(mag, dur);
   }
 
   hitSound(name: string, x: number): void {
@@ -2701,7 +2699,7 @@ export class CGameController implements ShotWorld {
 
     // Create explosion at tank position
     this.m_particles.tankDeath(pos.x, pos.y + 12);
-    this.m_screenShake.trigger(15, 0.5);
+    this.m_camera.shake(15, 0.5);
     this.m_audio?.tankExplode(pos.x); // tank explode.wav
 
     // Posthumous DEATH-weapon cook-off: a tank destroyed while still OWNING a Death-class weapon
@@ -3306,7 +3304,7 @@ export class CGameController implements ShotWorld {
         const pos = t.getPosition();
         t.explode();
         this.m_particles.tankDeath(pos.x, pos.y + 12);
-        this.m_screenShake.trigger(15, 0.5);
+        this.m_camera.shake(15, 0.5);
         this.m_audio?.tankExplode(pos.x);
       });
     }
@@ -6025,7 +6023,6 @@ export class CGameController implements ShotWorld {
     {nukes: number; beams: number; earth: number; shots: number}
   >();
   private m_mapName = ''; // set (localised) on each map load; '' pre-load, never surfaced
-  private m_screenShake: ScreenShake;
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;
   private m_smokeSink: ISmokeSink | null = null;

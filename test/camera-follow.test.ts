@@ -8,6 +8,7 @@ import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
 import {CGameController, EGameState} from '../src/game/CGameController';
 import {GameConfig} from '../src/core/CGameConfig';
+import {CCamera} from '../src/game/CCamera';
 import type {CTank} from '../src/core/CTank';
 
 type Priv = {
@@ -92,5 +93,27 @@ describe('battle-over camera', () => {
 
     expect(p.getWinnerTank()).toBe(a); // sanity: the survivor won
     expect(p.cameraFollowX()).toBe(a.getPosition().x); // camera frames the winner, not the last actor (b)
+  });
+});
+
+describe('camera shake', () => {
+  it('decays to zero after its duration', () => {
+    const c = new CCamera();
+    c.shake(20, 0.001);
+    const active0 = c.isShaking();
+    // Busy-wait a hair past the duration — the shake is timed on the WALL clock, not the sim.
+    const t0 = performance.now();
+    while (performance.now() - t0 < 5) {
+      /* spin ~5ms */
+    }
+    const off = c.shakeOffset();
+    expect(active0).toBe(true); // shake starts active
+    expect(off.x === 0 && off.y === 0).toBe(true); // …and settles to exactly zero
+    expect(c.isShaking()).toBe(false);
+  });
+
+  it('a fresh camera is not shaking', () => {
+    expect(new CCamera().isShaking()).toBe(false);
+    expect(new CCamera().shakeOffset()).toEqual({x: 0, y: 0});
   });
 });

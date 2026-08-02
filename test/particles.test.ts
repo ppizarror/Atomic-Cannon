@@ -5,7 +5,6 @@ import {describe, it, expect} from 'vitest';
 
 import {CParticleSystem, EXHAUST} from '../src/core/CParticleSystem';
 import {EXP} from '../src/core/weapons/ExpType';
-import {ScreenShake} from '../src/core/rendering/ScreenShake';
 import {Vec2} from '../src/math/Vec2';
 
 // These tests were authored to run with no DOM: with `document` undefined the
@@ -515,20 +514,6 @@ describe('Particle system', () => {
     (ctx as {globalCompositeOperation: string}).globalCompositeOperation = 'multiply';
     ps.draw(ctx);
     expect(ctx.globalCompositeOperation).toBe('multiply'); // draw restores composite op
-  });
-
-  it('ScreenShake decays to zero after its duration', () => {
-    const s = new ScreenShake();
-    s.trigger(20, 0.001);
-    const active0 = s.isActive();
-    // Busy-wait a hair past the duration.
-    const t0 = performance.now();
-    while (performance.now() - t0 < 5) {
-      /* spin ~5ms */
-    }
-    const off = s.getOffset();
-    expect(active0).toBe(true); // shake starts active
-    expect(off.x === 0 && off.y === 0).toBe(true); // shake settles to zero
   });
 
   // ---------------------------------------------------------------------------

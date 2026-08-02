@@ -48,10 +48,36 @@ exactly; they encode conventions the codebase already relies on.
 Keep this separation. New UI is a Preact component driven by a signal; new gameplay is in
 `core`/`game` and surfaces state through the signal pump — not by querying the DOM.
 
+### `core/` vs `game/` — where does a new class go?
+
+Layer 1 is two directories, and the split is load-bearing:
+
+- **`src/core`** — the shared domain: everything the UI *and* the match both speak, plus the
+  primitives they're built from (`CTank`, `CWeapon`, `CLand`, `CEconomy`, `CGameConfig`,
+  `CControls`, `CRoster`, the bot brains, `rendering/*`). The UI imports ~12 of these.
+- **`src/game`** — the match itself: `CGameController` plus the subsystems it owns
+  (`CCamera`, `CChatter`, `CCrateField`, `CFireworks`, `CHitMarkers`, `CVictoryScene`,
+  `RenderGate`). **`CGameController` is the only thing in `game/` the UI imports.**
+
+Imports run ONE way — `ui` → `game` → `core`. `core` must never import from `game` or `ui`;
+`game` must never import from `ui`. (Enforced only by review, so check it.)
+
+Rule of thumb: if a Settings screen, an editor or the HUD would need the type, it's `core`.
+If it only exists because a battle is running, it's `game`. "Only `CGameController` uses it"
+is NOT the test — `CParticleSystem`, `CWeather` and `WeaponBehavior` have one consumer each and
+are correctly `core`, because they're domain systems rather than match orchestration.
+
+Two known oddities, both deliberate: `core/CTaunts` (the editable line pools — the UI edits them)
+and `game/CChatter` (the speech bubbles — match-only) are a split pair that reads like a mistake
+but isn't; and `core/rendering/CPixiCompositor` is really layer 2 above, sitting under
+`core/rendering/` for historical reasons.
+
 ## Naming
 
 - Core/game classes are **`C`-prefixed**: `CGameController`, `CLand`, `CTank`, `CWeapon`,
   `CParticleSystem`, `CWeather`, `CPixiCompositor`, … One class per file, filename = class name.
+  A module of free functions over a data context is NOT `C`-prefixed (`botEconomy`, `wind`,
+  `CVictoryScene`'s draw helpers) — the prefix means "this file exports a class".
 - Instance fields are **`m_`-prefixed** (`m_canvas`, `m_particles`, `m_ctx`). They are TS
   soft-private — reachable at runtime in dev, which the browser verify harness relies on.
 - UI components/files are plain PascalCase (`Hud.tsx`, `BmpText.tsx`).

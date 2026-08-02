@@ -8,8 +8,15 @@
  * It deliberately does NOT decide WHAT to look at: the controller computes the follow target (a
  * shot in flight, the impact, the acting tank, the victor) and passes it in. Camera = how we get
  * there; controller = where we're going.
+ *
+ * It also owns the detonation SHAKE. Scroll and shake are both "where the view is this frame" —
+ * one eased and persistent, one transient and decaying — so a caller asks one object rather than
+ * combining two. (Shake previously sat in `core/rendering/ScreenShake`, whose own header noted it
+ * "is really a camera/view concern"; it lived there only because it was carved out of the particle
+ * system.)
  */
 import {clamp} from '../math/num';
+import {plusMinus} from '../math/random';
 
 export const CAMERA = {
   /** Where the followed object sits in the view: 0.5 = dead centre. */
@@ -48,6 +55,13 @@ export class CCamera {
   private m_dwell = 0;
   /** The player grabbed the minimap — auto-follow yields until the next fire/turn. */
   private m_manual = false;
+  // Detonation shake: peak offset, how long it decays over, and when it started. Timed on the WALL
+  // clock (performance.now), NOT the sim clock — it is a presentation effect, and a headless run
+  // that sims faster than real time must stub performance.now or every shake reads as permanently
+  // active (which wedges the Explosion → endTurn hand-off).
+  private m_shakeIntensity = 0;
+  private m_shakeDuration = 0;
+  private m_shakeStart = 0;
 
   /** World X of the view's left edge — for input→world mapping and the world draw. */
   x(): number {
@@ -83,6 +97,29 @@ export class CCamera {
     this.m_x = this.m_targetX = 0;
     this.m_dwell = 0;
     this.m_manual = false;
+  }
+
+  // ── detonation shake ──────────────────────────────────────────────────────
+
+  /** Kick the view: `intensity` px of peak offset, decaying linearly over `durationSec`. */
+  shake(intensity: number, durationSec: number): void {
+    this.m_shakeIntensity = intensity;
+    this.m_shakeDuration = durationSec;
+    this.m_shakeStart = performance.now() / 1000;
+  }
+
+  /** This frame's shake offset — a fresh random jitter scaled by the remaining decay, {0,0} once
+   *  it has run out. Called at draw time, so it is deliberately NOT memoised per frame. */
+  shakeOffset(): {x: number; y: number} {
+    const elapsed = performance.now() / 1000 - this.m_shakeStart;
+    if (elapsed > this.m_shakeDuration) return {x: 0, y: 0};
+    const maxOffset = this.m_shakeIntensity * (1 - elapsed / this.m_shakeDuration);
+    return {x: plusMinus(maxOffset), y: plusMinus(maxOffset)};
+  }
+
+  /** Still shaking — holds the render gate open and defers the turn hand-off. */
+  isShaking(): boolean {
+    return performance.now() / 1000 - this.m_shakeStart < this.m_shakeDuration;
   }
 
   /** Widest the view can scroll; 0 when the world fits (no scroll, hence no minimap). */
