@@ -567,6 +567,7 @@ export class CLand {
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
     this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
     const y = Math.floor(this.m_nHeight * 0.62);
     for (let x = 0; x < this.m_nWidth; x++) this.m_arrHeights[x] = y;
     if (this.m_baseHeights) this.m_baseHeights.fill(y);
@@ -590,6 +591,7 @@ export class CLand {
     this.m_speckPool.length = 0;
     this.m_radParticles.length = 0;
     this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
     for (const c of [this.m_terrainCanvas, this.m_backdropCanvas, this.m_debugCanvas]) {
       if (c) c.width = c.height = 0; // free the backing store now, not at the next GC
     }
@@ -615,6 +617,7 @@ export class CLand {
     this.m_radSpecks.length = 0;
     this.m_radParticles.length = 0;
     this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
     const A = 15; // walk amplitude
     const Ymin = Math.floor(this.m_nHeight * 0.3); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -1274,12 +1277,16 @@ export class CLand {
     // high and fall. Defaults keep the normal ground-blast behaviour.
     speckOriginY?: number,
     raining = false,
-    // The slot this detonation's contamination lives in. Passed in when the caller already claimed
-    // one to tag the earth the same blast THREW (see `radiationSlot`) — spoil, fallout and zone are
-    // one patch of poisoned ground and must share a slot, or they fade on separate clocks.
-    slot = this.radiationSlot(rgb),
   ): void {
     const [r, g, b] = CLand.radRGB(rgb);
+    // Spoil, fallout and zone are ONE patch of poisoned ground and must share a slot, or they fade
+    // on separate clocks. Asked for rather than passed in: `radiationSlot` answers per EVENT, so the
+    // caller that already claimed one to tag the earth this blast THREW gets that same slot back
+    // here. It used to be a parameter defaulting to a fresh claim, and since no caller ever passed
+    // it every irradiating blast claimed two slots — the zone's and an orphan holding the spoil,
+    // which then had no zone to light it or to cool it: contaminated ejecta that never glowed and
+    // never decayed, on top of burning the eight-slot table twice as fast as it should.
+    const slot = this.radiationSlot(rgb);
 
     // The fallout lingers longer than the raw irTime and dims GRADUALLY.
     // Stretch the visible life ~1.6× so the radioactive ground glows for a
@@ -1673,29 +1680,80 @@ export class CLand {
   }
 
   /**
-   * Claim a terrain slot for ONE detonation's contamination — its colour and its clock together.
-   * Called once per radioactive blast, before any of its earth is thrown, because the ejecta is
-   * launched ahead of `blastIradiate` and every pixel of a blast (spoil, fallout, zone) must carry
-   * the same slot: that is what makes it a single, independently-fading patch of poisoned ground.
+   * Open a new contamination EVENT: everything poisoned from here until the next call is one patch
+   * of ground on one clock, however many detonations produce it.
    *
-   * A fresh slot EVERY time, never one shared with the last blast of the same colour. Sharing
-   * couples two craters' clocks: the older one snaps back to full brightness the instant the newer
-   * one lands, and cannot go out while the newer one lives.
+   * The event, not the detonation, is the unit — see {@link radiationSlot}. Driven off the TURN,
+   * because the turn is already exactly one firing event: it does not advance until every shot has
+   * landed and every grain of thrown earth has settled, so a cluster's whole family — however deep
+   * it recurses, whatever trajectory carried it — falls inside one, and the next turn's blast is a
+   * genuinely separate poisoning that deserves its own clock. Deliberately not a wall-clock window
+   * or an idle heuristic: those would have to guess, and a net peer guessing differently would
+   * colour its terrain differently.
+   */
+  beginRadiationEvent(): void {
+    this.m_radEventSlot.clear();
+  }
+
+  /**
+   * The terrain slot THIS contamination event deposits into — its colour and its clock together.
+   *
+   * Idempotent per (event, colour): ask once or ask twenty times, from a blast, from its cluster
+   * children, from the ejecta tagger, from a beam, from a mine — the answer is the same slot, and
+   * only the first ask consumes one. That is the whole point. There are only eight slots (three
+   * bits in the material byte) and claiming one EVICTS whatever earth still holds it, so a call
+   * site that claims per detonation is not merely wasteful, it wipes other players' contamination
+   * off the map: an Anthrax (a 7-detonation cluster) claiming two slots apiece burned through the
+   * table twice over and took every Plasma crater on the map with it. Making the answer a property
+   * of the event rather than of the caller is what stops that at the root — a new weapon, or a new
+   * trajectory behaviour, cannot get it wrong because there is nothing for it to get right.
+   *
+   * Across events it is still a fresh slot, never one shared with an earlier blast of the same
+   * colour: sharing couples two craters' clocks, so the older one snaps back to full brightness the
+   * instant the newer one lands and cannot go out while the newer one lives.
    */
   radiationSlot(rgb?: [number, number, number]): number {
     const [r, g, b] = CLand.radRGB(rgb);
-    const slot =
-      this.m_radSlotRGB.length < MAT.RAD_SLOTS
-        ? this.m_radSlotRGB.length
-        : this.m_radSlotAge.reduce((lru, a, i) => (a < this.m_radSlotAge[lru] ? i : lru), 0);
+    const key = ((r << 16) | (g << 8) | b) >>> 0;
+    const held = this.m_radEventSlot.get(key);
+    if (held !== undefined) return held; // this event is already poisoning in this colour
+    const slot = this.pickRadSlot();
     // Recycling a slot ERASES the earth still tagged with it, rather than leaving it to be re-lit
     // in the new blast's colour on the new blast's clock — which is a long-dead crater switching
     // hue and glowing again, the same fault as sharing, only deferred by eight blasts. Bounded by
-    // the hot bounding box and paid once per detonation, on a frame already carving terrain.
+    // the hot bounding box and paid once per event, on a frame already carving terrain.
     this.clearRadSlot(slot);
     this.m_radSlotRGB[slot] = [r, g, b];
     this.m_radSlotAge[slot] = ++this.m_radSlotClock;
+    this.m_radEventSlot.set(key, slot);
     return slot;
+  }
+
+  /**
+   * Which slot the next contamination event takes: an unused one, else a BURNT-OUT one, else the
+   * oldest.
+   *
+   * Preferring burnt-out slots is what makes the ninth blast of a match cost nothing visible. A
+   * slot whose zone has expired is already inert — `drawRadGlow` skips it for want of a fade and
+   * `update` has cooled its earth back to clean soil — so recycling it destroys nothing, whereas
+   * evicting by age alone reaches for the oldest slot precisely because it is the one that has been
+   * glowing longest, which is very often still burning.
+   */
+  private pickRadSlot(): number {
+    if (this.m_radSlotRGB.length < MAT.RAD_SLOTS) return this.m_radSlotRGB.length;
+    const live = new Set(this.m_radParticles.map(z => z.slot));
+    // A slot this same event already claimed is not a candidate at any price — the event is still
+    // depositing into it and its zone may not even be pushed yet.
+    const held = new Set(this.m_radEventSlot.values());
+    let best = -1;
+    for (let i = 0; i < MAT.RAD_SLOTS; i++) {
+      if (held.has(i)) continue;
+      if (best < 0) best = i;
+      else if (live.has(best) !== live.has(i))
+        best = live.has(i) ? best : i; // dead beats live
+      else if (this.m_radSlotAge[i] < this.m_radSlotAge[best]) best = i; // then oldest
+    }
+    return best < 0 ? 0 : best; // every slot spoken for (8 colours in one event) — reuse the first
   }
 
   /** Strip one slot's radioactivity out of the terrain — the earth reverts to ordinary soil. */
@@ -3156,12 +3214,14 @@ export class CLand {
   private m_radGlowY = 0;
   private m_radGlowDirty = false;
   private m_bloomCanvas: HTMLCanvasElement | null = null;
-  // The colours those slots stand for, in stamp order. A blast claims the slot already holding its
-  // colour, or the oldest one — so a fifth simultaneous hue recolours the least recent coat rather
-  // than every coat on the map.
+  // The colours those slots stand for, in claim order, and when each was claimed (see `pickRadSlot`
+  // for which one the next event takes).
   private m_radSlotRGB: [number, number, number][] = [];
   private m_radSlotAge: number[] = [];
   private m_radSlotClock = 0;
+  // Colour → slot for the contamination event IN PROGRESS (see `beginRadiationEvent`). This is what
+  // makes `radiationSlot` idempotent, so no caller can claim the same event's slot twice.
+  private m_radEventSlot = new Map<number, number>();
   // Extent of the HOT EARTH, grown as the channel is written. The glow layer is sized from this and
   // never from the zones' radii: the coat reaches the crater FLOOR, which lies below `z.y + radius`,
   // so a zone-sized layer sliced the bottom off the coat with a flat horizontal cap — and when a

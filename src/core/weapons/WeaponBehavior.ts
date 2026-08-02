@@ -490,7 +490,6 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
 
   // Radiation, resolved BEFORE the terrain effect because the earth this blast throws is itself the
   // contaminated material — the spoil has to be tagged as it is launched, not dusted afterwards.
-  // Zone/fallout are fired further down; both take the same colour slot.
   const rad = weapon.getRadiation();
   const irradiates = rad.time > 0 && rad.dmg > 0;
   const radSlot = irradiates ? land.radiationSlot(rad.rgb) : -1;

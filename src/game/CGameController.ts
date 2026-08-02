@@ -2925,13 +2925,11 @@ export class CGameController implements ShotWorld {
 
   /** Start the current player's turn. The HUD (Preact) reads state via getters. */
   private beginTurn(): void {
+    this.m_land.beginRadiationEvent(); // open a fresh contamination event
     this.m_movePlacing = false; // a fresh turn is never mid-placement
     this.m_moveResolving = false; // fresh turn: no committed move drive in flight
     this.m_turnForfeited = false; // fresh turn: the passive-death forfeit latch is re-armed
-    // Disown any aim drag held from the PREVIOUS turn. A shot-clock forfeit ends the turn with no user
-    // action, so a pointer still held would otherwise keep aiming the NEW current tank: the world drag
-    // bails once m_aim.active is false, and the HUD power/angle drags bail when m_turnSeq changes.
-    this.m_aim.active = false;
+    this.m_aim.active = false; // disown any aim drag held from the PREVIOUS turn
     this.m_turnSeq++;
     const tank = this.getCurrentTank();
     // Buy Time → Automatic: the human's arsenal is auto-assigned (no manual depot). Top it up

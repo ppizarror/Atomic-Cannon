@@ -7,10 +7,14 @@
  * uranium zone left to ask, so the whole blue coat turns red, not just where the two met.
  *
  * Identity is a property of the pixel instead, like its radioactivity: the material byte carries a
- * 3-bit SLOT (bit 0 dirt tag, bits 1-4 intensity, bits 5-7 slot). A slot is one DETONATION — its
- * colour and its clock — not one colour, because two uranium craters an hour apart are not the same
- * contamination: sharing a slot flares the older one back to full brightness the moment the newer
- * one lands, and keeps it from ever going out.
+ * 3-bit SLOT (bit 0 dirt tag, bits 1-4 intensity, bits 5-7 slot). A slot is one contamination EVENT
+ * — its colour and its clock — not one colour, because two uranium craters an hour apart are not the
+ * same contamination: sharing a slot flares the older one back to full brightness the moment the
+ * newer one lands, and keeps it from ever going out.
+ *
+ * The event, not the individual detonation, is the unit — so these tests open one per blast the way
+ * a turn does (see `land-radiation-slots.test.ts` for why a cluster's seven detonations must NOT be
+ * seven events, and `CLand.beginRadiationEvent`).
  */
 import {describe, it, expect} from 'vitest';
 import {landPriv} from './_internals';
@@ -107,21 +111,23 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
     expect(columnColours(land, 200)).toEqual([BLUE.join(',')]);
   });
 
-  it('every blast gets its OWN slot, even fired twice in the same colour', () => {
+  it('every EVENT gets its own slot, even fired twice in the same colour', () => {
     const land = flatLand(900, 300, 150);
 
+    land.beginRadiationEvent();
     land.blastIradiate(150, 150, 40, 12, 30, BLUE);
     settleFallout(land);
     const first = columnSlots(land, 150);
 
+    land.beginRadiationEvent(); // …the next turn
     land.blastIradiate(600, 150, 40, 12, 30, BLUE); // same weapon, far away
     settleFallout(land);
     const second = columnSlots(land, 600);
 
     expect(first).toHaveLength(1);
     expect(second).toHaveLength(1);
-    // Same colour, different detonation → different slot, so the first crater keeps fading on its
-    // own clock instead of being relit by the second.
+    // Same colour, different event → different slot, so the first crater keeps fading on its own
+    // clock instead of being relit by the second.
     expect(second[0]).not.toBe(first[0]);
   });
 
@@ -129,6 +135,7 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
     const land = flatLand(900, 300, 150);
     const p = landPriv(land);
 
+    land.beginRadiationEvent();
     land.blastIradiate(150, 150, 40, 12, 30, BLUE);
     settleFallout(land); // A ages while its fallout comes down
     const slotA = columnSlots(land, 150)[0];
@@ -138,6 +145,7 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
     // has passed, and pinning the expected total here just breaks when that constant is tuned.
     expect(agedA).toBeLessThan(zA.duration);
 
+    land.beginRadiationEvent(); // …the next turn
     land.blastIradiate(600, 150, 40, 12, 30, BLUE);
 
     const zoneA = p.m_radParticles.find(z => z.slot === slotA);
@@ -190,13 +198,15 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
   it('recycling a slot ERASES the old blast’s earth rather than recolouring it', () => {
     const land = flatLand(2600, 300, 150);
 
-    // The first blast's slot must be gone — not repainted red — once enough later blasts have run
+    // The first blast's slot must be gone — not repainted red — once enough later EVENTS have run
     // the 8 slots round. Otherwise a long-dead crater lights back up in someone else's colour.
+    land.beginRadiationEvent();
     land.blastIradiate(150, 150, 40, 12, 30, BLUE);
     settleFallout(land);
     expect(columnColours(land, 150)).toEqual([BLUE.join(',')]);
 
     for (let i = 1; i <= 8; i++) {
+      land.beginRadiationEvent(); // each its own turn — within one, they would share a slot
       land.blastIradiate(150 + i * 260, 150, 40, 12, 30, RED);
       settleFallout(land);
     }
