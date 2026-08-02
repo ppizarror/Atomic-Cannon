@@ -1,5 +1,5 @@
 /**
- * Deterministic logic tests for the particle system (Phase 4).
+ * Deterministic logic tests for the particle system.
  */
 import {describe, it, expect} from 'vitest';
 import {particlesPriv} from './_internals';
@@ -8,12 +8,11 @@ import {CParticleSystem, EXHAUST} from '../src/core/CParticleSystem';
 import {EXP} from '../src/core/weapons/ExpType';
 import {Vec2} from '../src/math/Vec2';
 
-// These tests were authored to run with no DOM: with `document` undefined the
-// particle draw path takes CParticleSystem's "Node test runner" branch (a
-// gradient fallback painted on the recording ctx) instead of building an
-// offscreen glow canvas. The global Vitest setup installs a stub `document`;
-// drop it here so the draw tests exercise exactly the branch they were written
-// for (the stub canvas has no working createRadialGradient).
+// These tests run with no DOM: with `document` undefined the particle draw path
+// takes CParticleSystem's "Node test runner" branch (a gradient fallback painted
+// on the recording ctx) instead of building an offscreen glow canvas. The global
+// Vitest setup installs a stub `document`; drop it here so the draw tests exercise
+// exactly that branch (the stub canvas has no working createRadialGradient).
 delete (globalThis as {document?: unknown}).document;
 
 // A recording 2D-context stand-in: never throws, and logs each PAINT op with the
@@ -193,7 +192,7 @@ describe('Particle system', () => {
     const right = new CParticleSystem();
     right.setBounds(4000, 2000);
     // Same emission; opposite winds. trailType 2 (rocket) so it emits grey SMOKE
-    // (ballistic trailType 1 emits none — that's the shell/rail fix).
+    // (ballistic trailType 1 emits none — shells and rails leave no smoke).
     for (let i = 0; i < 30; i++) {
       left.trail(2000, 1000, '#cccccc', 0, 0, 2);
       right.trail(2000, 1000, '#cccccc', 0, 0, 2);
@@ -285,8 +284,8 @@ describe('Particle system', () => {
   const smokeOf = (ps: CParticleSystem) =>
     particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke');
 
-  /** Crater fumes are their OWN kind now — they used to be 'smoke' told apart by brightness
-   *  (r >= 200), which is exactly what blocked them from ever being soot-dark. */
+  /** Crater fumes are their OWN kind, not 'smoke' told apart by brightness (r >= 200) — a
+   *  brightness test is exactly what would stop them from ever being soot-dark. */
   const fumesOf = (ps: CParticleSystem) =>
     particlesPriv(ps).m_particles.filter(p => p.kind === 'fume');
 
@@ -415,12 +414,12 @@ describe('Particle system', () => {
     const cx = 800,
       cy = 600,
       r = 60;
-    // isCleaner=true — the earth-remover path used to skip the streamers entirely.
+    // isCleaner=true — the earth-remover path vents like any other, it does not skip the streamers.
     ps.blast(cx, cy, r, '#ffffff', false, undefined, undefined, undefined, false, true);
     for (let i = 0; i < 60; i++) ps.update(1 / 60); // past VENT_DELAY — fumes rise after the blast
     const parts = particlesPriv(ps).m_particles;
     const curtain = parts.filter(p => p.kind === 'fume');
-    expect(curtain.length).toBeGreaterThan(0); // cleaners now get the white curtain too
+    expect(curtain.length).toBeGreaterThan(0); // cleaners get the white curtain too
   });
 
   it('the crater vent keeps venting fumes over time (sustained ascension)', () => {

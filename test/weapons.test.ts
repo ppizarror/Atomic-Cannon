@@ -138,9 +138,9 @@ describe('Weapon behaviour', () => {
   });
 
   it('a Cleaner detonating a bit ABOVE the surface still cleans the GROUND (not empty air)', () => {
-    // Regression: the cleaner used to carve at `pos.y`; when the blast resolved above the ground it
-    // carved empty sky and removed NOTHING (the "blast floats, terrain intact" bug). It must carve
-    // the surface under the impact instead.
+    // A cleaner that carves at `pos.y` cuts empty sky whenever the blast resolves above the
+    // ground — the fireball plays and the terrain stays intact. It must carve the surface under
+    // the impact instead.
     const surface = 300;
     const land = flatLand(surface);
     const w = getWeapon(idxOf('Earth Destroy'));
@@ -154,10 +154,10 @@ describe('Weapon behaviour', () => {
     expect(land.getHeightAt(400)).toBeGreaterThan(surface); // ground under the impact is cleaned
   });
 
-  it('a Cleaner still cleans with a FRACTIONAL blast scale (regression: no-op crater)', () => {
-    // The real bug: `blastScale` (Explosion Size × resolution) is often NON-integer, so radiusPx =
-    // radius × scale is fractional (130×1.47≈191). The carve then iterated fractional column indices
-    // and carved NOTHING — the cleaner showed only fumes, no crater. Guard the end-to-end path.
+  it('a Cleaner still cleans with a FRACTIONAL blast scale', () => {
+    // `blastScale` (Explosion Size × resolution) is often NON-integer, so radiusPx = radius × scale
+    // is fractional (130×1.47≈191). A carve that iterates fractional column indices removes
+    // NOTHING — fumes and no crater — so this guards the end-to-end path.
     const surface = 300;
     const land = flatLand(surface);
     const w = getWeapon(idxOf('Earth Destroy'));
@@ -231,8 +231,8 @@ describe('Weapon behaviour', () => {
     const g1 = world.spawned[0];
     expect(g1.getPower()).toBeCloseTo(100); // 0.5 × 200
 
-    // A gen-1 submunition re-clusters: its child must ALSO be 0.5×200 = 100, NOT the old
-    // 0.5×100 = 50 (which compounded to 0.5ⁿ and made deep drillers barely move).
+    // A gen-1 submunition re-clusters: its child must ALSO be 0.5×200 = 100, NOT 0.5×100 = 50,
+    // which compounds to 0.5ⁿ and leaves deep drillers barely moving.
     world.spawned = [];
     spawnCluster(g1, w, world, new Vec2(400, 300));
     expect(world.spawned[0].getGeneration()).toBe(2);

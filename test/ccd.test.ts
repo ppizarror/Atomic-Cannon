@@ -1,8 +1,8 @@
 /**
  * Swept (continuous) collision: the integrator takes one full Euler step per frame, which on big maps
- * can span 35-50px vs a ~16px tank hit radius. The old endpoint point-sample let a shot whose path
- * crossed a tank skip clean over it ("I hit it dead-on, nothing happened"). weaponFlyStep now walks
- * the segment prev→cur and detonates at the first contact, snapping the blast onto it.
+ * can span 35-50px vs a ~16px tank hit radius. Point-sampling the endpoint alone lets a shot whose
+ * path crossed a tank skip clean over it ("I hit it dead-on, nothing happened"), so weaponFlyStep
+ * walks the segment prev→cur and detonates at the first contact, snapping the blast onto it.
  */
 import {describe, it, expect} from 'vitest';
 import {Vec2} from '../src/math/Vec2';
@@ -59,8 +59,8 @@ function sweptShot(from: Vec2, to: Vec2, owner: CTank | null = null): CShot {
 describe('swept collision (CCD)', () => {
   it('a fast shot whose path crosses a tank detonates on it (no tunneling)', () => {
     const world = worldWithTank(500, 300);
-    // 60px horizontal step straight through the tank; the endpoint (530) is 30px away → the old point
-    // test at the endpoint alone would MISS (30 > 16).
+    // 60px horizontal step straight through the tank; the endpoint (530) is 30px away → a test at
+    // the endpoint alone would MISS (30 > 16).
     const shot = sweptShot(new Vec2(470, 300), new Vec2(530, 300));
 
     expect(weaponFlyStep(shot, shell(), world, 1 / 60)).toBe('detonate');
@@ -83,7 +83,7 @@ describe('swept collision (CCD)', () => {
   });
 });
 
-describe('owner self-hit arming (regression: swept test near the muzzle)', () => {
+describe('owner self-hit arming (the swept test near the muzzle)', () => {
   it('a shot does NOT detonate on its own tank while still near the muzzle (un-armed)', () => {
     const owner = mockTank(500, 300);
     // Segment stays inside the owner's 16px radius — as at the barrel on a low-power / down-slope shot.
@@ -106,7 +106,7 @@ describe('owner self-hit arming (regression: swept test near the muzzle)', () =>
   });
 });
 
-describe('terrain-before-tank (regression: no shooting through a ridge)', () => {
+describe('terrain-before-tank (no shooting through a ridge)', () => {
   it('the staple used here is a default-case ballistic shell, not a beam', () => {
     expect(shell().getExtType()).not.toBe(EXT.BEAM);
   });

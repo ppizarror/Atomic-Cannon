@@ -96,10 +96,10 @@ describe('Winning the war', () => {
     expect(t[0].isAlive() && t[1].isAlive() && t[2].isAlive()).toBe(true); // respawned full
   });
 
-  // Regression: a new battle regenerated only the HEIGHTMAP — the landscape (sky, strata
-  // textures, weather, ambient tint) was picked once at startGame and then held for the whole
-  // war, so every battle was fought in the same place. The original rebuilds the whole level per
-  // battle (`FUN_004259c0(this, -1, …)`: roll a random enabled background → its land.txt block).
+  // A new battle must regenerate the whole LEVEL, not just the heightmap: the landscape (sky,
+  // strata textures, weather, ambient tint) is rolled per battle, as the original does — pick a
+  // random enabled background, then take its land.txt block. A landscape picked once at startGame
+  // and held for the whole war would leave every battle fought in the same place.
   it('nextBattle rolls a fresh landscape, not just fresh terrain', () => {
     const gc = newGame();
     const priv = gc as unknown as {pickLandscapeIndex(): number; m_loadPromise: Promise<void>};

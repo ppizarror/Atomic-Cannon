@@ -58,7 +58,7 @@ describe('Multi-fire cadence', () => {
     gc.fire();
 
     // Only salvo 0's fan is out; the other `sucNum` salvos are still pending — they do
-    // NOT all leave at once (the bug this guards: a simultaneous fan of sucNum+1).
+    // NOT all leave at once (the failure this guards: a simultaneous fan of sucNum+1).
     expect(priv(gc).m_shots.length).toBe(def.spawn);
     expect(priv(gc).m_pendingSalvos).toBe(def.sucNum); // 1+sucNum set, salvo 0 already fired
     expect(pendingDelays(gc).length).toBe(def.sucNum);
@@ -75,10 +75,11 @@ describe('Multi-fire cadence', () => {
     const delays = pendingDelays(gc);
     delays.forEach((d, k) => expect(d).toBeCloseTo(expected[k], 4));
 
-    // And it is genuinely the new model — distinct from both discarded formulas.
+    // And it is genuinely a fixed gap — distinct from either way of deriving one from the salvo
+    // count, both of which would land elsewhere.
     const salvos = 1 + def.sucNum;
     expect(gap).not.toBeCloseTo(def.sucSec / salvos, 2); // not sucSec/salvos (0.2)
-    expect(gap).not.toBeCloseTo(0.14, 2); // not the old clamp result (clamp(0.2,.05,.14)=0.14)
+    expect(gap).not.toBeCloseTo(0.14, 2); // not a clamped spacing (clamp(0.2,.05,.14)=0.14)
   });
 
   it('advancing sim time releases the queued salvos one at a time', () => {

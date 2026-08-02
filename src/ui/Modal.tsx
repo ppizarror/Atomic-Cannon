@@ -5,9 +5,8 @@
  * (a full screen of its own). A backdrop click calls `onClose` when provided; clicks
  * inside the card never bubble out to it.
  *
- * Before this, Help and About each rolled their own overlay + card — About even used a
- * different (plain dark, rounded) card — which is the visual inconsistency this fixes:
- * every dialog now wears the same dialog.bmp frame.
+ * Every dialog wears the same dialog.bmp frame — route pop-up cards through here rather than
+ * rolling a bespoke overlay + card per screen, which is how they drift visually apart.
  */
 import type {ComponentChildren, JSX} from 'preact';
 

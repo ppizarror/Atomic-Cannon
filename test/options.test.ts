@@ -1,7 +1,8 @@
 /**
- * Formerly-unwired Settings options (parity fix): each of the nine no-ops now reaches the
- * engine. This drives the real bridge (settingsStore → settingsValues → applyGameSettings →
- * GameConfig) and the Buy-Time / Randomize-Turns behaviour that hangs off it.
+ * Settings options that must reach the ENGINE, not just the store: nine options whose only proof
+ * of wiring is the value landing in GameConfig. This drives the real bridge (settingsStore →
+ * settingsValues → applyGameSettings → GameConfig) and the Buy-Time / Randomize-Turns behaviour
+ * that hangs off it.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -27,8 +28,8 @@ function humanGame(players = 2): CGameController {
   return gc;
 }
 
-describe('Formerly-no-op Settings options', () => {
-  it('all nine options now reach GameConfig (were silent no-ops)', () => {
+describe('Settings options that must reach the engine', () => {
+  it('all nine options reach GameConfig', () => {
     setVal('gp.rcFires', 0);
     setVal('gfx.smallBuy', 1);
     setVal('tank.relTurrets', 1);
@@ -118,7 +119,7 @@ describe('Formerly-no-op Settings options', () => {
     p.m_currentPlayerIndex = botIdx; // spectate the bot's turn
     const econ = p.economyFor(p.m_tanks[botIdx]);
 
-    // A weapon the bot does NOT own must be ABSENT (previously the whole arsenal was shown).
+    // A weapon the bot does NOT own must be ABSENT — the panel is its stock, not the arsenal.
     const missing = WEAPON_DATABASE.find(w => weaponEnabled(w.index) && !econ.hasStock(w.index));
     expect(missing).toBeDefined();
     const has = () => gc.getWeaponDefs().some(w => w.index === missing!.index);
@@ -233,7 +234,7 @@ describe('Formerly-no-op Settings options', () => {
 
   it('a Move drives the tank all the way to its target over spiky terrain (no steepness gate)', () => {
     // Every random terrain must let the tank crawl the full distance — the original drives on ANY
-    // terrain; a per-column slope gate used to halt it on ordinary bumps after a few frames.
+    // terrain, and a per-column slope gate would halt it on ordinary bumps after a few frames.
     for (const seed of [1, 123, 999, 55, 314]) {
       const land = new CLand(2000, 500);
       land.generateRandomTerrain(seed);
@@ -271,7 +272,7 @@ describe('Formerly-no-op Settings options', () => {
     GameConfig.buryTanks = true;
 
     // A LIGHT dusting of ejecta (8px, the hull still sticks well out) is NOT "underground" — the
-    // reported bug was that any speck of ejecta tripped the condition (old 0.5px / 10px thresholds).
+    // buried test keys on the hull being covered, not on a speck-sized threshold any ejecta trips.
     for (let c = 360; c < 440; c++) (land.m_arrHeights as Int16Array)[c] = SURF - 8;
     tank.update(L, 1 / 60);
     expect(tank.isBuried()).toBe(false); // a few px of ejecta ≠ underground
@@ -354,14 +355,15 @@ describe('Formerly-no-op Settings options', () => {
     p.m_currentPlayerIndex = 0;
     const startX = mover.getPosition().x;
     const w = p.m_land.width;
-    // A LONG move (~700px ≈ 10s at 70 px/s), toward the roomier side — well past the OLD 5s cap.
+    // A LONG move (~700px ≈ 10s at 70 px/s), toward the roomier side — longer than any fixed
+    // turn cap would sit through.
     const dest = startX < w / 2 ? Math.min(w - 30, startX + 700) : Math.max(30, startX - 700);
     expect(Math.abs(dest - startX)).toBeGreaterThan(450); // genuinely long
     p.startTankMove(mover, dest);
     expect(mover.isMoving()).toBe(true);
 
-    // Advance ~6.5s of sim — the OLD 5s cap would have ended the turn here, mid-drive, letting the
-    // next tank fire while this one was still moving.
+    // Advance ~6.5s of sim — a fixed 5s cap would end the turn right here, mid-drive, letting the
+    // next tank fire while this one is still moving.
     for (let i = 0; i < Math.round(6.5 * 60); i++) gc.update(1 / 60);
     expect(mover.isMoving()).toBe(true); // STILL driving — the long move wasn't cut short
     expect(p.m_currentPlayerIndex).toBe(0); // still the mover's turn (no hand-off mid-move)
@@ -379,7 +381,7 @@ describe('Formerly-no-op Settings options', () => {
 
     expect(p.m_crateField.list().length).toBe(0);
     p.endTurn(); // player 0 → 1: mid-round hand-off (turn order NOT wrapped yet)
-    expect(p.m_crateField.list().length).toBe(0); // no crate mid-round — the bug dropped one EVERY turn
+    expect(p.m_crateField.list().length).toBe(0); // no crate mid-round — the roll is per ROUND, not per turn
     p.endTurn(); // player 1 → 0: the round wraps
     expect(p.m_crateField.list().length).toBe(1); // exactly one crate for the completed round
 
@@ -406,11 +408,11 @@ describe('Formerly-no-op Settings options', () => {
   });
 
   it('Filled Craters is a render toggle (darkened-backdrop layer); a carve still works either way', () => {
-    // Filled Craters is now a rendering feature: a DARKENED snapshot of the pristine terrain drawn
+    // Filled Craters is a rendering feature: a DARKENED snapshot of the pristine terrain drawn
     // BEHIND the live terrain, so carved-away regions reveal the mountain's darkened interior (not
     // sky). It is decoupled from the carve — the crater math is identical whether the option is on or
     // off (only the draw layers differ, verified in-game). Here we just pin that the toggle is a plain
-    // boolean and that a crater carves regardless (no per-column pixel fill in the carve anymore).
+    // boolean and that a crater carves regardless — the carve does no per-column pixel fill of its own.
     const carveWith = (fill: boolean): number => {
       GameConfig.craterFill = fill;
       const land = new CLand(400, 300);

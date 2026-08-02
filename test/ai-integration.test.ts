@@ -1,7 +1,7 @@
 /**
  * Integration test: drive a real bot turn through CGameController and confirm the
  * AI aims at the enemy with a proper firing solution (real ballistics + full power
- * scale), not the old naive ~45°/≤100-power guess.
+ * scale), not a naive ~45°/≤100-power guess.
  */
 import {describe, it, expect, vi} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -76,13 +76,13 @@ for (let run = 0; run < RUNS; run++) {
 }
 
 describe('Bot AI (integration)', () => {
-  it('bot fires at real power (140..1000, not the old ≤100 cap)', () => {
+  it('bot fires at real power (140..1000, not a ≤100 cap)', () => {
     expect(sawFullPower).toBe(true);
   });
 
   it('bot lands near the enemy on most maps (within 60px)', () => {
-    // The old AI capped power at 100 (range ~16px) and never reached a target 600px
-    // away; the new one uses the full scale.
+    // Power capped at 100 reaches only ~16px, nowhere near a target 600px away — the bot
+    // has to solve on the full power scale.
     expect(good).toBeGreaterThanOrEqual(RUNS - 1);
   });
 });

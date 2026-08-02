@@ -13,7 +13,7 @@ import {CTank} from '../src/core/CTank';
 import {WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 
-// Weapon display names now come from i18n (data/weapons.json carries only the id slug),
+// Weapon display names come from i18n (data/weapons.json carries only the id slug),
 // so look weapons up by their localised name.
 const idxOf = (name: string) => WEAPON_DATABASE.findIndex(w => weaponName(w) === name);
 const SENTRY_TURRET = idxOf('Sentry Turret');
@@ -96,9 +96,9 @@ describe('Sentry turrets', () => {
     priv(gc).executeSentryTurn();
     expect(sentry.getWeaponIndex()).toBe(MACHINE_GUN); // selected the Machine Gun
 
-    // fire() is what the sentry's scheduled turn calls. A sentry reports isBot(), so before the fix it
-    // hit the ammo-charge path → ensureStocked found no MG rounds in its empty economy → swapped it
-    // back to the Shell. It must now keep the Machine Gun (sentries don't draw from an inventory).
+    // fire() is what the sentry's scheduled turn calls. A sentry reports isBot(), so the bot
+    // ammo-charge path would claim it → ensureStocked finds no MG rounds in its empty economy →
+    // swaps it back to the Shell. It must keep the Machine Gun (sentries hold no inventory).
     priv(gc).fire();
     expect(sentry.getWeaponIndex()).toBe(MACHINE_GUN);
   });
@@ -135,8 +135,8 @@ describe('Sentry turrets', () => {
   });
 
   it('every player keeps its allowance in a big match (16 players, 5 tanks each)', () => {
-    // Regression for a shared field budget: with a global pool the first deployers consumed it and
-    // the rest silently got nothing — worse the more players joined.
+    // The sentry budget is PER PLAYER: a global pool lets the first deployers consume it and
+    // leaves the rest silently with nothing — worse the more players join.
     const gc = new CGameController(makeCanvas());
     gc.setHumanCount(8); // the Play menu's maximum split: 8 humans + 8 CPUs = 16 roster slots
     gc.setTanksPerTeam(5);

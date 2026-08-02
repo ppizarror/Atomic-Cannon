@@ -34,10 +34,10 @@ const CCD = {
  * returns, plus the part its `fodder` earns — and `fodder` carries most of it, because that is the
  * field that says how much dirt this weapon kicks up.
  *
- * The base is deliberately LOW. At 0.35 even a fodder-0.1 shot put back nearly 40% of its bowl,
+ * The base is deliberately LOW. At 0.35 even a fodder-0.1 shot puts back nearly 40% of its bowl,
  * which is most of a small crater's depth once the spoil lands mostly inside it — digging with
- * anything but a nuke was impossible, and `fodder` barely mattered because the base dwarfed it.
- * Now a plain shell keeps ~85% of the hole it dug and a nuke still buries a third of its own.
+ * anything but a nuke becomes impossible, and `fodder` stops mattering because the base dwarfs it.
+ * At 0.08 a plain shell keeps ~85% of the hole it dug and a nuke still buries a third of its own.
  */
 const EJECTA = {
   FILL_BASE: 0.08,
@@ -171,8 +171,8 @@ export function weaponFlyStep(
   const segLen = Math.hypot(segX, segY);
   const subs = segLen > CCD.STEP ? Math.min(CCD.MAX_SUBS, Math.ceil(segLen / CCD.STEP)) : 1;
 
-  // Earliest TANK contact along the path (k=subs is the endpoint, so this subsumes the old point
-  // test). Snap the shot to that point so the blast centres on the impact, not a step beyond it.
+  // Earliest TANK contact along the path (k=subs is the endpoint, so this subsumes a plain point
+  // test there). Snap the shot to that point so the blast centres on the impact, not a step beyond it.
   // Every ext detonates on a tank hit (mine/sentry deploy only when they instead meet ground first),
   // so snapping is always followed by detonate/deploy — never a mutated position that keeps flying.
   let hit: CTank | null = null;
@@ -380,9 +380,9 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
     dir = right > left ? 1 : left > right ? -1 : Math.sign(vx) || 1;
   } else {
     // Keep the committed direction — the sign of the velocity we set last frame. Re-picking
-    // toward the momentary-lower side every frame made the roller ping-pong across a valley
-    // floor forever (the "vibration"/camera-jitter bug); a real roller rolls one way until it
-    // meets a rise, then detonates.
+    // toward the momentary-lower side every frame makes the roller ping-pong across a valley
+    // floor forever (a visible vibration, and camera jitter with it); a real roller rolls one way
+    // until it meets a rise, then detonates.
     dir = Math.sign(vx) || 1;
   }
   // Surface AHEAD in the roll direction rises >1px (a wall, or the far side of a valley it
@@ -539,7 +539,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     scorchRim(craterR);
     // Cosmetic dirt spray only (deposit=false): a BURIED digger blast displaces its dirt into
     // its own cave-in crater, it doesn't fountain depositing earth onto the surface. Depositing
-    // chunks here landed on the still-caving crater/trench columns and stranded as "floating dirt".
+    // chunks here land on the still-caving crater/trench columns and strand as "floating dirt".
     world.debrisSpray(
       Math.floor(pos.x),
       Math.floor(surfaceY),
@@ -548,13 +548,12 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     );
   } else if (!isBeam && reachesGround) {
     // Crater radius is `radius × explosionScale` and NOTHING else. The original stamps a burst MASK
-    // whose pixel radius is exactly that (`FUN_004a6480`; combat_physics.md §3) and its crater code
-    // has no nuke branch at all — a nuke digs a big hole purely because its authored `radius` is big
-    // (Uranium 140 vs a bomb's 50). The port used to widen a nuke's bowl a further 1.35× on top of
-    // that, and then throw its ejecta across a disc 1.6× wider still, so most of the earth it dug
-    // was born OUTSIDE the hole and rained down beyond the rim: a crater half a screen across that
-    // its own spoil could never refill. Both multipliers are gone — a nuke gets the same geometry
-    // every other weapon does.
+    // whose pixel radius is exactly that, and its crater code has no nuke branch at all — a nuke
+    // digs a big hole purely because its authored `radius` is big (Uranium 140 vs a bomb's 50). No
+    // nuke bonus here either: widening a nuke's bowl a further 1.35×, and throwing its ejecta
+    // across a disc 1.6× wider still, births most of the earth it digs OUTSIDE the hole so it rains
+    // down beyond the rim — a crater half a screen across that its own spoil can never refill. A
+    // nuke gets the same geometry every other weapon does.
     const heavy = weapon.isNukeClass();
     const craterR = Math.round(radiusPx);
     // Unified crater: remove the DISC and let the overburden cave in under gravity — NEVER strip the
@@ -571,21 +570,21 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // what is computed here is the VOLUME of earth thrown back: it is what decides how far the
     // crater refills, not just how busy the spray looks.
     //
-    // That volume has to be measured against the HOLE, not against the radius. The old count grew
-    // linearly with radius while the bowl it has to refill grows with the SQUARE of it, so the
-    // refilled fraction fell off as ~1/r — a 50px bomb put back a third of its crater, Uranium a
-    // fifth, Isotope 244 a tenth. That is the "big weapons leave a bare pit" mismatch: not too
-    // little dirt in absolute terms, too little *for their crater*. Size the throw off the crater's
-    // own excavated cross-section instead and every weapon returns the same fraction of what it dug.
+    // That volume has to be measured against the HOLE, not against the radius. A count growing
+    // linearly with radius, against a bowl that grows with the SQUARE of it, makes the refilled
+    // fraction fall off as ~1/r — a 50px bomb puts back a third of its crater, Uranium a fifth,
+    // Isotope 244 a tenth. That is the "big weapons leave a bare pit" mismatch: not too little dirt
+    // in absolute terms, too little *for their crater*. Sizing the throw off the crater's own
+    // excavated cross-section makes every weapon return the same fraction of what it dug.
     const craterVol = (Math.PI * craterR * craterR) / 2; // half-disc — the earth a surface burst removes
-    // NO linear floor. Keeping `fodder · radiusPx · 290` as a minimum kept the very bug the area
-    // scaling fixes: being linear in r it wins for every SMALL weapon, so those went on refilling a
-    // fixed depth of a crater that is only so deep — a low-fodder shot threw back nearly everything
-    // it dug and could not make a hole at all. Area alone, all the way down.
+    // NO linear floor. A minimum like `fodder · radiusPx · 290` reintroduces exactly what the area
+    // scaling exists to avoid: being linear in r it wins for every SMALL weapon, so those refill a
+    // fixed depth of a crater that is only so deep — a low-fodder shot throws back nearly
+    // everything it dug and cannot make a hole at all. Area alone, all the way down.
     const volume = Math.round(craterVol * (EJECTA.FILL_BASE + fodder * EJECTA.FILL_FODDER));
     // Past a few thousand, extra chunks cost frame time without reading as more dirt — so buy the
     // remaining volume with DEPTH per chunk rather than with more of them (the same trade the
-    // fallout grains make). Below the cap this is 1px/chunk, exactly as before.
+    // fallout grains make). Below the cap this stays at 1px/chunk.
     const perChunk = Math.max(1, Math.ceil(volume / EJECTA.MAX_CHUNKS));
     land.addShowerParticles(
       Math.floor(pos.x),
@@ -634,7 +633,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
     // MATCHES THE CRATER exactly — `radiusPx`, the same figure the carve above uses. The fallout
     // lines the hole the same blast just dug, so a zone even slightly wider than the crater puts
     // glowing ground outside the earth the explosion turned over: a rim of fallout on undisturbed
-    // terrain. (It was ×1.35 for nukes, tracking the ×1.35 crater bonus that is now gone.)
+    // terrain. No nuke multiplier here either — the crater has none for it to track.
     const zoneR = Math.round(radiusPx);
     // The damage zone + ground glow settle on the SURFACE; but for an airburst the fallout is
     // thrown from the mid-air burst point and RAINS down onto the ground (not up out of a crater).

@@ -1,17 +1,16 @@
 /**
- * Regression: one blast's fallout must not repaint, revive, or erase another's.
+ * One blast's fallout must not repaint, revive, or erase another's.
  *
- * Fire a hydrogen weapon (blue fallout), then a uranium one (red) beside it, and the blue coat used
- * to turn red — all of it, not just where the two met. The glow asked the LIVE ZONES what colour
- * each hot pixel was, taking the nearest one; a new blast dropped overlapping zones, so once the
- * hydrogen zone was gone every hot pixel on the map had only the uranium zone left to ask. The
- * ground had no memory of what had contaminated it.
+ * Asking the LIVE ZONES what colour each hot pixel is — taking the nearest one — leaves the ground
+ * with no memory of what contaminated it: fire a hydrogen weapon (blue fallout), then a uranium one
+ * (red) beside it, and once the hydrogen zone is gone every hot pixel on the map has only the
+ * uranium zone left to ask, so the whole blue coat turns red, not just where the two met.
  *
- * Identity is now a property of the pixel, like its radioactivity: the material byte carries a
+ * Identity is a property of the pixel instead, like its radioactivity: the material byte carries a
  * 3-bit SLOT (bit 0 dirt tag, bits 1-4 intensity, bits 5-7 slot). A slot is one DETONATION — its
  * colour and its clock — not one colour, because two uranium craters an hour apart are not the same
- * contamination: sharing a slot made the older one flare back to full brightness the moment the
- * newer one landed, and kept it from ever going out.
+ * contamination: sharing a slot flares the older one back to full brightness the moment the newer
+ * one lands, and keeps it from ever going out.
  */
 import {describe, it, expect} from 'vitest';
 import {landPriv} from './_internals';
@@ -97,8 +96,8 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
     settleFallout(land);
     expect(columnColours(land, 200)).toEqual([BLUE.join(',')]);
 
-    // Drop every live zone — the case that used to leave the ground with nothing to ask but the
-    // newest blast. The recorded colour is in the earth, so it does not depend on them at all.
+    // Drop every live zone — the case that leaves the ground with nothing to ask but the newest
+    // blast. The recorded colour is in the earth, so it does not depend on the zones at all.
     p.m_radParticles.length = 0;
     // Far enough that its own fallout cannot reach column 200 — this is about the RECORDED identity
     // surviving, not about two coats overlapping (where mixing is correct and expected).
@@ -142,8 +141,8 @@ describe('CLand — irradiated earth keeps the identity that contaminated it', (
     land.blastIradiate(600, 150, 40, 12, 30, BLUE);
 
     const zoneA = p.m_radParticles.find(z => z.slot === slotA);
-    // A survives B — this is what a shell landing on an old crater used to destroy, taking the
-    // whole coat's glow with it — and its clock only ever ran DOWN. It is not reset by B.
+    // A survives B — a later shell beside an old crater must not delete it and take the whole
+    // coat's glow with it — and A's clock only ever runs DOWN. It is not reset by B.
     expect(zoneA).toBeDefined();
     expect(zoneA!.timeRemaining).toBeLessThanOrEqual(agedA);
     // …while B starts fresh. Two clocks, not one shared maximum.

@@ -133,9 +133,9 @@ function DepBtn({
 // ---- the modal --------------------------------------------------------------
 // `<DepotPanel />` lives permanently in the App tree, so the panel body is split into its own
 // component that is only rendered while the depot is OPEN — that way it genuinely mounts/unmounts
-// each time. Putting the hooks behind an early `return null` in ONE persistent instance meant the
-// instance never unmounted between opens, so the mount-only autoscroll effect fired only on the
-// first-ever open and `useState(weaponIndex)` kept a stale `sel` on every reopen.
+// each time. Putting the hooks behind an early `return null` in ONE persistent instance never
+// unmounts it between opens, so the mount-only autoscroll effect would fire on the first-ever open
+// only, and `useState(weaponIndex)` would keep a stale `sel` on every reopen.
 export function DepotPanel() {
   if (!showDepot.value) return null;
   return <DepotBody />;
@@ -199,8 +199,8 @@ function DepotBody() {
   };
 
   // Equip the chosen weapon when the user closes the depot: without this you could buy a weapon, pick
-  // it, close, and still be holding your OLD weapon (the select-time equip was silently swallowed by
-  // the pause). Only the user-driven closes equip — the turn-change auto-close (syncHud) calls
+  // it, close, and still be holding your OLD weapon — equipping at select time is silently swallowed
+  // by the pause. Only the user-driven closes equip — the turn-change auto-close (syncHud) calls
   // closeDepot directly, so a forfeit can't equip this tank's pick onto the next player's tank.
   const closeAndEquip = () => {
     closeDepot();

@@ -368,7 +368,7 @@ describe('network match boot', () => {
     expect(snap.rngState).toBe(rngOf(room).getState()); // the snapshot captured the live cursor
 
     const joiner = netController(0); // a fresh (re)joining client — same seed → battle-start cursor
-    expect(joiner.stateHash()).not.toBe(room.stateHash()); // out of phase BEFORE bootstrap (the bug)
+    expect(joiner.stateHash()).not.toBe(room.stateHash()); // out of phase until the bootstrap lands
 
     joiner.applyNetSnapshot(snap);
     expect(rngOf(joiner).getState()).toBe(rngOf(room).getState()); // cursor restored
@@ -1074,8 +1074,9 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
     const inSync = gc.stateHash(); // crates are NOT in this hash
 
     // A keyframe whose ONLY difference is a supply crate the actor has that we don't (ours drifted /
-    // hasn't spawned locally). Pre-fix this flipped the hash and false-flagged; now crates are excluded
-    // from the hash AND re-pinned from the keyframe even though we trust our own sim for everything else.
+    // hasn't spawned locally). A crate inside the hash would flip it and false-flag a divergence, so
+    // crates are excluded from the hash AND re-pinned from the keyframe even though we trust our own
+    // sim for everything else.
     const snap = gc.getNetSnapshot();
     snap.crates = [
       {x: 123, y: 45, vy: 0, kind: 'health', amount: 300, weaponIndex: -1, landed: false},
@@ -1201,7 +1202,7 @@ describe('net turn-flow queue', () => {
     const q = netPriv(ng);
 
     busy.m_netShotResolving = true; // our sim is mid-shot → not idle
-    // Two turn hand-offs arrive while busy — the OLD single-slot stash kept only the LAST, dropping
+    // Two turn hand-offs arrive while busy — a single-slot stash would keep only the LAST and drop
     // the intervening turn's once-per-turn effects (seeded crate/income draws → RNG divergence).
     ng.handle({t: 'turnBegin', playerIdx: 1, deadline: 0, handoff: true, roundWrapped: false});
     ng.handle({t: 'turnBegin', playerIdx: 0, deadline: 0, handoff: true, roundWrapped: false});

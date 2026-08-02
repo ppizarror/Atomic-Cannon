@@ -212,7 +212,8 @@ describe('country display helpers', () => {
 describe('MATCH_COUNTERS is the single source', () => {
   it('every counter is capped, zeroed and merged', () => {
     // STAT_CAPS is typed Record<keyof StatsDeltaNums, …>, so the compiler already forces a cap for
-    // each counter; this pins the runtime behaviour that used to be hand-written per field.
+    // each counter; this pins the RUNTIME half — every counter really zeroed, summed, floored and
+    // capped, rather than merely declared.
     const zero = emptyDelta();
     const one = {...emptyDelta(), ...Object.fromEntries(MATCH_COUNTERS.map(k => [k, 3]))};
     for (const k of MATCH_COUNTERS) {

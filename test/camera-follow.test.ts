@@ -1,8 +1,9 @@
 /**
  * Large-map camera follow target: hold on the last impact for the WHOLE shot-resolution window (until
- * the turn hands off), then follow the current tank. Keyed on the game STATE — using hasActiveBlast()
- * released too early (camera eased toward the shooter during the post-blast settle), and the original
- * hasActiveExplosions() held too long (parked on the old crater's smoke into the next turn).
+ * the turn hands off), then follow the current tank. Keyed on the game STATE, not on live effects:
+ * hasActiveBlast() releases too early (the camera eases toward the shooter during the post-blast
+ * settle) and hasActiveExplosions() holds too long (parking on the spent crater's smoke into the
+ * next turn).
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';

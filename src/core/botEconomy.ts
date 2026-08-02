@@ -1,11 +1,11 @@
 /**
- * botEconomy — what a computer player BUYS, split out of CGameController.
+ * botEconomy — what a computer player BUYS, kept out of CGameController.
  *
  * The port already keeps the bots' *aiming* and *planning* brains as pure modules (CBotAI, and the
  * expected-value planner in CBotUltraAI) with the controller marshalling engine state into them.
- * The purchasing half was the odd one out: it lived inside the 7k-line controller even though it
- * touches almost nothing the controller owns — it reads an inventory, asks the weapon database
- * questions, and spends. This module is that half, in the same shape as its siblings.
+ * The purchasing half belongs out here for the same reason: it touches almost nothing the
+ * controller owns — it reads an inventory, asks the weapon database questions, and spends. This
+ * module is that half, in the same shape as its siblings.
  *
  * Two doctrines live here:
  *  • {@link aiRestock} — levels 1..10. A difficulty-gated DEFENSIVE front-load (shield/heal/armor/
@@ -267,7 +267,7 @@ export function ultraManageEconomy(ctx: UltraBuyCtx): void {
   // BURIED — top priority, ahead of everything else: a pinned tank can't drive and can't fire a
   // normal round without eating its own blast, so nothing else in the shop matters until it's out.
   // A cleaner (earth-remover, no damage) is the clean way out, and the planner can only pick one
-  // that's actually in stock — the economy never bought one, so that escape was dead on arrival.
+  // that's actually in stock, so the escape only exists if the economy keeps one on the shelf.
   // Ignores the reserve: being stuck costs far more than the credits do.
   if (s.buried && !botOwnsMatching(econ, isCleaner)) ultraBuyMatching(econ, isCleaner, false);
   // Buy a HEAL as soon as it's hurt (< 60%) and holds none — so a heal is in stock BEFORE it gets

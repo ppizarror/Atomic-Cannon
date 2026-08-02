@@ -11,9 +11,7 @@
  *
  * It also owns the detonation SHAKE. Scroll and shake are both "where the view is this frame" —
  * one eased and persistent, one transient and decaying — so a caller asks one object rather than
- * combining two. (Shake previously sat in `core/rendering/ScreenShake`, whose own header noted it
- * "is really a camera/view concern"; it lived there only because it was carved out of the particle
- * system.)
+ * combining two. Shake belongs here, with the scroll it composes with, not in the particle system.
  */
 import {clamp} from '../math/num';
 import {plusMinus} from '../math/random';

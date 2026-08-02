@@ -1,7 +1,7 @@
 /**
  * CAssetManager loads each logical name at most once. This matters mid-battle: deploySentry asks
- * for the Sentry hull on every turret it drops, and each of those calls used to re-fetch and re-run
- * the colour-key pass over the same three bitmaps.
+ * for the Sentry hull on every turret it drops, and without dedupe each of those calls re-fetches
+ * and re-runs the colour-key pass over the same three bitmaps.
  */
 import {describe, it, expect, beforeEach, afterEach} from 'vitest';
 import {CAssetManager} from '../src/core/rendering/CAssetManager';

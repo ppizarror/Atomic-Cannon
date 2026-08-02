@@ -71,8 +71,8 @@ describe('Weapon selection', () => {
   it("bot turn shows the BOT's own stock, not the full arsenal", () => {
     gc.m_currentPlayerIndex = 1; // the bot's turn
     const defs = gc.getWeaponDefs();
-    // Spectating the bot shows only what it actually owns — far fewer than the whole database
-    // (this is the fix for "the enemy list shows nukes it doesn't have").
+    // Spectating the bot shows only what it actually owns — far fewer than the whole database,
+    // so the panel never advertises nukes the enemy does not have.
     expect(defs.length).toBeGreaterThan(0);
     expect(defs.length).toBeLessThan(WEAPON_DATABASE.length);
   });

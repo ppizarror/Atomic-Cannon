@@ -26,9 +26,9 @@ export const GameConfig = {
   // scale would over-tall the arc; √ keeps range strong AND the arc on-screen.
   worldScale: 1,
 
-  // Live view width in px (set at map load). Our world is sized in DISPLAY pixels, but the launch
-  // SPEED was a fixed px/s — so a full-power shot's range (a fixed ~2000px) covered a shrinking
-  // fraction of the world as the display widened (on an ultrawide it couldn't even cross the map).
+  // Live view width in px (set at map load). Our world is sized in DISPLAY pixels, so a launch
+  // SPEED in fixed px/s gives a full-power shot a fixed ~2000px range, covering a shrinking
+  // fraction of the world as the display widens (on an ultrawide it cannot even cross the map).
   // `launchSpeed` scales by √(viewWidth / LAUNCH_REF_WIDTH) so max-power range is a consistent
   // multiple of the world width at every resolution. Default = the reference (no change when unset).
   viewWidth: 1000,

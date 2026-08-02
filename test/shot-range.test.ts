@@ -1,8 +1,9 @@
 /**
  * Shot range is resolution-INDEPENDENT: a max-power shot crosses the world at 1× land size on
- * every display width. The world is sized in display pixels, so a fixed px/s launch speed used to
- * reach a shrinking fraction of the world as the screen widened (on an ultrawide, power 1000 could
- * not even cross the map). `launchSpeed` now scales by √(viewWidth / LAUNCH_REF_WIDTH).
+ * every display width. The world is sized in display pixels, so a fixed px/s launch speed reaches a
+ * shrinking fraction of the world as the screen widens — on an ultrawide, power 1000 would not even
+ * cross the map. `launchSpeed` scales by √(viewWidth / LAUNCH_REF_WIDTH) to hold the reach constant
+ * as a fraction of the world.
  */
 import {describe, it, expect, afterAll} from 'vitest';
 import {launchSpeed, SHOT_GRAVITY} from '../src/core/CShot';
@@ -26,8 +27,8 @@ describe('Shot range (resolution-independent max power)', () => {
     for (const viewW of [1280, 1920, 2560, 3440, 3840]) {
       GameConfig.viewWidth = viewW;
       const range = maxRange();
-      // ~2× the world — "easily passes the other end". Before the fix this was a fixed 2000px,
-      // so on a 3440-wide ultrawide it was only ~0.58× the world (could not cross).
+      // ~2× the world — "easily passes the other end". A fixed 2000px range would be only ~0.58×
+      // the world on a 3440-wide ultrawide, i.e. unable to cross it at all.
       expect(range).toBeGreaterThan(viewW * 1.8);
       expect(range).toBeLessThan(viewW * 2.2);
     }

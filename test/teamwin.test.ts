@@ -56,7 +56,7 @@ describe('Team-based battle end (squads)', () => {
     expect(priv(gc).m_gameState).toBe(EGameState.Battle); // two teams left → not decided
   });
 
-  it('a single-tank-per-team match still ends on the last tank (no regression)', () => {
+  it('a single-tank-per-team match still ends on the last tank', () => {
     const gc = squadGame(1);
     const tanks = priv(gc).m_tanks;
     expect(tanks.length).toBe(2);

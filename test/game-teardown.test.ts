@@ -1,9 +1,9 @@
 /**
- * Quitting a battle to the main menu must TEAR THE BATTLE DOWN — not merely freeze it. Regression:
- * closing to the menu left `isStarted()` true, so the render loop kept advancing the sim (two AIs
- * "still playing" behind the menu) and the last frame lingered instead of the scene going blank.
- * stopGame() flips isStarted() → false so the sim/redraw/HUD all short-circuit like the boot title
- * screen, and goToMenu()/quitToMenu() call it.
+ * Quitting a battle to the main menu must TEAR THE BATTLE DOWN — not merely freeze it. Leaving
+ * `isStarted()` true keeps the render loop advancing the sim (two AIs playing on behind the menu)
+ * and holds the last frame on screen instead of letting the scene go blank. stopGame() flips
+ * isStarted() → false so the sim/redraw/HUD all short-circuit like the boot title screen, and
+ * goToMenu()/quitToMenu() call it.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -34,7 +34,7 @@ describe('Battle teardown', () => {
     expect(gc.isStarted()).toBe(false);
     expect(gc.shouldRedraw()).toBe(false); // no redraw → no animation on the menu backdrop
 
-    // advance() must be inert now — the sim can't keep running (the reported "tanks still playing").
+    // advance() must be inert — the sim cannot keep running with tanks playing on behind the menu.
     const state = gc.getState();
     for (let i = 0; i < 120; i++) gc.advance(0.1); // ~12 s of wall-clock time
     expect(gc.isStarted()).toBe(false);

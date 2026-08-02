@@ -1,8 +1,8 @@
 /**
  * A localStorage-backed signal — the shape every persisted store repeated: seed a signal
- * from the stored value on init, and re-persist on every change. The four content/controls/
- * players/setup stores each hand-wrote a `load()` + `persist()` pair around this; now they
- * pass only the parts that actually differ.
+ * from the stored value on init, and re-persist on every change. The content/controls/players/
+ * setup stores pass only the parts that actually differ rather than each hand-writing its own
+ * `load()` + `persist()` pair.
  *
  * `revive` turns the stored (parsed JSON) shape into the live value; `seed` is the
  * fresh / absent / corrupt default; `encode` turns the live value back into something

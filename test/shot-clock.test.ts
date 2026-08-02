@@ -2,7 +2,7 @@
  * The shot clock (Shot Time) is paused — not cleared — when a human spends part of a turn on a jet
  * flight or a free utility (Utility-Turn off). fire() stops the countdown; when control is handed
  * back to the human, armShotClock(false) RESUMES it from where it paused. Without that resume the
- * clock stayed dead for the rest of the turn, so a player could dodge the deadline indefinitely by
+ * clock stays dead for the rest of the turn and a player can dodge the deadline indefinitely by
  * jetting / spamming free utilities. A brand-new turn arms a FRESH clock via armShotClock(true).
  */
 import {describe, it, expect} from 'vitest';
@@ -27,7 +27,7 @@ describe('shot clock re-arm after jet / free utility', () => {
 
     p.armShotClock(false); // flight/utility over → control back to the human
 
-    expect(p.m_turnTimerRunning).toBe(true); // clock runs again (was permanently dead before the fix)
+    expect(p.m_turnTimerRunning).toBe(true); // the clock runs again, not left dead for the turn
     expect(p.m_turnElapsed).toBe(12); // resumed, NOT refilled — the deadline can't be dodged
   });
 

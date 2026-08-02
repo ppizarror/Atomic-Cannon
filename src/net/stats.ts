@@ -6,12 +6,11 @@
  *
  * Two tiers, matching what the game itself shows: a WAR is the whole story (the fireworks / final
  * standings), a BATTLE is one map inside it — Deathmatch plays `Settings → Battles` of them, while
- * Rounds/Points is a single battle. Nothing finer is uploaded: a per-round POST was needless traffic.
+ * Rounds/Points is a single battle. Nothing finer is uploaded: a per-round POST is needless traffic.
  *
- * Uploads are incremental, and none of them is click-gated. The first version uploaded one lump at
- * the end of the war and only when the player CLICKED past the final standings, so quitting to the
- * menu, closing the tab, or simply walking away from the victory screen threw the whole match away
- * (the live counters sat at 0 for exactly that reason). Now each battle is banked as it ends.
+ * Uploads are incremental and NEVER click-gated — each battle is banked the moment it ends. One lump
+ * at the end of the war, gated on the player CLICKING past the final standings, throws the whole
+ * match away when they quit to the menu, close the tab, or just walk away from the victory screen.
  *
  * It is deliberately approximate: a public, unauthenticated counter (no accounts), server-capped per
  * request so one client can't wildly inflate it. No IPs or personal data are stored — only per-country
@@ -49,8 +48,8 @@ export interface StatsSnapshot {
  * flush; the names are identical on both sides so nothing has to be mapped.
  *
  * Adding a counter here is the whole change: the tally type, the zeroing, the differencing and the
- * delta all derive from it, so there is no second place to forget (which would have meant a stat
- * that silently never uploads).
+ * delta all derive from it, so there is no second place to forget — a missed one would be a stat
+ * that silently never uploads.
  */
 export const MATCH_COUNTERS = [
   'weaponsFired', // fire actions (one trigger pull, regardless of salvo size)

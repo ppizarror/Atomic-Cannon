@@ -1,8 +1,8 @@
 /**
- * A weapon/bomb supply crate must resolve to a real weapon. The lookup used `w.name === 'Bomb'`, but
- * weapons carry an `id` (+ i18n display name), never a `.name` field — so it returned -1: a bomb crate
- * (≈10% of crates) granted NOTHING and its pickup text read "Found Magma Beam" (getWeapon(-1) falls
- * back to weapon 0). Now keyed on the stable id.
+ * A weapon/bomb supply crate must resolve to a real weapon, keyed on the stable `id`. Weapons carry
+ * an `id` (+ an i18n display name) and never a `.name` field, so a lookup like `w.name === 'Bomb'`
+ * returns -1: a bomb crate (≈10% of crates) would grant NOTHING and its pickup text would read
+ * "Found Magma Beam", since getWeapon(-1) falls back to weapon 0.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';

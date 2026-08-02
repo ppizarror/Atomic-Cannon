@@ -297,12 +297,12 @@ export const settingsRowPitch = signal(0);
 const PAGE_HEIGHT_FRACTION = 0.6;
 /** Slots the list spends on things that aren't options: the "More Options" nav and the Done button. */
 const RESERVED_ROWS = 2;
-/** Fallbacks for the very first paint, before a row exists to measure (the previous fixed values). */
+/** Fallbacks for the very first paint, before a row exists to measure. */
 const FALLBACK_SIZE = {mobile: 6, desktop: 10};
 
 /** Max real options shown on one settings page; anything longer auto-splits into sub-pages, each
- *  ending in a free "More Options" nav. Derived from how many rows actually FIT: a fixed 6/10 left a
- *  tall phone showing 6 rows over a third of the screen while a short desktop window overflowed. */
+ *  ending in a free "More Options" nav. Derived from how many rows actually FIT — a fixed 6/10 leaves
+ *  a tall phone showing 6 rows over a third of the screen while a short desktop window overflows. */
 const pageSize = (): number => {
   const pitch = settingsRowPitch.value;
   if (pitch <= 0) return isMobile.value ? FALLBACK_SIZE.mobile : FALLBACK_SIZE.desktop;
@@ -314,7 +314,7 @@ const pageSize = (): number => {
 
 /** Slice a category's full row list to the requested sub-page, appending a "next page" nav to every
  *  page but the last. The sub-page index rides in the route id as `<base>~<n>` (page 0 = bare id),
- *  and back always returns to root — matching the flat nav the manual "More …" rows used before. */
+ *  and back always returns to root — the sub-pages are a flat nav, not a stack to unwind. */
 function paginate(base: string, allRows: Widget[], pageIdx: number): Widget[] {
   const size = pageSize();
   const start = pageIdx * size;

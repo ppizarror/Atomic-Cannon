@@ -1,11 +1,11 @@
 /**
- * Regression: erasing irradiated terrain must remove the radiation too.
+ * Erasing irradiated terrain must remove its radiation too.
  *
- * The heat "smoke" wisps are spawned every frame off a LIVE radiation zone (`m_radParticles`).
- * The terrain-erase routines used to wipe only the ground specks, leaving the damage zone alive —
- * so a cleaner fired over an irradiated crater removed the dirt but the ground kept smoking (and
- * kept dealing fallout damage) forever. `clearRadiationSpan` now drops the zones, wisps and specks
- * in the erased span together, so the cleaned ground goes inert.
+ * The heat "smoke" wisps are spawned every frame off a LIVE radiation zone (`m_radParticles`), so a
+ * terrain-erase that wipes only the ground specks leaves the damage zone alive — a cleaner fired
+ * over an irradiated crater would take the dirt while the ground kept smoking (and kept dealing
+ * fallout damage) forever. `clearRadiationSpan` drops the zones, wisps and specks in the erased
+ * span together, so the cleaned ground goes inert.
  */
 import {describe, it, expect} from 'vitest';
 import {landPriv} from './_internals';
@@ -13,8 +13,8 @@ import {CLand} from '../src/core/CLand';
 import {CParticleSystem} from '../src/core/CParticleSystem';
 
 /** A flat land with a REAL pixel buffer so `blastCircle` can actually carve.
- *  The heat wisps live in CParticleSystem now (CLand only decides where fallout fumes), so the
- *  land is wired to one and the tests count wisps there. */
+ *  The heat wisps live in CParticleSystem (CLand only decides where fallout fumes), so the land is
+ *  wired to one and the tests count wisps there. */
 function landWithPixels(
   W: number,
   H: number,
@@ -62,7 +62,7 @@ describe('CLand — erasing terrain clears its radiation', () => {
 
     // The hot EARTH is gone → tanks stop taking fallout damage there. Asserted on the ground, not
     // on the zone list: the zone is the blast's CLOCK and outlives its earth on purpose (deleting it
-    // whenever a later shell landed on it was what darkened the coat all around the new crater).
+    // whenever a later shell lands on it darkens the coat all around the new crater).
     expect(land.radiationAt(150)).toBe(false);
     // …the existing wisps over the cleared span are wiped…
     expect(fx.heatCount()).toBe(0);
@@ -138,7 +138,7 @@ describe('CLand — erasing terrain clears its radiation', () => {
     // never touched. (Above the blast line the x-band IS cleared, whether or not it is inside the
     // sphere: the fireball erupts up through that column and takes the settling ash with it. Without
     // that, ash still in the air when a shot lands simply carries on down and re-coats the crater
-    // that was meant to have swept it away.)
+    // that just swept it away.)
     specks.push(
       mk(cx, cy), // centre — dist 0 → inside → cleared
       mk(cx + 5, cy - 5), // ~7px from centre → inside → cleared

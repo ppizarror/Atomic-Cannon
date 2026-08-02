@@ -112,8 +112,8 @@ describe('index.html', () => {
   });
 
   it('renders nothing of its own before the game mounts', () => {
-    // Regression guard: a visible boot splash reads as a black text page flashing ahead of
-    // the title screen. Everything outside <head>/<noscript> must stay an empty mount point.
+    // A visible boot splash reads as a black text page flashing ahead of the title screen —
+    // everything outside <head>/<noscript> must stay an empty mount point.
     const body = /<body>([\s\S]*?)<\/body>/.exec(html)?.[1] ?? '';
     expect(body.replace(/<noscript>[\s\S]*?<\/noscript>/, '')).not.toMatch(/>[A-Za-z]/);
   });
@@ -166,7 +166,7 @@ function stubDoc() {
 
 describe('document metadata (live locale switch)', () => {
   it('ships the English catalog copy verbatim in index.html', () => {
-    // Drift guard: a player on English must see exactly what a crawler was served,
+    // Drift guard: a player on English must see exactly what a crawler is served,
     // and the description doubles as SITE_DESCRIPTION (asserted above).
     const en = stringsFor('en').meta;
     expect(en.description).toBe(SITE_DESCRIPTION);

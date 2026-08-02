@@ -81,7 +81,7 @@ Requirements & effects:
 
 `scripts/deploy.env` and the generated `.wrangler.deploy.jsonc` are gitignored, so the
 hostname never lands in git. `wrangler dev` / `pnpm dev:net` ignore all of this and run
-locally as before.
+locally unchanged.
 
 ## SEO / link previews
 

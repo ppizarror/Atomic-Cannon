@@ -421,7 +421,7 @@ export class CGameController implements ShotWorld {
     // wind altitude profile and keeps crater-vent fumes from spraying into empty sky (no soil).
     this.m_particles.setGroundProvider(x => this.m_land.getHeightAt(Math.floor(x)));
     // Radiation heat haze: the land decides where the fallout fumes, the particle system owns the
-    // resulting particles (it used to run its own pool inside CLand).
+    // resulting particles — one pool for the whole game, none of its own inside CLand.
     this.m_land.setFxSink(this.m_particles);
     // Crater fumes are the AFTERMATH: they hold until the ground stops moving (spoil landed,
     // collapses done) rather than rising through the blast's own falling debris.
@@ -691,8 +691,8 @@ export class CGameController implements ShotWorld {
     this.m_assets.loadSprite('gui/crate-chute', '/assets/gui/crate parachute.bmp');
     this.m_assets.loadSprite('gui/crate', '/assets/gui/crate.bmp');
     // Sentry turret hull/turret/wreck. Preloaded HERE rather than left to deploySentry: a sentry is
-    // born mid-battle, and CTank.draw falls back to the crude vector hull until its sprites decode —
-    // so loading them at deploy time flashed a placeholder turret for the first frames. The loop
+    // born mid-battle, and CTank.draw falls back to the crude vector hull until its sprites decode,
+    // so loading them at deploy time flashes a placeholder turret for the first frames. The loop
     // above only covers tanks already on the field, and no Sentry exists yet.
     for (const s of SENTRY.SPRITES) this.m_assets.loadSprite(s.name, s.file);
 
@@ -742,10 +742,9 @@ export class CGameController implements ShotWorld {
    * terrain textures. Fire-and-forget: the terrain shows a gradient until ready.
    *
    * Called at every LEVEL build — match start AND each new battle of a war — because that is
-   * what the original does: the war's next battle runs the whole level builder again
-   * (`FUN_004259c0(this, -1, …)`), whose `-1` means "roll a random ENABLED background", and the
-   * chosen background is also the key into `land.txt` for the strata textures + weather. So a
-   * new battle is a new CLIMATE, not just a new heightmap.
+   * what the original does: the war's next battle runs the whole level builder again, re-rolling a
+   * random ENABLED background, and the chosen background is also the key into `land.txt` for the
+   * strata textures + weather. So a new battle is a new CLIMATE, not just a new heightmap.
    */
   private async loadLandscape(): Promise<void> {
     const cfg = LAND_DATA[this.pickLandscapeIndex()];
@@ -1350,8 +1349,8 @@ export class CGameController implements ShotWorld {
     this.m_land.setViewport(this.m_camera.x(), this.m_viewW);
     this.m_land.draw(ctx);
     // The radioactive heat haze belongs to the GROUND, so it paints here — right after the terrain
-    // and under the tanks/aim overlay, the slot it occupied when CLand still owned the pool. The
-    // particles themselves now live in the particle system (see IHeatSink).
+    // and under the tanks/aim overlay. The particles themselves live in the particle system, not in
+    // CLand (see IHeatSink); only the draw ORDER ties them to the terrain.
     this.m_particles.drawHeat(ctx);
     // Cosmetic dirt spray (beam dust / buried digger). Depositing crater ejecta stays with the
     // terrain and is drawn inside m_land.draw above — see IFxSink on why they are separate.
@@ -2564,8 +2563,8 @@ export class CGameController implements ShotWorld {
       if (!near) continue;
       const w = getWeapon(m.weaponIndex);
       this.m_mines.splice(i, 1);
-      // Scale the mine blast by Explosion Size × resolution, exactly like a fired shot (a mine used
-      // the raw weapon radius, so it ignored the setting and the resolution scale — now aligned).
+      // Scale the mine blast by Explosion Size × resolution, exactly like a fired shot — the raw
+      // weapon radius would ignore both the setting and the resolution scale.
       const mineR = this.scaledBlastRadius(w);
       this.explode(
         m.x,
@@ -3193,8 +3192,8 @@ export class CGameController implements ShotWorld {
     if (wrapped) {
       this.m_currentRound++;
       this.awardSurvivorCredit(this.m_creditRound);
-      // Roll the Crates chance ONCE per ROUND (the setting is "chance each round"). It used to roll
-      // on every turn hand-off, so an N-player round got N rolls → multiple crates per round.
+      // Roll the Crates chance ONCE per ROUND (the setting is "chance each round") — rolling on
+      // every turn hand-off gives an N-player round N rolls → multiple crates per round.
       this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k =>
         this.crateWeaponFor(k),
       );
@@ -4102,7 +4101,7 @@ export class CGameController implements ShotWorld {
    */
   private botMove(botTank: CTank): boolean {
     // A BURIED tank can't drive at all (startDrive refuses until it's dug out), so a move roll here
-    // used to end the turn instantly with no action whatsoever. Fire instead — the round detonates in
+    // would end the turn instantly with no action whatsoever. Fire instead — the round detonates in
     // the dirt around the tank and blasts it free, which is the only way it gets out.
     if (botTank.isBuried()) return false;
     const wi = pickMoveWeapon();
@@ -4823,8 +4822,9 @@ export class CGameController implements ShotWorld {
    * Where each {@link MatchConfig} field lives in the running engine — some on the global
    * GameConfig, some on this controller's own match fields. Both directions read this ONE table:
    * `getMatchConfig` snapshots through the getters, `startNetworkGame` adopts the host's config
-   * through the setters. Previously each field was spelled out separately in both places, so
-   * adding one and forgetting the apply half silently desynced the match instead of failing.
+   * through the setters. Spelling each field out separately in both places lets a new field be
+   * added to the snapshot half and forgotten in the apply half — silently desyncing the match
+   * instead of failing.
    *
    * The mapped type requires an entry for every key, so a new MatchConfig field can't be missed.
    */

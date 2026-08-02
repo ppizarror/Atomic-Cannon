@@ -1,10 +1,10 @@
 /**
- * Regression: the bot must lead GUSTING Realistic wind, not aim at the sustained mean.
+ * The bot must lead GUSTING Realistic wind, not aim at the sustained mean.
  *
  * In Realistic mode the wind the shots actually feel is `m_effWind = m_wind ⊙ gustFactor(t)` — a
- * ±30% breathing envelope. The aim solver used to be handed the bare `m_wind` (no gust), so every
- * bot — mastery included — aimed for the mean and the gust blew the shot off. The fix feeds the
- * solver the launch-time gust clock so it integrates the SAME breathing wind the real shot will.
+ * ±30% breathing envelope. Handed the bare `m_wind` (no gust), every bot — mastery included — aims
+ * for the mean and the gust blows the shot off. The solver is passed the launch-time gust clock so
+ * it integrates the SAME breathing wind the real shot will.
  */
 import {describe, it, expect, afterEach} from 'vitest';
 
@@ -44,9 +44,9 @@ describe('Bot AI leads gusting Realistic wind', () => {
     const gustT0 = 5.0; // …that gusts DOWN to ~0.84× at this launch phase (a -16% lull)
     expect(Math.abs(gustFactor(gustT0).x - 1)).toBeGreaterThan(0.1); // precondition: the gust matters
 
-    // AWARE (the fix): predict the breathing wind over the flight, starting at the launch phase.
+    // AWARE: predict the breathing wind over the flight, starting at the launch phase.
     const aware = bestAim(muzzleAt(180), target, wind, flat, gustT0);
-    // BLIND (the old bug): solve for the sustained mean wind, ignoring the gust entirely.
+    // BLIND: solve for the sustained mean wind, ignoring the gust entirely.
     const blind = bestAim(muzzleAt(180), target, wind, flat);
 
     // Fly BOTH under the TRUE gusting wind — simulateMiss(…, gustT0) matches what the real shot flies.

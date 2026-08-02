@@ -1,13 +1,13 @@
 /**
  * MatchConfig is the host's gameplay settings, adopted verbatim by every client so the
- * deterministic simulation agrees. It used to be spelled out field-by-field in four places —
- * the interface, `getMatchConfig`, the apply block in `startNetworkGame`, and the room's
- * `sanitizeConfig` — so a field added to one and missed in another produced no error at all:
- * clients silently ran different physics and the match desynced on the first shot.
+ * deterministic simulation agrees. Spelling it out field-by-field in four places — the interface,
+ * `getMatchConfig`, the apply block in `startNetworkGame`, and the room's `sanitizeConfig` — makes
+ * a field added to one and missed in another a silent failure: clients run different physics and
+ * the match desyncs on the first shot. Both engine halves read one binding table instead, and the
+ * server shares the client's sanitizer.
  *
- * Both engine halves now read one binding table and the server shares the client's sanitizer.
- * These tests pin the property that made the drift dangerous: whatever `getMatchConfig` can
- * REPORT, `startNetworkGame` must APPLY — a read-only field would come back stale here.
+ * These tests pin the property that makes such drift dangerous: whatever `getMatchConfig` can
+ * REPORT, `startNetworkGame` must APPLY — a read-only field comes back stale here.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';

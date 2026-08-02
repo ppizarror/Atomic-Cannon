@@ -717,9 +717,9 @@ export function advanceWar(): void {
   warStandings.value = null;
   uiClick();
   game().clearTaunts(); // drop the victor's bubble before leaving the standings
-  // Nothing is RECORDED here any more: the Battle Heroes boards and the global counters are both
-  // written the moment the war ends (see the stats hook in setController), not when the player
-  // finally clicks past the standings — leaving that screen open used to throw the match away.
+  // Nothing is RECORDED here: the Battle Heroes boards and the global counters are both written
+  // the moment the war ends (see the stats hook in setController), not when the player finally
+  // clicks past the standings — a match left sitting on that screen must still count.
   if (s.warOver) {
     goToMenu();
     return;
@@ -842,7 +842,8 @@ export function setController(c: CGameController): void {
   weapons.value = c.getWeaponDefs() as WeaponDef[];
   initStatsUpload(c);
   // Every completed round / battle / war banks its play in the global counters, and the war-closing
-  // one also writes the Battle Heroes boards. Both used to wait for a click on the standings screen.
+  // one also writes the Battle Heroes boards — both off this hook, so neither waits on the player
+  // dismissing the standings screen.
   c.setStatsListener(closed => {
     if (closed.warOver) submitBattleHeroes(c.getBattleHeroes());
     void flushStats(closed);

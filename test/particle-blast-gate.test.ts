@@ -2,9 +2,9 @@
  * The turn hands off when the EXPLOSION finishes — NOT when its smoke finishes.
  *
  * Our port adds lingering grey smoke/plume puffs (1–4 s) that the original blasts never had
- * (the original emits only flares + fire streamers). `hasActiveExplosions()` counts them, so
- * gating turn hand-off on it made the round wait seconds for cosmetic smoke to fade. The Explosion
- * state now gates on `hasActiveBlast()`, which tracks the fireball / beam / fire+spark particles but
+ * (the original emits only flares + fire streamers). `hasActiveExplosions()` counts them, so gating
+ * turn hand-off on it makes the round wait seconds for cosmetic smoke to fade. The Explosion state
+ * gates on `hasActiveBlast()` instead, which tracks the fireball / beam / fire+spark particles but
  * IGNORES the smoke/plume, so the turn ends with the blast and the smoke drifts on cosmetically.
  */
 import {describe, it, expect} from 'vitest';

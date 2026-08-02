@@ -2,7 +2,7 @@
  * Play setup — the human/CPU split and squad size (tanks per team) reach the match:
  * the first N teams are human, each team fields `tanksPerTeam` tanks that share a
  * colour, and every configured tank spawns. The persisted setup store clamps to the
- * binary ranges.
+ * ranges the Play menu offers.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -115,7 +115,7 @@ describe('Play setup', () => {
     expect(playersOf(setup.value)).toBeGreaterThanOrEqual(2); // default setup has an opponent
   });
 
-  it('the setup store clamps to the binary ranges', () => {
+  it('the setup store clamps to the supported ranges', () => {
     setSetup({humans: 99, computers: 99, tanksPerTeam: 99});
     expect(setup.value.humans).toBe(MAX_HUMANS); // humans clamps to max
     expect(setup.value.tanksPerTeam).toBe(MAX_TANKS_PER_TEAM); // tanks clamps to max
@@ -127,8 +127,8 @@ describe('Play setup', () => {
     setSetup({humans: 2, computers: 3, tanksPerTeam: 1});
     expect(playersOf(setup.value)).toBe(5); // players = humans + computers
 
-    // A setup from the old {total, humans} schema (no computers / tanksPerTeam) must not
-    // yield NaN — the missing fields fall back to sensible defaults.
+    // A legacy persisted setup ({total, humans}, no computers / tanksPerTeam) must not yield
+    // NaN — the missing fields fall back to sensible defaults.
     setSetup({total: 4, humans: 1} as unknown as Parameters<typeof setSetup>[0]);
     expect(
       Number.isFinite(setup.value.computers) && Number.isFinite(setup.value.tanksPerTeam),

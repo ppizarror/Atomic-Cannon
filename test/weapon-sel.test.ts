@@ -1,8 +1,8 @@
 /**
  * `?weaponsel=<id>` selects by STABLE weapon id, and the arsenal list numbers rows
  * by that same id (`weaponDisplayNumber`), NOT by their position in the (filtered)
- * list. Regression for: with weapons disabled in Game Content, list-position numbering
- * drifted below the id, so `weaponsel=74` (aiming at "Tracer 5") landed on Barrage.
+ * list. With weapons disabled in Game Content, list-position numbering drifts below
+ * the id — `weaponsel=74` (aiming at "Tracer 5") would land on Barrage instead.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -28,17 +28,17 @@ describe('weaponsel (stable-id selection)', () => {
     const before = WEAPON_DATABASE.filter(w => w.index < tracer5.index).slice(0, 3);
     for (const w of before) GameContent.weaponsOff.add(w.index);
     expect(weaponDisplayNumber(tracer5)).toBe(tracer5.index + 1);
-    // The naive list-position number WOULD have shifted down by the 3 disabled rows —
-    // prove id-numbering and position-numbering genuinely differ here (the old bug).
+    // The naive list-position number shifts down by the 3 disabled rows — proving the two
+    // numberings genuinely differ here, so the assertion above has teeth.
     const enabled = WEAPON_DATABASE.filter(w => !GameContent.weaponsOff.has(w.index));
     const listPos = enabled.findIndex(w => w.index === tracer5.index) + 1;
-    expect(listPos).toBe(weaponDisplayNumber(tracer5) - before.length); // list-position numbering DOES drift (the old bug)
+    expect(listPos).toBe(weaponDisplayNumber(tracer5) - before.length); // list-position numbering DOES drift
     for (const w of before) GameContent.weaponsOff.delete(w.index); // restore
   });
 
   it('weaponsel=<id> selects that exact weapon end-to-end', () => {
     // End-to-end: ?weaponsel=<id> → forceWeapon(id-1) selects that exact weapon even
-    // with earlier weapons disabled (the reported scenario).
+    // with earlier weapons disabled.
     const gc = new CGameController(makeCanvas()) as unknown as {
       startGame(n: number): void;
       forceWeapon(index: number): void;

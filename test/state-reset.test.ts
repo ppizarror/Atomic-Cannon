@@ -1,5 +1,5 @@
 /**
- * State-reset / taunt guards from the round-9 audits:
+ * State-reset / taunt guards:
  *  - respawn() clears in-progress motion (drive target, jet fuel) so a tank respawned while a drive/jet
  *    was queued at battle-end doesn't crawl / fly on its first update.
  *  - setNetState() clears a locally-mispredicted explosion when the snapshot says the tank is alive
@@ -68,7 +68,7 @@ describe('CTank respawn / setNetState resets', () => {
 });
 
 describe('taunt bubbles', () => {
-  // The bubble system is its own object now (game/CChatter), so these drive it directly — no
+  // The bubble system is its own object (game/CChatter), so these drive it directly — no
   // match, no controller. A speaker is anything with a name, a position and alive/sentry flags.
   const speaker = (alive = true, sentry = false) => ({
     isAlive: () => alive,

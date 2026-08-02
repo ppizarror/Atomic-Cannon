@@ -94,8 +94,8 @@ const ART: {
 };
 
 /**
- * Jet pack. Thrust is expressed as MULTIPLES of `TANK.GRAVITY`, which is how it was tuned: up is
- * -1.2g (a net -0.2g rise while held) and each side is ∓0.1g.
+ * Jet pack. Thrust is expressed as MULTIPLES of `TANK.GRAVITY`, so the feel holds if gravity is
+ * retuned: up is -1.2g (a net -0.2g rise while held) and each side is ∓0.1g.
  */
 const JET = {
   /** Screen-Y the climb stops at — the map top. */
@@ -447,8 +447,8 @@ export class CTank {
 
     // BURIED / underground: only with Bury Tanks on, and only when the surface has risen ABOVE the
     // tank's TOP — i.e. the whole hull is under the dirt. A few px of blast EJECTA lapping the hull
-    // does NOT count (the tank can still crawl out — the drive hugs any terrain); the old 0.5px
-    // hair-trigger flagged any dusting as "underground". Recomputed each frame so it clears the
+    // does NOT count (the tank can still crawl out — the drive hugs any terrain); a sub-pixel
+    // threshold flags any dusting as "underground". Recomputed each frame so it clears the
     // instant the ground is lowered back to (or below) the tank.
     this.m_bBuried = GameConfig.buryTanks && this.m_vPos.y > surf;
 

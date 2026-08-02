@@ -47,11 +47,12 @@ describe('CLand terrain', () => {
     expect(rough).toBeGreaterThan(smooth); // ragged rim is bumpier than the clean circle
   });
 
-  it('a crater with a FRACTIONAL radius still carves (regression: fractional-index no-op)', () => {
-    // Bug: `blastCircle`'s column loop started at `x - nRadius`; with a non-integer radius (e.g. a
-    // weapon radius × a non-integer blast scale, like 130×1.47≈191.1) that start is fractional, so
-    // the loop stepped through fractional `dx` and `m_arrHeights[dx]` (a TypedArray) read `undefined`
-    // → `craterBottom > undefined` is false → the crater carved NOTHING (cleaners "didn't clean").
+  it('a crater with a FRACTIONAL radius carves exactly like an integer one', () => {
+    // `blastCircle`'s column loop has to start on an INTEGER column. A radius that is not a whole
+    // number (a weapon radius × a non-integer blast scale, e.g. 130×1.47≈191.1) makes an `x -
+    // nRadius` start fractional, so the loop steps through fractional `dx`, `m_arrHeights[dx]` (a
+    // TypedArray) reads `undefined`, `craterBottom > undefined` is false — and the crater carves
+    // NOTHING, which surfaces as cleaners that "don't clean".
     const land = new CLand(1080, 400);
     land.generateRandomTerrain(12345);
     const cx = 540;

@@ -30,7 +30,7 @@ describe('Opening aim', () => {
       expect(a).toBeGreaterThanOrEqual(0); // 0 = flat right
       expect(a).toBeLessThanOrEqual(180); // 180 = flat left; never below the horizon
     }
-    // Not the old shared 45°: 16 draws landing on one value is not a plausible pass.
+    // Not one shared 45° for everybody: 16 draws landing on a single value is not a plausible pass.
     expect(new Set(aims).size).toBeGreaterThan(1);
   });
 
@@ -41,7 +41,7 @@ describe('Opening aim', () => {
       expect(p).toBeGreaterThanOrEqual(200);
       expect(p).toBeLessThanOrEqual(699);
     }
-    expect(new Set(powers).size).toBeGreaterThan(1); // not the old shared 500
+    expect(new Set(powers).size).toBeGreaterThan(1); // not one shared 500 for every tank
   });
 
   it('the human opens the battle on its own drawn aim + power (the HUD reads them)', () => {

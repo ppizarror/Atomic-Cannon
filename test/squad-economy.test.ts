@@ -1,8 +1,8 @@
 /**
  * Squad credit pooling. Credits are stored per-tank but a team shares them (a human squad shares one
  * depot bound to its lead tank; squad-mates hold display copies). A buy debits the banker; without
- * re-syncing the copies, a squad-mate's later earn would pool its stale, undebited balance back over
- * the banker and REFUND the purchase. After the fix a buy debits the whole squad in lock-step.
+ * re-syncing the copies, a squad-mate's later earn pools its stale, undebited balance back over the
+ * banker and REFUNDS the purchase — so a buy debits the whole squad in lock-step.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';

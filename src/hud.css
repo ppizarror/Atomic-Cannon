@@ -22,7 +22,7 @@
   --z-flash: 9999; /* nuke white-out */
   --z-gate: 10000; /* resolution-too-small gate — above everything */
 
-  /* One dim wash behind every scrim overlay (was 0.5 / 0.55 / 0.72 — now uniform). */
+  /* One dim wash behind every scrim overlay — uniform, so no two overlays dim differently. */
   --overlay-scrim: rgba(0, 0, 0, 0.6);
 
   /* Shared brushed-metal gradients — the depot stats popup (standard) and the
@@ -430,7 +430,7 @@ canvas {
 /* Weapon list / editor icon. The source art is native 16x16, so we DON'T scale it to
    18px (1.125x is a non-integer zoom that smears the pixels even with `pixelated`).
    Instead we render it 1:1 at 16x16 and add a 1px #757575 (117,117,117) frame; with
-   `content-box` the border sits OUTSIDE the icon, keeping the old 18x18 footprint. */
+   `content-box` the border sits OUTSIDE the icon, giving an 18x18 footprint. */
 .wicon {
   width: 16px;
   height: 16px;
@@ -631,7 +631,7 @@ canvas {
 }
 
 /* Jet-flight indicator — low-centre, above the HUD panel, clear of the top-left
-   minimap + status text (which the top-centre placement used to collide with). */
+   minimap + status text (which a top-centre placement collides with). */
 .flight-hud {
   position: fixed;
   bottom: calc(var(--hud-h) + 16px);

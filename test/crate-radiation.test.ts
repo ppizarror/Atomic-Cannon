@@ -1,7 +1,7 @@
 /**
- * Two gameplay fixes:
- *  1. A weapon/bomb crate grants to WHOEVER grabs it — including a solo bot (it used to vanish for
- *     free when a CPU tank drove over it).
+ * Two gameplay rules:
+ *  1. A weapon/bomb crate grants to WHOEVER grabs it — a CPU tank driving over one collects the
+ *     contents like anybody else, rather than the crate vanishing for free.
  *  2. Radiation fallout DOT is neutralized in NET matches (cosmetic only), because it accrues per
  *     frame over the un-synchronized aim phase and would drift/false-desync lockstep clients — the
  *     same treatment wind gusts already get. Solo keeps full radiation damage.

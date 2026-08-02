@@ -95,8 +95,8 @@ async function main(): Promise<void> {
   sizeFx();
 
   const gameController = new CGameController(scene);
-  // Smoke bypasses the 2D scene canvas and is batched on the GPU — the layer used to be thousands
-  // of individual drawImage calls and the dominant cost of a heavy frame.
+  // Smoke bypasses the 2D scene canvas and is batched on the GPU — drawing the layer as thousands
+  // of individual drawImage calls is the dominant cost of a heavy frame.
   gameController.setSmokeSink(compositor);
   gameController.setImpactListener((x, y, s) => {
     // The shockwave maps world→screen against the controller's fixed LOGICAL size (which the
@@ -169,7 +169,7 @@ async function main(): Promise<void> {
     if (weaponTest) gameController.setWeaponTest(true);
     // `?weaponsel=<id>`: force the human onto weapon <id> with unlimited ammo. `id` is the weapon's
     // STABLE 1-based database id (position + 1) — a fixed dev handle (`weaponDisplayNumber`). NOTE
-    // the in-game arsenal now numbers weapons by BUY ORDER, so its "1./2./…" no longer matches this
+    // the in-game arsenal numbers weapons by BUY ORDER, so its "1./2./…" does NOT match this
     // database id — pass the database id here, not the number shown in the list.
     if (weaponSel !== null) {
       const id = parseInt(weaponSel, 10);
@@ -333,7 +333,7 @@ async function main(): Promise<void> {
   // Release thrust on ANY keyup — a key release must always release thrust, even if focus moved into
   // a text field (chat) between press and release, or the keydown was on the battle screen. Keydown
   // stays gameplay-gated (don't START thrust while typing); keyup is always safe to honour, so it is
-  // NOT gated — gating it on `gameplayKeys` was exactly what stranded the jet "on".
+  // NOT gated — gating it on `gameplayKeys` strands the jet "on" whenever the gate flips mid-press.
   document.addEventListener('keyup', e => {
     const dir = thrustKey(e.code);
     if (dir && thrust[dir]) {

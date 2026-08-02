@@ -1,22 +1,23 @@
 /**
- * Regression: there cannot be radiation floating in air.
+ * There cannot be radiation floating in air.
  *
  * The settled coat is drawn by spreading each hot grain's dot onto its neighbours — that bleed is
- * what softens the join between contaminated earth and the ground around it. It checked bounds, and
- * it checked that the target was not already hot, but it never checked that there was any GROUND
- * there. So every grain lying on the surface bled its dot straight upward into the sky.
+ * what softens the join between contaminated earth and the ground around it. The bleed has to check
+ * three things: bounds, that the target is not already hot, and — the one that matters here — that
+ * there is any GROUND under the target at all. Without that last check, every grain lying on the
+ * surface bleeds its dot straight upward into the sky.
  *
  * On flat ground that is a 1-2px halo nobody notices. Along a cliff edge or a fresh crater rim —
  * where the terrain stops abruptly and every grain on that line is a surface grain — it becomes a
- * continuous band of glow hanging off the terrain with nothing underneath it. It also read as a bug
- * in something else entirely: a rocket fired into contaminated ground appeared not to clean it,
- * when in fact the earth (and its radiation) had been removed correctly and what remained was the
- * halo bleeding off the rim the rocket had just cut.
+ * continuous band of glow hanging off the terrain with nothing underneath it, and it reads as a bug
+ * in something else entirely: a rocket fired into contaminated ground looks as though it failed to
+ * clean it, when the earth (and its radiation) went correctly and what is left is the halo bleeding
+ * off the rim the rocket just cut.
  *
  * The invariant is the simple one: a lit pixel of the glow layer must sit on solid terrain. This
  * exercises the REAL bake through `draw()` — the headless canvas stub captures what `putImageData`
- * writes — because the bug lived in the compositing, not in the radiation channel, and every
- * data-level assertion in the suite passed happily while it was there.
+ * writes — because the property lives in the compositing, not in the radiation channel, where every
+ * data-level assertion in the suite passes happily either way.
  */
 import {describe, it, expect} from 'vitest';
 import {CLand} from '../src/core/CLand';

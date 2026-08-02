@@ -26,7 +26,8 @@ describe('kill attribution vs zero-damage hits', () => {
 
     p.creditDamage(c, b, 0); // C's shot is fully absorbed (shield/armor) → 0 life removed
 
-    // Before the fix, setLastDamager ran before the lifeRemoved<=0 guard → this stole attribution.
+    // setLastDamager runs BEHIND the lifeRemoved<=0 guard; ahead of it, an absorbed shot like
+    // this one would steal the attribution.
     expect(b.getLastDamager()).toBe(a); // still A, not C
   });
 

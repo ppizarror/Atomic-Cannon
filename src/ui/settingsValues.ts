@@ -4,8 +4,8 @@
  *
  * There is ONE reader, {@link engineValue}: an option's kind and units are declared in
  * `settingsCatalog` (a boolean `default` means the engine wants a boolean, a `scale` table means
- * enum→scalar, `map` covers the few that aren't 1:1), so this file no longer restates them as
- * ~50 hand-written getters that could drift from the catalog beside them.
+ * enum→scalar, `map` covers the few that aren't 1:1), so this file never restates them —
+ * ~50 hand-written getters would drift from the catalog beside them.
  *
  * `applyGameConfig` (applySettings.ts) drives the ~45 options that mirror a GameConfig field
  * straight off the catalog's `cfg` binding. What's left below is the handful the CONTROLLER or

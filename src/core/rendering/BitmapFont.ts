@@ -189,8 +189,8 @@ export class BitmapFont {
 
   /**
    * `render()` memoised per (text, spacing) — the single rendered-text cache for
-   * everything that draws bitmap text (the on-canvas tank badge, `<BmpText>`), so
-   * callers no longer keep their own caches. Only stores the result once the font is
+   * everything that draws bitmap text (the on-canvas tank badge, `<BmpText>`) — callers
+   * share this one rather than keeping their own. Only stores the result once the font is
    * ready, so an early empty render never sticks. The returned canvas is shared —
    * blit FROM it, never draw INTO it.
    */

@@ -1,9 +1,8 @@
 /**
  * Sprite source interfaces — the contract between drawing code (tanks, particles,
  * terrain) and whatever resolves a logical sprite name to a drawable bitmap
- * (CAssetManager). These lived in CTank and were re-declared ad hoc in
- * CParticleSystem (`SpriteSrc`); they belong here in core/rendering next to their
- * implementer.
+ * (CAssetManager). They live here in core/rendering, next to their implementer, so
+ * drawing code shares one declaration instead of each consumer restating it.
  */
 
 export interface Sprite {

@@ -1,8 +1,8 @@
 /**
  * Mines are authoritative net state: getNetSnapshot carries them (position, arm countdown, weapon,
  * owner-by-index), applyNetSnapshot reproduces them, and stateHash mixes them so a mine that drifted
- * / armed / detonated on one client but not another is DETECTED. Before this they were invisible to
- * the drift detector and absent from reconnect bootstraps.
+ * / armed / detonated on one client but not another is DETECTED. Leaving mines out of the snapshot
+ * makes such a divergence invisible to the drift detector and absent from reconnect bootstraps.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';

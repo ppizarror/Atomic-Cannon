@@ -2,10 +2,9 @@
  * Typed access to the engine's soft-private internals, for tests.
  *
  * Engine fields are `m_`-prefixed TS soft-privates (see AGENTS.md) — reachable at runtime, which
- * both the browser verify harness and these tests rely on. Reaching them needs a cast, and every
- * test file used to hand-roll its own: 31 files declared their own `type Priv = {...}`, `m_tanks`
- * alone was re-declared in 41 of them, and there were 200+ `as unknown as` casts. Renaming a field
- * meant hunting every one.
+ * both the browser verify harness and these tests rely on. Reaching them needs a cast, and a cast
+ * hand-rolled per test file scatters the same declarations across dozens of files — `m_tanks` alone
+ * belongs to 40+ of them — so renaming one engine field means hunting every copy.
  *
  * One declaration per engine class lives here instead, and `priv()` / `landPriv()` / … do the cast.
  * These are intentionally WIDE — a test gets the whole internal view, not a bespoke slice — because
@@ -14,7 +13,7 @@
  *
  * Only add a member here when a test genuinely needs it. If a test is reaching for something just
  * to observe a result, prefer a public accessor (or extracting the logic into its own object, the
- * way `CChatter` / `botEconomy` made their tests controller-free).
+ * way `CChatter` / `botEconomy` keep their tests controller-free).
  */
 import type {CGameController, EGameState} from '../src/game/CGameController';
 import type {CLand} from '../src/core/CLand';
@@ -210,8 +209,8 @@ export interface ParticlesPriv {
 /**
  * Field manifests, used by `internals.test.ts` to prove these interfaces still match the engine.
  *
- * A cast can't check that `m_tanks` exists — that's the hole the hand-rolled per-file types had, and
- * a rename would silently leave every test asserting against `undefined`. `Record<keyof X, true>`
+ * A cast can't check that `m_tanks` exists — that's the hole any hand-rolled per-file type leaves,
+ * and a rename would silently leave every test asserting against `undefined`. `Record<keyof X, true>`
  * forces this object to carry EXACTLY the interface's keys (a missing or extra one is a compile
  * error), so the guard test can iterate them and confirm each is really present on an instance.
  */
@@ -296,9 +295,9 @@ export const LAND_KEYS: Record<keyof LandPriv, true> = {
 
 const cast = <T>(o: unknown): T => o as T;
 
-// These views are PRIVATES-ONLY, deliberately. An intersection (`CGameController & GCPriv`) reads
-// better and was tried first, but TypeScript reduces it to `never`: the members are `private` on
-// the class and public here, which is a real conflict. So a test that needs both keeps the original
+// These views are PRIVATES-ONLY, deliberately. An intersection (`CGameController & GCPriv`) would
+// read better, but TypeScript reduces it to `never`: the members are `private` on the class and
+// public here, which is a real conflict. So a test that needs both keeps the original
 // reference for the public API and takes a view for the internals:
 //     gc.startGame(2);            // public
 //     priv(gc).m_tanks[0];        // internals

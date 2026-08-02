@@ -2,14 +2,14 @@
  * Single source of truth for every PERSISTED Settings option: its default value, the
  * index→scalar table for the enums the engine reads as a scalar, and — for the ~45 that mirror
  * a {@link GameConfig} field — WHICH field they land in (`cfg`). `applyGameConfig` walks this
- * table, so an option's default, its units and its destination all live on one line; they used
- * to be a catalog entry plus a hand-written getter in settingsValues plus a hand-written
- * assignment in applySettings, three places that could quietly disagree.
+ * table, so an option's default, its units and its destination all live on ONE line — splitting
+ * them across a catalog entry, a hand-written getter in settingsValues and a hand-written
+ * assignment in applySettings gives three places that can quietly disagree.
  *
- * Enum DISPLAY labels used to live here too, but they are localised copy, so they now
- * live in i18n (`strings.settings.<page>.<row>.options`), index-aligned with the `scale`
- * table below. Keep an enum's i18n `options` the same length as its `scale` here — the
- * index the widget stores is shared between them.
+ * Enum DISPLAY labels do NOT live here: they are localised copy, so they live in i18n
+ * (`strings.settings.<page>.<row>.options`), index-aligned with the `scale` table below. Keep an
+ * enum's i18n `options` the same length as its `scale` here — the index the widget stores is
+ * shared between them.
  *
  * Only STORED settings live here. Audio (Sound / Music / volumes), Full Screen (reads the
  * document) and Language (lives on the i18n signal) aren't remembered options and aren't

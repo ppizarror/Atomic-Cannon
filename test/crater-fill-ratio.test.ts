@@ -1,19 +1,19 @@
 /**
  * Crater geometry + spoil budget.
  *
- * Two properties the nuke tier used to break:
+ * Two properties that must hold across every tier, the nukes included:
  *
  *  1. **Crater radius is `weapon.radius × explosionScale`, for every weapon.** The original stamps a
- *     burst mask of exactly that pixel radius (`FUN_004a6480`, `combat_physics.md` §3) and its crater
- *     path has no nuke branch — a nuke digs a big hole only because its authored `radius` is big. The
- *     port used to widen nuke bowls a further 1.35×.
+ *     burst mask of exactly that pixel radius and its crater path has no nuke branch — a nuke digs a
+ *     big hole only because its authored `radius` is big, never because of a size bonus on top.
  *
- *  2. **A blast throws back the same FRACTION of its own crater whatever its size.** The ejecta count
- *     used to grow linearly with radius while the bowl grows with its square, so the refilled share
- *     fell off as ~1/r: a bomb put back a third of its crater, Uranium a fifth, Isotope a tenth —
- *     big weapons left a bare pit. Both weapons below must now refill to within a factor of ~1.5.
- *     The absolute share is a separate, tuned thing (`fodder` decides it, and it is deliberately low
- *     so a small weapon can still dig a hole); only its independence from size is invariant.
+ *  2. **A blast throws back the same FRACTION of its own crater whatever its size.** The bowl grows
+ *     with the square of the radius, so the ejecta budget has to grow with it — an ejecta count that
+ *     tracked radius alone makes the refilled share fall off as ~1/r: a bomb putting back a third of
+ *     its crater, Uranium a fifth, Isotope a tenth, big weapons left with a bare pit. Both weapons
+ *     below must refill to within a factor of ~1.5. The absolute share is a separate, tuned thing
+ *     (`fodder` decides it, and it is deliberately low so a small weapon can still dig a hole); only
+ *     its independence from size is invariant.
  */
 import {describe, it, expect} from 'vitest';
 
@@ -102,8 +102,8 @@ function crater(name: string): {dug: number; back: number; radius: number} {
 
 describe('Crater geometry and spoil budget', () => {
   it('a nuke carves `radius × explosionScale` — no wider than any other weapon', () => {
-    // Uranium Nuke: authored radius 140, blastScale 1, explosionScale 1 → a 140px bowl. The old
-    // 1.35× nuke bonus put this at ~189.
+    // Uranium Nuke: authored radius 140, blastScale 1, explosionScale 1 → a 140px bowl. A 1.35×
+    // nuke bonus on top would put this at ~189.
     const {radius} = crater('Uranium Nuke');
     expect(radius).toBeGreaterThan(130);
     expect(radius).toBeLessThanOrEqual(142); // +ragged-rim slack, nowhere near 189
@@ -117,13 +117,13 @@ describe('Crater geometry and spoil budget', () => {
     const bombShare = bomb.back / bomb.dug;
     const nukeShare = nuke.back / nuke.dug;
     // A floor, not a target. How MUCH a weapon puts back is `fodder`'s job and is tuned — the base
-    // share came down hard so that low-fodder weapons can actually dig (a Hellfire, radius 20 and
-    // fodder 0.1, could not make a hole at all when every blast returned ~40% of its bowl). What
-    // this test guards is the property below, which is structural: the share must not depend on the
+    // share is deliberately low so that low-fodder weapons can actually dig (a Hellfire, radius 20
+    // and fodder 0.1, cannot make a hole at all if every blast returns ~40% of its bowl). What this
+    // test guards is the property below, which is structural: the share must not depend on the
     // weapon's SIZE. These two only assert that some spoil comes back at all.
     expect(bombShare).toBeGreaterThan(0.07);
     expect(nukeShare).toBeGreaterThan(0.07);
-    // The whole point: the ratio no longer collapses with size (it was ~3× worse for the nuke).
+    // The whole point: the ratio must not collapse with size — the nuke keeps pace with the bomb.
     expect(nukeShare).toBeGreaterThan(bombShare * 0.66);
   });
 });

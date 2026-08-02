@@ -1,11 +1,11 @@
 /**
- * Regression: firing overlapping terrain cuts (e.g. multiple beams over the same span) must NOT
- * leave "floating dirt" — solid pixels stranded in the sky above the surface line.
+ * Overlapping terrain cuts (e.g. multiple beams over the same span) must NOT leave "floating
+ * dirt" — solid pixels stranded in the sky above the surface line.
  *
- * Root cause (fixed): a second cut over a column whose overburden was still FALLING read the
- * mid-air block top as the surface and spawned a concurrent falling block; the two landed at
- * independent absolute targets, and whichever set the surface lower stranded the other's pixels
- * above it. `settleFallsIn` now finalizes active falls before each re-carve.
+ * The hazard is a second cut over a column whose overburden is still FALLING: reading the mid-air
+ * block top as the surface spawns a concurrent falling block, the two land at independent absolute
+ * targets, and whichever sets the surface lower strands the other's pixels above it. `settleFallsIn`
+ * finalizes active falls before each re-carve, so every cut starts from settled ground.
  *
  * The pixel-level ops (sliceColumn / falling blocks) only run when `m_pixels` exists — the headless
  * DOM mock no-ops getImageData — so we install a real pixel buffer with solid ground below a flat
@@ -68,7 +68,7 @@ describe('CLand — no floating dirt', () => {
     land.update(1 / 60); // one frame: blocks are mid-air
     expect(floatingPixels(land)).toBe(0); // a falling block sits AT the surface, never above it
 
-    // Second slice over the SAME span while the first is still in the air (the bug trigger).
+    // Second slice over the SAME span while the first is still in the air — the stranding case.
     land.carveBeamSlice(30, surf + 24, 170, surf + 24, 8);
     land.carveBeamSlice(30, surf + 18, 170, surf + 18, 8); // and a third, for good measure
 
@@ -91,7 +91,7 @@ describe('CLand — no floating dirt', () => {
   });
 
   it('depositing debris on a column with a FALLING overburden block strands nothing', () => {
-    // Bug: a bomb now cuts with `carveDiscCollapse` (falling-block collapse) AND throws DEPOSITING
+    // A bomb cuts with `carveDiscCollapse` (falling-block collapse) AND throws DEPOSITING
     // debris. A chunk that settles on a column whose block is still mid-air stamps dirt at the block's
     // CURRENT (high) top; when the block then lands lower, that dirt is left floating above the surface.
     const W = 200,

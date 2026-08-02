@@ -1,11 +1,11 @@
 /**
  * Contaminated spoil.
  *
- * Radiation used to accumulate as its OWN particle cloud, laid down independently of the dirt: the
- * ejecta deposited clean soil and a separate fallout cloud dusted a film over whatever the surface
- * ended up being. So the two disagreed about where the hot material was — the rim, where grains
- * drifted and no dirt landed, ended up hotter than the metres of spoil piled in the middle of the
- * bowl, which read as inert brown with a red skin.
+ * Radiation must not accumulate as its OWN particle cloud, laid down independently of the dirt:
+ * ejecta depositing clean soil while a separate fallout cloud dusts a film over whatever the surface
+ * ends up being leaves the two disagreeing about where the hot material is — the rim, where grains
+ * drift and no dirt lands, comes out hotter than the metres of spoil piled in the middle of the
+ * bowl, which reads as inert brown under a red skin.
  *
  * The earth a radioactive blast throws IS the contaminated material, so it lands hot through its
  * whole thickness, and the glow is drawn down the contiguous hot body rather than to a fixed depth.
@@ -67,7 +67,7 @@ const world = (land: CLand): ShotWorld =>
   }) as unknown as ShotWorld;
 
 /** Depth (px) of the contiguous run of radioactive earth under a column's surface — what the glow
- *  now lights, and what "how much of this dirt is hot" means. */
+ *  lights, and what "how much of this dirt is hot" means. */
 function hotDepth(land: CLand, col: number): number {
   const p = land as unknown as {m_material: Uint8Array; m_arrHeights: Int16Array};
   const top = p.m_arrHeights[col];

@@ -45,8 +45,8 @@ function newGame(): {gc: CGameController; calls: Record<string, number>; t: CTan
 }
 
 describe('Battle transitions', () => {
-  // Regression: the win was only detected when a shot resolved, so the human had
-  // to fire a pointless final round to actually win.
+  // The win is polled every tick, not only when a shot resolves — otherwise a human whose
+  // last enemy dies passively has to fire a pointless final round to claim it.
   it('ends the battle when the enemy dies mid-turn, without firing', () => {
     const {gc, calls, t} = newGame();
     expect(gc.getState()).toBe(EGameState.Battle); // human to act
@@ -71,8 +71,8 @@ describe('Battle transitions', () => {
     expect(t[0].isAlive() && t[1].isAlive()).toBe(true);
   });
 
-  // Regression: nextBattle never touched the music, so the victory track lingered
-  // and no new bed started.
+  // nextBattle owns the music hand-off: without it the victory track lingers into the
+  // new battle and no fresh bed ever starts.
   it('starts a fresh bed on the next battle, cutting the win jingle', () => {
     const {gc, calls, t} = newGame();
     expect(calls.battleMusic).toBe(1); // opening battle started a bed

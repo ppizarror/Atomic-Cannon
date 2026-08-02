@@ -1,22 +1,22 @@
 /**
- * Regression: a fill (Dirt weapon, or a crater's own ejecta) piled over irradiated ground must BURY
- * the radiation, and a carve must take it away — never leave it floating on ground it no longer
- * belongs to.
+ * A fill (Dirt weapon, or a crater's own ejecta) piled over irradiated ground must BURY the
+ * radiation, and a carve must take it away — never leave it floating over ground it does not
+ * belong to.
  *
  * Radioactivity is a PROPERTY OF THE TERRAIN — bits 1-7 of the per-pixel material byte, alongside the
- * dirt tag in bit 0 — not a cloud of particles hovering near it. Fallout specks are only the fall: on landing a grain stamps the
- * channel and is recycled. That coupling is the point. It used to live purely in the specks, at
- * absolute positions with no relationship to the ground, so four separate call sites (crater disc,
- * beam carve, column filter, the fill) each had to GUESS what a terrain edit did to it — and every
- * guess was wrong in some direction: fallout stranded in bands over ground that merely happened to
- * survive, deposited dirt carried no radiation at all, and lifting buried grains back to the surface
- * dragged them up through the earth as a crater refilled.
+ * dirt tag in bit 0 — not a cloud of particles hovering near it. Fallout specks are only the fall:
+ * on landing a grain stamps the channel and is recycled. That coupling is the point. Held purely in
+ * the specks, at absolute positions with no relationship to the ground, four separate call sites
+ * (crater disc, beam carve, column filter, the fill) would each have to GUESS what a terrain edit
+ * did to it — and every guess is wrong in some direction: fallout stranded in bands over ground that
+ * merely happened to survive, deposited dirt carrying no radiation at all, buried grains dragged
+ * back up through the earth as a crater refills.
  *
- * Now there is nothing to guess. Every terrain edit routes through `setColumnTop`, which clears the
- * channel for the pixels it touches: earth arriving is clean, earth leaving takes its radioactivity
- * with it. These tests drive that REAL edit path for the same reason — poking `m_arrHeights`
- * directly (as the previous version of this file did) moves the ground without moving the terrain,
- * which is precisely the decoupling the channel exists to prevent.
+ * With the channel there is nothing to guess. Every terrain edit routes through `setColumnTop`,
+ * which clears the channel for the pixels it touches: earth arriving is clean, earth leaving takes
+ * its radioactivity with it. These tests drive that REAL edit path for the same reason — poking
+ * `m_arrHeights` directly moves the ground without moving the terrain, which is precisely the
+ * decoupling the channel exists to prevent.
  */
 import {describe, it, expect} from 'vitest';
 import {landPriv} from './_internals';

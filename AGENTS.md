@@ -69,8 +69,8 @@ are correctly `core`, because they're domain systems rather than match orchestra
 
 Two known oddities, both deliberate: `core/CTaunts` (the editable line pools — the UI edits them)
 and `game/CChatter` (the speech bubbles — match-only) are a split pair that reads like a mistake
-but isn't; and `core/rendering/CPixiCompositor` is really layer 2 above, sitting under
-`core/rendering/` for historical reasons.
+but isn't; and `core/rendering/CPixiCompositor` is really layer 2 above, filed under
+`core/rendering/` alongside the other rendering primitives.
 
 ## Naming
 
@@ -102,9 +102,9 @@ but isn't; and `core/rendering/CPixiCompositor` is really layer 2 above, sitting
   `resize()` stretches the sprite to the live container size. Tank/turret art is **absolute
   pixels** (`CTank`, `TANK_DRAW_WIDTH` etc.), so the buffer resolution is effectively the
   world's logical scale. (Note: because the buffer is captured at the initial size and the
-  sprite stretches, resizing the window after load softens the scene until reload — a known
-  tradeoff. Several "fix" approaches — fixed-res letterbox, dynamic relayout, high-res
-  downscale — were tried and reverted; do **not** reintroduce one without explicit agreement.)
+  sprite stretches, resizing the window after load softens the scene until reload — a deliberate
+  tradeoff. Do **not** replace it with a fixed-res letterbox, a dynamic relayout or a high-res
+  downscale without explicit agreement.)
   Pointer→world mapping lives in `main.tsx` `toWorld` (client px → scene px).
 - **Minimum playable window is 768×432** (`MIN_W`/`MIN_H` in `App.tsx`). Below it, the
   `TooSmallOverlay` gate covers everything. Keep these in sync with any copy that states the size.

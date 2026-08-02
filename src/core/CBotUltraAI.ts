@@ -539,14 +539,14 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
 
   for (const e of aimAt) {
     // BEAMS are hitscan straight rays: only score them when the LINE from the muzzle to the enemy is
-    // CLEAR — a beam can't shoot through a mountain (scoring it as an always-hit is why it used to be
-    // over-picked and nukes never fired). Aim straight at the enemy, no arc.
+    // CLEAR — a beam can't shoot through a mountain (scoring it as an always-hit over-picks beams
+    // and leaves nukes unfired). Aim straight at the enemy, no arc.
     //
     // EXCEPT while BURIED, where the check must be skipped: the muzzle sits UNDER the dirt, so the ray
     // starts inside terrain and beamBlocked rejects every beam on its first sample — yet the buried
-    // filter above has already narrowed the pool to beams alone. The two rules cancelled out, leaving a
-    // buried bot with NO candidate action at all: it skipped its turn, nothing about its situation
-    // changed, and it skipped again every round for the rest of the battle. A beam is genuinely fine
+    // filter above has already narrowed the pool to beams alone. Applied there the two rules cancel
+    // out and leave a buried bot with NO candidate action at all: it skips its turn, nothing about
+    // its situation changes, and it skips again every round for the rest of the battle. A beam is fine
     // here — the engine's beam is pure hitscan that only ever stops on a TANK (see EXT.BEAM in
     // WeaponBehavior), so shooting it out from under the dirt is exactly what it's for.
     const beamAngle = ctx.aimDegToward({x: e.x, y: e.y});
@@ -706,7 +706,7 @@ const RAD_VETO_FRAC = 0.35;
  * the bot should cross the first for a weapon crate while refusing the second for anything.
  *
  * With no reading available we return undefined rather than a guess, and every caller falls back to
- * the old conservative rule (any fallout = keep off). Unknown dose is not the same as small dose.
+ * the conservative rule (any fallout = keep off). Unknown dose is not the same as small dose.
  */
 function radCost(ctx: UltraCtx, x: number): number | undefined {
   return ctx.radiationCostAt ? Math.max(0, ctx.radiationCostAt(x)) : undefined;
@@ -756,7 +756,7 @@ function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note
   // What running is actually WORTH: the dose we'd eat by staying put, scaled by how badly we can
   // afford it. 200 damage of fallout on a full-health tank is an annoyance it can shoot through; the
   // same carpet on a tank with 250 life left is the whole game, so the urgency curve climbs steeply as
-  // life falls. Measured dose beats the old flat guess in both directions — it stops the bot sprinting
+  // life falls. Measured dose beats a flat guess in both directions — it stops the bot sprinting
   // off a dying speck carpet, and stops it standing in a fresh crater trading shots.
   const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
   const urgency = Math.max(0.5, (1 - lifeFrac) * 2.2);

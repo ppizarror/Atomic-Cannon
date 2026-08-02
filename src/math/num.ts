@@ -1,7 +1,7 @@
 /**
- * Scalar math helpers shared across the game. Previously `clamp` was defined three
- * times (Hud, CBotAI, CLand) and inlined ~30 more as `Math.max(lo, Math.min(hi, v))`;
- * likewise deg↔rad, index wrap, and `Math.PI * 2`. One home for all of them.
+ * Scalar math helpers shared across the game — `clamp`, deg↔rad, index wrap and `Math.PI * 2`.
+ * One home for all of them: import from here rather than re-declaring a local `clamp` or
+ * inlining `Math.max(lo, Math.min(hi, v))`.
  */
 
 export const TWO_PI = Math.PI * 2;

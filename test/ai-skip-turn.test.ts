@@ -1,15 +1,15 @@
 /**
  * A bot must never spend a whole turn doing NOTHING — no shot, no drive. A wasted turn isn't just
  * dull to watch: the bot's situation doesn't change on its own, so whatever made it pass repeats next
- * round and it passes forever (observed: 17 consecutive skipped turns by one buried Ultra bot while
- * it held a beam and 30k credits).
+ * round and it passes forever (a buried Ultra bot sitting on a beam and 30k credits can burn 17
+ * consecutive turns that way).
  *
- * Covers the two ways that happened:
- *  • ULTRA — buried ⇒ beams only, but the beam line-of-sight check rejected every beam because the
- *    muzzle starts under the dirt, so the planner had zero candidates and returned `skip`.
- *  • levels 1..10 — the 25% move roll committed a drive that couldn't happen (buried tank) or covered
- *    no ground (already parked at the map-edge clamp, rolled into the wall), and waitForRest ended the
- *    turn the instant the tank wasn't moving.
+ * Covers the two ways a turn comes out empty:
+ *  • ULTRA — buried ⇒ beams only, and a beam line-of-sight check that rejects every beam because the
+ *    muzzle starts under the dirt leaves the planner with zero candidates and a `skip`.
+ *  • levels 1..10 — the 25% move roll commits a drive that cannot happen (buried tank) or covers no
+ *    ground (already parked at the map-edge clamp, rolled into the wall), and waitForRest ends the
+ *    turn the instant the tank is not moving.
  */
 import {describe, it, expect, vi} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -43,7 +43,7 @@ const shell: UltraWeapon = {
 const beam: UltraWeapon = {...shell, index: 40, ext: 5, cost: 900, count: 3, isBeam: true};
 
 // Flat ground at y=500, one enemy 400px away. A buried bot's body — and so its muzzle — sits BELOW
-// that surface, which is what the beam line-of-sight check used to trip on.
+// that surface — the case the beam line-of-sight check has to handle without calling itself blocked.
 function ctx(buried: boolean, weapons: UltraWeapon[]): UltraCtx {
   const muzzleY = buried ? 515 : 475;
   return {
@@ -144,8 +144,8 @@ describe('bot move never burns the turn', () => {
     const gc = newGame(7);
     const tank = gc.m_tanks[0];
     tank.init(20, gc.m_land as never); // parked hard against the left clamp
-    // 0.1 → the distance roll, then direction = LEFT (into the wall). The old code clamped that
-    // straight back onto x=20 and committed a zero-pixel drive.
+    // 0.1 → the distance roll, then direction = LEFT (into the wall). Clamping that straight back
+    // onto x=20 commits a zero-pixel drive; the bot has to turn around and use its move instead.
     const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.1);
     const moved = gc.botMove(tank);
     rnd.mockRestore();

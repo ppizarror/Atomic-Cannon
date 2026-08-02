@@ -270,8 +270,8 @@ export const EXHAUST = {
  * calls costs ~0.95ms. Pixels are free; calls are not.
  *
  * What stays live: gravity, buoyancy and wind act on the cluster as a whole. The puffs sit within
- * ~40px of each other and share the boundary-layer factor, so their individual wind response was
- * already indistinguishable. What is baked: the intra-cluster spread, per-puff growth, the
+ * ~40px of each other and share the boundary-layer factor, so their individual wind responses are
+ * indistinguishable anyway. What is baked: the intra-cluster spread, per-puff growth, the
  * plume.bmp colour ramp and each puff's own fade — including its life stagger, so the cohort still
  * dissolves raggedly rather than snapping out together.
  */
@@ -584,7 +584,7 @@ export class CParticleSystem {
    * source-over is associative that way. The bake is lossless, not an approximation.
    *
    * Consequence worth knowing: sub-puffs inside a cell are FREE at runtime — the cost is one blit
-   * regardless of how many are baked in. EXHAUST.PUFFS is therefore a pure quality knob now.
+   * regardless of how many are baked in. EXHAUST.PUFFS is therefore a pure quality knob.
    */
   private exhaustAtlas(): HTMLCanvasElement | null {
     if (this.m_exAtlas) return this.m_exAtlas;
@@ -1815,7 +1815,7 @@ export class CParticleSystem {
       }
       // 2. Then HOLD while the ground is still resolving — spoil in the air, overburden falling,
       //    the surface sinking. This is what makes the fumes read as aftermath instead of arriving
-      //    with the blast; without it a nuke smoked while its own ejecta was still coming down.
+      //    with the blast; without it a nuke smokes while its own ejecta is still coming down.
       if (v.wait < FUME.VENT.MAX_WAIT && settling?.()) {
         v.wait += dt;
         this.m_craterVents[vw++] = v;

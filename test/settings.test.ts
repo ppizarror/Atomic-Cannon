@@ -159,7 +159,7 @@ describe('Settings → game', () => {
 
 describe('settings catalog (single source)', () => {
   it('every enum with an engine scale table has matching i18n option-label lengths', () => {
-    // Enum labels live in i18n now; the catalog only carries the scale table. Each scaled
+    // Enum labels live in i18n; the catalog only carries the scale table. Each scaled
     // enum's i18n `options` array must stay index-aligned (same length) with its scale.
     const optionsForScaledId: Record<string, readonly string[]> = {
       'tank.kickback': en.settings.tank.kickback.options!,
@@ -210,7 +210,7 @@ describe('settings catalog (single source)', () => {
     }
   });
 
-  it('defaults + scalar tables match the known values (regression guard)', () => {
+  it('defaults + scalar tables match the known values', () => {
     expect(SETTINGS['eco.creditStart'].default).toBe(3000);
     expect(SETTINGS['gp.difficulty'].default).toBe(4);
     expect(SETTINGS['tank.hitpoints'].default).toBe(1000);
