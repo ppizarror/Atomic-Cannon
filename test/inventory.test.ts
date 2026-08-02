@@ -5,6 +5,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from '../src/core/CWeapon';
@@ -13,9 +14,6 @@ const SHELL = getDefaultWeaponIndex();
 // A buyable weapon: any costed weapon that isn't the free staple. Looked up by cost (not
 // by display name) so it's independent of the i18n weapon-name scheme.
 const NUKE = WEAPON_DATABASE.findIndex(w => w.index !== SHELL && (w.cost ?? 0) > 0);
-
-type GCInternals = {beginTurn(): void};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 /** A fresh match with a human at index 0 and plenty of credits to buy with. */
 function humanGame(): CGameController {

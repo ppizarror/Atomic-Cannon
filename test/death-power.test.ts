@@ -6,15 +6,13 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE, getWeapon} from '../src/core/CWeapon';
 import {EXT} from '../src/core/weapons/ExtType';
 
 const DEATH = WEAPON_DATABASE.findIndex((_, i) => getWeapon(i).getExtType() === EXT.DEATH);
-
-type Priv = {m_shots: {getBasePower(): number}[]};
-const priv = (gc: CGameController) => gc as unknown as Priv;
 
 function fireGame(): CGameController {
   const gc = new CGameController(makeCanvas());

@@ -6,19 +6,14 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv, type GCPriv} from './_internals';
 import {CGameController} from '../src/game/CGameController';
-import type {CTank} from '../src/core/CTank';
 
-type Priv = {
-  m_tanks: CTank[];
-  creditDamage(shooter: CTank | null, victim: CTank, lifeRemoved: number): void;
-};
-
-function game(): Priv {
+function game(): GCPriv {
   const gc = new CGameController(makeCanvas());
   gc.setHumanCount(0);
   gc.startGame(3);
-  return gc as unknown as Priv;
+  return priv(gc);
 }
 
 describe('kill attribution vs zero-damage hits', () => {

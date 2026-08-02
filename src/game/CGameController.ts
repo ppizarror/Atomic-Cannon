@@ -416,8 +416,8 @@ export class CGameController implements ShotWorld {
 
     // Large maps: the WORLD can be several viewports wide (Land Size); the scene
     // canvas is the VIEW. World width = viewWidth × landScale (1 = no scroll);
-    // world height = view height (scroll is horizontal only). `m_camX` is the
-    // world X of the view's left edge.
+    // world height = view height (scroll is horizontal only). The view's left edge
+    // is the camera's X (see game/CCamera).
     this.m_worldWidth = Math.round(canvas.width * this.landScale());
     // Publish the world scale so shot PHYSICS grow with the map (a full-power shot stays powerful on
     // big maps instead of only crossing a fraction of them). Blast SIZE is a separate resolution axis.
@@ -1298,8 +1298,8 @@ export class CGameController implements ShotWorld {
     // (debris slumping, a knocked-up tank still falling) instead of easing toward the shooter early; and
     // it does NOT hold during a Move drive (that's Battle state), so the camera follows the driving tank.
     // Once the turn hands off, state is Battle and we follow the new current tank — no crater smoke lag.
-    // ...and, in Cinematic mode, keep lingering on the impact for a beat AFTER the hand-off (m_camDwell,
-    // counted down in updateCamera) before the pan to the next player begins.
+    // ...and, in Cinematic mode, keep lingering on the impact for a beat AFTER the hand-off (the
+    // camera's dwell, counted down in CCamera.update) before the pan to the next player begins.
     if (
       this.m_gameState === EGameState.ShotFlying ||
       this.m_gameState === EGameState.Explosion ||
@@ -2984,8 +2984,8 @@ export class CGameController implements ShotWorld {
     // Focus the player whose turn it is — Graphics → Camera picks the feel of the hand-off:
     //  • INSTANT   — if the active tank is OFF-SCREEN, snap onto it (the player must SEE whose turn it
     //                is even across several screens before a bot fires ~0.6s later). On-screen eases.
-    //  • SMOOTH    — never snap; updateCamera eases across to the new tank (no jarring jump).
-    //  • CINEMATIC — hold on the impact for a beat (updateCamera counts m_camDwell down), then ease.
+    //  • SMOOTH    — never snap; the camera eases across to the new tank (no jarring jump).
+    //  • CINEMATIC — hold on the impact for a beat (CCamera counts the dwell down), then ease.
     const focusX = tank.getPosition().x;
     const offScreen = focusX < this.m_camera.x() || focusX > this.m_camera.x() + this.m_viewW;
     if (GameConfig.cameraMode === CAMERA.MODE_INSTANT && offScreen) {
@@ -5114,7 +5114,7 @@ export class CGameController implements ShotWorld {
       mix(m.weaponIndex);
     }
     mix(this.m_mines.length);
-    // Crates are deliberately NOT hashed. Their physics (updateCrates) free-runs every frame on the
+    // Crates are deliberately NOT hashed. Their physics (CCrateField.update) free-runs every frame on the
     // wall-clock fixed-step count OUTSIDE the lockstep shot window — during the aim/watch phase, which
     // isn't step-synchronised across clients — so an airborne crate is a latency-worth of descent steps
     // ahead on one client vs another. A landed crate settles deterministically, but a mid-descent one
@@ -5909,10 +5909,8 @@ export class CGameController implements ShotWorld {
 
   private m_ctx: CanvasRenderingContext2D;
 
-  // Large-map camera (horizontal only). The world is `m_worldWidth` px wide; the
-  // scene canvas is the view. `m_camX` = world X of the view's left edge (current,
-  // eased); `m_camTargetX` = where it's heading. `m_manualScroll` = the player
-  // dragged the minimap, which suppresses auto-follow until fire / turn change.
+  // The world is `m_worldWidth` px wide; the scene canvas is the view. Where that view sits (and
+  // the minimap that drags it) lives in `m_camera` — see game/CCamera.
   private m_worldWidth = 0;
   private readonly m_camera = new CCamera();
   // The ONE shot the camera tracks this turn (latched to the first of a salvo, so it
@@ -6045,8 +6043,8 @@ export class CGameController implements ShotWorld {
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
   // Floating "Show Points" damage numbers + "Show Blast Circles" rings (see game/CHitMarkers).
   private readonly m_markers = new CHitMarkers();
-  // Victory fireworks (war-end, human wins). Spawned + aged during BattleEnd; drawn in
-  // the sky behind the standings overlay. `m_showFireworks` is decided once at battle end.
+  // Victory fireworks (war-end, human wins), drawn in the sky behind the standings overlay.
+  // Armed once at battle end (setActive) and inert otherwise.
   private readonly m_fireworksFx = new CFireworks();
   // The computer players' brains. The classic one is rebuilt when the difficulty changes (see
   // botBrain); Ultra is level-11 only, so one instance serves the whole match.

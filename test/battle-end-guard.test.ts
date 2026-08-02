@@ -6,17 +6,9 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController, EGameState} from '../src/game/CGameController';
-
-type Priv = {
-  m_gameState: EGameState;
-  m_shots: unknown[];
-  m_battleEndTime: number;
-  m_timers: unknown[];
-  endTurn(): void;
-};
-const priv = (gc: CGameController) => gc as unknown as Priv;
 
 function game(): CGameController {
   const gc = new CGameController(makeCanvas());

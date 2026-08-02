@@ -5,15 +5,14 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
-import {CTank, TEAM_COLORS} from '../src/core/CTank';
+import {TEAM_COLORS} from '../src/core/CTank';
 import {Roster, ROSTER_HUMAN_SLOTS} from '../src/core/CRoster';
 import {roster, setColor, setName, MAX_PLAYERS} from '../src/ui/playersStore';
 import {samplePalette} from '../src/ui/palette';
 import {strings} from '../src/i18n';
-
-type Tanks = {m_tanks: CTank[]};
 
 describe('Customize Players', () => {
   it('roster defaults: player 0 is "Player", colours are the distinct 16-palette', () => {
@@ -49,7 +48,7 @@ describe('Customize Players', () => {
     const gc = new CGameController(makeCanvas());
     gc.setHumanCount(4); // all four are human, so every tank takes its roster name
     gc.startGame(4);
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
 
     expect(t[0].getName() === 'Red1' && t[2].getName() === 'Blue1').toBe(true); // tanks take their roster names
     expect(t[0].getColor() === '#ff0000' && t[2].getColor() === '#0000ff').toBe(true); // tanks take their roster colours
@@ -78,7 +77,7 @@ describe('Customize Players', () => {
     const gc = new CGameController(makeCanvas());
     gc.setHumanCount(1); // one human, two CPUs
     gc.startGame(3);
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
 
     expect(t[0].getName()).toBe('Ada'); // human ← slot 0
     expect(t[1].getName()).toBe('Custom Foe A'); // bot 1 ← slot 8
@@ -89,7 +88,7 @@ describe('Customize Players', () => {
     Roster.players = [];
     const gc = new CGameController(makeCanvas());
     gc.startGame(3);
-    const t = (gc as unknown as Tanks).m_tanks;
+    const t = priv(gc).m_tanks;
     expect(new Set(t.map(x => x.getColor())).size).toBe(3); // fallback colours are distinct
     expect(new Set(t.map(x => x.getTeamId())).size).toBe(3); // fallback gives each its own team
   });

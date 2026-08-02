@@ -6,16 +6,9 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController, EGameState} from '../src/game/CGameController';
-import {CTank} from '../src/core/CTank';
-
-type GCInternals = {
-  m_tanks: CTank[];
-  m_gameState: EGameState;
-  endBattleIfDecided(): void;
-};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 /** A 2-team match with `perTeam` tanks each (1 human team + 1 bot team). */
 function squadGame(perTeam: number): CGameController {

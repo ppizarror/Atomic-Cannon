@@ -17,6 +17,7 @@
 import type {Vec2} from '../math/Vec2';
 import type {ISpriteSource, Sprite} from './rendering/sprites';
 import {capSet} from '../util/cache';
+import {PixelBlitter} from '../util/PixelBlitter';
 import {tryCanvas2d} from '../util/canvas';
 import {TintedSpriteCache} from './rendering/TintedSpriteCache';
 import particlesRaw from '../data/particles.json';
@@ -1506,27 +1507,14 @@ export class CParticleSystem {
       }
       return;
     }
-    let cv = this.m_debrisCanvas;
-    if (!cv) cv = this.m_debrisCanvas = document.createElement('canvas');
-    if (cv.width < dw || cv.height < dh) {
-      cv.width = Math.max(cv.width, dw);
-      cv.height = Math.max(cv.height, dh);
-      this.m_debrisImage = null;
-    }
-    const g = cv.getContext('2d');
-    if (!g) return;
-    if (!this.m_debrisImage || this.m_debrisImage.width !== dw || this.m_debrisImage.height !== dh)
-      this.m_debrisImage = g.createImageData(dw, dh);
-    const img = this.m_debrisImage;
-    const buf = new Uint32Array(img.data.buffer);
-    buf.fill(0); // transparent — the scene behind the cloud must still show through
+    const buf = this.m_blit.begin(dw, dh); // transparent — the scene must show through the gaps
+    if (!buf) return;
     for (const d of this.m_debris) {
       const x = Math.floor(d.x) - bx0,
         y = Math.floor(d.y) - by0;
       buf[y * dw + x] = d.rgba;
     }
-    g.putImageData(img, 0, 0);
-    ctx.drawImage(cv, 0, 0, dw, dh, bx0, by0, dw, dh);
+    this.m_blit.end(ctx, dw, dh, bx0, by0);
   }
 
   /** Integrate the dirt spray: gravity, an eased wind push, then die on the ground or off-field. */
@@ -2217,8 +2205,8 @@ export class CParticleSystem {
   private m_debris: Debris[] = [];
   private m_debrisPool: Debris[] = []; // free-list — a warm pool allocates nothing per blast
   private m_debrisColors: string[] = []; // CSS strings cached by brightness
-  private m_debrisCanvas: HTMLCanvasElement | null = null;
-  private m_debrisImage: ImageData | null = null;
+  // One-call blit of the debris cloud (see util/PixelBlitter).
+  private readonly m_blit = new PixelBlitter();
 
   // The baked exhaust-cluster atlas: EXHAUST_ATLAS.VARIANTS rows (seeds) × EXHAUST_ATLAS.FRAMES columns (the cohort's
   // life). Null until gui/rocket plume.bmp is available (and always in headless tests, where there

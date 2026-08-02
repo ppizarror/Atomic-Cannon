@@ -8,6 +8,7 @@ import {blotchNoise, hashLattice} from '../math/noise';
 import {between, plusMinus} from '../math/random';
 import {GameConfig} from './CGameConfig';
 import {isRealisticWind, windProfile} from './wind';
+import {PixelBlitter} from '../util/PixelBlitter';
 
 // ==========================================================================
 // INTERFACES & TYPES
@@ -3047,20 +3048,8 @@ export class CLand {
       }
       return;
     }
-    let cv = this.m_debrisCanvas;
-    if (!cv) cv = this.m_debrisCanvas = document.createElement('canvas');
-    if (cv.width < dw || cv.height < dh) {
-      cv.width = Math.max(cv.width, dw);
-      cv.height = Math.max(cv.height, dh);
-      this.m_debrisImage = null;
-    }
-    const g = cv.getContext('2d');
-    if (!g) return;
-    if (!this.m_debrisImage || this.m_debrisImage.width !== dw || this.m_debrisImage.height !== dh)
-      this.m_debrisImage = g.createImageData(dw, dh);
-    const img = this.m_debrisImage;
-    const buf = new Uint32Array(img.data.buffer);
-    buf.fill(0); // transparent — the terrain behind the cloud must still show through
+    const buf = this.m_blit.begin(dw, dh); // transparent — the terrain must show through the gaps
+    if (!buf) return;
     const DBG = this.packSolid(0, 200, 0);
     for (const p of this.m_spoil) {
       const x = Math.floor(p.x) - bx0,
@@ -3068,8 +3057,7 @@ export class CLand {
       if (x < 0 || x >= dw || y < 0 || y >= dh) continue;
       buf[y * dw + x] = dbgDebris ? DBG : p.rgba;
     }
-    g.putImageData(img, 0, 0);
-    ctx.drawImage(cv, 0, 0, dw, dh, bx0, by0, dw, dh);
+    this.m_blit.end(ctx, dw, dh, bx0, by0);
   }
 
   // ========================================================================
@@ -3169,8 +3157,8 @@ export class CLand {
   private m_debugImage: ImageData | null = null; // scratch RGBA for the debug render
   private m_debugCanvas: HTMLCanvasElement | null = null;
   // Scratch buffer the in-flight dirt cloud is plotted into, then blitted in one call (see `draw`).
-  private m_debrisCanvas: HTMLCanvasElement | null = null;
-  private m_debrisImage: ImageData | null = null;
+  // One-call blit of the in-flight dirt cloud (see util/PixelBlitter).
+  private readonly m_blit = new PixelBlitter();
   private m_speckCanvas: HTMLCanvasElement | null = null;
   private m_speckImage: ImageData | null = null;
 

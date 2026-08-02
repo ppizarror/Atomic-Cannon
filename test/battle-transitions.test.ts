@@ -6,13 +6,12 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController, EGameType, EGameState} from '../src/game/CGameController';
 import type {CAudio} from '../src/audio/CAudio';
 import {CTank} from '../src/core/CTank';
 import {Roster} from '../src/core/CRoster';
-
-type Priv = {m_tanks: CTank[]};
 
 // A fake audio facade that just counts which semantic events were fired. Every
 // method is a no-op counter, so the controller can drive it freely in headless.
@@ -42,7 +41,7 @@ function newGame(): {gc: CGameController; calls: Record<string, number>; t: CTan
   gc.setGameType(EGameType.Deathmatch);
   gc.setTotalBattles(5);
   gc.startGame(2);
-  return {gc, calls, t: (gc as unknown as Priv).m_tanks};
+  return {gc, calls, t: priv(gc).m_tanks};
 }
 
 describe('Battle transitions', () => {

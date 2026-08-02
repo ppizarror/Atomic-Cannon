@@ -8,14 +8,11 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
-import {CTank} from '../src/core/CTank';
 import {GameConfig} from '../src/core/CGameConfig';
 import {Vec2} from '../src/math/Vec2';
-
-type GCInternals = {m_tanks: CTank[]};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 const RADIUS = 100; // outer-field base
 const INNER = 20; // inner-core base

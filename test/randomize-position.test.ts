@@ -6,14 +6,13 @@
  */
 import {describe, it, expect, afterEach} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
-import {CTank} from '../src/core/CTank';
 import {GameConfig} from '../src/core/CGameConfig';
 import {sanitizeMatchConfig} from '../src/net/protocol';
 
-type Tanks = {m_tanks: CTank[]};
-const tanksOf = (gc: CGameController) => (gc as unknown as Tanks).m_tanks;
+const tanksOf = (gc: CGameController) => priv(gc).m_tanks;
 
 /** 4 players × 4 tanks, spawned with the option in whatever state the caller set. */
 function match(): CGameController {

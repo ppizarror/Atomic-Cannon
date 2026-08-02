@@ -4,14 +4,9 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
-
-type GCInternals = {
-  m_mines: {x: number; y: number; vy: number}[];
-  settleMines(dt: number): void;
-};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 function freshGame(): CGameController {
   const gc = new CGameController(makeCanvas());

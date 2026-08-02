@@ -10,6 +10,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
+import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
@@ -21,14 +22,6 @@ const idOf = (id: string) => WEAPON_DATABASE.findIndex(w => w.id === id);
 // timers after a shot are the succession salvos themselves (smoke would add 0.06s timers).
 const STINGERS = idOf('stingers'); // spawn 6, sucNum 0 — a pure fan
 const HELLFIRE = idOf('hellfire'); // spawn 1, sucNum 9, sucSec 2 — a pure succession stream
-
-type GCInternals = {
-  m_shots: unknown[];
-  m_timers: {at: number; fn: () => void}[];
-  m_time: number;
-  m_pendingSalvos: number;
-};
-const priv = (gc: CGameController) => gc as unknown as GCInternals;
 
 /** A fresh match with a human at index 0 and free-fire on (every weapon selectable). */
 function fireGame(): CGameController {
