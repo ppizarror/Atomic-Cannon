@@ -2014,24 +2014,30 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * The drag-aim indicator: a hollow green block-arrow from the tank toward the
-   * cursor (no fill). Its length is capped at full power, and its thickness + head
-   * grow with power. A target crosshair sits at the tip.
+   * The drag-aim indicator: a hollow green block-arrow from the tank toward the aim
+   * point (no fill). Its length is capped at full power, and its thickness + head
+   * grow with power. The target crosshair sits exactly at the tip.
    */
   private drawAim(ctx: CanvasRenderingContext2D): void {
     if (!this.m_aim.active) return;
-    // The arrow starts at the cannon tip (muzzle) and its tip reaches the cursor.
-    // Since the aim angle is now measured from the turret pivot, the muzzle lies on
-    // the pivot→cursor ray, so the arrow runs collinear with the barrel.
-    // (The crosshair markers still anchor to the pivot via aimPoint(), so the faded
-    // "initial" marker stays put while aiming.)
+    // The arrow starts at the cannon tip (muzzle). Since the aim angle is measured from
+    // the turret pivot, the muzzle lies on the pivot→aim ray, so the arrow runs collinear
+    // with the barrel. (The crosshair markers still anchor to the pivot via aimPoint(), so
+    // the faded "initial" marker stays put while aiming.)
     const o = this.getCurrentTank().getMuzzlePosition();
-    const dx = this.m_aim.tx - o.x,
-      dy = this.m_aim.ty - o.y;
+    // The tip is the COMMITTED aim point — the very point the target cross marks
+    // (aimPoint of the live angle/power) — not the raw cursor. Below full power they
+    // coincide, so the tip still tracks the cursor; past it they don't, and drawing to
+    // the cursor put the tip a barrel-length BEYOND the cross: the cursor distance was
+    // capped from the muzzle (pivot + barrel + 400) while the aim point caps from the
+    // pivot (pivot + 400). Deriving both from aimPoint() keeps them exactly together,
+    // and also shows the whole-degree angle the shot actually commits to.
+    const t = this.aimPoint(this.m_angle, this.m_power);
+    const dx = t.x - o.x,
+      dy = t.y - o.y;
     const ang = Math.atan2(dy, dx);
-    // Length = distance to the cursor, capped — so the tip sits on the cursor
-    // (until full power). The whole shape scales with length (thickness too).
-    const L = Math.min(Math.hypot(dx, dy), CGameController.AIM_MAX_DRAG);
+    // The whole shape scales with length (thickness too).
+    const L = Math.hypot(dx, dy);
 
     // Block-arrow shape: base half 1, shaft-junction half 1.5, head half 4,
     // junction at 10/15, tip at 15 — all in units of L/15.
