@@ -101,6 +101,21 @@ export const GameConfig = {
   ambientLight: TYPE_BOOL, // Ambient Lighting (tint the scene toward the map's mood)
 };
 
+/** The fields above that are RUNTIME state, not player settings — set during play, never by
+ *  the options menu, and deliberately absent from the settings catalog. */
+type RuntimeKey = 'worldScale' | 'viewWidth' | 'lethalDamage';
+
+/**
+ * Every settings-mirror field — i.e. every GameConfig key a catalog entry is expected to own.
+ * `settingsCatalog` types its `cfg` binding as this, so an option can only point at a real
+ * field, and `settings.test.ts` asserts the two sets line up exactly: a mirror field with no
+ * catalog entry would silently keep its inert placeholder forever.
+ *
+ * Adding a RUNTIME field means adding its name to {@link RuntimeKey} above; the test fails
+ * loudly otherwise, which is the intended nudge.
+ */
+export type SettingsMirrorKey = Exclude<keyof typeof GameConfig, RuntimeKey>;
+
 /** Detail preset values. */
 export const DETAIL = {OLD_SCHOOL: 0, SIMPLE: 1, HIGH: 2, WARGAME: 3} as const;
 

@@ -12,30 +12,11 @@ import {
 } from '../src/net/roomClient';
 import type {NetTransport, ConnStatus} from '../src/net/transport';
 import type {ClientMessage, ServerMessage, PlayerInfo, MatchConfig} from '../src/net/protocol';
+import {sanitizeMatchConfig} from '../src/net/protocol';
 
-/** A complete default MatchConfig for messages that carry one. */
-const MATCH_CONFIG: MatchConfig = {
-  hitpoints: 1000,
-  tankSizeScale: 1,
-  explosionScale: 1,
-  powerScale: 1,
-  kickbackScale: 1,
-  buryTanks: false,
-  variance: true,
-  relativeTurrets: false,
-  utilityTurn: false,
-  randomizePosition: false,
-  roundTime: 0,
-  radiationDamage: true,
-  crateChance: 20,
-  startCredits: 3000,
-  gameType: 1,
-  sellRate: 0.5,
-  creditDamage: 1,
-  creditKill: 500,
-  creditTurn: 0,
-  creditRound: 1000,
-};
+/** A complete default MatchConfig for messages that carry one — built from the protocol's own
+ *  per-field spec, so a new field can't leave this fixture short. */
+const MATCH_CONFIG: MatchConfig = sanitizeMatchConfig();
 
 /** A hand-driven transport that records sends and lets tests push status/messages. */
 class FakeTransport implements NetTransport {

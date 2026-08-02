@@ -10,6 +10,7 @@ import {makeCanvas} from './_dom';
 import {CGameController} from '../src/game/CGameController';
 import {CTank} from '../src/core/CTank';
 import {GameConfig} from '../src/core/CGameConfig';
+import {sanitizeMatchConfig} from '../src/net/protocol';
 
 type Tanks = {m_tanks: CTank[]};
 const tanksOf = (gc: CGameController) => (gc as unknown as Tanks).m_tanks;
@@ -41,29 +42,8 @@ function longestRun(teams: number[]): number {
   return best;
 }
 
-/** A host MatchConfig at the catalog defaults — only randomizePosition matters here. */
-const HOST_CFG = {
-  hitpoints: 1000,
-  tankSizeScale: 1,
-  explosionScale: 1,
-  powerScale: 1,
-  kickbackScale: 1,
-  buryTanks: false,
-  variance: true,
-  relativeTurrets: false,
-  utilityTurn: false,
-  randomizePosition: false,
-  roundTime: 0,
-  crateChance: 20,
-  radiationDamage: true,
-  startCredits: 3000,
-  gameType: 1,
-  sellRate: 0.5,
-  creditDamage: 1,
-  creditKill: 500,
-  creditTurn: 0,
-  creditRound: 1000,
-};
+/** A host MatchConfig at the protocol defaults — only randomizePosition matters here. */
+const HOST_CFG = sanitizeMatchConfig();
 
 const dflt = GameConfig.randomizePosition;
 afterEach(() => {

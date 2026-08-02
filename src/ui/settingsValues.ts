@@ -1,129 +1,72 @@
 /**
- * Engine-facing view of the persisted option values — each getter returns a value in the
- * units the game wants (fractions, scalars, AI levels), derived from the raw `settingsStore`
- * map. `applyGameSettings` (applySettings.ts) reads these and pushes them into the
- * controller; the UI never lets the engine touch localStorage directly.
+ * Engine-facing view of the persisted option values — the raw stored number turned into the
+ * units the game wants (fractions, scalars, AI levels).
  *
- * Ids + defaults + enum scalar tables all come from `settingsCatalog` (SETTINGS) — no values
- * are repeated here, so there is nothing to keep in sync with the widgets.
+ * There is ONE reader, {@link engineValue}: an option's kind and units are declared in
+ * `settingsCatalog` (a boolean `default` means the engine wants a boolean, a `scale` table means
+ * enum→scalar, `map` covers the few that aren't 1:1), so this file no longer restates them as
+ * ~50 hand-written getters that could drift from the catalog beside them.
+ *
+ * `applyGameConfig` (applySettings.ts) drives the ~45 options that mirror a GameConfig field
+ * straight off the catalog's `cfg` binding. What's left below is the handful the CONTROLLER or
+ * the UI takes instead — they have named setters rather than a config field, so they still need
+ * a name here.
  */
 import {getVal} from './settingsStore';
 import {SETTINGS, type SettingId} from './settingsCatalog';
 
-/** Engine scalar for an enum setting at its current index (e.g. Wind → wind multiplier),
- *  read from the catalog's co-located `scale` table; `fallback` when there's no entry. */
-const scale = (id: SettingId, fallback = 1): number => SETTINGS[id].scale?.[getVal(id)] ?? fallback;
+/**
+ * The engine-units value of any stored option, derived entirely from its catalog entry:
+ * a boolean-defaulted option reads as a boolean, a `scale`d one maps its stored index through
+ * the scalar table (falling back to `scaleDflt` — 1 unless the entry says otherwise — if the
+ * index is out of range), and `map` applies any last unit conversion (% → fraction, index → level).
+ */
+export function engineValue(id: SettingId): number | boolean {
+  const meta = SETTINGS[id];
+  const raw = getVal(id);
+  if (typeof meta.default === 'boolean') return raw !== 0;
+  const v = meta.scale ? (meta.scale[raw] ?? meta.scaleDflt ?? 1) : raw;
+  return meta.map ? meta.map(v) : v;
+}
 
+const num = (id: SettingId): number => engineValue(id) as number;
+const bool = (id: SettingId): boolean => engineValue(id) as boolean;
+
+/**
+ * The options the CONTROLLER (not GameConfig) owns, plus the two the UI reads directly.
+ * Everything else reaches the engine through the catalog's `cfg` binding — see applySettings.
+ */
 export const gameSettings = {
   /** Credits each player starts a match with. */
-  creditStart: (): number => getVal('eco.creditStart'),
+  creditStart: (): number => num('eco.creditStart'),
   /** Depot sell-back refund as a fraction (0..1). */
-  sellRate: (): number => getVal('eco.sellBack') / 100,
+  sellRate: (): number => num('eco.sellBack'),
   /** Credits earned per point of life removed. */
-  creditDamage: (): number => getVal('eco.creditDamage'),
+  creditDamage: (): number => num('eco.creditDamage'),
   /** Credits earned per kill (Deathmatch). */
-  creditKill: (): number => getVal('eco.creditKill'),
+  creditKill: (): number => num('eco.creditKill'),
   /** Credits each survivor earns per turn. */
-  creditTurn: (): number => getVal('eco.creditTurn'),
+  creditTurn: (): number => num('eco.creditTurn'),
   /** Credits each survivor earns per round. */
-  creditRound: (): number => getVal('eco.creditRound'),
+  creditRound: (): number => num('eco.creditRound'),
   /** Battles per match. */
-  battles: (): number => getVal('gp.battles'),
+  battles: (): number => num('gp.battles'),
   /** Rounds in a Point/Rounds game. */
-  rounds: (): number => getVal('gp.rounds'),
+  rounds: (): number => num('gp.rounds'),
   /** Game Type enum index → EGameType (0 = Rounds, 1 = Deathmatch). */
-  gameType: (): number => getVal('gp.gameType'),
-  /** Land Size: world-width multiplier (enum index 0..4 → 1..5 screens). */
-  landSize: (): number => getVal('gp.landSize') + 1,
+  gameType: (): number => num('gp.gameType'),
   /** Per-shot inaccuracy on/off. */
-  variance: (): boolean => getVal('gp.variance') !== 0,
-  /** Radiation fallout deals damage-over-time to tanks standing on it (on) vs cosmetic-only (off). */
-  radiationDamage: (): boolean => getVal('gp.radiationDamage') !== 0,
-  soilCompaction: (): boolean => getVal('gp.soilCompaction') !== 0,
+  variance: (): boolean => bool('gp.variance'),
   /** Game-speed multiplier (Update Scale 10 → 1.0 normal). */
-  gameSpeed: (): number => getVal('gp.updateScale') / 10,
+  gameSpeed: (): number => num('gp.updateScale'),
   /** Wind strength scalar (0 = disabled). */
-  windScale: (): number => scale('gp.wind'),
+  windScale: (): number => num('gp.wind'),
   /** Forced landscape shape 0..4, or -1 for a random landscape ("Random"). */
-  landMode: (): number => {
-    const i = getVal('gfx.landType');
-    return i >= 0 && i <= 4 ? i : -1;
-  },
-  /** Computer AI level 1..11 (difficulty enum index 0..10 → level index+1; 11 = Ultra). */
-  difficulty: (): number => getVal('gp.difficulty') + 1,
-
-  /** Blast knockback scalar (Off = 0). */
-  kickbackScale: (): number => scale('tank.kickback'),
-  /** Explosion radius scalar. */
-  explosionScale: (): number => scale('gp.explosionSize'),
-  /** Shot launch-speed scalar (Power Scale %). */
-  powerScale: (): number => getVal('tank.powerScale') / 100,
-  /** Tank geometry scalar (Player Size). */
-  tankSizeScale: (): number => scale('tank.size'),
-  /** Tank starting life. */
-  hitpoints: (): number => getVal('tank.hitpoints'),
-
-  drawSmoke: (): boolean => getVal('gfx.smoke') !== 0,
-  colorizeTeam: (): boolean => getVal('tank.colorize') !== 0,
-  chatter: (): boolean => getVal('tank.chatter') !== 0,
-  /** Supply-crate drop chance per turn (0..100 %). */
-  crateChance: (): number => getVal('gp.crates'),
-  showTeamColor: (): boolean => getVal('gfx.teamColor') !== 0,
-  /** Status list past its row cap: scroll a window that follows the acting player (vs. that
-   *  player's row alone). */
-  statusScroll: (): boolean => getVal('gfx.statusScroll') !== 0,
-  showPowerBars: (): boolean => getVal('gfx.showPower') !== 0,
-  showTankStats: (): boolean => getVal('gfx.tankStats') !== 0,
-  tracking: (): boolean => getVal('gfx.tracking') !== 0,
-  showTurn: (): boolean => getVal('gfx.showTurn') !== 0,
-  showPoints: (): boolean => getVal('gfx.showPoints') !== 0,
-  autoScroll: (): boolean => getVal('gfx.autoScroll') !== 0,
-  /** Turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic. */
-  cameraMode: (): number => getVal('gfx.camera'),
-  showLastAim: (): boolean => getVal('gfx.lastAim') !== 0,
-  explosionWaves: (): boolean => getVal('gfx.expWaves') !== 0,
-  /** Camera shake on big/nuke blasts (a port embellishment — not in the original). */
-  cameraShake: (): boolean => getVal('gfx.camShake') !== 0,
-  /** Blow up the non-winning teams as a battle ends (the original's end-of-round wipeout). */
-  explodeLosers: (): boolean => getVal('gfx.explodeLosers') !== 0,
-  blastCircles: (): boolean => getVal('gfx.blastCircles') !== 0,
-  highContrast: (): boolean => getVal('gfx.highContrast') !== 0,
-  showAiStats: (): boolean => getVal('gfx.aiStats') !== 0,
-  demo: (): boolean => getVal('gfx.demo') !== 0,
-  ambientLight: (): boolean => getVal('gfx.ambientLight') !== 0,
+  landMode: (): number => num('gfx.landType'),
+  /** Computer AI level 1..11 (11 = Ultra). */
+  difficulty: (): number => num('gp.difficulty'),
   /** Framerate overlay mode: 0 = Off, 1 = FPS only, 2 = Full (FPS + frame count). */
-  framerate: (): number => getVal('gfx.framerate'),
+  framerate: (): number => num('gfx.framerate'),
   /** Max framerate cap (ticker.maxFPS): 0 = uncapped (display refresh rate). */
-  maxFps: (): number => scale('gfx.fpsCap', 0),
-
-  /** Right-click fires the shot (like Space / the FIRE button). */
-  rightClickFires: (): boolean => getVal('gp.rcFires') !== 0,
-  /** Depot list uses the smaller bitmap font. */
-  smallBuyFonts: (): boolean => getVal('gfx.smallBuy') !== 0,
-  /** Turret aim is relative to the tank's terrain tilt (vs. absolute screen angle). */
-  relativeTurrets: (): boolean => getVal('tank.relTurrets') !== 0,
-  /** Tanks can be buried underground instead of always riding the surface top. */
-  buryTanks: (): boolean => getVal('tank.bury') !== 0,
-  /** Per-turn shot clock in seconds (0 = Off → infinite turns). Enum index → 0/15/30/45. */
-  roundTime: (): number => scale('gp.roundTime', 0),
-  /** Using a utility item consumes the turn (off = it's free, fire afterwards). */
-  utilityTurn: (): boolean => getVal('gp.utilTurn') !== 0,
-  /** Shuffle the turn order at the start of each battle. */
-  randomizeTurns: (): boolean => getVal('gp.randTurns') !== 0,
-  /** Scatter the spawn slots so a player's squad lands spread across the map, not as one block. */
-  randomizePosition: (): boolean => getVal('gp.randPos') !== 0,
-  alternateTurns: (): boolean => getVal('gp.altTurns') !== 0,
-  /** Weapon choice belongs to the PLAYER: every tank of a squad inherits the pick, so the next
-   *  one opens its turn on it (off = each tank remembers its own weapon). */
-  weaponPersist: (): boolean => getVal('gp.weaponPersist') !== 0,
-  /** Buy Time enum: 0 Anytime · 1 After-round · 2 At-start · 3 Automatic. */
-  buyTime: (): number => getVal('eco.buyTime'),
-  /** Change-Wind cadence enum: 0 Per-game · 1 After-round · 2 After-shot · 3 Anytime. */
-  changeWind: (): number => getVal('gp.changeWind'),
-  /** Wind model enum: 0 Linear (uniform) · 1 Realistic (boundary-layer altitude profile). */
-  windModel: (): number => getVal('gp.windModel'),
-  /** Detail render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame. */
-  detail: (): number => getVal('gfx.detail'),
-  /** Fill blast craters with soil instead of leaving them transparent (background through). */
-  craterFill: (): boolean => getVal('gfx.craterFill') !== 0,
+  maxFps: (): number => num('gfx.fpsCap'),
 };

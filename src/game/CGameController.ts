@@ -5732,39 +5732,13 @@ export class CGameController implements ShotWorld {
     this.m_windScale = clamp(Math.round(opts.wind), 0, 2);
     GameConfig.changeWind = 0; // Per-game: wind set once from the seed, constant all match
     GameConfig.windModel = 0; // Linear (uniform) — no time-based gusts
-    // Adopt the HOST's gameplay config so every client runs the SAME simulation. Any of these
-    // read from a client's OWN Settings instead would diverge the world: the scalars change
-    // trajectories/blast/damage/recoil, gameType changes the damage model, buryTanks/relative-
-    // Turrets change resting position / firing angle. The host is the single source of truth.
-    const c = opts.config;
-    GameConfig.hitpoints = c.hitpoints;
-    GameConfig.tankSizeScale = c.tankSizeScale;
-    GameConfig.explosionScale = c.explosionScale;
-    GameConfig.powerScale = c.powerScale;
-    GameConfig.kickbackScale = c.kickbackScale;
-    GameConfig.buryTanks = c.buryTanks;
-    this.m_variance = c.variance; // per-shot inaccuracy gates a seeded draw — must match on all
-    GameConfig.relativeTurrets = c.relativeTurrets;
-    GameConfig.utilityTurn = c.utilityTurn;
-    // Spawn scatter decides where every tank stands — it MUST come from the host. Unlike Randomize
-    // Turns it is net-safe to run: spawnSlots draws from the seeded match RNG, not Math.random.
-    GameConfig.randomizePosition = c.randomizePosition;
-    GameConfig.roundTime = c.roundTime; // host owns the shot clock so every client forfeits on the same limit
-    GameConfig.crateChance = c.crateChance;
-    GameConfig.radiationDamage = c.radiationDamage; // fallout DOT rule — host is source of truth
+    // Adopt the HOST's gameplay config so every client runs the SAME simulation — every field of
+    // it, through the one binding table `getMatchConfig` also reads (so the two can't drift).
+    this.applyMatchConfig(opts.config);
     // Randomize Turns is FORCED OFF in net: the server owns the turn order, and the local
     // shuffle uses Math.random() AND reorders the tank array — which would break the
     // index-based turn hand-off and snapshot mapping. (Also guarded at the call sites.)
     GameConfig.randomizeTurns = false;
-    this.m_startCredits = c.startCredits;
-    this.m_gameType = c.gameType === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch;
-    // Economy rates must match on every client — buys are relayed and earning runs in each
-    // client's sim, so a rate mismatch would diverge the (now fully deterministic) credit totals.
-    this.setSellRate(c.sellRate);
-    this.m_creditDamage = c.creditDamage;
-    this.m_creditKill = c.creditKill;
-    this.m_creditTurn = c.creditTurn;
-    this.m_creditRound = c.creditRound;
     // Real economy in network: clear any leftover free-fire (dev weapon-test) so each player
     // spends its own credits + inventory. The acting client charges ammo from its own economy
     // (see fire()); spectators only simulate the relayed weapon, so no inventory sync is needed —
@@ -5793,31 +5767,102 @@ export class CGameController implements ShotWorld {
     return this.m_viewH;
   }
 
+  /**
+   * Where each {@link MatchConfig} field lives in the running engine — some on the global
+   * GameConfig, some on this controller's own match fields. Both directions read this ONE table:
+   * `getMatchConfig` snapshots through the getters, `startNetworkGame` adopts the host's config
+   * through the setters. Previously each field was spelled out separately in both places, so
+   * adding one and forgetting the apply half silently desynced the match instead of failing.
+   *
+   * The mapped type requires an entry for every key, so a new MatchConfig field can't be missed.
+   */
+  private static readonly MATCH_BINDINGS: {
+    readonly [K in keyof MatchConfig]: {
+      get(c: CGameController): MatchConfig[K];
+      set(c: CGameController, v: MatchConfig[K]): void;
+    };
+  } = {
+    hitpoints: {get: () => GameConfig.hitpoints, set: (_c, v) => void (GameConfig.hitpoints = v)},
+    tankSizeScale: {
+      get: () => GameConfig.tankSizeScale,
+      set: (_c, v) => void (GameConfig.tankSizeScale = v),
+    },
+    explosionScale: {
+      get: () => GameConfig.explosionScale,
+      set: (_c, v) => void (GameConfig.explosionScale = v),
+    },
+    powerScale: {
+      get: () => GameConfig.powerScale,
+      set: (_c, v) => void (GameConfig.powerScale = v),
+    },
+    kickbackScale: {
+      get: () => GameConfig.kickbackScale,
+      set: (_c, v) => void (GameConfig.kickbackScale = v),
+    },
+    buryTanks: {get: () => GameConfig.buryTanks, set: (_c, v) => void (GameConfig.buryTanks = v)},
+    // Per-shot inaccuracy gates a seeded RNG draw — must match on every client.
+    variance: {get: c => c.m_variance, set: (c, v) => void (c.m_variance = v)},
+    relativeTurrets: {
+      get: () => GameConfig.relativeTurrets,
+      set: (_c, v) => void (GameConfig.relativeTurrets = v),
+    },
+    utilityTurn: {
+      get: () => GameConfig.utilityTurn,
+      set: (_c, v) => void (GameConfig.utilityTurn = v),
+    },
+    // Spawn scatter decides where every tank stands, so it MUST come from the host. Unlike
+    // Randomize Turns it is net-safe to run: spawnSlots draws from the seeded match RNG.
+    randomizePosition: {
+      get: () => GameConfig.randomizePosition,
+      set: (_c, v) => void (GameConfig.randomizePosition = v),
+    },
+    // Host owns the shot clock so every client forfeits on the same limit.
+    roundTime: {get: () => GameConfig.roundTime, set: (_c, v) => void (GameConfig.roundTime = v)},
+    crateChance: {
+      get: () => GameConfig.crateChance,
+      set: (_c, v) => void (GameConfig.crateChance = v),
+    },
+    // Fallout DOT rule — host is source of truth.
+    radiationDamage: {
+      get: () => GameConfig.radiationDamage,
+      set: (_c, v) => void (GameConfig.radiationDamage = v),
+    },
+    startCredits: {get: c => c.m_startCredits, set: (c, v) => void (c.m_startCredits = v)},
+    gameType: {
+      get: c => c.m_gameType,
+      // Anything that isn't exactly Rounds is Deathmatch (the damage model has no third state).
+      set: (c, v) =>
+        void (c.m_gameType = v === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch),
+    },
+    // Economy rates must match on every client — buys are relayed and earning runs in each
+    // client's sim, so a mismatch would diverge the (otherwise deterministic) credit totals.
+    sellRate: {get: c => c.m_sellRate, set: (c, v) => c.setSellRate(v)},
+    creditDamage: {get: c => c.m_creditDamage, set: (c, v) => void (c.m_creditDamage = v)},
+    creditKill: {get: c => c.m_creditKill, set: (c, v) => void (c.m_creditKill = v)},
+    creditTurn: {get: c => c.m_creditTurn, set: (c, v) => void (c.m_creditTurn = v)},
+    creditRound: {get: c => c.m_creditRound, set: (c, v) => void (c.m_creditRound = v)},
+  };
+
   /** Snapshot THIS host's gameplay settings as the shared MatchConfig (sent at Start so every
    *  client adopts them — see startNetworkGame). Reads live GameConfig + match fields. */
   getMatchConfig(): MatchConfig {
-    return {
-      hitpoints: GameConfig.hitpoints,
-      tankSizeScale: GameConfig.tankSizeScale,
-      explosionScale: GameConfig.explosionScale,
-      powerScale: GameConfig.powerScale,
-      kickbackScale: GameConfig.kickbackScale,
-      buryTanks: GameConfig.buryTanks,
-      variance: this.m_variance,
-      relativeTurrets: GameConfig.relativeTurrets,
-      utilityTurn: GameConfig.utilityTurn,
-      randomizePosition: GameConfig.randomizePosition,
-      roundTime: GameConfig.roundTime,
-      crateChance: GameConfig.crateChance,
-      radiationDamage: GameConfig.radiationDamage,
-      startCredits: this.m_startCredits,
-      gameType: this.m_gameType,
-      sellRate: this.m_sellRate,
-      creditDamage: this.m_creditDamage,
-      creditKill: this.m_creditKill,
-      creditTurn: this.m_creditTurn,
-      creditRound: this.m_creditRound,
-    };
+    const b = CGameController.MATCH_BINDINGS;
+    const out: Record<string, number | boolean> = {};
+    for (const key of Object.keys(b) as (keyof MatchConfig)[]) out[key] = b[key].get(this);
+    return out as unknown as MatchConfig;
+  }
+
+  /** Adopt the host's shared MatchConfig — the write half of {@link MATCH_BINDINGS}. Any field
+   *  read from a client's OWN Settings instead would diverge the world: the scalars change
+   *  trajectories/blast/damage/recoil, gameType changes the damage model, buryTanks /
+   *  relativeTurrets change resting position and firing angle. */
+  private applyMatchConfig(config: MatchConfig): void {
+    const b = CGameController.MATCH_BINDINGS;
+    for (const key of Object.keys(b) as (keyof MatchConfig)[]) {
+      // Each binding's get/set agree on the field's type; the loop erases that pairing, so the
+      // per-key narrowing has to be re-asserted once here rather than at 20 call sites.
+      (b[key].set as (c: CGameController, v: MatchConfig[typeof key]) => void)(this, config[key]);
+    }
   }
 
   /** The live NATIVE display size (container px). main keeps this current on every resize; a

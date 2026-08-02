@@ -17,6 +17,7 @@ import {
   parseClientMessage,
   isValidShotResult,
   isValidGameCommand,
+  sanitizeMatchConfig,
   PROTOCOL_VERSION,
 } from '../src/net/protocol';
 
@@ -135,35 +136,6 @@ function freshState(code: string): RoomState {
     contested: false,
     turnGen: 0,
     expectedColumns: 0,
-  };
-}
-
-/** Clamp the host's gameplay config into sane ranges (a bad/hostile host can't hand peers
- *  values that break their sim). Applied on Start, then broadcast + replayed identically. */
-function sanitizeConfig(c: MatchConfig): MatchConfig {
-  const num = (v: unknown, lo: number, hi: number, dflt: number): number =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt;
-  return {
-    hitpoints: num(c?.hitpoints, 1, 100000, 1000),
-    tankSizeScale: num(c?.tankSizeScale, 0.25, 4, 1),
-    explosionScale: num(c?.explosionScale, 0.25, 8, 1),
-    powerScale: num(c?.powerScale, 0.25, 4, 1),
-    kickbackScale: num(c?.kickbackScale, 0, 8, 1),
-    buryTanks: !!c?.buryTanks,
-    variance: c?.variance ?? true, // default ON (matches the game default)
-    relativeTurrets: !!c?.relativeTurrets,
-    utilityTurn: !!c?.utilityTurn,
-    randomizePosition: !!c?.randomizePosition,
-    roundTime: num(c?.roundTime, 0, 600, 0), // per-turn shot clock (s); 0 = off
-    radiationDamage: c?.radiationDamage ?? true,
-    crateChance: num(c?.crateChance, 0, 100, 20),
-    startCredits: num(c?.startCredits, 0, 1000000, 3000),
-    gameType: num(c?.gameType, 0, 1, 1) === 0 ? 0 : 1,
-    sellRate: num(c?.sellRate, 0, 1, 0.5),
-    creditDamage: num(c?.creditDamage, 0, 1000, 1),
-    creditKill: num(c?.creditKill, 0, 100000, 500),
-    creditTurn: num(c?.creditTurn, 0, 100000, 0),
-    creditRound: num(c?.creditRound, 0, 100000, 1000),
   };
 }
 
@@ -448,7 +420,7 @@ export class Room {
       currentBattle: s.currentBattle,
       viewW: s.viewW,
       viewH: s.viewH,
-      config: s.config ?? sanitizeConfig({} as MatchConfig),
+      config: s.config ?? sanitizeMatchConfig(),
     });
     if (s.snapshot) {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
@@ -510,7 +482,7 @@ export class Room {
    *  settings before Start. Stored + broadcast; the same config is re-sent at Start. */
   private async onConfig(s: RoomState, pid: number, config: MatchConfig): Promise<void> {
     if (s.hostId !== pid) return;
-    s.config = sanitizeConfig(config);
+    s.config = sanitizeMatchConfig(config);
     await this.save(s);
     this.broadcast({t: 'config', config: s.config});
   }
@@ -556,7 +528,7 @@ export class Room {
     s.viewW = clampInt(viewW, 320, 4096);
     s.viewH = clampInt(viewH, 240, 4096);
     // The host's gameplay config becomes the shared config (sanitized), applied on every client.
-    s.config = sanitizeConfig(config);
+    s.config = sanitizeMatchConfig(config);
     // War length: a Deathmatch runs `battles` battles; Rounds/Points is always a single battle.
     s.totalBattles = s.config.gameType === 1 ? clampInt(s.settings.battles, 1, 20) : 1;
     s.currentBattle = 1;

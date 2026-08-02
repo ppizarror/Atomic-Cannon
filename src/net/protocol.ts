@@ -74,6 +74,76 @@ export interface MatchConfig {
   readonly creditRound: number; // credits earned by each survivor per round
 }
 
+/** A numeric config field: clamped into [lo, hi], falling back to `dflt` when absent/non-finite.
+ *  `snap` post-processes the clamped value for fields that are really a small enum. */
+interface NumField {
+  readonly lo: number;
+  readonly hi: number;
+  readonly dflt: number;
+  readonly snap?: (v: number) => number;
+}
+
+/** A boolean config field: taken verbatim when it really is a boolean, else `dflt`. */
+interface BoolField {
+  readonly dflt: boolean;
+}
+
+/**
+ * Per-field validation rules for {@link MatchConfig} — the ONE place each field's range and
+ * fallback lives, mirroring how `STAT_CAPS` (net/stats.ts) drives every stats helper.
+ *
+ * The mapped type demands an entry for EVERY key of MatchConfig, so a field added to the
+ * interface without a rule here is a compile error rather than an unvalidated value a hostile
+ * host could hand every peer.
+ */
+const MATCH_CONFIG_SPEC: {
+  readonly [K in keyof MatchConfig]: MatchConfig[K] extends boolean ? BoolField : NumField;
+} = {
+  hitpoints: {lo: 1, hi: 100000, dflt: 1000},
+  tankSizeScale: {lo: 0.25, hi: 4, dflt: 1},
+  explosionScale: {lo: 0.25, hi: 8, dflt: 1},
+  powerScale: {lo: 0.25, hi: 4, dflt: 1},
+  kickbackScale: {lo: 0, hi: 8, dflt: 1},
+  buryTanks: {dflt: false},
+  variance: {dflt: true}, // default ON (matches the game default)
+  relativeTurrets: {dflt: false},
+  utilityTurn: {dflt: false},
+  randomizePosition: {dflt: false},
+  roundTime: {lo: 0, hi: 600, dflt: 0}, // per-turn shot clock (s); 0 = off
+  crateChance: {lo: 0, hi: 100, dflt: 20},
+  radiationDamage: {dflt: true},
+  startCredits: {lo: 0, hi: 1000000, dflt: 3000},
+  // 0 = Rounds/Points, 1 = Deathmatch — anything non-zero in range reads as Deathmatch.
+  gameType: {lo: 0, hi: 1, dflt: 1, snap: v => (v === 0 ? 0 : 1)},
+  sellRate: {lo: 0, hi: 1, dflt: 0.5},
+  creditDamage: {lo: 0, hi: 1000, dflt: 1},
+  creditKill: {lo: 0, hi: 100000, dflt: 500},
+  creditTurn: {lo: 0, hi: 100000, dflt: 0},
+  creditRound: {lo: 0, hi: 100000, dflt: 1000},
+};
+
+/**
+ * Clamp a (possibly hostile or stale) gameplay config into sane ranges, filling anything missing
+ * from {@link MATCH_CONFIG_SPEC}. The room applies it on config-publish and Start, so a bad host
+ * can't hand peers values that break their sim. Call with no argument for the all-defaults config.
+ */
+export function sanitizeMatchConfig(raw?: Partial<MatchConfig> | null): MatchConfig {
+  const out: Record<string, number | boolean> = {};
+  for (const key of Object.keys(MATCH_CONFIG_SPEC) as (keyof MatchConfig)[]) {
+    const spec: NumField | BoolField = MATCH_CONFIG_SPEC[key];
+    const v = raw?.[key];
+    if (typeof spec.dflt === 'boolean') {
+      out[key] = typeof v === 'boolean' ? v : spec.dflt;
+    } else {
+      const n = spec as NumField;
+      const clamped =
+        typeof v === 'number' && Number.isFinite(v) ? Math.min(n.hi, Math.max(n.lo, v)) : n.dflt;
+      out[key] = n.snap ? n.snap(clamped) : clamped;
+    }
+  }
+  return out as unknown as MatchConfig;
+}
+
 /**
  * Authoritative post-turn state the acting client broadcasts once its shot resolves;
  * everyone applies it so tanks + terrain + wind stay in sync. Structurally matches the

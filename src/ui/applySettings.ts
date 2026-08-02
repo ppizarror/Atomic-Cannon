@@ -12,69 +12,28 @@ import {GameConfig} from '../core/CGameConfig';
 import {GameContent} from '../core/CGameContent';
 import {Roster} from '../core/CRoster';
 import {Taunts} from '../core/CTaunts';
-import {gameSettings as S} from './settingsValues';
+import {gameSettings as S, engineValue} from './settingsValues';
+import {SETTINGS, type SettingId} from './settingsCatalog';
 import {weaponsOff, landsOff} from './contentStore';
 import {tauntLines} from './tauntsStore';
 import {roster} from './playersStore';
 import {showFramerate, showFrameCount, maxFps} from './store';
 
 /**
- * Seed every settings-mirror field of GameConfig from the persisted Settings (via settingsValues,
- * which falls back to the catalog default when a value was never stored). This is the ONLY writer
- * of those fields — GameConfig itself holds inert placeholders, so the catalog is the single source
- * of truth for every default. Called from applyGameSettings (boot + each game + on any change) and
- * from the test setup, so the same catalog-derived defaults apply in-game and in unit tests.
+ * Seed every settings-mirror field of GameConfig from the persisted Settings. This is the ONLY
+ * writer of those fields — GameConfig itself holds inert placeholders, so the catalog is the
+ * single source of truth for every default. Called from applyGameSettings (boot + each game + on
+ * any change) and from the test setup, so the same catalog-derived defaults apply in-game and in
+ * unit tests.
  */
 export function applyGameConfig(): void {
-  // Tank
-  GameConfig.kickbackScale = S.kickbackScale();
-  GameConfig.tankSizeScale = S.tankSizeScale();
-  GameConfig.relativeTurrets = S.relativeTurrets();
-  GameConfig.buryTanks = S.buryTanks();
-  GameConfig.powerScale = S.powerScale();
-  GameConfig.hitpoints = S.hitpoints();
-  GameConfig.chatter = S.chatter();
-  GameConfig.colorizeTeam = S.colorizeTeam();
-  // Gameplay
-  GameConfig.landSize = S.landSize(); // world-width multiplier (applied at next startGame)
-  GameConfig.changeWind = S.changeWind();
-  GameConfig.windModel = S.windModel();
-  GameConfig.explosionScale = S.explosionScale();
-  GameConfig.utilityTurn = S.utilityTurn();
-  GameConfig.roundTime = S.roundTime(); // per-turn shot clock (0 = off); shared in net via MatchConfig
-  GameConfig.randomizeTurns = S.randomizeTurns();
-  GameConfig.randomizePosition = S.randomizePosition(); // spawn scatter (shared in net via MatchConfig)
-  GameConfig.alternateTurns = S.alternateTurns();
-  GameConfig.weaponPersist = S.weaponPersist();
-  GameConfig.crateChance = S.crateChance();
-  GameConfig.rightClickFires = S.rightClickFires();
-  GameConfig.radiationDamage = S.radiationDamage(); // fallout DOT vs cosmetic-only (shared in net via MatchConfig)
-  GameConfig.soilCompaction = S.soilCompaction(); // nukes compact the soil around their crater
-  GameConfig.buyTime = S.buyTime();
-  // Graphics
-  GameConfig.tracking = S.tracking();
-  GameConfig.drawSmoke = S.drawSmoke();
-  GameConfig.detail = S.detail();
-  GameConfig.craterFill = S.craterFill();
-  GameConfig.highContrast = S.highContrast();
-  GameConfig.showAiStats = S.showAiStats();
-  GameConfig.showTeamColor = S.showTeamColor();
-  GameConfig.statusScroll = S.statusScroll();
-  GameConfig.smallBuyFonts = S.smallBuyFonts();
-  // Graphics — More Graphics Options
-  GameConfig.showTurn = S.showTurn();
-  GameConfig.blastCircles = S.blastCircles();
-  GameConfig.showPoints = S.showPoints(); // floating damage numbers per hit
-  GameConfig.showPowerBars = S.showPowerBars();
-  GameConfig.showTankStats = S.showTankStats();
-  GameConfig.autoScroll = S.autoScroll(); // camera follows the shot / active tank
-  GameConfig.cameraMode = S.cameraMode(); // turn hand-off: Smooth / Instant / Cinematic
-  GameConfig.showLastAim = S.showLastAim();
-  GameConfig.explosionWaves = S.explosionWaves();
-  GameConfig.cameraShake = S.cameraShake();
-  GameConfig.explodeLosers = S.explodeLosers();
-  GameConfig.demo = S.demo();
-  GameConfig.ambientLight = S.ambientLight();
+  // The key is a SettingsMirrorKey, so it IS a real GameConfig field; the index signature is
+  // just to write it dynamically (the catalog's boolean/number kind matches the field's type).
+  const cfg = GameConfig as unknown as Record<string, number | boolean>;
+  for (const id of Object.keys(SETTINGS) as SettingId[]) {
+    const target = SETTINGS[id].cfg;
+    if (target) cfg[target] = engineValue(id);
+  }
 }
 
 export function applyGameSettings(c: CGameController): void {

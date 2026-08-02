@@ -11,7 +11,7 @@ import {CEconomy} from '../src/core/CEconomy';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
 import {GameConfig} from '../src/core/CGameConfig';
 import {setVal} from '../src/ui/settingsStore';
-import {applyGameSettings} from '../src/ui/applySettings';
+import {applyGameSettings, applyGameConfig} from '../src/ui/applySettings';
 import {showFramerate, showFrameCount, maxFps} from '../src/ui/store';
 import {SETTINGS} from '../src/ui/settingsCatalog';
 import {en} from '../src/i18n/en';
@@ -182,6 +182,38 @@ describe('settings catalog (single source)', () => {
         expect(options, `${id} has a scale table but no i18n option labels`).toBeDefined();
         expect(meta.scale.length, `${id}: option/scale length mismatch`).toBe(options.length);
       }
+    }
+  });
+
+  // The catalog's `cfg` binding is the ONLY thing that puts an option into GameConfig — a field
+  // with no option keeps its inert placeholder forever, and two options pointing at one field
+  // means whichever the walk visits last silently wins. Neither shows up as a type error, so the
+  // two sides are checked here. `cfg` is typed as SettingsMirrorKey, so a typo is already a
+  // compile error; this covers the omissions a type can't see.
+  it('every GameConfig settings-mirror field is claimed by exactly one option', () => {
+    // Runtime state, deliberately absent from the catalog — mirrors CGameConfig's RuntimeKey.
+    // Adding a runtime field means adding it here AND to that type.
+    const RUNTIME = new Set(['worldScale', 'viewWidth', 'lethalDamage']);
+    const mirrorFields = Object.keys(GameConfig).filter(k => !RUNTIME.has(k));
+
+    const claimed: string[] = [];
+    for (const meta of Object.values(SETTINGS)) if (meta.cfg) claimed.push(meta.cfg);
+
+    const dupes = claimed.filter((k, i) => claimed.indexOf(k) !== i);
+    expect(dupes, 'a GameConfig field is written by more than one option').toEqual([]);
+    expect(claimed.slice().sort(), 'catalog `cfg` bindings vs GameConfig mirror fields').toEqual(
+      mirrorFields.slice().sort(),
+    );
+  });
+
+  it('a `cfg` option delivers the right TYPE to its field (bool option → bool field)', () => {
+    applyGameConfig();
+    const cfg = GameConfig as unknown as Record<string, unknown>;
+    for (const [id, meta] of Object.entries(SETTINGS)) {
+      if (!meta.cfg) continue;
+      // A boolean catalog default declares the option's kind; scale/map entries are numeric.
+      const want = typeof meta.default === 'boolean' ? 'boolean' : 'number';
+      expect(typeof cfg[meta.cfg], `${id} → GameConfig.${meta.cfg}`).toBe(want);
     }
   });
 
