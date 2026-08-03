@@ -147,6 +147,18 @@ interface Debris {
   color: string;
 }
 
+/** Which batched layer a quad belongs to. The renderer maps these to draw ORDER and BLEND MODE, so
+ *  a quad's compositing is a property of the layer it names, not of the emitter. Sparks sit under
+ *  the smoke exactly as they do on the 2D path; glows sit over it and add rather than cover. */
+export const FX_LAYER = {
+  /** Crisp spark/debris dots, normal blend, beneath the smoke. */
+  SPARK: 0,
+  /** Smoke, fumes and exhaust — normal blend. */
+  SMOKE: 1,
+  /** Fireball glow and the nuke flash — ADDITIVE, above everything else. */
+  GLOW: 2,
+} as const;
+
 /**
  * Somewhere for the smoke layer to go other than the 2D canvas. The particle system describes each
  * puff exactly as it would to `drawImage` — a source canvas, a sub-rect, a destination box — so it
@@ -166,6 +178,7 @@ export interface ISmokeSink {
   smokeBegin(): void;
   smokeEnd(): void;
   smokeQuad(
+    layer: number, /** One of FX_LAYER — decides both draw order and blend mode. */
     src: CanvasImageSource,
     sx: number,
     sy: number,
@@ -1593,6 +1606,24 @@ export class CParticleSystem {
   // COSMETIC DIRT SPRAY
   // ========================================================================
 
+  // A hard-edged white dot for the spark layer. Sparks draw as small crisp circles, so this is
+  // kept SMALL (and the renderer samples it nearest-neighbour): a large soft texture scaled down to
+  // a 1-2px dot turns the spark storm into a haze.
+  private m_dotSprite: HTMLCanvasElement | null = null;
+
+  private dotSprite(): HTMLCanvasElement | null {
+    if (this.m_dotSprite) return this.m_dotSprite;
+    const made = tryCanvas2d(16, 16);
+    if (!made) return null;
+    const {cv, ctx: g} = made;
+    g.fillStyle = '#fff';
+    g.beginPath();
+    g.arc(8, 8, 7.5, 0, TWO_PI);
+    g.fill();
+    this.m_dotSprite = cv;
+    return cv;
+  }
+
   /** Live cosmetic chunks (diagnostics / tests). */
   debrisCount(): number {
     return this.m_debris.length;
@@ -1905,8 +1936,9 @@ export class CParticleSystem {
     const cullMin = cull ? this.m_viewCamX - CULL_MARGIN : -Infinity;
     const cullMax = cull ? this.m_viewCamX + this.m_viewW + CULL_MARGIN : Infinity;
 
-    // Pass 1a: crisp sparks/debris (normal blend, full-res).
-    for (const p of ps) {
+    // Pass 1a: crisp sparks/debris (normal blend, full-res). Skipped when a batched sink is wired —
+    // the sparks go out as quads on FX_LAYER.SPARK instead (see emitSmokeQuads).
+    for (const p of this.m_smokeSink ? [] : ps) {
       if (p.kind !== 'disc') continue;
       if (p.x < cullMin || p.x > cullMax) continue;
       const t = p.age / p.life;
@@ -1966,7 +1998,8 @@ export class CParticleSystem {
       }
     }
 
-    for (const p of ps) {
+    // Glows likewise move to FX_LAYER.GLOW (additive) when a sink is wired.
+    for (const p of this.m_smokeSink ? [] : ps) {
       if (p.kind !== 'flare' && p.kind !== 'flash') continue;
       if (p.x < cullMin || p.x > cullMax) continue;
       const t = p.age / p.life;
@@ -2244,6 +2277,8 @@ export class CParticleSystem {
    */
   private emitSmokeQuads(sink: ISmokeSink, cullMin: number, cullMax: number): void {
     const atlas = this.exhaustAtlas();
+    const dot = this.dotSprite();
+    const glow = this.m_glowCache.master();
     const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null;
     const white = this.whiteSmoke();
     for (const p of this.m_particles) {
@@ -2251,10 +2286,34 @@ export class CParticleSystem {
       const t = p.age / p.life;
       if (t >= 1) continue;
 
+      // SPARKS — crisp dots, normal blend, under the smoke. One tinted quad each replaces a
+      // template-string fillStyle plus a path op per particle.
+      if (p.kind === 'disc') {
+        if (!dot) continue;
+        const a = 1 - t;
+        const d = Math.max(0.6, p.size * (0.5 + a * 0.5)) * 2;
+        sink.smokeQuad(FX_LAYER.SPARK, dot, 0, 0, dot.width, dot.height, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
+        continue;
+      }
+      // GLOWS — the fireball's flares and the nuke flash, ADDITIVE and above everything. The white
+      // master carries every colour as a tint, so the whole layer stays one batch.
+      if (p.kind === 'flare' || p.kind === 'flash') {
+        if (!glow) continue;
+        const radius =
+          p.kind === 'flash'
+            ? p.size * (1 + t * 1.2) // flash expands as it fades
+            : p.size * (1.7 - t * 0.9); // flare shrinks
+        const a = p.kind === 'flash' ? (1 - t) * (1 - t) * 0.9 : (1 - t) * 0.5;
+        if (radius <= 0 || a <= 0.004) continue;
+        const d = radius * 2;
+        sink.smokeQuad(FX_LAYER.GLOW, glow, 0, 0, glow.width, glow.height, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
+        continue;
+      }
       if (p.kind === 'exhaust') {
         if (!atlas) continue;
         const frame = Math.min(EXHAUST_ATLAS.FRAMES - 1, (t * EXHAUST_ATLAS.FRAMES) | 0);
         sink.smokeQuad(
+          FX_LAYER.SMOKE,
           atlas,
           frame * EXHAUST_ATLAS.CELL_W,
           p.exVariant * EXHAUST_ATLAS.CELL_H,
@@ -2294,7 +2353,7 @@ export class CParticleSystem {
         const puff = this.m_puffCache.master();
         if (!puff || de <= 0 || ea <= 0.01) continue;
         const tint = ((cr & 0xff) << 16) | ((cg & 0xff) << 8) | (cb & 0xff);
-        sink.smokeQuad(puff, 0, 0, puff.width, puff.height, p.x, p.y, de, de, 0, ea, tint);
+        sink.smokeQuad(FX_LAYER.SMOKE, puff, 0, 0, puff.width, puff.height, p.x, p.y, de, de, 0, ea, tint); // prettier-ignore
         continue;
       }
 
@@ -2312,7 +2371,7 @@ export class CParticleSystem {
       const sh = white ? white.height : (smokeSpr?.height ?? 0);
       if (!sw || !sh) continue;
       const shade = ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff);
-      sink.smokeQuad(spr, 0, 0, sw, sh, p.x, p.y, fd, fd, 0, fa, shade);
+      sink.smokeQuad(FX_LAYER.SMOKE, spr, 0, 0, sw, sh, p.x, p.y, fd, fd, 0, fa, shade); // prettier-ignore
     }
   }
 

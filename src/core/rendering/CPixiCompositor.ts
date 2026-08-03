@@ -81,6 +81,7 @@ export class CPixiCompositor {
    * so the particle system needs no knowledge of Pixi.
    */
   smokeQuad(
+    layer: number,
     src: CanvasImageSource,
     sx: number,
     sy: number,
@@ -98,13 +99,16 @@ export class CPixiCompositor {
     if (id < 0) return;
     const tex = this.frameTexture(src, id, sx, sy, sw, sh);
     if (!tex) return;
-    const layer = this.layerFor(id);
-    let p = layer.pool[layer.used];
+    // Sparks are 1-2px dots: sampled linearly they smear into a haze, so their source is set to
+    // nearest-neighbour the first time one is drawn.
+    if (layer === 0 && tex.source.scaleMode !== 'nearest') tex.source.scaleMode = 'nearest';
+    const lay = this.layerFor(layer, id);
+    let p = lay.pool[lay.used];
     if (!p) {
       p = new Particle({texture: tex});
       p.anchorX = 0.5;
       p.anchorY = 0.5;
-      layer.pool.push(p);
+      lay.pool.push(p);
     }
     p.texture = tex;
     p.x = x;
@@ -114,7 +118,7 @@ export class CPixiCompositor {
     p.rotation = rotation;
     p.alpha = alpha;
     p.tint = tint;
-    layer.used++;
+    lay.used++;
   }
 
   /** Publish the frame's puffs — one batched draw per texture source. */
@@ -127,20 +131,29 @@ export class CPixiCompositor {
     }
   }
 
-  /** The layer that batches this texture source, created (and placed in the world) on demand. */
-  private layerFor(id: number): {c: ParticleContainer; pool: Particle[]; used: number} {
-    let l = this.m_smokeLayers.get(id);
+  /** The batch for one (layer, texture source) pair, created and placed in the world on demand.
+   *  Keyed on both because Pixi requires a single texture source per container, while the layer
+   *  decides where the batch sits and how it blends. `zIndex` is the layer, so batches sort into
+   *  spark → smoke → glow regardless of the order their sources first appear. */
+  private layerFor(
+    layer: number,
+    id: number,
+  ): {c: ParticleContainer; pool: Particle[]; used: number} {
+    const key = layer * 1e6 + id;
+    let l = this.m_smokeLayers.get(key);
     if (!l) {
       const c = new ParticleContainer({
         dynamicProperties: {position: true, scale: true, rotation: true, color: true},
       });
+      c.zIndex = layer;
+      if (layer === 2) c.blendMode = 'add'; // FX_LAYER.GLOW — fireball glow and the nuke flash
       const [sx, sy, ox, oy] = this.m_smokeScale;
       c.scale.set(sx, sy);
       c.x = ox;
       c.y = oy;
       this.m_world.addChild(c);
       l = {c, pool: [], used: 0};
-      this.m_smokeLayers.set(id, l);
+      this.m_smokeLayers.set(key, l);
     }
     return l;
   }
@@ -226,6 +239,8 @@ export class CPixiCompositor {
     // only the scene sprite would ripple the world and leave the smoke hanging rigidly over it.
     // Smoke layers are added to this as their sources appear.
     this.m_world = new Container();
+    this.m_world.sortableChildren = true; // batches place themselves by FX_LAYER via zIndex
+    this.m_scene.zIndex = -1; // the 2D scene is the backdrop every batch draws over
     this.m_world.addChild(this.m_scene);
     this.m_app.stage.addChild(this.m_world);
 

@@ -3,6 +3,7 @@
 .git/
 .idea/
 *.log
+.claude/
 .vscode/
 .wrangler/
 
