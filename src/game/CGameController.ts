@@ -333,13 +333,13 @@ const HOMING = {
    *  TOP edge (`terrainHeight - tankHeight`), not its middle, so centring on the raw anchor rides
    *  half a tank high. tankHeight is 1.5x the hit radius, so half of it is 0.75x. */
   LOCK_DROP: 0.75,
-  /** Points the bounding trajectories are resampled to when blending between solves. Enough to
-   *  keep a long curve smooth; the paths themselves are already sparse samples. */
-  PATH_POINTS: 28,
   /** Reticle span as a multiple of the target's hit radius. 2.9 lands on the hull's own width
    *  (SIZE.W 46 vs SIZE.R 16), so the brackets sit snugly around the vehicle. Both terms scale
    *  with Player Size, so the fit holds at any tank size. */
   LOCK_SPAN: 2.9,
+  /** Points the bounding trajectories are resampled to when blending between solves. Enough to
+   *  keep a long curve smooth; the paths themselves are already sparse samples. */
+  PATH_POINTS: 28,
 } as const;
 
 /**

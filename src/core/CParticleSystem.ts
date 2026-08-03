@@ -135,7 +135,8 @@ interface CraterVent {
   delay: number; // silent period before venting can start (∝ radius: a nuke's bloom lasts longer)
   ramp: number; // seconds to build from a wisp to full emission (∝ radius)
   seeds: VentSeed[]; // the ignition points this crater lights at, each spreading on its own clock
-  wait: number; // time spent HELD because the ground was still moving (capped by FUME.VENT.MAX_WAIT)
+  wait: number; // time spent HELD because the ground was still moving…
+  hold: number; // …and this vent's own ceiling on that, so a long volley cannot mute it
   emit: number; // emission clock — advances only while actually venting, so a hold costs no window
   window: number; // how long this crater vents once it starts (∝ radius)
   acc: number; // per-vent fractional-puff accumulator (independent, so vents don't fight over one)
@@ -357,6 +358,21 @@ const FUME = {
    *  coverage has to be bought back with SIZE and COUNT, not with opacity — raising opacity instead
    *  thins the cloud out into visibly separate bubbles. */
   RATE: 6,
+  /** Where a puff is born relative to the carved surface, in px: negative is above the dirt,
+   *  positive is inside it. Mostly BELOW, so a puff spends its fade-in climbing out of the soil and
+   *  is at full opacity by the time it clears the surface — smoke seeps out of the ground instead of
+   *  appearing in mid-air a dozen px above it. */
+  SEEP_DEPTH: [-2, 7],
+  /** Soot. A detonation's first smoke is unburnt and nearly black; as the fire dies the plume pales
+   *  to ordinary grey. `SHADE_RAMP` is the fraction of the emission window over which that happens,
+   *  and `SHADE_VAR` is the per-puff spread that stops any one generation reading as a flat block. */
+  SHADE_DARK: 62,
+  /** Exponent on the soot→grey ramp. Above 1 the smoke HOLDS its dark early and pales late, which
+   *  is how a fire actually dies down; a linear ramp reads as a wash straight through to grey. */
+  SHADE_EASE: 1.25,
+  SHADE_LIGHT: 232,
+  SHADE_RAMP: 0.62,
+  SHADE_VAR: 26,
   /** How much of its size a puff gives up across the tail fade (0 = none, 1 = shrinks to nothing).
    *  Mirrors the exhaust puffs, which contract as they dissolve — see the draw path for why a puff
    *  that fades at CONSTANT size is what exposes its own outline as the cloud dies. */
@@ -371,21 +387,6 @@ const FUME = {
   SIZE_BASE: 1.5,
   SIZE_R: 0.013,
   SIZE_VAR: [0.65, 1.55],
-  /** Where a puff is born relative to the carved surface, in px: negative is above the dirt,
-   *  positive is inside it. Mostly BELOW, so a puff spends its fade-in climbing out of the soil and
-   *  is at full opacity by the time it clears the surface — smoke seeps out of the ground instead of
-   *  appearing in mid-air a dozen px above it. */
-  SEEP_DEPTH: [-2, 7],
-  /** Soot. A detonation's first smoke is unburnt and nearly black; as the fire dies the plume pales
-   *  to ordinary grey. `SHADE_RAMP` is the fraction of the emission window over which that happens,
-   *  and `SHADE_VAR` is the per-puff spread that stops any one generation reading as a flat block. */
-  SHADE_DARK: 62,
-  SHADE_LIGHT: 232,
-  SHADE_RAMP: 0.62,
-  /** Exponent on the soot→grey ramp. Above 1 the smoke HOLDS its dark early and pales late, which
-   *  is how a fire actually dies down; a linear ramp reads as a wash straight through to grey. */
-  SHADE_EASE: 1.25,
-  SHADE_VAR: 26,
   /** Seconds for a puff to reach ~63% of its swell. A fume puff's swell and fade run on ABSOLUTE
    *  age against these time constants, NOT on the normalised age/life. Life scales with the crater
    *  (measured: 3.7s at r=90, 8.6s at r=250), so a curve spread across it swells the puff by only
@@ -405,27 +406,44 @@ const FUME = {
     DELAY_R: 0.006,
     /** Fumes are the AFTERMATH: after the delay the vent still holds while the ground is physically
      *  moving — spoil raining down, overburden collapsing, the surface sinking — so smoke rises off
-     *  earth that has come to rest. Capped, so a map that never fully settles still gets its smoke. */
-    MAX_WAIT: 8,
-    /** How far through the window the emission FRONT takes to reach the full crater width. Each vent
-     *  picks a random column to start from and spreads outward from there, so the crater catches
-     *  light at one point and the smoke creeps along it — instead of the entire rim igniting on the
-     *  same frame. A port embellishment: the original seeds every column in one pass at detonation. */
-    SPREAD: 0.4,
+     *  earth that has come to rest.
+     *
+     *  Bounded PER VENT (`HOLD + radius · HOLD_R`) rather than by one flat cap, because the signal
+     *  it waits on is the whole map going quiet and that is not this crater's business. A multi-shot
+     *  weapon — a Katyusha barrage, a cluster — keeps SOMETHING moving for as long as it is firing,
+     *  so under a flat 8s cap every hole it dug sat silent until the last rocket had landed and the
+     *  spoil had come to rest: craters visibly smokeless while the player was still shooting, and
+     *  then the whole field igniting at once when the map finally settled. Scaled by radius since it
+     *  is standing in for this blast's OWN debris clearing the air, which is what the radius says. */
+    HOLD: 0.35,
+    HOLD_R: 0.007,
+    /** Seconds to ramp emission 0 → full (`RAMP + radius · RAMP_R`). Without it the vent switched on
+     *  at full rate and read as a chimney being lit; a crater should start with a wisp and build. */
+    RAMP: 0.9,
+    RAMP_R: 0.006,
     /** Ignition points per crater — `SEEDS + radius · SEEDS_R`, capped. A single source spreads as
      *  one clean travelling wave, which is no more organic than the whole rim lighting at once; a
      *  big crater should catch in several places that grow into each other. Scaled by radius so a
      *  grenade still lights at one point and only a nuke gets the patchwork. */
     SEEDS: 1,
-    SEEDS_R: 0.018,
     SEEDS_MAX: 6,
+    SEEDS_R: 0.018,
     /** Fraction of the window over which the later sources catch. The earliest is always normalised
      *  to 0 so emission still starts the moment the vent opens. */
     SEED_STAGGER: 0.3,
-    /** Seconds to ramp emission 0 → full (`RAMP + radius · RAMP_R`). Without it the vent switched on
-     *  at full rate and read as a chimney being lit; a crater should start with a wisp and build. */
-    RAMP: 0.9,
-    RAMP_R: 0.006,
+    /** How far through the window the emission FRONT takes to reach the full crater width. Each vent
+     *  picks a random column to start from and spreads outward from there, so the crater catches
+     *  light at one point and the smoke creeps along it — instead of the entire rim igniting on the
+     *  same frame. A port embellishment: the original seeds every column in one pass at detonation. */
+    SPREAD: 0.4,
+    /** Random slack added to each vent's own delay, so craters catch light at DIFFERENT moments.
+     *  Without it every hole born in the same salvo opens on the same frame and a rocket barrage
+     *  reads as one switch being thrown — `SPREAD` staggers ignition WITHIN a crater, and nothing
+     *  staggered one crater against the next. Kept SHORT, because the only way to stagger craters is
+     *  to make some of them wait and waiting is the thing that made this look wrong in the first
+     *  place: a second visibly breaks up a row of eight holes while costing the first puff a beat at
+     *  worst. */
+    START_JITTER: 1,
     /** Emission window (how long the crater keeps generating fumes) = `WIN_BASE + radius · WIN_R`. */
     WIN_BASE: 7.5,
     WIN_R: 0.02,
@@ -1499,10 +1517,13 @@ export class CParticleSystem {
       y,
       r,
       age: 0,
-      delay: FUME.VENT.DELAY + r * FUME.VENT.DELAY_R,
+      // Each crater on its own clock — the radius-scaled delay plus a random beat, so holes dug by
+      // the same volley do not all open together.
+      delay: FUME.VENT.DELAY + r * FUME.VENT.DELAY_R + between(0, FUME.VENT.START_JITTER),
       ramp: FUME.VENT.RAMP + r * FUME.VENT.RAMP_R,
       seeds: CParticleSystem.ventSeeds(r),
       wait: 0,
+      hold: FUME.VENT.HOLD + r * FUME.VENT.HOLD_R,
       emit: 0,
       window: FUME.VENT.WIN_BASE + r * FUME.VENT.WIN_R, // how long this crater smokes (∝ radius)
       acc: 0,
@@ -1807,7 +1828,10 @@ export class CParticleSystem {
       // 2. Then HOLD while the ground is still resolving — spoil in the air, overburden falling,
       //    the surface sinking. This is what makes the fumes read as aftermath instead of arriving
       //    with the blast; without it a nuke smokes while its own ejecta is still coming down.
-      if (v.wait < FUME.VENT.MAX_WAIT && settling?.()) {
+      //    Bounded by this vent's OWN ceiling: the settle flag is the whole map's, so while a
+      //    multi-shot weapon is still firing it never goes quiet, and one shared cap let a barrage
+      //    hold every crater it had already dug until the last round landed.
+      if (v.wait < v.hold && settling?.()) {
         v.wait += dt;
         this.m_craterVents[vw++] = v;
         continue;

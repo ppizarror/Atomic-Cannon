@@ -320,7 +320,9 @@ describe('Particle system', () => {
     const cr = new CParticleSystem();
     cr.setBounds(1600, 1200);
     cr.blast(800, 600, 50, '#ff8c22', false);
-    for (let i = 0; i < 60; i++) cr.update(1 / 60); // past VENT_DELAY — fumes rising
+    // Past the vent delay, which is now a RANGE: each crater adds a random beat of its own so
+    // holes dug by one salvo do not all open together (see particle-vent-stagger.test.ts).
+    for (let i = 0; i < 150; i++) cr.update(1 / 60);
     const fumes = fumesOf(cr);
     expect(fumes.length).toBeGreaterThan(0);
     // Fumes start SOOT-dark and pale toward grey across the vent's window, so brightness is no
@@ -356,14 +358,14 @@ describe('Particle system', () => {
     air.setBounds(2000, 2000);
     air.setGroundProvider(() => 1000);
     air.blast(1000, 300, 150, '#ff0000', false); // burst at y=300, r=150 → bottom y=450, well above ground
-    for (let i = 0; i < 90; i++) air.update(1 / 60); // past VENT_DELAY, into the emit window
+    for (let i = 0; i < 180; i++) air.update(1 / 60); // past the delay range, into the emit window
     expect(smokeOf(air).length).toBe(0); // Sky Bomb bursting in the air → no ground fumes
 
     const ground = new CParticleSystem();
     ground.setBounds(2000, 2000);
     ground.setGroundProvider(() => 1000);
     ground.blast(1000, 1000, 150, '#ff0000', false); // same blast AT the surface
-    for (let i = 0; i < 90; i++) ground.update(1 / 60);
+    for (let i = 0; i < 180; i++) ground.update(1 / 60);
     expect(fumesOf(ground).length).toBeGreaterThan(0); // a blast in soil DOES vent fumes
   });
 
@@ -392,7 +394,7 @@ describe('Particle system', () => {
       return xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
     };
     // The vent stays silent until its delay (fumes rise AFTER the blast), so step past that first.
-    for (let i = 0; i < 90; i++) ps.update(1 / 60); // ~1.5s > delay
+    for (let i = 0; i < 180; i++) ps.update(1 / 60); // 3s > the longest delay the jitter can add
     expect(fumes().length).toBeGreaterThan(0);
     // It lights at ONE column and creeps outward, so early on it covers only part of the width.
     const early = span();
@@ -415,7 +417,7 @@ describe('Particle system', () => {
       r = 60;
     // isCleaner=true — the earth-remover path vents like any other, it does not skip the streamers.
     ps.blast(cx, cy, r, '#ffffff', false, undefined, undefined, undefined, false, true);
-    for (let i = 0; i < 60; i++) ps.update(1 / 60); // past VENT_DELAY — fumes rise after the blast
+    for (let i = 0; i < 150; i++) ps.update(1 / 60); // past the delay range — fumes rise after the blast
     const parts = particlesPriv(ps).m_particles;
     const curtain = parts.filter(p => p.kind === 'fume');
     expect(curtain.length).toBeGreaterThan(0); // cleaners get the white curtain too

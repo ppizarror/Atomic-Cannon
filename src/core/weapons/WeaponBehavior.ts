@@ -88,27 +88,15 @@ const HOMING = {
   /** How far HORIZONTALLY from the unguided impact point a tank can sit and still be acquired
    *  (px). Also the loosest miss the search will still arm for. */
   ACQUIRE_PX: 300,
+  /** Sustainer burn once relit: the ceiling on what it may reach as a multiple of launch speed, and
+   *  the fraction of current speed added per second. */
+  BURN_MAX_SCALE: 1.6,
+  BURN_PER_SEC: 0.45,
   /** Fraction of the predicted range where the motor cuts and the round starts coasting down… */
   COAST_FROM: 0.25,
   /** …reaching this fraction of its launch horizontal speed by the apex. It never stops — it
    *  slouches into the top of the arc, which is what makes the relight afterwards read. */
   COAST_TO: 0.5,
-  /** Degrees per second the airframe can swing. The command can jump; the missile cannot, so
-   *  every correction is a lean rather than a kink — and a late re-target visibly costs time. */
-  TURN_RATE_DEG: 22,
-  /** Sustainer burn once relit: fraction of current speed added per second, and the ceiling on
-   *  what it may reach as a multiple of launch speed.
-   *
-   *  Tuned DOWN from the value that made powered range match a plain rocket exactly. That one
-   *  drove the round to 3.6x launch speed, which made arming a large change to where it lands —
-   *  and near maximum range every correction in the band then flew clean off the map, so guidance
-   *  declined shots that were landing fine unpowered. A missile whose guidance is a liability at
-   *  long range is worse than one that simply flies a little shorter. */
-  BURN_PER_SEC: 0.45,
-  BURN_MAX_SCALE: 1.6,
-  /** Guidance re-solves this often (seconds). Every frame is wasted work; too slow and a target
-   *  that dies or moves is chased for a visible beat. */
-  RESOLVE_SEC: 0.1,
   /** Landing points sampled across the band for the on-screen fan. The drawn edge is smoothed
    *  through them with midpoint quadratics, so this buys shape, not resolution — each extra
    *  sample is a whole extra trajectory prediction. */
@@ -119,6 +107,12 @@ const HOMING = {
   PREDICT_DT: 1 / 60,
   /** Runaway cap ≈10 s of flight — past {@link SHOT.MAX_LIFE}, so it never binds in practice. */
   PREDICT_STEPS: 600,
+  /** Guidance re-solves this often (seconds). Every frame is wasted work; too slow and a target
+   *  that dies or moves is chased for a visible beat. */
+  RESOLVE_SEC: 0.1,
+  /** Degrees per second the airframe can swing. The command can jump; the missile cannot, so
+   *  every correction is a lean rather than a kink — and a late re-target visibly costs time. */
+  TURN_RATE_DEG: 22,
 } as const;
 
 /**
@@ -128,9 +122,9 @@ const HOMING = {
  * a guided round with confident precision at the wrong place.
  */
 export const HOMING_PROFILE = {
-  COAST_TO: HOMING.COAST_TO,
-  BURN_PER_SEC: HOMING.BURN_PER_SEC,
   BURN_MAX_SCALE: HOMING.BURN_MAX_SCALE,
+  BURN_PER_SEC: HOMING.BURN_PER_SEC,
+  COAST_TO: HOMING.COAST_TO,
 } as const;
 
 // ==========================================================================
