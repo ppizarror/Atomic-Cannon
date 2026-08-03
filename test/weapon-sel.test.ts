@@ -1,57 +1,86 @@
 /**
- * `?weaponsel=<id>` selects by STABLE weapon id, and the arsenal list numbers rows
- * by that same id (`weaponDisplayNumber`), NOT by their position in the (filtered)
- * list. With weapons disabled in Game Content, list-position numbering drifts below
- * the id — `weaponsel=74` (aiming at "Tracer 5") would land on Barrage instead.
+ * `?weaponsel=<n>` selects the weapon the arsenal list prints as row `n`. The list hides
+ * everything disabled in Game Content, so a disabled weapon must NOT consume a number —
+ * resolving `n` as a raw database index lands short by the number switched off (with the
+ * four secret Organic weapons off, `weaponsel=101` reached the row labelled "97.").
  */
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, afterEach} from 'vitest';
 import {makeCanvas} from './_dom';
 
 import {CGameController} from '../src/game/CGameController';
-import {WEAPON_DATABASE, weaponDisplayNumber, weaponName} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 import {GameContent} from '../src/core/CGameContent';
 
-const tracer5 = WEAPON_DATABASE.find(w => weaponName(w) === 'Tracer 5')!;
-const barrage = WEAPON_DATABASE.find(w => weaponName(w) === 'Barrage')!;
+const indexOfName = (name: string): number =>
+  WEAPON_DATABASE.find(w => weaponName(w) === name)!.index;
 
-describe('weaponsel (stable-id selection)', () => {
-  it('display number is the weapon stable id (index + 1)', () => {
-    // The displayed number is the weapon's stable id (index + 1) — the value you pass
-    // to ?weaponsel. So `weaponsel = weaponDisplayNumber(w)` and `forceWeapon(id-1)`
-    // are inverses: the id you read off the list selects that exact weapon.
-    expect(weaponDisplayNumber(tracer5)).toBe(tracer5.index + 1);
+/** Switch weapons off the way the shipped default does (the secret Organic set). */
+function disable(...names: string[]): void {
+  GameContent.weaponsOff = new Set(names.map(indexOfName));
+}
+
+/** A match with a human at index 0 and free-fire on, so the arsenal list is every enabled
+ *  weapon in database order — exactly what `?weapontest=1&weaponsel=<n>` puts on screen. */
+function weaponTestGame(): CGameController {
+  const gc = new CGameController(makeCanvas());
+  gc.setHumanCount(1);
+  gc.startGame(2);
+  gc.setWeaponTest(true);
+  return gc;
+}
+
+/** The numbers the HUD prints, straight off the live list (`Hud.tsx` renders `i + 1`). */
+const listNumberOf = (gc: CGameController, name: string): number =>
+  gc.getWeaponDefs().findIndex(w => weaponName(w) === name) + 1;
+
+afterEach(() => {
+  GameContent.weaponsOff = new Set();
+});
+
+describe('weaponsel (arsenal row selection)', () => {
+  it('selects the weapon printed at that row number', () => {
+    const gc = weaponTestGame();
+    for (const name of ['Machine Gun', 'Tracer 5', 'Booster Jet', 'Stingers']) {
+      const n = listNumberOf(gc, name);
+      expect(n).toBeGreaterThan(0); // the weapon really is on the list
+      expect(gc.forceWeaponByListNumber(n)).toBe(true);
+      expect(gc.getCurrentWeapon().getName()).toBe(name);
+    }
   });
 
-  it('stable id is unchanged when earlier weapons are disabled', () => {
-    // Disabling weapons that sit BEFORE Tracer 5 must NOT change its number — the whole
-    // point of id- over position-numbering. (Position numbering would drop it by 3 here.)
-    const before = WEAPON_DATABASE.filter(w => w.index < tracer5.index).slice(0, 3);
-    for (const w of before) GameContent.weaponsOff.add(w.index);
-    expect(weaponDisplayNumber(tracer5)).toBe(tracer5.index + 1);
-    // The naive list-position number shifts down by the 3 disabled rows — proving the two
-    // numberings genuinely differ here, so the assertion above has teeth.
-    const enabled = WEAPON_DATABASE.filter(w => !GameContent.weaponsOff.has(w.index));
-    const listPos = enabled.findIndex(w => w.index === tracer5.index) + 1;
-    expect(listPos).toBe(weaponDisplayNumber(tracer5) - before.length); // list-position numbering DOES drift
-    for (const w of before) GameContent.weaponsOff.delete(w.index); // restore
+  it('disabled weapons do not consume row numbers', () => {
+    // The reported regression, with the shipped defaults: the four secret Organic weapons sit
+    // before Booster Jet, so its database id (101) runs four ahead of its row number (97).
+    disable('Pig Blaster', 'Cowinator', 'Toxic Cow', 'Defiled Pig');
+    const gc = weaponTestGame();
+    const booster = indexOfName('Booster Jet');
+    const offBefore = [...GameContent.weaponsOff].filter(i => i < booster).length;
+    expect(offBefore).toBe(4); // the two numberings genuinely differ here
+    const row = listNumberOf(gc, 'Booster Jet');
+    expect(row).toBe(booster + 1 - offBefore);
+
+    // The row number lands on Booster Jet…
+    expect(gc.forceWeaponByListNumber(row)).toBe(true);
+    expect(gc.getCurrentWeapon().getName()).toBe('Booster Jet');
   });
 
-  it('weaponsel=<id> selects that exact weapon end-to-end', () => {
-    // End-to-end: ?weaponsel=<id> → forceWeapon(id-1) selects that exact weapon even
-    // with earlier weapons disabled.
-    const gc = new CGameController(makeCanvas()) as unknown as {
-      startGame(n: number): void;
-      forceWeapon(index: number): void;
-      getCurrentWeapon(): {getName(): string};
-    };
-    gc.startGame(2);
+  it('turning a weapon off shifts every row after it down by one', () => {
+    const gc = weaponTestGame();
+    const before = listNumberOf(gc, 'Tracer 5');
 
-    const selById = (id: number) => {
-      gc.forceWeapon(id - 1);
-      return gc.getCurrentWeapon().getName();
-    };
+    disable('Cluster Bomb', 'Runway Bomb', 'Grave Digger'); // three rows ahead of Tracer 5
+    const gc2 = weaponTestGame();
+    expect(listNumberOf(gc2, 'Tracer 5')).toBe(before - 3); // row moved up by 3
+    expect(gc2.forceWeaponByListNumber(before - 3)).toBe(true);
+    expect(gc2.getCurrentWeapon().getName()).toBe('Tracer 5'); // …and the flag follows it
+  });
 
-    expect(selById(weaponDisplayNumber(tracer5))).toBe('Tracer 5');
-    expect(selById(weaponDisplayNumber(barrage))).toBe('Barrage');
+  it('a row number past the end of the arsenal selects nothing', () => {
+    const gc = weaponTestGame();
+    const rows = gc.getWeaponDefs().length;
+    gc.forceWeaponByListNumber(1);
+    const picked = gc.getCurrentWeapon().getName();
+    expect(gc.forceWeaponByListNumber(rows + 1)).toBe(false);
+    expect(gc.getCurrentWeapon().getName()).toBe(picked); // selection untouched
   });
 });

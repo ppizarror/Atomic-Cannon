@@ -167,13 +167,11 @@ async function main(): Promise<void> {
     // never fires, the shot timer is off) so weapons can be tried back-to-back — with
     // unlimited ammo across the whole arsenal.
     if (weaponTest) gameController.setWeaponTest(true);
-    // `?weaponsel=<id>`: force the human onto weapon <id> with unlimited ammo. `id` is the weapon's
-    // STABLE 1-based database id (position + 1) — a fixed dev handle (`weaponDisplayNumber`). NOTE
-    // the in-game arsenal numbers weapons by BUY ORDER, so its "1./2./…" does NOT match this
-    // database id — pass the database id here, not the number shown in the list.
+    // `?weaponsel=<n>`: force the human onto arsenal row <n> with unlimited ammo.
     if (weaponSel !== null) {
-      const id = parseInt(weaponSel, 10);
-      if (Number.isInteger(id) && id >= 1) gameController.forceWeapon(id - 1);
+      const n = parseInt(weaponSel, 10);
+      if (Number.isInteger(n) && n >= 1 && !gameController.forceWeaponByListNumber(n))
+        console.warn(`?weaponsel=${n}: past the end of the enabled arsenal — no weapon selected`);
     }
     if (q.get('depot') === '1') openDepot();
     if (q.get('pause') === '1') openPauseMenu();

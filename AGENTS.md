@@ -30,7 +30,7 @@ exactly; they encode conventions the codebase already relies on.
   | `?depot=1` | Start a battle and open the Weapons Depot. |
   | `?pause=1` | Start a battle and open the pause menu. |
   | `?weapontest=1` | Start a battle and keep the turn on the human forever (AI never fires, shot timer off) so weapons can be fired back-to-back. |
-  | `?weaponsel=<id>` | Force the human onto weapon `<id>` with unlimited ammo. **`id` is 1-based** to match the in-game list (`id=1` → first weapon, `id=65` → Machine Gun). Combine with `weapontest=1` to spam one weapon. |
+  | `?weaponsel=<n>` | Force the human onto arsenal row `<n>` with unlimited ammo. **`n` is the 1-based number the in-game list prints**, so weapons switched off in Game Content don't count (`n=1` → first row). Combine with `weapontest=1` — free-fire lists every enabled weapon in database order, which is the numbering you can read off the HUD. |
   | `?settings=<id>` | Open the Settings root (`=1`) or a specific option page (e.g. `=gameplay`). |
 
   Params combine, e.g. `http://localhost:2141/?weapontest=1&weaponsel=65`.

@@ -5457,14 +5457,16 @@ export class CGameController implements ShotWorld {
     }
   }
 
-  /** Dev (?weaponsel=<id>): grant weapon <id> unlimited ammo and select it on every
-   *  tank so it stays picked across the turn cycle (pairs with ?weapontest=1). */
-  forceWeapon(index: number): void {
-    if (index < 0 || index >= WEAPON_DATABASE.length) return;
+  forceWeaponByListNumber(n: number): boolean {
+    const staple = getDefaultWeaponIndex();
+    const rows = weaponIndices(i => i === staple || weaponEnabled(i));
+    const index = rows[n - 1];
+    if (index === undefined || index < 0 || index >= WEAPON_DATABASE.length) return false;
     this.m_economy.setUnlimited(index);
     this.m_currentWeaponIndex = index;
     for (const t of this.m_tanks) t.setWeaponIndex(index);
     this.markDirty();
+    return true;
   }
 
   // --- HUD accessors ---------------------------------------------------------

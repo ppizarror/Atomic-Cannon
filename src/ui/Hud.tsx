@@ -2,10 +2,6 @@
  * In-battle HUD. The control panel is the `gui.bmp` sprite; live content
  * (weapon list, power fill, FIRE, angle needle, wind) and click hotspots are
  * positioned over it as a percentage of the 640x120 panel.
- *
- * Each frequently-changing readout is its own leaf component that reads a single
- * signal, so the 104-row weapon list only re-renders when the weapon changes
- * (not every frame) — keeps it cheap and lets async icons stick.
  */
 import {useEffect, useRef} from 'preact/hooks';
 import type {JSX, ComponentChildren, TargetedWheelEvent} from 'preact';
