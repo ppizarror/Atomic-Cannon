@@ -383,8 +383,9 @@ describe('Particle system', () => {
     ps.setBounds(1600, 1200);
     const cx = 800,
       cy = 600,
-      r = 50;
+      r = 25;
     ps.blast(cx, cy, r, '#ff8c22', false);
+    expect(particlesPriv(ps).m_craterVents.at(-1)!.seeds.length).toBe(1);
     const fumes = () => particlesPriv(ps).m_particles.filter(p => p.kind === 'fume');
     const span = () => {
       const xs = fumes().map(p => p.x);
