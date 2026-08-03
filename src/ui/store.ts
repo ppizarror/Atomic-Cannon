@@ -20,7 +20,8 @@ import {knockoutWhere, makeCanvas2d} from '../util/canvas';
 // SCREEN STATE
 // ==========================================================================
 
-export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'setup' | 'highscores' | 'network';
+export type Screen =
+  'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'changelog' | 'setup' | 'highscores' | 'network';
 
 export const screen = signal<Screen>('battle');
 
@@ -379,6 +380,7 @@ const TOP_SCREEN: Partial<Record<string, Screen>> = {
   network: 'network',
   about: 'about',
   manual: 'manual',
+  changelog: 'changelog',
   highscores: 'highscores',
   settings: 'settings',
   battle: 'battle',
@@ -402,6 +404,8 @@ function currentPath(): string {
       return '/about';
     case 'manual':
       return '/manual';
+    case 'changelog':
+      return '/changelog';
     case 'highscores':
       return '/highscores';
     default:
@@ -644,6 +648,11 @@ export function openAbout(): void {
 /** Main menu → Manual (the how-to-play document), and back. */
 export function openManual(): void {
   openScreen('manual');
+}
+
+/** Main menu → Changelog (the release notes behind the version tag), and back. */
+export function openChangelog(): void {
+  openScreen('changelog');
 }
 
 /** Main menu → High Scores (the Battle Heroes hall of fame). */

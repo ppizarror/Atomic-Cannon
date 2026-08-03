@@ -70,6 +70,7 @@ export type TitleSection =
   | 'network'
   | 'about'
   | 'manual'
+  | 'changelog'
   | 'highScores'
   | 'settings'
   | 'battle'
@@ -261,6 +262,25 @@ export interface Strings {
     /** The manual document (gameplay / controls / weapons / tips), top to bottom.
      *  Reuses the About section shape and the same bitmap-font card chrome. */
     sections: AboutSection[];
+    back: string;
+  };
+
+  // ---- CHANGELOG ---------------------------------------------------------
+  // Release notes, opened from the main menu's version tag. Only this chrome is localised:
+  // the notes themselves are fetched from the repository's CHANGELOG.md (see net/changelog)
+  // and are the author's English, so there is no section list here.
+  changelog: {
+    title: string;
+    /** Head line under the title; `{v}` is the running build's version. */
+    subtitle: string;
+    /** Flag beside the release this build actually IS. */
+    current: string;
+    /** While the notes are being fetched. */
+    loading: string;
+    /** When they can't be read (offline, or GitHub unreachable). */
+    unavailable: string;
+    /** Footer link out to the file itself. */
+    viewSource: string;
     back: string;
   };
 

@@ -5,7 +5,16 @@
  * and the atom logo in the corner. Play opens the game-setup screen; Quick Play starts
  * immediately with the last-used setup; Settings/About navigate.
  */
-import {openPlaySetup, quickPlay, openNetworkGame, openSettings, openManual, openAbout, openHighScores} from './store';
+import {
+  openPlaySetup,
+  quickPlay,
+  openNetworkGame,
+  openSettings,
+  openManual,
+  openAbout,
+  openChangelog,
+  openHighScores,
+} from './store';
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
@@ -66,9 +75,15 @@ export function MainMenu() {
         <BmpText font="beijing-16-out" text={strings.value.menu.repoLabel} />
         <AtomLogo />
       </a>
-      <div class="mainmenu-version">
+      {/* The version tag doubles as the way in to the release notes (fetched from GitHub). */}
+      <button
+        class="mainmenu-version"
+        onClick={openChangelog}
+        title={strings.value.changelog.title}
+        aria-label={strings.value.changelog.title}
+      >
         <BmpText font="beijing-16-out" text={`v${__APP_VERSION__}`} />
-      </div>
+      </button>
     </div>
   );
 }

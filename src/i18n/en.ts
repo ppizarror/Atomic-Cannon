@@ -53,6 +53,7 @@ export const en: Strings = {
       network: 'Network Game',
       about: 'About',
       manual: 'Manual',
+      changelog: 'Changelog',
       highScores: 'High Scores',
       settings: 'Settings',
       battle: 'Playing',
@@ -320,6 +321,17 @@ export const en: Strings = {
         ],
       },
     ],
+  },
+
+  changelog: {
+    title: 'CHANGELOG',
+    subtitle: 'You are playing v{v}',
+    current: '(this build)',
+    loading: 'Fetching the release notes...',
+    unavailable:
+      'The release notes could not be fetched right now. Check your connection, or read them on GitHub with the link below.',
+    viewSource: 'See all releases on GitHub',
+    back: 'Back',
   },
 
   heroes: {

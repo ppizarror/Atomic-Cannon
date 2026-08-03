@@ -53,6 +53,7 @@ export const es: Strings = {
       network: 'Juego en Red',
       about: 'Acerca de',
       manual: 'Manual',
+      changelog: 'Novedades',
       highScores: 'Puntuaciones',
       settings: 'Ajustes',
       battle: 'Jugando',
@@ -320,6 +321,17 @@ export const es: Strings = {
         ],
       },
     ],
+  },
+
+  changelog: {
+    title: 'NOVEDADES',
+    subtitle: 'Estás jugando la v{v}',
+    current: '(esta versión)',
+    loading: 'Buscando las notas de la versión...',
+    unavailable:
+      'No se pudieron obtener las notas de la versión ahora mismo. Revisa tu conexión, o léelas en GitHub con el enlace de abajo.',
+    viewSource: 'Ver todas las versiones en GitHub',
+    back: 'Volver',
   },
 
   heroes: {

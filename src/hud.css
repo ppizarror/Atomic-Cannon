@@ -1382,6 +1382,56 @@ canvas {
   margin-top: 16px;
 }
 
+/* ── Changelog (About chrome, remote body — see Changelog.tsx) ──────────────── */
+/* Version heading + its "(this build)" flag on one baseline. */
+.changelog-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* The release you are actually running: amber, to pick it out of a long list. */
+.changelog-current canvas {
+  filter: sepia(1) saturate(3) hue-rotate(5deg) brightness(1.05);
+}
+
+.changelog-release.is-current .changelog-head {
+  border-bottom: 1px solid var(--green-line);
+  padding-bottom: 3px;
+}
+
+/* A release's notes are one or more titled groups of bullets ("Added", "Fixed", …). */
+.changelog-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.changelog-group-head {
+  opacity: 0.75;
+}
+
+/* Loading / unavailable placeholder — dimmed so it reads as a status, not as content. */
+.changelog-note {
+  opacity: 0.75;
+}
+
+/* Footer link out to the releases page (the fallback when the fetch fails). */
+.changelog-link {
+  align-self: center;
+  margin-top: 6px;
+  opacity: 0.8;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.changelog-link:hover,
+.changelog-link:focus-visible {
+  opacity: 1;
+}
+
 /* Source-repository link, bottom-right of the main menu: the "Source on GitHub" label
    and the atom logo sit on one baseline as a single clickable footer unit (the whole
    row — label and atom — opens the repo). */
@@ -1839,14 +1889,30 @@ canvas {
   }
 }
 
-/* Version tag, bottom-left of the main menu. */
+/* Version tag, bottom-left of the main menu — a button, since clicking it opens the release
+   notes (see Changelog.tsx). Styled as bare text like the repo link opposite it, not as a
+   menu row: it is a footnote that happens to be clickable, and reading as a control would
+   compete with the nav list for attention. */
 .mainmenu-version {
   position: absolute;
   left: 12px;
   bottom: 10px;
+  padding: 2px 4px;
+  background: none;
+  border: 0;
   transform: translateZ(0); /* own layer → the bitmap font stays crisp */
   opacity: 0.85;
-  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.mainmenu-version:hover,
+.mainmenu-version:focus-visible {
+  opacity: 1;
+}
+
+.mainmenu-version:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 /* ============================ SETTINGS (options root) ======================= */
