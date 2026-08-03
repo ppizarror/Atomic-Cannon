@@ -127,13 +127,16 @@ export class CChatter {
    *
    * `ageing` is false on the standings screen, where the victor's gloat must persist beside the
    * winner flag until the player advances (it is created at battle end, so ageing it there would
-   * let it vanish mid-celebration). `idleSpeaker` is non-null only during a live turn — the idle
-   * countdown only ticks while a tank is actually waiting to fire.
+   * let it vanish mid-celebration).
    */
   update(dt: number, opts: {ageing: boolean; idleSpeaker: TauntSpeaker | null}): void {
-    if (opts.ageing && this.m_bubbles.length) {
-      for (const b of this.m_bubbles) b.age += dt;
-      this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT.LIFE);
+    if (this.m_bubbles.length) {
+      if (opts.ageing) {
+        for (const b of this.m_bubbles) b.age += dt;
+        this.m_bubbles = this.m_bubbles.filter(b => b.age < TAUNT.LIFE);
+      } else {
+        this.m_bubbles = this.m_bubbles.filter(b => b.speaker.isAlive());
+      }
     }
     if (!opts.idleSpeaker) return;
     this.m_idleTimer -= dt;
