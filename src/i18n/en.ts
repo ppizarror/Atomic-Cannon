@@ -3,7 +3,8 @@
  * prose (no manual line breaks); the About screen wraps them to fit at draw time.
  * `{token}` placeholders are filled by `fmt` at the call site (see index.ts).
  */
-import type {RowCopy, Strings} from './types';
+import {GAME_NAME} from '../brand.ts';
+import type {RowCopy, Strings} from './types.ts';
 
 /** Rows shared verbatim between the pre-game setup screen (`play`) and `settings.gameplay`. */
 const battlesRow: RowCopy = {label: 'Battles', tip: 'How many battles per Deathmatch'};
@@ -37,15 +38,37 @@ export const en: Strings = {
     off: 'OFF',
   },
 
-  // Mirrors the static tags in index.html verbatim (seo.test.ts pins the pair).
+  // The source of index.html's copy: src/shell.ts pours these into its %TOKEN% placeholders.
   meta: {
-    title: 'Atomic Cannon — Turn-Based Artillery Game, Recreated for the Web',
+    title: `${GAME_NAME} — Turn-Based Artillery Game, Recreated for the Web`,
     description:
-      'A browser recreation of Atomic Cannon, the classic turn-based artillery duel on ' +
+      `A browser recreation of ${GAME_NAME}, the classic turn-based artillery duel on ` +
       'destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends.',
     social:
       'A turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, ' +
       'and out-shoot bots or friends — the classic, recreated for the browser.',
+    sectionTitle: '{game} — {section}',
+    sections: {
+      play: 'New Game',
+      network: 'Network Game',
+      about: 'About',
+      manual: 'Manual',
+      highScores: 'High Scores',
+      settings: 'Settings',
+      battle: 'Playing',
+      paused: 'Paused',
+      depot: 'Weapons Depot',
+      help: 'Controls',
+      loading: 'Loading',
+    },
+    imageAlt: `A rocket arcing over destructible terrain toward an enemy tank in ${GAME_NAME}`,
+    noscript: {
+      pitch:
+        'A turn-based artillery game, recreated for the browser. Two or more tanks trade shots ' +
+        'across destructible terrain — set your angle and power, account for the wind, and blow ' +
+        'the other tank off the map. Play against bots or online with friends.',
+      requires: 'Playing it needs JavaScript and WebGL — enable JavaScript to start a battle.',
+    },
   },
 
   menu: {
@@ -138,7 +161,7 @@ export const en: Strings = {
   },
 
   about: {
-    title: 'ATOMIC CANNON',
+    title: GAME_NAME.toUpperCase(),
     subtitle: 'A web preservation port',
     back: 'Back',
     stats: {
@@ -171,14 +194,14 @@ export const en: Strings = {
       {
         heading: 'About the Game',
         body: [
-          'Atomic Cannon is a turn-based artillery duel. Two or more cannons take turns lobbing shells across destructible terrain, dialing in angle and power while wind and gravity conspire against a clean hit. Land a shot and the ground caves in around it; miss, and you have handed your rival the range.',
+          `${GAME_NAME} is a turn-based artillery duel. Two or more cannons take turns lobbing shells across destructible terrain, dialing in angle and power while wind and gravity conspire against a clean hit. Land a shot and the ground caves in around it; miss, and you have handed your rival the range.`,
           'Between shots you spend your credits in the weapons depot, stocking everything from humble shells to earth-shattering nuclear ordnance, then reshape the battlefield to bury the opposition. Play solo against the computer or pass-and-play with friends, and be the last cannon standing.',
         ],
       },
       {
         heading: 'About the Real Atomic Cannon',
         body: [
-          'The game Atomic Cannon is loosely based on the real life nuclear capable mobile artillery cannon manufactured by the United States. The atomic cannon has a 280mm (11 inch) diameter barrel and can fire atomic projectiles over 20 miles. Twenty cannons were manufactured but none were used in battle.',
+          `The game ${GAME_NAME} is loosely based on the real life nuclear capable mobile artillery cannon manufactured by the United States. The atomic cannon has a 280mm (11 inch) diameter barrel and can fire atomic projectiles over 20 miles. Twenty cannons were manufactured but none were used in battle.`,
           'Operation Upshot Knothole was the only test shot (named Grable) for the atomic cannon, this is the intro screen image. It was on May 25th, 1953 at the Nevada Test Site. The shot traveled 7 miles and yielded 15kt of explosive power with a blast height of 524ft.',
           'The largest atomic cannon sits in a public park in Junction City, Kansas. The atomic cannon (M65-280mm) is 42 feet long and weighs 42,500 lbs.',
         ],
@@ -213,7 +236,7 @@ export const en: Strings = {
       {
         heading: 'Introduction',
         body: [
-          'Welcome to the best artillery game in the world! Atomic Cannon is a fun arcade game that is easy to learn but difficult to master. In this strategic tank artillery duel you battle against computers or friends across many different landscapes.',
+          `Welcome to the best artillery game in the world! ${GAME_NAME} is a fun arcade game that is easy to learn but difficult to master. In this strategic tank artillery duel you battle against computers or friends across many different landscapes.`,
           'Players take turns aiming and firing at each other with dozens of weapons of mass destruction, including nuclear bombs. Some weapons create landmasses you can use to your tactical advantage as cover; others dig, clean, or reshape the ground. The landscape is randomly generated each round and can be destroyed in real time for real scorched earth.',
         ],
       },
@@ -315,12 +338,12 @@ export const en: Strings = {
     jetFuel: 'JET FUEL {s}s',
     flyHint: 'Arrows / WASD to fly - Space to cut engine',
     tooSmallTitle: 'RESOLUTION TOO SMALL',
-    tooSmallLead: 'Atomic Cannon needs a window of at least',
+    tooSmallLead: `${GAME_NAME} needs a window of at least`,
     tooSmallSize: '{w} x {h} pixels to play.',
     tooSmallEnlarge: 'Enlarge the window to continue.',
     tooSmallCurrent: 'Current:  {w} x {h}',
     rotateTitle: 'ROTATE YOUR DEVICE',
-    rotateHint: 'Atomic Cannon plays in landscape.',
+    rotateHint: `${GAME_NAME} plays in landscape.`,
     installTitle: 'PLAY FULLSCREEN',
     installBody: 'Tap Share, then "Add to Home Screen"',
     installAndroid: 'Install the app for fullscreen play',
@@ -761,7 +784,7 @@ export const en: Strings = {
       done: 'Done',
       idle: 'Choose an action above',
       imported: 'Imported {n} setting groups. Reloading...',
-      importFailed: 'That file is not a valid Atomic Cannon backup.',
+      importFailed: `That file is not a valid ${GAME_NAME} backup.`,
       confirmTitle: 'Reset All Settings?',
       confirmBody:
         'This erases every setting - options, controls, players, taunts, and high scores - and restarts the game fresh. This cannot be undone.',

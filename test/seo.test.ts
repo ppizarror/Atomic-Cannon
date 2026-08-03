@@ -1,28 +1,29 @@
 /**
  * Crawler-facing metadata: robots.txt / sitemap.xml / JSON-LD build absolute URLs from the
  * request origin (never a hard-coded host), and index.html carries the static half in the
- * exact shape the Worker's rewriter expects — root-relative canonical/og URLs, description
- * matching SITE_DESCRIPTION, and an og:image path the Vite build actually emits.
+ * exact shape the Worker's rewriter expects — root-relative canonical/og URLs and an
+ * og:image path the Vite build actually emits.
  *
- * Plus the LIVE half: ui/documentMeta restamps the same tags from the i18n catalog when the
- * player switches language, so the English entries there must match index.html verbatim.
+ * The shell's PROSE is generated from the catalog (src/shell.ts), so these tests render it
+ * the same way the dev server and the build do, then assert each slot got the right copy.
+ *
+ * Plus the LIVE half: ui/documentMeta restamps the same tags — and the per-screen tab title
+ * — from the catalog as the player moves around and switches language.
  */
 import {readFileSync} from 'node:fs';
 import {describe, it, expect} from 'vitest';
-import {
-  robotsTxt,
-  sitemapXml,
-  jsonLd,
-  headTags,
-  SITE_NAME,
-  SITE_DESCRIPTION,
-  OG_IMAGE_PATH,
-} from '../src/seo';
+import {robotsTxt, sitemapXml, jsonLd, headTags, SITE_DESCRIPTION, OG_IMAGE_PATH} from '../src/seo';
+import {GAME_NAME} from '../src/brand';
+import {escapeHtml, renderShell} from '../src/shell';
 import {availableLocales, stringsFor} from '../src/i18n';
-import {applyDocumentMeta} from '../src/ui/documentMeta';
+import type {TitleSection} from '../src/i18n';
+import {applyDocumentMeta, documentTitle, titleSection} from '../src/ui/documentMeta';
+import {loading, screen, showPause} from '../src/ui/store';
 
 const ORIGIN = 'https://play.example.com';
-const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+// What a browser (or a crawler) actually receives: the shell with its placeholders filled.
+const html = renderShell(source);
 
 /** The content/href of a <meta>/<link> tag, tolerating Prettier's multi-line attributes. */
 const tagUrl = (attrs: string): string | null => {
@@ -57,7 +58,7 @@ describe('JSON-LD', () => {
   it('describes a playable browser game with absolute URLs', () => {
     const data = JSON.parse(jsonLd(ORIGIN));
     expect(data['@type']).toBe('VideoGame');
-    expect(data.name).toBe(SITE_NAME);
+    expect(data.name).toBe(GAME_NAME);
     expect(data.description).toBe(SITE_DESCRIPTION);
     expect(data.url).toBe(`${ORIGIN}/`);
     expect(data.image).toBe(`${ORIGIN}${OG_IMAGE_PATH}`);
@@ -92,7 +93,7 @@ describe('Worker-injected head tags', () => {
 
 describe('index.html', () => {
   it('describes the page with the same copy as SITE_DESCRIPTION', () => {
-    expect(tagUrl('name="description"')).toBe(SITE_DESCRIPTION);
+    expect(tagUrl('name="description"')).toBe(escapeHtml(SITE_DESCRIPTION));
   });
 
   it('keeps the og URLs root-relative so the Worker can absolutise them', () => {
@@ -106,8 +107,11 @@ describe('index.html', () => {
   it('ships crawlable copy and a title beyond the bare product name', () => {
     expect(/<title>([^<]+)<\/title>/.exec(html)?.[1].length).toBeGreaterThan(20);
     // The prose lives in <noscript> so it can never flash on screen before the game boots.
+    const {noscript: ns} = stringsFor('en').meta;
     const noscript = /<noscript>([\s\S]*?)<\/noscript>/.exec(html)?.[1] ?? '';
-    expect(noscript).toMatch(/<h1>Atomic Cannon<\/h1>/);
+    expect(noscript).toContain(`<h1>${GAME_NAME}</h1>`);
+    expect(noscript).toContain(escapeHtml(ns.pitch));
+    expect(noscript).toContain(escapeHtml(ns.requires));
     expect(noscript).toMatch(/artillery/i);
   });
 
@@ -120,6 +124,23 @@ describe('index.html', () => {
 
   it('leaks no deploy hostname', () => {
     expect(html).not.toMatch(/https?:\/\/(?!schema\.org|www\.w3\.org)/);
+  });
+
+  it('authors no copy of its own — every word comes from the catalog', () => {
+    // The point of src/shell.ts: renaming the game, or rewording the pitch, is a one-file
+    // edit in i18n/en.ts. Nothing a reader sees may be typed into the shell.
+    const en = stringsFor('en').meta;
+    expect(source).not.toContain(GAME_NAME);
+    for (const copy of [en.title, en.description, en.social, en.imageAlt, en.noscript.pitch])
+      expect(source).not.toContain(copy);
+    expect(source).toMatch(/%[A-Z_]+%/);
+  });
+
+  it('fills every placeholder it uses (and leaves none behind)', () => {
+    // An unknown placeholder throws at render — better a failed build than %META_TITLE%
+    // showing up in a search result.
+    expect(html).not.toMatch(/%[A-Z_]+%/);
+    expect(() => renderShell('<title>%NOT_A_TOKEN%</title>')).toThrow(/unknown placeholder/);
   });
 });
 
@@ -165,16 +186,18 @@ function stubDoc() {
 }
 
 describe('document metadata (live locale switch)', () => {
-  it('ships the English catalog copy verbatim in index.html', () => {
-    // Drift guard: a player on English must see exactly what a crawler is served,
-    // and the description doubles as SITE_DESCRIPTION (asserted above).
+  it('pours the English catalog into the right slots of index.html', () => {
+    // Not a drift guard any more (the shell is generated from this table) but a WIRING one:
+    // every slot has to get the field meant for it — og:description takes the short social
+    // line, not the search-result description.
     const en = stringsFor('en').meta;
-    expect(en.description).toBe(SITE_DESCRIPTION);
-    expect(/<title>([^<]+)<\/title>/.exec(html)?.[1]).toBe(en.title);
-    expect(tagUrl('property="og:title"')).toBe(en.title);
-    expect(tagUrl('name="twitter:title"')).toBe(en.title);
-    expect(tagUrl('property="og:description"')).toBe(en.social);
-    expect(tagUrl('name="twitter:description"')).toBe(en.social);
+    expect(/<title>([^<]+)<\/title>/.exec(html)?.[1]).toBe(escapeHtml(en.title));
+    expect(tagUrl('property="og:title"')).toBe(escapeHtml(en.title));
+    expect(tagUrl('name="twitter:title"')).toBe(escapeHtml(en.title));
+    expect(tagUrl('property="og:description"')).toBe(escapeHtml(en.social));
+    expect(tagUrl('name="twitter:description"')).toBe(escapeHtml(en.social));
+    expect(tagUrl('property="og:image:alt"')).toBe(escapeHtml(en.imageAlt));
+    expect(tagUrl('property="og:site_name"')).toBe(GAME_NAME);
   });
 
   it('restamps the tab title, lang and share tags when the locale changes', () => {
@@ -210,6 +233,64 @@ describe('document metadata (live locale switch)', () => {
       // landed in the snippet slot.
       expect(m.description.length).toBeLessThanOrEqual(200);
       expect(m.social.length).toBeGreaterThan(60);
+      expect(m.imageAlt.length).toBeGreaterThan(20);
+      expect(m.noscript.pitch.length).toBeGreaterThan(60);
+      expect(m.noscript.requires.length).toBeGreaterThan(20);
     }
+  });
+});
+
+describe('browser tab title (per screen)', () => {
+  it('keeps the full marketing headline on the main menu', () => {
+    // The resting screen: what a rendering crawler reads, and what a bookmark is named.
+    expect(documentTitle('en', null)).toBe(stringsFor('en').meta.title);
+  });
+
+  it('names the current screen everywhere else, always brand-first', () => {
+    expect(documentTitle('en', 'settings')).toBe(`${GAME_NAME} — Settings`);
+    expect(documentTitle('en', 'depot')).toBe(`${GAME_NAME} — Weapons Depot`);
+    expect(documentTitle('es', 'paused')).toBe(`${GAME_NAME} — En Pausa`);
+  });
+
+  it('leaves the share tags on the headline, whatever screen is open', () => {
+    // A link unfurled from a paused battle must still read as the game, not "Paused".
+    const {doc, contents} = stubDoc();
+    const en = stringsFor('en').meta;
+    applyDocumentMeta(doc, 'en', 'paused');
+    expect(doc.title).not.toBe(en.title);
+    expect(contents('meta[property="og:title"]')).toEqual([en.title]);
+    expect(contents('meta[name="twitter:title"]')).toEqual([en.title]);
+  });
+
+  it('labels every screen in every shipped locale', () => {
+    const keys = Object.keys(stringsFor('en').meta.sections) as TitleSection[];
+    for (const code of availableLocales) {
+      const m = stringsFor(code).meta;
+      expect(m.sectionTitle).toContain('{game}');
+      expect(m.sectionTitle).toContain('{section}');
+      expect(Object.keys(m.sections).sort()).toEqual([...keys].sort());
+      // A missing/blank label would silently render "Atomic Cannon — ".
+      for (const k of keys)
+        expect(documentTitle(code, k).trim().length).toBeGreaterThan(GAME_NAME.length + 2);
+    }
+  });
+
+  it('follows the navigation signals — screen, battle overlay, and loading', () => {
+    // `screen` starts on 'battle' (the boot title screen) until main.tsx reaches goToMenu.
+    screen.value = 'menu';
+    expect(titleSection.value).toBe(null);
+    screen.value = 'settings';
+    expect(titleSection.value).toBe('settings');
+    screen.value = 'battle';
+    expect(titleSection.value).toBe('battle');
+    showPause.value = true;
+    expect(titleSection.value).toBe('paused');
+    // Loading a match wins over whatever screen is underneath it.
+    loading.value = true;
+    expect(titleSection.value).toBe('loading');
+    loading.value = false;
+    showPause.value = false;
+    screen.value = 'menu';
+    expect(titleSection.value).toBe(null);
   });
 });

@@ -41,6 +41,22 @@ export interface EntryCopy {
   sub: string;
 }
 
+/** A screen worth naming in the browser tab ("Atomic Cannon — Settings"). The main menu has
+ *  no entry on purpose: it wears the full `meta.title`, which is the headline a crawler that
+ *  renders the page reads. See ui/documentMeta. */
+export type TitleSection =
+  | 'play'
+  | 'network'
+  | 'about'
+  | 'manual'
+  | 'highScores'
+  | 'settings'
+  | 'battle'
+  | 'paused'
+  | 'depot'
+  | 'help'
+  | 'loading';
+
 /** One help-screen control: its name and one-line description. */
 export interface HelpItem {
   name: string;
@@ -67,11 +83,11 @@ export interface Strings {
   };
 
   // ---- DOCUMENT METADATA -------------------------------------------------
-  // Browser tab + link previews.
-  /** The `<head>` copy, restamped on the live document whenever the locale changes
-   *  (ui/documentMeta). index.html ships the ENGLISH copy statically — that's what a
-   *  crawler and a cold share-unfurl see — so the `en` entries here must match it
-   *  verbatim; test/seo.test.ts pins the pair. */
+  // Browser tab + link previews + the crawler-facing shell.
+  /** The `<head>` and `<noscript>` copy. Restamped on the live document whenever the locale
+   *  changes (ui/documentMeta), and — for the source locale — poured into index.html's
+   *  `%TOKEN%` placeholders at build time (src/shell.ts), so the served shell is generated
+   *  from this table rather than being a second copy of it. */
   meta: {
     /** `<title>` + og:title + twitter:title. Longer than the bare product name: it's
      *  the search-result headline, not just a tab label. */
@@ -80,6 +96,22 @@ export interface Strings {
     description: string;
     /** og:description + twitter:description — the shorter share-card line. */
     social: string;
+    /** Tab title anywhere but the main menu: `{game}` (the product name) and `{section}`
+     *  are substituted. Only `<title>` follows the player around — the share tags keep
+     *  `title`, since an unfurled card must never read "Paused". */
+    sectionTitle: string;
+    /** The `{section}` half of `sectionTitle`, one label per screen. */
+    sections: Record<TitleSection, string>;
+    /** `og:image:alt` — what the share-card screenshot shows, for anyone who can't see it. */
+    imageAlt: string;
+    /** The `<noscript>` document: the only prose in the served HTML, and all a JS-less
+     *  visitor gets. Shell-only copy — the running game never renders it. */
+    noscript: {
+      /** What the game is, in one paragraph. */
+      pitch: string;
+      /** Why the page looks empty without JavaScript. */
+      requires: string;
+    };
   };
 
   // ---- MAIN MENU ---------------------------------------------------------

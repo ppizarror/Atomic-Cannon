@@ -10,17 +10,16 @@
  * Isomorphic: no DOM, no Node, no Workers API — plain string building, imported by the
  * Worker (worker/seo.ts) and exercised by tests.
  */
-
-/** Canonical product name (Open Graph `og:site_name`, schema.org `name`). */
-export const SITE_NAME = 'Atomic Cannon';
+import {GAME_NAME} from './brand';
+import {en} from './i18n/en';
 
 /**
- * The one-line pitch shown in search results and link previews.
- * KEEP IN SYNC with `<meta name="description">` in index.html — test/seo.test.ts asserts it.
+ * The one-line pitch shown in search results and link previews — the same string index.html's
+ * `<meta name="description">` is generated from (src/shell.ts), read straight from the source
+ * catalog so the two cannot drift. The catalog is inert data (no DOM, no signals), so the
+ * Worker can import it.
  */
-export const SITE_DESCRIPTION =
-  'A browser recreation of Atomic Cannon, the classic turn-based artillery duel on ' +
-  'destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends.';
+export const SITE_DESCRIPTION = en.meta.description;
 
 /** Social card image (1200x630), served from public/ — see og:image in index.html. */
 export const OG_IMAGE_PATH = '/screenshot.jpg';
@@ -93,8 +92,8 @@ export function jsonLd(origin: string): string {
   return JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'VideoGame',
-    name: SITE_NAME,
-    alternateName: 'Atomic Cannon Web',
+    name: GAME_NAME,
+    alternateName: `${GAME_NAME} Web`,
     url: `${origin}/`,
     image: `${origin}${OG_IMAGE_PATH}`,
     description: SITE_DESCRIPTION,
@@ -107,6 +106,8 @@ export function jsonLd(origin: string): string {
     inLanguage: ['en', 'es'],
     isBasedOn: {
       '@type': 'VideoGame',
+      // Literal, NOT GAME_NAME: this names Isotope 244's original, which a rename of this
+      // port must not rewrite (see src/brand.ts).
       name: 'Atomic Cannon',
       author: {'@type': 'Organization', name: 'Isotope 244'},
     },

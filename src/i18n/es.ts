@@ -4,6 +4,7 @@
  * fit at draw time. `{token}` placeholders are filled by `fmt` at the call site (see
  * index.ts) — keep the tokens intact when translating.
  */
+import {GAME_NAME} from '../brand';
 import type {RowCopy, Strings} from './types';
 
 /** Rows shared verbatim between the pre-game setup screen (`play`) and `settings.gameplay`. */
@@ -39,13 +40,37 @@ export const es: Strings = {
   },
 
   meta: {
-    title: 'Atomic Cannon — Juego de Artillería por Turnos, Recreado para la Web',
+    title: `${GAME_NAME} — Juego de Artillería por Turnos, Recreado para la Web`,
     description:
-      'Recreación para navegador de Atomic Cannon, el clásico duelo de artillería por turnos ' +
+      `Recreación para navegador de ${GAME_NAME}, el clásico duelo de artillería por turnos ` +
       'sobre terreno destructible. Apunta, mide el viento, compra nucleares y gana a bots o amigos.',
     social:
       'Un duelo de artillería por turnos sobre terreno destructible. Apunta, mide el viento, ' +
       'compra nucleares y gana a bots o amigos: el clásico, recreado para el navegador.',
+    sectionTitle: '{game} — {section}',
+    sections: {
+      play: 'Nueva Partida',
+      network: 'Juego en Red',
+      about: 'Acerca de',
+      manual: 'Manual',
+      highScores: 'Puntuaciones',
+      settings: 'Ajustes',
+      battle: 'Jugando',
+      paused: 'En Pausa',
+      depot: 'Depósito de Armas',
+      help: 'Controles',
+      loading: 'Cargando',
+    },
+    imageAlt: `Un cohete trazando un arco sobre terreno destructible hacia un tanque enemigo en ${GAME_NAME}`,
+    noscript: {
+      pitch:
+        'Un juego de artillería por turnos, recreado para el navegador. Dos o más tanques ' +
+        'intercambian disparos sobre un terreno destructible: ajusta tu ángulo y potencia, ten ' +
+        'en cuenta el viento y saca al otro tanque del mapa. Juega contra la computadora o en ' +
+        'línea con amigos.',
+      requires:
+        'Para jugar se necesita JavaScript y WebGL — activa JavaScript para comenzar una batalla.',
+    },
   },
 
   menu: {
@@ -137,7 +162,7 @@ export const es: Strings = {
   },
 
   about: {
-    title: 'ATOMIC CANNON',
+    title: GAME_NAME.toUpperCase(),
     subtitle: 'Un port de preservación web',
     back: 'Atrás',
     stats: {
@@ -170,14 +195,14 @@ export const es: Strings = {
       {
         heading: 'Sobre el Juego',
         body: [
-          'Atomic Cannon es un duelo de artillería por turnos. Dos o más cañones se turnan para lanzar proyectiles sobre un terreno destructible, ajustando ángulo y potencia mientras el viento y la gravedad conspiran contra un impacto limpio. Acierta un disparo y el suelo se hunde a su alrededor; falla, y le habrás dado el alcance a tu rival.',
+          `${GAME_NAME} es un duelo de artillería por turnos. Dos o más cañones se turnan para lanzar proyectiles sobre un terreno destructible, ajustando ángulo y potencia mientras el viento y la gravedad conspiran contra un impacto limpio. Acierta un disparo y el suelo se hunde a su alrededor; falla, y le habrás dado el alcance a tu rival.`,
           'Entre disparos gastas tus créditos en el depósito de armas, abasteciéndote de todo, desde humildes proyectiles hasta artillería nuclear devastadora, y luego remodelas el campo de batalla para enterrar a la oposición. Juega en solitario contra la computadora o por turnos con amigos, y sé el último cañón en pie.',
         ],
       },
       {
         heading: 'Sobre el Cañón Atómico Real',
         body: [
-          'El juego Atomic Cannon está vagamente basado en el cañón de artillería móvil con capacidad nuclear fabricado en la vida real por los Estados Unidos. El cañón atómico tiene un cañón de 280 mm (11 pulgadas) de diámetro y puede disparar proyectiles atómicos a más de 30 kilómetros. Se fabricaron veinte cañones pero ninguno fue usado en combate.',
+          `El juego ${GAME_NAME} está vagamente basado en el cañón de artillería móvil con capacidad nuclear fabricado en la vida real por los Estados Unidos. El cañón atómico tiene un cañón de 280 mm (11 pulgadas) de diámetro y puede disparar proyectiles atómicos a más de 30 kilómetros. Se fabricaron veinte cañones pero ninguno fue usado en combate.`,
           'La Operación Upshot Knothole fue el único disparo de prueba (llamado Grable) del cañón atómico, esta es la imagen de la pantalla de introducción. Fue el 25 de mayo de 1953 en el Sitio de Pruebas de Nevada. El disparo recorrió 11 kilómetros y rindió 15 kt de potencia explosiva con una altura de detonación de 160 metros.',
           'El mayor cañón atómico se encuentra en un parque público de Junction City, Kansas. El cañón atómico (M65-280mm) mide casi 13 metros de largo y pesa más de 19 000 kilos.',
         ],
@@ -212,7 +237,7 @@ export const es: Strings = {
       {
         heading: 'Introducción',
         body: [
-          '¡Bienvenido al mejor juego de artillería del mundo! Atomic Cannon es un divertido juego arcade fácil de aprender pero difícil de dominar. En este estratégico duelo de artillería con tanques luchas contra la computadora o contra amigos a través de muchos paisajes distintos.',
+          `¡Bienvenido al mejor juego de artillería del mundo! ${GAME_NAME} es un divertido juego arcade fácil de aprender pero difícil de dominar. En este estratégico duelo de artillería con tanques luchas contra la computadora o contra amigos a través de muchos paisajes distintos.`,
           'Los jugadores se turnan para apuntar y disparar entre sí con decenas de armas de destrucción masiva, incluidas bombas nucleares. Algunas armas crean masas de tierra que puedes usar a tu favor táctico como cobertura; otras excavan, limpian o remodelan el suelo. El paisaje se genera aleatoriamente en cada ronda y puede destruirse en tiempo real para una verdadera tierra arrasada.',
         ],
       },
@@ -314,12 +339,12 @@ export const es: Strings = {
     jetFuel: 'COMBUSTIBLE {s}s',
     flyHint: 'Flechas / WASD para volar - Espacio para apagar el motor',
     tooSmallTitle: 'RESOLUCIÓN DEMASIADO PEQUEÑA',
-    tooSmallLead: 'Atomic Cannon necesita una ventana de al menos',
+    tooSmallLead: `${GAME_NAME} necesita una ventana de al menos`,
     tooSmallSize: '{w} x {h} píxeles para jugar.',
     tooSmallEnlarge: 'Agranda la ventana para continuar.',
     tooSmallCurrent: 'Actual:  {w} x {h}',
     rotateTitle: 'GIRA TU DISPOSITIVO',
-    rotateHint: 'Atomic Cannon se juega en horizontal.',
+    rotateHint: `${GAME_NAME} se juega en horizontal.`,
     installTitle: 'PANTALLA COMPLETA',
     installBody: 'Toca Compartir y "Añadir a inicio"',
     installAndroid: 'Instala la app para pantalla completa',
@@ -813,7 +838,7 @@ export const es: Strings = {
       done: 'Listo',
       idle: 'Elige una acción arriba',
       imported: 'Se importaron {n} grupos de ajustes. Recargando...',
-      importFailed: 'Ese archivo no es un respaldo válido de Atomic Cannon.',
+      importFailed: `Ese archivo no es un respaldo válido de ${GAME_NAME}.`,
       confirmTitle: '¿Restablecer Todos los Ajustes?',
       confirmBody:
         'Esto borra cada ajuste - opciones, controles, jugadores, provocaciones y puntuaciones - y reinicia el juego desde cero. Esto no se puede deshacer.',

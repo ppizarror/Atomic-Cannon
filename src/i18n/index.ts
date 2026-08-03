@@ -23,6 +23,7 @@ export type {
   RowCopy,
   EntryCopy,
   HelpItem,
+  TitleSection,
 } from './types';
 
 const CATALOG: Record<LocaleCode, Strings> = {en, es};

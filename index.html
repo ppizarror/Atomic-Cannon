@@ -6,56 +6,40 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <title>Atomic Cannon</title>
-    <meta
-      name="description"
-      content="A browser recreation of Atomic Cannon, the classic turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends."
-    />
+    <title>%META_TITLE%</title>
+    <meta name="description" content="%META_DESCRIPTION%" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <!-- Open Graph: link previews in Discord / WhatsApp / Facebook / Slack -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Atomic Cannon" />
-    <meta property="og:title" content="Atomic Cannon" />
-    <meta
-      property="og:description"
-      content="A turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends — the classic, recreated for the browser."
-    />
+    <meta property="og:site_name" content="%GAME_NAME%" />
+    <meta property="og:title" content="%META_TITLE%" />
+    <meta property="og:description" content="%META_SOCIAL%" />
     <meta property="og:url" content="/" />
     <meta property="og:image" content="/screenshot.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta
-      property="og:image:alt"
-      content="A rocket arcing over destructible terrain toward an enemy tank in Atomic Cannon"
-    />
+    <meta property="og:image:alt" content="%META_IMAGE_ALT%" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:locale:alternate" content="es_ES" />
     <!-- X / Twitter card (image URL absolutised by the Worker, same as og:image) -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Atomic Cannon — Turn-Based Artillery Game, Recreated for the Web" />
-    <meta
-      name="twitter:description"
-      content="A turn-based artillery duel on destructible terrain. Aim, read the wind, buy nukes, and out-shoot bots or friends — the classic, recreated for the browser."
-    />
+    <meta name="twitter:title" content="%META_TITLE%" />
+    <meta name="twitter:description" content="%META_SOCIAL%" />
     <meta name="twitter:image" content="/screenshot.jpg" />
     <!-- Run full-screen (no browser chrome) when added to the home screen; on iOS the
        black-translucent status bar lets the game fill under it (with safe-area insets). -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Atomic Cannon" />
+    <meta name="apple-mobile-web-app-title" content="%GAME_NAME%" />
     <meta name="theme-color" content="#10141a" />
     <!-- PWA install: landscape-locked, fullscreen display (Android honours these; iOS uses
          the apple-* meta above). Add to Home Screen for the real fullscreen experience. -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- Favicon: authentic radioactive icon extracted from the original atomic.exe (2007) -->
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <!-- Critical CSS: paint the page dark from the very first frame. hud.css is imported by
-         the bundle, so in dev (and on a slow first load) it lands after first paint — without
-         this the browser would flash a white page before the game appears. -->
     <style>
       html,
       body {
@@ -69,12 +53,6 @@
     <div id="game-container"></div>
     <!-- Preact renders the HUD / screens here (overlays the canvas) -->
     <div id="ui-root"></div>
-    <!-- The game is a canvas, so this is the only prose in the document: the heading and
-         pitch a crawler reads from the raw HTML, and the message a JS-less visitor gets.
-         Deliberately inside <noscript> — it must NEVER flash on screen before the game
-         starts, and hiding it with CSS instead would be exactly the cloaking pattern
-         search engines penalise. Machine-readable SEO lives in the <head> (description,
-         Open Graph, and the JSON-LD the Worker injects). -->
     <noscript>
       <style>
         #no-js {
@@ -95,13 +73,9 @@
         }
       </style>
       <div id="no-js">
-        <h1>Atomic Cannon</h1>
-        <p>
-          A turn-based artillery game, recreated for the browser. Two or more tanks trade shots
-          across destructible terrain — set your angle and power, account for the wind, and blow
-          the other tank off the map. Play against bots or online with friends.
-        </p>
-        <p>Playing it needs JavaScript and WebGL — enable JavaScript to start a battle.</p>
+        <h1>%GAME_NAME%</h1>
+        <p>%NOSCRIPT_PITCH%</p>
+        <p>%NOSCRIPT_REQUIRES%</p>
       </div>
     </noscript>
     <script type="module" src="/src/main.tsx"></script>

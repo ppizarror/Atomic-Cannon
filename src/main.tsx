@@ -66,11 +66,6 @@ async function main(): Promise<void> {
   // mobile container — a permanent vertical blur until the next resize/reload.
   watchViewport();
 
-  // Put the document itself in the player's language (tab title, <html lang>, share
-  // tags) and keep it there across language switches. index.html ships the English
-  // copy for crawlers; this is the live-document half.
-  watchDocumentMeta();
-
   // ========================================================================
   // SCENE BUFFER & COMPOSITOR
   // ========================================================================
@@ -148,6 +143,13 @@ async function main(): Promise<void> {
   setController(gameController);
   render(<App />, uiRoot);
   goToMenu();
+
+  // Put the document itself in the player's language (tab title, <html lang>, share tags) and
+  // keep it there across language switches + screen changes. index.html ships the English copy
+  // for crawlers; this is the live-document half. AFTER goToMenu on purpose: `screen` starts on
+  // 'battle' (the boot title screen), so stamping earlier would title the tab "— Playing" for
+  // the whole async boot — and leave it there if the compositor never comes up.
+  watchDocumentMeta();
 
   // ========================================================================
   // DEV URL AFFORDANCES

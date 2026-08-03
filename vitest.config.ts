@@ -1,5 +1,5 @@
 import {defineConfig, mergeConfig} from 'vitest/config';
-import viteConfig from './vite.config';
+import viteConfig from './vite.config.ts';
 
 // Tests reuse the app's Vite config (Preact JSX transform + the __APP_VERSION__
 // define) so a test can import any src module exactly as the app builds it. They
