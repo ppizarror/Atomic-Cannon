@@ -76,6 +76,7 @@ class MockWorld implements ShotWorld {
   markers = 0;
   blasts: number[] = [];
   blastScale = 1; // resolution-based blast scale (derived render value on the world context)
+  wind = new Vec2(0, 0); // still air unless a test says otherwise (homing predicts against it)
 
   random(): number {
     return Math.random();

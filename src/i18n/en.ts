@@ -986,6 +986,10 @@ export const en: Strings = {
     breakout: {name: 'Breakout'},
     hellfire: {name: 'Hellfire', desc: 'A rapid fire set of small rockets with low accuracy.'},
     stingers: {name: 'Stingers'},
+    'homing.missile': {
+      name: 'Homing Missile',
+      desc: 'Flies like any rocket until it tips over, then relights and steers onto whoever is standing near where it was going to land.',
+    },
     katyusha: {
       name: 'Katyusha',
       desc: 'A rocket rack that saturates the target, volley after volley after volley.',

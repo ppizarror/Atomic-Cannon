@@ -10,6 +10,7 @@
 
 import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
+import {makeCanvas2d} from '../util/canvas';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
 import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 import {MATCH_COUNTERS, type MatchCounter, type StatsDelta} from '../net/stats';
@@ -244,9 +245,6 @@ const BEAM_COLLAPSE_DELAY = 1;
 const CONTROL_WEAPON: string | null = null;
 
 /**
-
-
-/**
  * Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the radius
  * that maps to ×1. The original scales the kick by the per-explosion size (not damage alone), so a
  * bigger crater shoves harder for equal life removed — a nuke launches a tank a shell only nudges.
@@ -289,6 +287,36 @@ const NET = {
  *  arced shots keep the authentic apex cutoff, but downward/flat shots — which never ascend — still
  *  get an initial exhaust plume instead of nothing. */
 const ROCKET_MIN_BURN = 0.7;
+
+/**
+ * Homing-round telemetry (extType 19) — the reachable-landing beam, the ground it lights, and the
+ * lock reticle. Purely how the guided family is DRAWN; the guidance itself lives in
+ * core/weapons/WeaponBehavior, and its per-weapon limits are stats on the weapon row.
+ *
+ * The COLOUR is not here: it comes from the weapon's own `blast`/`trail` particle via
+ * `CWeapon.getColor()`, so a new guided round tints its beam, its lit ground and its reticle just
+ * by naming a different effect in the data — and they can never drift from its actual trail.
+ */
+const HOMING = {
+  /** How far past the landing points the beam is carried, ALONG its own direction of travel, so
+   *  its closing rim stays out of sight. It MUST follow the beam: dropping the edge straight down
+   *  instead runs the polygon's sides through a point below the landing arc, so they cross the
+   *  real surface short of where the round lands — beam and lit ground part company in X. */
+  FAN_SKIRT: 60,
+  /** The lit-ground wash: additive, so it brightens terrain rather than tinting it. Deliberately
+   *  near-subliminal — stronger and it stops reading as light and starts reading as paint. */
+  GLOW_ALPHA: 0.13,
+  /** …and how deep into the surface that wash reaches (px). */
+  GLOW_H: 7,
+  /** How far BELOW the target's anchor the reticle centres. `CTank.getPosition()` is the hull's
+   *  TOP edge (`terrainHeight - tankHeight`), not its middle, so centring on the raw anchor rides
+   *  half a tank high. tankHeight is 1.5x the hit radius, so half of it is 0.75x. */
+  LOCK_DROP: 0.75,
+  /** Reticle span as a multiple of the target's hit radius. 2.9 lands on the hull's own width
+   *  (SIZE.W 46 vs SIZE.R 16), so the brackets sit snugly around the vehicle. Both terms scale
+   *  with Player Size, so the fit holds at any tank size. */
+  LOCK_SPAN: 2.9,
+} as const;
 
 /**
  * Sentry turrets (auto-firing deployables).
@@ -342,16 +370,9 @@ export class CGameController implements ShotWorld {
   // ========================================================================
   // STATIC HELPERS
   //
-  // Pure lookups, plus two that memoise: the arsenal and the burst sprites are
-  // both immutable once loaded, so each is resolved once and kept.
+  // Pure lookups over the weapon database, plus one that memoises: the arsenal
+  // is immutable once loaded, so the DEATH-class scan is resolved once and kept.
   // ========================================================================
-
-  /** Per-shape sampled lit pixels: offset from the sprite centre + that pixel's colour. Null until
-  private static deathWeapons: number[] | null = null;
-
-  private static controlWeaponIndex(): number {
-    return CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
-  }
 
   /** Memoised result of {@link deathWeaponIndices}; the weapon database is immutable after load. */
   private static deathWeapons: number[] | null = null;
@@ -376,8 +397,6 @@ export class CGameController implements ShotWorld {
     for (const k of MATCH_COUNTERS) t[k] = 0;
     return t;
   }
-
-  /** Load the 8 burst bmps once and sample their lit pixels (magenta keyed out, ~half subsampled
 
   /** The weapon a deployed sentry fires on its turn: the plain Shell (Turret variant) or the rapid
    *  Machine Gun (Minigun variant). The Turret uses the Shell staple; the Minigun looks the Machine
@@ -678,6 +697,10 @@ export class CGameController implements ShotWorld {
     // The aim crosshair (magenta-keyed white "+" with a black outline) that marks
     // the (angle, power) aim point — the "target turret" reticle.
     this.m_assets.loadSprite('gui/target', '/assets/gui/target turret.bmp');
+    // The LOCK reticle a homing round paints over the tank it has picked, once it relights at apex.
+    // Unlike the magenta-keyed gui art, this one is drawn on BLACK — key that instead, or the
+    // brackets arrive inside an opaque 40px tile.
+    this.m_assets.loadSprite('gui/target-player', '/assets/gui/target player.bmp', [0, 0, 0]);
     // Off-screen shot notches (gated on the "Tracking" option): top arrows (up
     // while rising, down while falling) + left/right edge brackets pointing at a
     // projectile that has left the view.
@@ -810,7 +833,7 @@ export class CGameController implements ShotWorld {
   }
 
   /** Pick which landscape to load. Honours a `?land=N` override (for reviewing a
-   * specific map / its weather), otherwise random. */
+   *  specific map / its weather), otherwise random. */
   private pickLandscapeIndex(): number {
     if (typeof location !== 'undefined') {
       const p = new URLSearchParams(location.search).get('land');
@@ -1205,9 +1228,11 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // SCENE RENDER — the per-frame draw dispatch (world, overlay, minimap). Camera
-  // state and the minimap widget itself live in game/CCamera; what's here decides
-  // WHAT to follow (cameraFollowX) and paints the result.
+  // SCENE RENDER
+  //
+  // The per-frame draw dispatch (world, overlay, minimap). Camera state and the
+  // minimap widget itself live in game/CCamera; what's here decides WHAT to
+  // follow (cameraFollowX) and paints the result.
   // ========================================================================
 
   /** Land-Size scale (1..5); world width = viewWidth × scale. */
@@ -1448,6 +1473,9 @@ export class CGameController implements ShotWorld {
     this.m_smokeSink?.smokeBegin();
     this.m_particles.draw(ctx);
     this.m_smokeSink?.smokeEnd();
+
+    // Homing telemetry UNDER the projectiles: the reachable-landing fan and the lock reticle.
+    this.drawHomingGuidance(ctx, alpha);
 
     // Active projectiles ON TOP of their own trail — so the missile sprite is
     // visible ahead of its exhaust+smoke, not buried under the fire head.
@@ -1728,9 +1756,11 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // AIM & MOVE INDICATORS — the drag-aim arrow, the move-range band and the
-  // target crosshair. (Speech bubbles moved to game/CChatter; the few forwarding
-  // methods below are all that remain of them here.)
+  // AIM & MOVE INDICATORS
+  //
+  // The drag-aim arrow, the move-range band and the target crosshair. (Speech
+  // bubbles moved to game/CChatter; the few forwarding methods below are all
+  // that remain of them here.)
   // ========================================================================
 
   /** Forward a taunt event to the bubble system. */
@@ -2021,13 +2051,9 @@ export class CGameController implements ShotWorld {
     return this.getLeadingTeam()?.human ?? false;
   }
 
-  /** Launch a firework: pick a random sky target above the terrain and send a rocket up
-
   // ========================================================================
   // SUPPLY CRATES (Gameplay → Crates)
   // ========================================================================
-
-
 
   /** The world slice the crate field reads. Sim-affecting draws come from the SEEDED rng so a
    *  networked client reproduces the same crate — crates ride the shared snapshot. */
@@ -2301,7 +2327,10 @@ export class CGameController implements ShotWorld {
       // proper exhaust plume for the initial burn. Both the fume trail and the thrust flare are
       // gated on this same "motor burning" window.
       const isTracer = weapon.getExtType() === EXT.TRACER;
-      const motorBurning = !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
+      // A HOMING round relights at the apex and burns all the way down, so its plume must not stop
+      // where every other rocket's does — `homingBurn` is the guidance telling us the motor is lit.
+      const motorBurning =
+        shot.homingBurn || !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
       if (isTracer) {
         // Tracer: NO exhaust, NO smoke, NO nose flare — just a thin white streak.
         // Stationary white puffs planted along the whole path (it emits rising AND
@@ -2367,7 +2396,9 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // ShotWorld — the surface the weapon behaviours (WeaponBehavior.ts) act on
+  // SHOTWORLD SURFACE
+  //
+  // The surface the weapon behaviours (WeaponBehavior.ts) act on.
   // ========================================================================
 
   get land(): CLand {
@@ -2376,6 +2407,12 @@ export class CGameController implements ShotWorld {
 
   get tanks(): CTank[] {
     return this.m_tanks;
+  }
+
+  /** ShotWorld: the EFFECTIVE wind shots are actually integrated against (sustained + gusts),
+   *  not the sustained `m_wind` the HUD shows — homing predicts its own arc with it. */
+  get wind(): Vec2 {
+    return this.m_effWind;
   }
 
   spawnShot(shot: CShot): void {
@@ -2501,6 +2538,151 @@ export class CGameController implements ShotWorld {
     const img = {width: w, height: h, data: new Uint32Array(id.data.buffer)};
     this.m_structImages.set(key, img);
     return img;
+  }
+
+  /** The lock reticle, recoloured once per colour and cached. `target player.bmp` is dark grey on
+   *  black — as shipped it reads as a smudge over terrain and vanishes against sky, so the
+   *  brackets are repainted in the firing weapon's own colour (`source-in` over the keyed art
+   *  keeps the shape and its alpha). Keyed by colour because that now comes from the weapon data,
+   *  so two guided rounds in flight can legitimately want different ones. Built lazily: the sprite
+   *  only exists once the asset has decoded. */
+  private homingLockSprite(color: string): CanvasImageSource | null {
+    const hit = this.m_homingLock.get(color);
+    if (hit) return hit;
+    const src = this.m_assets.getSprite('gui/target-player');
+    if (!src) return null;
+    const w = (src.bitmap as {width: number}).width;
+    const h = (src.bitmap as {height: number}).height;
+    const {cv, ctx} = makeCanvas2d(w, h);
+    ctx.drawImage(src.bitmap, 0, 0);
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    this.m_homingLock.set(color, cv);
+    return cv;
+  }
+
+  /**
+   * A guided round's telemetry, drawn only while one is in the air and only after it relights:
+   *
+   *  • the REACHABLE FAN — where the missile could still put itself across its whole authority
+   *    band. Widest at the apex, closing as the descent runs out of time to turn, so it reads as
+   *    "this much correction is left".
+   *  • the SURFACE GLOW — the ground inside that spread lit faintly, as if the fan were falling on
+   *    it. Almost subliminal, but it is what stops the wedge looking like a flat decal pasted over
+   *    the scene.
+   *  • the LOCK — `target player.bmp` boxing the tank being steered at. It moves if the round
+   *    re-targets mid-fall, which is the point of showing it at all.
+   *
+   * The wedge is a GRADIENT that fades out below the landing line, and its far edge is carried
+   * under the terrain: a flat-alpha polygon ends on a hard rim exactly where the eye is already
+   * looking, and the outline reads as a drawn border rather than a volume of light.
+   */
+  private drawHomingGuidance(ctx: CanvasRenderingContext2D, alpha: number): void {
+    for (const shot of this.m_shots) {
+      if (shot.isDead() || Number.isNaN(shot.homingBase)) continue;
+      const weapon = getWeapon(shot.getWeaponIndex());
+      if (weapon.getExtType() !== EXT.HOMING) continue;
+      // Straight from the weapon's `blast`/`trail` effect, so the telemetry is the round's own
+      // colour rather than a house cyan every guided weapon would be stuck with.
+      const color = weapon.getColor();
+      const lock = this.homingLockSprite(color);
+      // The RENDER position, not the sim one: the sprite is drawn interpolated, so anchoring the
+      // shaft to the raw sim position leaves it lagging the missile by up to a full step.
+      const p = shot.renderPosition(alpha);
+      const fan = shot.homingFan;
+
+      if (fan.length > 1) {
+        // The region is bounded by the two EXTREME trajectories and the landing arc between
+        // them, walked along the real curves — not chords from the missile, which dive into any
+        // ground that rises in between and get clipped short of the very landing points they span.
+        // Carried ALONG the beam (missile -> landing point), never straight down.
+        const skirt = (q: {x: number; y: number}) => {
+          const dx = q.x - p.x,
+            dy = q.y - p.y;
+          const d = Math.hypot(dx, dy) || 1;
+          return {x: q.x + (dx / d) * HOMING.FAN_SKIRT, y: q.y + (dy / d) * HOMING.FAN_SKIRT};
+        };
+        const L = shot.homingFanL;
+        const R = shot.homingFanR;
+        const far = fan.reduce((a, b) => a + b.y, 0) / fan.length;
+        const grad = ctx.createLinearGradient(p.x, p.y, p.x, far);
+        // Lit from the nozzle down. Starting at zero and fading in made the beam appear to begin
+        // in mid-air, detached from the missile it belongs to.
+        grad.addColorStop(0, `${color}30`);
+        grad.addColorStop(0.55, `${color}34`);
+        grad.addColorStop(0.9, `${color}2e`);
+        grad.addColorStop(1, `${color}12`); // still lit AT the ground it lands on
+        ctx.save();
+        // Clip to the SKY. The gradient is still ~20% opaque where it crosses the ground, so
+        // without this the beam soaks down through the terrain — light through a hillside.
+        const allX = [p.x, ...fan.map(f => f.x), ...L.map(q => q.x), ...R.map(q => q.x)];
+        const cx0 = Math.max(0, Math.floor(Math.min(...allX)) - 4);
+        const cx1 = Math.min(this.m_land.width - 1, Math.ceil(Math.max(...allX)) + 4);
+        ctx.beginPath();
+        ctx.moveTo(cx0, -4000);
+        for (let x = cx0; x <= cx1; x += 3) ctx.lineTo(x, this.m_land.getHeightAt(x));
+        ctx.lineTo(cx1, this.m_land.getHeightAt(cx1));
+        ctx.lineTo(cx1, -4000);
+        ctx.closePath();
+        ctx.clip();
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        for (const q of L) ctx.lineTo(q.x, q.y);
+        ctx.lineTo(skirt(fan[0]).x, skirt(fan[0]).y);
+        for (let i = 1; i < fan.length; i++) {
+          const a = skirt(fan[i - 1]),
+            b = skirt(fan[i]);
+          ctx.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        }
+        ctx.lineTo(skirt(fan[fan.length - 1]).x, skirt(fan[fan.length - 1]).y);
+        for (let i = R.length - 1; i >= 0; i--) ctx.lineTo(R[i].x, R[i].y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // The lit ground: a thin additive wash hugging the surface across the fan's span, so the
+        // terrain under the shaft brightens instead of merely being tinted through.
+        const x0 = Math.max(0, Math.floor(Math.min(...fan.map(f => f.x))));
+        const x1 = Math.min(this.m_land.width - 1, Math.ceil(Math.max(...fan.map(f => f.x))));
+        if (x1 > x0) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = HOMING.GLOW_ALPHA;
+          ctx.beginPath();
+          ctx.moveTo(x0, this.m_land.getHeightAt(x0));
+          for (let x = x0; x <= x1; x += 3) ctx.lineTo(x, this.m_land.getHeightAt(x));
+          for (let x = x1; x >= x0; x -= 3)
+            ctx.lineTo(x, this.m_land.getHeightAt(x) + HOMING.GLOW_H);
+          ctx.closePath();
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // The lock, sized to BOX the hull rather than sit on the turret, pulsing gently so it reads
+      // as live tracking rather than a decal.
+      const t = shot.homingTarget;
+      if (t?.isAlive()) {
+        const tp = t.getPosition();
+        const r = t.getHitRadius();
+        const s = r * HOMING.LOCK_SPAN + Math.sin(shot.getAge() * 9) * 1.5;
+        const cy = tp.y + r * HOMING.LOCK_DROP; // anchor is the hull TOP — drop to its middle
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.imageSmoothingEnabled = false;
+        if (lock) {
+          ctx.drawImage(lock, Math.round(tp.x - s / 2), Math.round(cy - s / 2), s, s);
+        } else {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(tp.x - s / 2, cy - s / 2, s, s);
+        }
+        ctx.restore();
+      }
+    }
   }
 
   aimMarker(x: number, y: number, label?: string): void {
@@ -4461,7 +4643,7 @@ export class CGameController implements ShotWorld {
     return best;
   }
 
-  // ── Reading the opposition ───────────────────────────────────────────────────────────────────────
+  // ---- READING THE OPPOSITION --------------------------------------------
   // Seconds of exposure a tank should assume when weighing whether to stand on fallout: roughly one
   // full lap of the turn order, since radiation DOT ticks in every in-battle state, not only on the
   // victim's own turn. Scaled by how many tanks are still taking turns.
@@ -4732,7 +4914,8 @@ export class CGameController implements ShotWorld {
     this.m_difficulty = level;
   }
 
-  // ── Settings pushed from the options menu (see ui/applySettings). Start-time
+  // ---- SETTINGS ----------------------------------------------------------
+  // Pushed from the options menu (see ui/applySettings). Start-time
   // setters take effect on the next startGame; the rest are live. ──────────────
   /** Credits each player starts a match with (applied on the next startGame). */
   setStartCredits(n: number): void {
@@ -4750,7 +4933,7 @@ export class CGameController implements ShotWorld {
     this.m_tanksPerTeam = clamp(Math.round(n), 1, 5);
   }
 
-  // ── Networked match ────────────────────────────────────────────────────────
+  // ---- NETWORKED MATCH ---------------------------------------------------
 
   /**
    * Boot a network match: one human team per player (no local AI), a single tank
@@ -5469,7 +5652,7 @@ export class CGameController implements ShotWorld {
     return true;
   }
 
-  // --- HUD accessors ---------------------------------------------------------
+  // ---- HUD ACCESSORS -----------------------------------------------------
   getWeaponDefs() {
     // The control-weapon lock only restricts the HUMAN's own list. During a bot's
     // turn (or normal play) the full arsenal is shown, so the HUD reflects the
@@ -5520,7 +5703,7 @@ export class CGameController implements ShotWorld {
     return getWeapon(this.m_currentWeaponIndex);
   }
 
-  // --- Weapons Depot / economy ----------------------------------------------
+  // ---- WEAPONS DEPOT / ECONOMY -------------------------------------------
   // All depot reads/writes go through the ACTIVE player's economy: solo that's the human's
   // shared depot; net it's the current player's own per-tank economy (so a relayed buy applies
   // to the buyer on every client). buy/sell/autobuy relay on the local turn so peers mirror them.
@@ -5836,7 +6019,7 @@ export class CGameController implements ShotWorld {
   }
 
   // ========================================================================
-  // ACCESSORS
+  // ACCESSORS & QUERIES
   // ========================================================================
 
   getState(): EGameState {
@@ -5934,7 +6117,7 @@ export class CGameController implements ShotWorld {
   private m_pendingSalvos = 0; // succession salvos still scheduled to fire this shot
   private m_weaponTest = false; // ?weapontest=1: AI never takes a turn (endless firing)
 
-  // ── Networked match state ────────────────────────────────────────────────
+  // ---- NETWORKED MATCH STATE ---------------------------------------------
   // Set by startNetworkGame(). In net mode the server is the turn arbiter: turns
   // don't advance locally (endTurn defers to m_onNetTurnEnd), local input is limited
   // to the local player's tank, and terrain is seeded so every client starts identical.
@@ -6039,6 +6222,7 @@ export class CGameController implements ShotWorld {
   }[] = [];
   // Marks which live sentry tanks are the Minigun variant (→ fire "Machine Gun", not Shell).
   private m_sentryMinigun: WeakSet<CTank> = new WeakSet();
+  private m_homingLock = new Map<string, CanvasImageSource>();
   private m_aimMarkers: {x: number; y: number; label?: string}[] = [];
   // Floating "Show Points" damage numbers + "Show Blast Circles" rings (see game/CHitMarkers).
   private readonly m_markers = new CHitMarkers();

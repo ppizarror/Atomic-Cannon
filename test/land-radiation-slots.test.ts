@@ -55,6 +55,7 @@ function land(): CLand {
 class World implements ShotWorld {
   spawned: CShot[] = [];
   blastScale = 1;
+  wind = new Vec2(0, 0); // still air (only homing guidance reads it)
   tanks: CTank[] = []; // no tanks in these tests — the radiation lands on bare terrain
 
   constructor(public land: CLand) {}

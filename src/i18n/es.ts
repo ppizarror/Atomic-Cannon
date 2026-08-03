@@ -1046,6 +1046,10 @@ export const es: Strings = {
       desc: 'Una ráfaga rápida de cohetes pequeños con baja precisión.',
     },
     stingers: {name: 'Aguijones'},
+    'homing.missile': {
+      name: 'Misil Buscador',
+      desc: 'Vuela como cualquier cohete hasta que empieza a caer; entonces reenciende y corrige hacia quien esté cerca de donde iba a caer.',
+    },
     katyusha: {
       name: 'Katiusha',
       desc: 'Un lanzacohetes que satura el objetivo, andanada tras andanada tras andanada.',

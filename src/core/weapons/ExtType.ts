@@ -7,13 +7,13 @@
  * `ExtType` is NOMINAL on purpose: it's an opaque token, NOT a plain `number`. So a bare
  * literal can never stand in for a behaviour selector — `ext === 1` is a COMPILE error
  * (`ext === EXT.DIGGER` is the only way to write it), which is what stops a value being
- * silently misrouted. The underlying runtime values are still the plain numbers 0..18
+ * silently misrouted. The underlying runtime values are still the plain numbers 0..19
  * (the cast is type-only), so comparisons, `switch`, and the weapon JSON are unaffected.
  */
 import {makeNominalEnum} from './nominalEnum';
 
 /**
- * The complete 0..18 behaviour map (no bare numbers anywhere) so a value can never be
+ * The complete 0..19 behaviour map (no bare numbers anywhere) so a value can never be
  * silently misrouted — cross-checked against the weapon data and each type's weapons.
  * These are the raw codes; {@link EXT} exposes them as the nominal {@link ExtType} tokens.
  *
@@ -24,7 +24,7 @@ import {makeNominalEnum} from './nominalEnum';
  *    can't be missed.
  */
 const EXT_CODES = {
-  // -- projectile behaviours --
+  // ---- PROJECTILE BEHAVIOURS ---------------------------------------------
   BALLISTIC: 0, //    Shell / Bomb / Rocket / Dirt / Cleaner / NUKE / DOT / Organic / Missile (default)
   DIGGER: 1, //       Digger, Excavator — tunnels then detonates buried
   ROLLER: 2, //       Roller, Big Wheel, Mighty Roller — rolls downhill on contact
@@ -44,6 +44,7 @@ const EXT_CODES = {
   MINE: 16, //        Mine, Minefield, Super Mine — plants a persistent mine
   JET: 17, //         Booster Jet, Jump Jet — tank flight (utility)
   SENTRY: 18, //      Sentry Turret, Sentry Minigun — deploys an auto-firing turret
+  HOMING: 19, //      Homing Missile — at apex, bends its arc toward a tank near where it would land
 } as const;
 
 declare const EXT_BRAND: unique symbol;
