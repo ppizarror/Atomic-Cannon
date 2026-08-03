@@ -22,6 +22,7 @@ const idOf = (id: string) => WEAPON_DATABASE.findIndex(w => w.id === id);
 // timers after a shot are the succession salvos themselves (smoke would add 0.06s timers).
 const STINGERS = idOf('stingers'); // spawn 6, sucNum 0 — a pure fan
 const HELLFIRE = idOf('hellfire'); // spawn 1, sucNum 9, sucSec 2 — a pure succession stream
+const KATYUSHA = idOf('katyusha'); // spawn 2 AND sucNum > 0 — a fresh fan per succession salvo
 
 /** A fresh match with a human at index 0 and free-fire on (every weapon selectable). */
 function fireGame(): CGameController {
@@ -80,6 +81,23 @@ describe('Multi-fire cadence', () => {
     const salvos = 1 + def.sucNum;
     expect(gap).not.toBeCloseTo(def.sucSec / salvos, 2); // not sucSec/salvos (0.2)
     expect(gap).not.toBeCloseTo(0.14, 2); // not a clamped spacing (clamp(0.2,.05,.14)=0.14)
+  });
+
+  it('a fan + succession weapon fires the WHOLE fan on every salvo', () => {
+    const gc = fireGame();
+    const def = WEAPON_DATABASE[KATYUSHA];
+    gc.selectWeapon(KATYUSHA);
+    gc.fire();
+
+    // The Katyusha's identity is `spawn` rockets per volley, `sucNum+1` volleys deep — the
+    // two multiply. A salvo that dropped back to a single round (or a fan that fired the
+    // whole rack at once) would land on `spawn` total rockets either way, so step the clock
+    // through every salvo and count.
+    expect(priv(gc).m_shots.length).toBe(def.spawn); // volley 0's pair, not the whole rack
+    const gap = def.sucSec * REF_TIME_SCALE;
+    for (let k = 0; k < def.sucNum; k++) gc.update(gap + 0.001);
+    expect(priv(gc).m_pendingSalvos).toBe(0);
+    expect(priv(gc).m_shots.length).toBe(def.spawn * (1 + def.sucNum)); // the whole rack
   });
 
   it('advancing sim time releases the queued salvos one at a time', () => {

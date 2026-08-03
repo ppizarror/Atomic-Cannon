@@ -1,7 +1,7 @@
 /**
  * CWeapon - weapon definitions, loaded from the bundled game data.
  *
- * Source of truth is `data/weapons.json` (104 weapons).
+ * Source of truth is `data/weapons.json`.
  */
 
 import weaponsRaw from '../data/weapons.json';
@@ -35,7 +35,7 @@ export type WeaponType =
   | 'Utility'
   | string;
 
-/** One row of data/weapons.json (46-column schema). */
+/** One row of data/weapons.json. */
 export interface RawWeapon {
   /** Stable slug (e.g. "magma.beam") — the engine/AI match key and the i18n key for the
    *  weapon's display name/description. NEVER localised, so game logic can rely on it. */
@@ -81,6 +81,7 @@ export interface RawWeapon {
   irBlue: number;
   expType: number;
   expBitmap: string;
+  disabled?: boolean;
 
   [k: string]: unknown;
 }
@@ -124,14 +125,6 @@ export const weaponDesc = (w: {id: string}): string => strings.value.weapons[w.i
 
 /** Localised label for a weapon category (`type` discriminant), falling back to the type. */
 export const weaponTypeName = (type: string): string => strings.value.weaponTypes[type] ?? type;
-
-/** The number shown next to a weapon in the arsenal list — its STABLE 1-based id
- *  (database position + 1), NOT its position in the currently-shown (filtered) list.
- *  Because it keys off the weapon's own index it never shifts when weapons are
- *  disabled in Game Content, so it always matches `?weaponsel=<id>` (which selects
- *  `WEAPON_DATABASE[id-1]`). Numbering by list position instead makes the two diverge
- *  the moment any earlier weapon is turned off. */
-export const weaponDisplayNumber = (w: {index: number}): number => w.index + 1;
 
 /** Index of the first plain Shell — a sensible default/starter weapon. */
 export function getDefaultWeaponIndex(): number {

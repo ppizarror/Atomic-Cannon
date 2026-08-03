@@ -178,7 +178,8 @@ export interface ISmokeSink {
   smokeBegin(): void;
   smokeEnd(): void;
   smokeQuad(
-    layer: number, /** One of FX_LAYER — decides both draw order and blend mode. */
+    /** One of FX_LAYER — decides both draw order and blend mode. */
+    layer: number,
     src: CanvasImageSource,
     sx: number,
     sy: number,

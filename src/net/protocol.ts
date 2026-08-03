@@ -343,8 +343,6 @@ export const parseServerMessage = (raw: string): ServerMessage | null =>
 
 const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
-// Weapon indices are into the ~104-entry database; a generous cap rejects wild out-of-range values
-// (which would index arrays on peers) without coupling the validator to the exact DB length.
 const MAX_WEAPON_INDEX = 1000;
 const CRATE_KINDS = new Set(['weapon', 'credits', 'health', 'bomb']);
 

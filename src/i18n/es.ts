@@ -1046,6 +1046,10 @@ export const es: Strings = {
       desc: 'Una ráfaga rápida de cohetes pequeños con baja precisión.',
     },
     stingers: {name: 'Aguijones'},
+    katyusha: {
+      name: 'Katiusha',
+      desc: 'Un lanzacohetes que satura el objetivo, andanada tras andanada tras andanada.',
+    },
     'hydrogen.nuke': {
       name: 'Nuke de Hidrógeno',
       desc: 'La nuke básica. Crea lluvia radiactiva que causa daño con el tiempo.',

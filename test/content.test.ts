@@ -1,7 +1,7 @@
 /**
- * Game Content — the Weapons / Landscapes enable lists actually affect play: the
- * default-disabled secret weapons, the enabled-set gating the arsenal / depot /
- * auto-buy, and the landscape picker honouring the enabled landscapes.
+ * Game Content — the Weapons / Landscapes enable lists actually affect play: the rows the
+ * weapon data flags `disabled`, the enabled-set gating the arsenal / depot / auto-buy, and
+ * the landscape picker honouring the enabled landscapes.
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -9,19 +9,71 @@ import {makeCanvas} from './_dom';
 import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from '../src/core/CWeapon';
 import {GameContent, weaponEnabled, landEnabled} from '../src/core/CGameContent';
-import {weaponsOff as pendingWeaponsOff} from '../src/ui/contentStore';
+import {
+  weaponsOff as pendingWeaponsOff,
+  weaponsOffFromStored,
+  weaponsOffToStored,
+} from '../src/ui/contentStore';
 import landData from '../src/data/land.json';
 
 const LAND_COUNT = (landData as unknown[]).length;
 const STAPLE = getDefaultWeaponIndex();
+const idOf = (i: number) => WEAPON_DATABASE[i].id;
+const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
 
 describe('Game Content', () => {
-  it('secret Organic weapons default disabled, others enabled', () => {
-    const organic = WEAPON_DATABASE.findIndex(w => w.type === 'Organic');
-    expect(organic).toBeGreaterThanOrEqual(0); // an Organic weapon exists
-    expect(pendingWeaponsOff.value.has(organic)).toBe(true); // secret Organic weapon defaults disabled
+  it('the JSON `disabled` flag is exactly what defaults off', () => {
+    // A weapon's default state lives in its own row and nowhere else: `"disabled": true` starts
+    // it off, everything else starts on. No type/index/version rule on top.
+    const flagged = WEAPON_DATABASE.filter(w => w.disabled).map(w => w.index);
+    expect(flagged.length).toBeGreaterThan(0); // some weapon is flagged, so this has teeth
+    expect(sorted(pendingWeaponsOff.value)).toEqual(flagged);
     expect(pendingWeaponsOff.value.has(STAPLE)).toBe(false); // the staple (Shell) defaults enabled
-    expect(pendingWeaponsOff.value.size).toBe(4); // there are exactly 4 default-disabled weapons
+  });
+
+  it('a stored id map is read back by id, not by position', () => {
+    // The point of keying by id: the saved selection means the same thing however the database
+    // grows or shifts underneath it.
+    const map = Object.fromEntries(WEAPON_DATABASE.map(w => [w.id, true]));
+    map[idOf(3)] = false;
+    map[idOf(7)] = false;
+    expect(sorted(weaponsOffFromStored(map))).toEqual([3, 7]);
+  });
+
+  it('only the player’s overrides are stored — an untouched profile stores nothing', () => {
+    const def = new Set(WEAPON_DATABASE.filter(w => w.disabled).map(w => w.index));
+    expect(weaponsOffToStored(def)).toEqual({}); // exactly the data's defaults → no overrides
+
+    const optIn = WEAPON_DATABASE.find(w => w.disabled)!; // turn a default-off weapon ON
+    const optOut = WEAPON_DATABASE.find(w => !w.disabled)!; // and a default-on weapon OFF
+    const edited = new Set(def);
+    edited.delete(optIn.index);
+    edited.add(optOut.index);
+    expect(weaponsOffToStored(edited)).toEqual({[optIn.id]: true, [optOut.id]: false});
+
+    // …and the pair round-trips, so what is written is what comes back.
+    expect(sorted(weaponsOffFromStored(weaponsOffToStored(edited)))).toEqual(sorted(edited));
+  });
+
+  it('a weapon missing from the stored map falls back to its own default', () => {
+    // The migration that index lists could not do: a row added since the save is simply absent
+    // from the map, so an opt-in weapon starts OFF rather than switching itself on.
+    const off = WEAPON_DATABASE.find(w => w.disabled)!;
+    const on = WEAPON_DATABASE.find(w => !w.disabled)!;
+    const empty = weaponsOffFromStored({}); // a map that has never seen ANY current weapon
+    expect(empty.has(off.index)).toBe(true);
+    expect(empty.has(on.index)).toBe(false);
+    // …and an unknown id in the map (a weapon since renamed or removed) is ignored, not crashed on.
+    expect(sorted(weaponsOffFromStored({'no.such.weapon': false}))).toEqual(
+      WEAPON_DATABASE.filter(w => w.disabled).map(w => w.index),
+    );
+  });
+
+  it('a pre-id save (bare index array) is read once and keeps its disabled picks', () => {
+    const off = WEAPON_DATABASE.find(w => w.disabled)!;
+    const legacy = weaponsOffFromStored([3, 7]);
+    expect(legacy.has(3) && legacy.has(7)).toBe(true); // what the player switched off is kept
+    expect(legacy.has(off.index)).toBe(true); // and default-off rows it couldn't know about stay off
   });
 
   it('weaponEnabled / landEnabled reflect the active GameContent sets', () => {
