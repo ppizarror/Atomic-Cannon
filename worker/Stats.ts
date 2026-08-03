@@ -18,6 +18,7 @@ import {
   EMPTY_TOTALS,
   sanitizeDelta,
 } from '../src/net/stats';
+import {json} from './http';
 
 interface Env {
   STATS: DurableObjectNamespace;
@@ -65,9 +66,6 @@ export class Stats {
   }
 
   async fetch(req: Request): Promise<Response> {
-    const json = (data: unknown, status = 200): Response =>
-      new Response(JSON.stringify(data), {status, headers: {'content-type': 'application/json'}});
-
     if (req.method === 'GET') {
       return json(await this.load());
     }

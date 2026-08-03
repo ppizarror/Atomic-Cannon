@@ -3,10 +3,10 @@
  * Cloudflare the canonical code *is* the Durable Object name, so every socket
  * for a code routes to the same room instance.
  *
- * A 6-char specialisation of the shared generator in `codes.ts` (which also backs the 10-char
+ * A 6-char specialisation of the shared generator in `codes.ts` (which also backs the 12-char
  * profile id); the alphabet, the rejection-sampled RNG and the typing formatter all live there.
  */
-import {CODE_ALPHABET, newCode, normalizeCode, isValidCode, groupCode, formatTypedCode} from './codes';
+import {newCode, normalizeCode, isValidCode, groupCode, formatTypedCode} from './codes';
 import type {RandInt} from './codes';
 
 export {cryptoRandInt} from './codes';
@@ -15,9 +15,6 @@ export type {RandInt};
 const CODE_LEN = 6;
 /** Hyphen position in the display form: "ABC-D23". */
 const GROUP_AT = 3;
-
-/** The room-code alphabet (re-exported so callers don't reach past this module). */
-export const ROOM_ALPHABET = CODE_ALPHABET;
 
 /** Generate a fresh canonical room code (6 chars, no separator). */
 export const newRoomCode = (randInt?: RandInt): string => newCode(CODE_LEN, randInt);

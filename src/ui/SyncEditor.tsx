@@ -21,8 +21,8 @@ import {BmpParagraph} from './BmpParagraph';
 import {Button} from './Button';
 import {EditorDone} from './EditorDone';
 import {EditorScreen} from './EditorScreen';
-import {Modal} from './Modal';
-import {ModalButton} from './ModalButton';
+import {CodeDisplay} from './CodeDisplay';
+import {ConfirmDialog} from './ConfirmDialog';
 import {uiClick} from './store';
 import {strings, fmt} from '../i18n';
 import type {AgoCopy} from '../i18n';
@@ -157,7 +157,10 @@ export function SyncEditor() {
 
       {confirm && (
         <ConfirmDialog
-          kind={confirm}
+          title={e.confirm[confirm].title}
+          body={e.confirm[confirm].body}
+          yes={e.confirm[confirm].yes}
+          no={e.confirmNo}
           onCancel={() => setConfirm(null)}
           onConfirm={confirm === 'link' ? onLink : confirm === 'download' ? onDownload : onDesync}
         />
@@ -172,27 +175,16 @@ export function SyncEditor() {
 
 function LinkedBody() {
   const e = strings.value.editors.sync;
-  const code = syncLink.value.code;
-  const [copied, setCopied] = useState(false);
-  const copy = (): void => {
-    void navigator.clipboard?.writeText(formatProfileCode(code)).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      },
-      () => {},
-    );
-  };
   return (
     <>
       <BmpParagraph class="ie-intro" font="beijing-16-out" text={e.linkedIntro} />
       <BmpText font="beijing-16-out" text={e.idLabel} />
-      <div class="sync-code-display">
-        <span class="sync-code-value">{formatProfileCode(code)}</span>
-        <button class="btn" onClick={copy}>
-          <BmpText font="msans-14" text={copied ? e.copied : e.copy} />
-        </button>
-      </div>
+      <CodeDisplay
+        code={formatProfileCode(syncLink.value.code)}
+        copyLabel={e.copy}
+        copiedLabel={e.copied}
+        class="sync-code-display"
+      />
       <BmpText font="beijing-16-out" text={e.uploadDesc} />
       <BmpText font="beijing-16-out" text={e.downloadDesc} />
       <BmpText font="beijing-16-out" text={e.desyncDesc} />
@@ -223,26 +215,5 @@ function UnlinkedBody({typed, onType}: {typed: string; onType: (v: string) => vo
         />
       </div>
     </>
-  );
-}
-
-// ==========================================================================
-// CONFIRMATIONS
-// ==========================================================================
-
-function ConfirmDialog({kind, onConfirm, onCancel}: {kind: Confirm; onConfirm: () => void; onCancel: () => void}) {
-  const e = strings.value.editors.sync;
-  const c = e.confirm[kind];
-  return (
-    <Modal backdrop="scrim" onClose={onCancel} class="confirm-card">
-      <div class="confirm-title">
-        <BmpText font="bazouk-28" text={c.title} />
-      </div>
-      <BmpParagraph class="confirm-body" font="beijing-16-out" text={c.body} />
-      <div class="confirm-buttons">
-        <ModalButton label={c.yes} onClick={onConfirm} />
-        <ModalButton label={e.confirmNo} onClick={onCancel} />
-      </div>
-    </Modal>
   );
 }

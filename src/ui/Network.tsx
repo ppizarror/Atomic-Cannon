@@ -10,6 +10,7 @@ import {BmpText} from './BmpText';
 import {BigButton} from './BigButton';
 import {ClassicScrollbar} from './ClassicScrollbar';
 import {Modal} from './Modal';
+import {CodeDisplay} from './CodeDisplay';
 import {goToMenu, uiMenuBack} from './store';
 import {formatRoomCode, formatCodeInput} from '../net/roomCode';
 import {
@@ -116,27 +117,12 @@ function StatusPill() {
   );
 }
 
-function CodeDisplay({code}: {code: string}) {
+function RoomCode({code}: {code: string}) {
   const n = strings.value.net;
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    void navigator.clipboard?.writeText(formatRoomCode(code)).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      },
-      () => {},
-    );
-  };
   return (
     <>
       <BmpText font="beijing-16-out" text={n.shareHint} spacing={-1} />
-      <div class="net-code-display">
-        <span class="net-code-value">{formatRoomCode(code)}</span>
-        <button class="btn" onClick={copy}>
-          <BmpText font="msans-14" text={copied ? n.copied : n.copy} />
-        </button>
-      </div>
+      <CodeDisplay code={formatRoomCode(code)} copyLabel={n.copy} copiedLabel={n.copied} class="net-code-display" />
     </>
   );
 }
@@ -382,7 +368,7 @@ function Lobby() {
     <div class="net-panel">
       <BmpText font="bazouk-28" text={n.lobbyTitle} />
       <StatusPill />
-      <CodeDisplay code={s.code} />
+      <RoomCode code={s.code} />
 
       <div class="net-roster">
         {s.players.map(p => (

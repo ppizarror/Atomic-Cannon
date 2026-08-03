@@ -201,6 +201,26 @@ export class Room {
     }
   }
 
+  /** The `startGame` message describing this match — everything a client needs to build a
+   *  byte-identical world. Sent to the whole room at Start and replayed to each (re)joining socket,
+   *  so the two paths cannot describe the match differently. */
+  private static startGameMsg(s: RoomState): Extract<ServerMessage, {t: 'startGame'}> {
+    return {
+      t: 'startGame',
+      seed: s.seed,
+      order: s.order,
+      wind: s.settings.wind,
+      mapSize: s.settings.mapSize,
+      battles: s.totalBattles,
+      tanksPerTeam: s.tanksPerTeam,
+      currentBattle: s.currentBattle,
+      viewW: s.viewW,
+      viewH: s.viewH,
+      // A resume can run before a config was ever stored; the defaults are what a fresh match uses.
+      config: s.config ?? sanitizeMatchConfig(),
+    };
+  }
+
   private static publicPlayers(s: RoomState): PlayerInfo[] {
     return Object.values(s.players).map(p => ({
       id: p.id,
@@ -239,6 +259,13 @@ export class Room {
       if (a?.playerId === playerId) return ws;
     }
     return null;
+  }
+
+  /** Send one player an error. A disconnected socket is simply skipped — every caller is
+   *  rejecting that player's message, and none of them can do anything about a missing socket. */
+  private replyError(pid: number, code: 'not_your_turn' | 'bad_message', message: string): void {
+    const ws = this.socketFor(pid);
+    if (ws) this.send(ws, {t: 'error', code, message});
   }
 
   // ── Message handling ────────────────────────────────────────────────────────
@@ -402,19 +429,7 @@ export class Room {
   /** Replay the match to one (re)joining socket: boot → latest state → turn/result. */
   private resumeMatch(ws: WebSocket, s: RoomState): void {
     if (s.phase !== 'playing' && s.phase !== 'ended') return;
-    this.send(ws, {
-      t: 'startGame',
-      seed: s.seed,
-      order: s.order,
-      wind: s.settings.wind,
-      mapSize: s.settings.mapSize,
-      battles: s.totalBattles,
-      tanksPerTeam: s.tanksPerTeam,
-      currentBattle: s.currentBattle,
-      viewW: s.viewW,
-      viewH: s.viewH,
-      config: s.config ?? sanitizeMatchConfig(),
-    });
+    this.send(ws, Room.startGameMsg(s));
     if (s.snapshot) {
       this.send(ws, {t: 'stateUpdate', from: 0, seq: 0, result: s.snapshot, hash: s.snapshotHash});
     }
@@ -527,19 +542,7 @@ export class Room {
     const deadline = await this.armTurn(s); // start the AFK backstop for the first turn
     await this.save(s);
 
-    this.broadcast({
-      t: 'startGame',
-      seed: s.seed,
-      order: s.order,
-      wind: s.settings.wind,
-      mapSize: s.settings.mapSize,
-      battles: s.totalBattles,
-      tanksPerTeam: s.tanksPerTeam,
-      currentBattle: s.currentBattle,
-      viewW: s.viewW,
-      viewH: s.viewH,
-      config: s.config,
-    });
+    this.broadcast(Room.startGameMsg(s));
     this.broadcast({
       t: 'turnBegin',
       playerIdx: Room.tankAt(s, s.turnIdx),
@@ -582,15 +585,13 @@ export class Room {
 
   private onCmd(s: RoomState, pid: number, msg: Extract<ClientMessage, {t: 'cmd'}>): void {
     if (s.phase !== 'playing' || Room.ownerOf(s, s.turnIdx) !== pid) {
-      const ws = this.socketFor(pid);
-      if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
+      this.replyError(pid, 'not_your_turn', 'not your turn');
       return;
     }
     // Validate the command shape before relaying — a malformed cmd (null, unknown type, non-finite
     // index/coords) would crash or NaN-corrupt every peer's applyCommand.
     if (!isValidGameCommand(msg.cmd)) {
-      const ws = this.socketFor(pid);
-      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'invalid command'});
+      this.replyError(pid, 'bad_message', 'invalid command');
       return;
     }
     // Relay the intent so spectators mirror the acting player's aim/inventory.
@@ -599,8 +600,7 @@ export class Room {
 
   private async onShotResult(s: RoomState, pid: number, msg: Extract<ClientMessage, {t: 'shotResult'}>): Promise<void> {
     if (s.phase !== 'playing' || Room.ownerOf(s, s.turnIdx) !== pid) {
-      const ws = this.socketFor(pid);
-      if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
+      this.replyError(pid, 'not_your_turn', 'not your turn');
       return;
     }
     // Idempotency: turnGen is the ONLY duplicate signal we can trust. Every live client echoes the
@@ -611,8 +611,7 @@ export class Room {
     // contiguous squad) skip tank-1's turn and double the hand-off income, or advance the battle twice
     // after `over`. Silent drop for a stale gen — not an error; a missing gen is a malformed message.
     if (typeof msg.turnGen !== 'number') {
-      const ws = this.socketFor(pid);
-      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'missing turn generation'});
+      this.replyError(pid, 'bad_message', 'missing turn generation');
       return;
     }
     if (msg.turnGen !== s.turnGen) return;
@@ -622,8 +621,7 @@ export class Room {
     // reconnect or a new spectator), permanently bricking the room across DO hibernation. Reject it;
     // the turn stays put and the AFK alarm forfeits it if the actor never sends a valid result.
     if (!isValidShotResult(msg.result, Room.totalTanks(s))) {
-      const ws = this.socketFor(pid);
-      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'invalid shot result'});
+      this.replyError(pid, 'bad_message', 'invalid shot result');
       return;
     }
     // The world width is fixed for the whole match — pin the heightmap column count on the first
@@ -631,8 +629,7 @@ export class Room {
     // on any client that bootstraps from it).
     if (s.expectedColumns === 0) s.expectedColumns = msg.result.heights.length;
     else if (msg.result.heights.length !== s.expectedColumns) {
-      const ws = this.socketFor(pid);
-      if (ws) this.send(ws, {t: 'error', code: 'bad_message', message: 'heightmap width changed'});
+      this.replyError(pid, 'bad_message', 'heightmap width changed');
       return;
     }
     // Broadcast the authoritative outcome + its hash, and keep both for reconnects.
@@ -702,8 +699,6 @@ export class Room {
     });
   }
 
-  /** Advance to the next turn, skipping players whose tank is DEAD (life ≤ 0) or whose socket
-   *  is DISCONNECTED — a dropped player must never hold the turn, or the match stalls. */
   /** Can turn POSITION `pos` take a turn? Its owner must be present+connected, and in Deathmatch its
    *  tank must still be alive (Rounds/Point is non-lethal — a 0-life tank keeps playing). */
   private playablePos(s: RoomState, pos: number): boolean {
@@ -715,6 +710,8 @@ export class Room {
     return s.snapshot ? (s.snapshot.tanks[tankIdx]?.life ?? 1) > 0 : true; // dead tank → skip
   }
 
+  /** Advance to the next turn, skipping players whose tank is DEAD (life ≤ 0) or whose socket
+   *  is DISCONNECTED — a dropped player must never hold the turn, or the match stalls. */
   private nextLivingTurn(s: RoomState): number {
     const n = Room.totalTanks(s); // cycle over turn POSITIONS (one per tank)
     if (n === 0) return 0;

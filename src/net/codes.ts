@@ -1,6 +1,6 @@
 /**
  * Shareable codes — the alphabet, generator and input-formatter behind every human-typed key
- * in the game: the 6-char ROOM code you send to friends, and the 10-char PROFILE id that names
+ * in the game: the 6-char ROOM code you send to friends, and the 12-char PROFILE id that names
  * a cloud settings/score save. In both cases the canonical code *is* a Durable Object name, so
  * the same string always routes to the same instance.
  *
@@ -14,7 +14,7 @@
  */
 
 /** Crockford-ish alphabet: no I/L/O/0/1, so codes are unambiguous when read aloud/typed. */
-export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 /** A source of uniform integers in [0, n). */
 export type RandInt = (n: number) => number;

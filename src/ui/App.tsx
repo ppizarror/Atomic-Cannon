@@ -35,6 +35,7 @@ import {MainMenu} from './MainMenu';
 import {LoadingScreen} from './LoadingScreen';
 import {About} from './About';
 import {Manual} from './Manual';
+import {Changelog} from './Changelog';
 import {HighScores} from './HighScores';
 import {Settings} from './Settings';
 import {PlaySetup} from './PlaySetup';
@@ -263,6 +264,8 @@ function CurrentScreen() {
       return <About />;
     case 'manual':
       return <Manual />;
+    case 'changelog':
+      return <Changelog />;
     case 'highscores':
       return <HighScores />;
     case 'settings':

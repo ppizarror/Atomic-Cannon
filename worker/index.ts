@@ -9,6 +9,7 @@ import {newProfileCode, normalizeProfileCode, isValidProfileCode} from '../src/n
 import {PROFILE_MAX_BYTES, isPayload, payloadBytes} from '../src/net/profile';
 import {robotsTxt, sitemapXml} from '../src/seo';
 import {withSeo} from './seo';
+import {json, JSON_TYPE, rateLimit} from './http';
 
 export {Room} from './Room';
 export {Stats} from './Stats';
@@ -36,14 +37,6 @@ const profileStub = (env: Env, code: string) => env.PROFILE.get(env.PROFILE.idFr
 /** Attempts to find a free id when minting. Collisions at 31^12 are effectively impossible;
  *  this exists so the one-in-a-quintillion case fails safe instead of returning a taken id. */
 const MINT_TRIES = 3;
-
-const JSON_TYPE = {'content-type': 'application/json'};
-
-const json = (data: unknown, status = 200): Response =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: JSON_TYPE,
-  });
 
 /** Forward a DO response verbatim (status + JSON body) to the client. */
 const passthrough = async (res: Response): Promise<Response> =>
@@ -91,9 +84,8 @@ export default {
     // the DO is created lazily on first connect, so no reservation is needed.)
     // Rate-limited per client IP so one host can't spin up rooms in a loop.
     if (url.pathname === '/api/new') {
-      const ip = req.headers.get('CF-Connecting-IP') ?? 'anon';
-      const {success} = await env.ROOM_LIMIT.limit({key: ip});
-      if (!success) return json({error: 'slow down — too many rooms'}, 429);
+      const limited = await rateLimit(req, env.ROOM_LIMIT, 'slow down — too many rooms');
+      if (limited) return limited;
       return json({code: newRoomCode()});
     }
 
@@ -101,9 +93,8 @@ export default {
     // match's delta, stamped with the visitor's edge country and folded into the global Stats DO.
     if (url.pathname === '/api/stats') {
       if (req.method === 'POST') {
-        const ip = req.headers.get('CF-Connecting-IP') ?? 'anon';
-        const {success} = await env.STATS_LIMIT.limit({key: ip});
-        if (!success) return json({error: 'slow down'}, 429);
+        const limited = await rateLimit(req, env.STATS_LIMIT, 'slow down');
+        if (limited) return limited;
         let delta: unknown;
         try {
           delta = await req.json();
@@ -114,7 +105,7 @@ export default {
         return statsStub(env).fetch(
           new Request('https://do/stats', {
             method: 'POST',
-            headers: {'content-type': 'application/json'},
+            headers: JSON_TYPE,
             body: JSON.stringify({delta, country}),
           }),
         );
@@ -132,9 +123,8 @@ export default {
     // per IP across reads AND writes: the read limit is what turns "guess an id" from a slow
     // attack into an impossible one, since there is no other secret protecting a profile.
     if (url.pathname === '/api/profile' || url.pathname.startsWith('/api/profile/')) {
-      const ip = req.headers.get('CF-Connecting-IP') ?? 'anon';
-      const {success} = await env.PROFILE_LIMIT.limit({key: ip});
-      if (!success) return json({error: 'slow down'}, 429);
+      const limited = await rateLimit(req, env.PROFILE_LIMIT, 'slow down');
+      if (limited) return limited;
 
       // POST /api/profile — mint a fresh id holding this device's data. The SERVER picks the id
       // (and re-rolls if the slot is somehow occupied) so a client can never claim one in use.

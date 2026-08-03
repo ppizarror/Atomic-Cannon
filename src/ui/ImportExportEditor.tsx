@@ -17,8 +17,7 @@ import {BmpParagraph} from './BmpParagraph';
 import {Button} from './Button';
 import {EditorDone} from './EditorDone';
 import {EditorScreen} from './EditorScreen';
-import {Modal} from './Modal';
-import {ModalButton} from './ModalButton';
+import {ConfirmDialog} from './ConfirmDialog';
 import {uiClick} from './store';
 import {strings, fmt} from '../i18n';
 import {exportSettings, importSettings, resetAllSettings} from '../util/settingsBackup';
@@ -107,16 +106,14 @@ export function ImportExportEditor() {
       <input ref={fileInput} type="file" accept="application/json,.json" style={{display: 'none'}} onChange={onFile} />
 
       {confirmReset && (
-        <Modal backdrop="scrim" onClose={() => setConfirmReset(false)} class="confirm-card">
-          <div class="confirm-title">
-            <BmpText font="bazouk-28" text={e.confirmTitle} />
-          </div>
-          <BmpParagraph class="confirm-body" font="beijing-16-out" text={e.confirmBody} />
-          <div class="confirm-buttons">
-            <ModalButton label={e.confirmYes} onClick={onResetConfirm} />
-            <ModalButton label={e.confirmNo} onClick={() => setConfirmReset(false)} />
-          </div>
-        </Modal>
+        <ConfirmDialog
+          title={e.confirmTitle}
+          body={e.confirmBody}
+          yes={e.confirmYes}
+          no={e.confirmNo}
+          onConfirm={onResetConfirm}
+          onCancel={() => setConfirmReset(false)}
+        />
       )}
     </>
   );

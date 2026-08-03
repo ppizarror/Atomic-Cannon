@@ -76,7 +76,7 @@ export function exportSettings(): SettingsBackup {
 }
 
 /** True iff `v` looks like one of our backups (and not some other JSON that happens to parse). */
-export function isSettingsBackup(v: unknown): v is SettingsBackup {
+function isSettingsBackup(v: unknown): v is SettingsBackup {
   if (!v || typeof v !== 'object') return false;
   const b = v as Partial<SettingsBackup>;
   return b.format === FORMAT && !!b.data && typeof b.data === 'object' && !Array.isArray(b.data);

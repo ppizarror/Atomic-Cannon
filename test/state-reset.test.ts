@@ -86,6 +86,18 @@ describe('taunt bubbles', () => {
     expect(c.count()).toBe(0);
   });
 
+  it('a destroyed speaker drops its frozen bubble on the standings screen', () => {
+    const c = new CChatter();
+    let alive = true;
+    const doomed = {...speaker(), isAlive: () => alive};
+    c.say(doomed, 'gg');
+    c.update(0.1, {ageing: false, idleSpeaker: null});
+    expect(c.count()).toBe(1); // still standing → still gloating
+    alive = false; // …then the Explode Losers cascade (or a death cry that outlived the battle)
+    c.update(0.1, {ageing: false, idleSpeaker: null});
+    expect(c.count()).toBe(0); // a wreck doesn't talk beside the winner flag
+  });
+
   it('a dead tank speaks its death line but never an idle taunt', () => {
     const prev = GameConfig.chatter;
     GameConfig.chatter = true;

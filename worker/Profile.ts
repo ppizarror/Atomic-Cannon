@@ -16,6 +16,7 @@
  * only by knowing its 12-char id.
  */
 import {type ProfileRecord, type ProfilePayload, PROFILE_MAX_BYTES, isPayload, payloadBytes} from '../src/net/profile';
+import {json} from './http';
 
 /** Sole storage key — the whole record is one value (a save is a few KB). */
 const KEY = 'profile';
@@ -28,9 +29,6 @@ export class Profile {
   // ==========================================================================
 
   async fetch(req: Request): Promise<Response> {
-    const json = (data: unknown, status = 200): Response =>
-      new Response(JSON.stringify(data), {status, headers: {'content-type': 'application/json'}});
-
     if (req.method === 'GET') {
       const rec = await this.ctx.storage.get<ProfileRecord>(KEY);
       return rec ? json(rec) : json({error: 'no such profile'}, 404);
@@ -51,11 +49,11 @@ export class Profile {
     // it is enforced where the write actually happens.
     if (payloadBytes(data) > PROFILE_MAX_BYTES) return json({error: 'profile too large'}, 413);
 
-    if (req.method === 'POST') return this.create(data, json);
+    if (req.method === 'POST') return this.create(data);
 
     const baseRev = Number(body.baseRev);
     if (!Number.isFinite(baseRev)) return json({error: 'bad baseRev'}, 400);
-    return this.update(baseRev, data, json);
+    return this.update(baseRev, data);
   }
 
   // ==========================================================================
@@ -64,7 +62,7 @@ export class Profile {
 
   /** Claim this id for a brand-new profile. Refuses (409) if one already lives here, so the
    *  front door's re-roll on collision can never hand a player someone else's slot. */
-  private async create(data: ProfilePayload, json: (d: unknown, s?: number) => Response): Promise<Response> {
+  private async create(data: ProfilePayload): Promise<Response> {
     let taken = false;
     let rec: ProfileRecord | null = null;
     await this.ctx.blockConcurrencyWhile(async () => {
@@ -83,11 +81,7 @@ export class Profile {
   /** Compare-and-swap update. `baseRev` must equal the stored rev or the write is refused and
    *  the caller is told the current rev — it must re-read rather than retry with a higher rev,
    *  which would be exactly the blind overwrite this guards against. */
-  private async update(
-    baseRev: number,
-    data: ProfilePayload,
-    json: (d: unknown, s?: number) => Response,
-  ): Promise<Response> {
+  private async update(baseRev: number, data: ProfilePayload): Promise<Response> {
     let result: {status: number; body: unknown} = {status: 500, body: {error: 'unreachable'}};
     await this.ctx.blockConcurrencyWhile(async () => {
       const stored = await this.ctx.storage.get<ProfileRecord>(KEY);
