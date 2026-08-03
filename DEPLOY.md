@@ -30,8 +30,8 @@ pnpm build              # produce dist/ (the client the Worker serves)
 pnpm deploy:net         # wrangler deploy
 ```
 
-The first deploy automatically applies the Durable Object migration (`v1`,
-`new_sqlite_classes: ["Room"]`) — no manual step. By default the Worker serves from a
+Each deploy automatically applies any Durable Object migrations it hasn't yet (`v1` Room,
+`v2` Stats, `v3` Profile — all `new_sqlite_classes`) — no manual step. By default the Worker serves from a
 `*.workers.dev` URL, which wrangler prints at the end; to serve from your own domain
 instead, see "Custom domain" below.
 
@@ -41,14 +41,24 @@ after **Start**, play a synced match.
 
 ## What's configured (`wrangler.jsonc`)
 
-| Binding                           | Purpose                                                           |
-| --------------------------------- | ----------------------------------------------------------------- |
-| `ROOM` (Durable Object, SQLite)   | one instance per room code; roster, turn arbiter, latest snapshot |
-| `ASSETS` (dist/)                  | the static client, with SPA fallback to `index.html`              |
-| `ROOM_LIMIT` (Rate Limit, 30/60s) | per-IP cap on `/api/new` room creation                            |
+| Binding                              | Purpose                                                            |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| `ROOM` (Durable Object, SQLite)      | one instance per room code; roster, turn arbiter, latest snapshot  |
+| `STATS` (Durable Object, SQLite)     | ONE global instance; aggregate play counters + per-country tally   |
+| `PROFILE` (Durable Object, SQLite)   | one instance per profile id; that player's synced settings/scores  |
+| `ASSETS` (dist/)                     | the static client, with SPA fallback to `index.html`               |
+| `ROOM_LIMIT` (Rate Limit, 30/60s)    | per-IP cap on `/api/new` room creation                             |
+| `STATS_LIMIT` (Rate Limit, 20/60s)   | per-IP cap on `/api/stats` uploads                                 |
+| `PROFILE_LIMIT` (Rate Limit, 30/60s) | per-IP cap on all of `/api/profile*` — reads included              |
 
 Server-side guards already in place: version check on join, per-room `maxPlayers`,
 turn-ownership validation, a 128 KB frame-size cap, and the room-creation rate limit.
+
+Profile sync has two of its own. Writes are **compare-and-swap** — a client sends the revision
+it last read and the Worker refuses (409) if the stored one has moved on, so two devices that
+both auto-upload can't silently overwrite each other. And profile READS are rate-limited as well
+as writes: a 12-char id is the only thing protecting a save, so throttling `GET` is what makes
+guessing one infeasible.
 
 ## Custom domain
 

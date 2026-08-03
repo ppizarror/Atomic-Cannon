@@ -8,17 +8,20 @@
   "compatibility_date": "2025-06-01",
 
   // Durable Objects: ROOM = one per match (roster/turn state, hibernatable); STATS = ONE global
-  // instance ("global") holding the aggregate play counters + per-country tally for the About screen.
-  // Both SQLite-backed (free-tier eligible).
+  // instance ("global") holding the aggregate play counters + per-country tally for the About screen;
+  // PROFILE = one per profile id, holding that player's synced settings/scores.
+  // All SQLite-backed (free-tier eligible).
   "durable_objects": {
     "bindings": [
       {"name": "ROOM", "class_name": "Room"},
       {"name": "STATS", "class_name": "Stats"},
+      {"name": "PROFILE", "class_name": "Profile"},
     ],
   },
   "migrations": [
     {"tag": "v1", "new_sqlite_classes": ["Room"]},
     {"tag": "v2", "new_sqlite_classes": ["Stats"]},
+    {"tag": "v3", "new_sqlite_classes": ["Profile"]},
   ],
 
   // Static client (the Vite build). The Worker handles /api/* and /room/*; every
@@ -47,10 +50,14 @@
   },
 
   // Per-IP limiters (period must be 10 or 60). ROOM_LIMIT gates room creation (/api/new);
-  // STATS_LIMIT gates stats uploads (POST /api/stats).
+  // STATS_LIMIT gates stats uploads (POST /api/stats); PROFILE_LIMIT gates ALL of /api/profile*.
+  // Profile reads are limited too, not just writes: a profile id is the only thing protecting a
+  // save, so throttling GETs is what makes guessing one infeasible. The ceiling is set well above
+  // real use (one read per launch, one debounced write per burst of changes).
   "ratelimits": [
     {"name": "ROOM_LIMIT", "namespace_id": "1", "simple": {"limit": 30, "period": 60}},
     {"name": "STATS_LIMIT", "namespace_id": "2", "simple": {"limit": 20, "period": 60}},
+    {"name": "PROFILE_LIMIT", "namespace_id": "3", "simple": {"limit": 30, "period": 60}},
   ],
 
   // ── Custom domain (injected at deploy time — NOT stored here) ──────────────

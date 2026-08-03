@@ -20,7 +20,7 @@ exactly; they encode conventions the codebase already relies on.
   no-parens single-arg arrows, 100-col. All must be clean.
 - **Dev-only URL params.** The app boots to a MAIN MENU, so a bare `http://localhost:2141`
   renders the menu over everything. Append a query flag to jump straight into a state for
-  manual testing or headless screenshots. Handled in `src/main.tsx` inside an
+  manual testing or headless screenshots. Handled in `src/app.tsx` inside an
   `import.meta.env.DEV` guard — **development-only**: a production build tree-shakes the
   whole block out and ignores every param below.
 
@@ -184,7 +184,7 @@ does **not** catch it.
   sprite stretches, resizing the window after load softens the scene until reload — a deliberate
   tradeoff. Do **not** replace it with a fixed-res letterbox, a dynamic relayout or a high-res
   downscale without explicit agreement.)
-  Pointer→world mapping lives in `main.tsx` `toWorld` (client px → scene px).
+  Pointer→world mapping lives in `app.tsx` `toWorld` (client px → scene px).
 - **Minimum playable window is 768×432** (`MIN_W`/`MIN_H` in `App.tsx`). Below it, the
   `TooSmallOverlay` gate covers everything. Keep these in sync with any copy that states the size.
 - **Present-on-demand:** the loop ticks every frame but the expensive 2D redraw + GPU upload

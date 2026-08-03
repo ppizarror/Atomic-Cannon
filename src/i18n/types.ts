@@ -14,6 +14,10 @@
  */
 
 import type {ActionId} from '../core/CControls';
+// Keying the sync copy off the real outcome union keeps the two exhaustively in step. It is
+// imported from its own leaf module rather than from `ui/syncStore`, which would pull that
+// store's DOM dependencies into the Worker's typecheck — see the note in syncOutcome.ts.
+import type {SyncOutcome} from '../ui/syncOutcome';
 
 // ==========================================================================
 // INTERFACES & TYPES
@@ -33,6 +37,23 @@ export interface RowCopy {
   label: string;
   tip: string;
   options?: readonly string[];
+}
+
+/** Relative-time parts for a "last synced" line. ASCII only (the bitmap fonts carry no accents
+ *  or ellipsis) and kept terse so the whole status fits one line. `{n}` is the count. */
+export interface AgoCopy {
+  now: string;
+  minutes: string;
+  hours: string;
+  days: string;
+}
+
+/** A confirmation dialog: its heading, its body, and the affirmative button. The negative
+ *  button is shared across a screen's dialogs rather than repeated in each. */
+export interface ConfirmCopy {
+  title: string;
+  body: string;
+  yes: string;
 }
 
 /** A menu/category entry: the button label and its bottom-of-screen hover subtitle. */
@@ -449,6 +470,7 @@ export interface Strings {
       players: EntryCopy;
       taunts: EntryCopy;
       importExport: EntryCopy;
+      sync: EntryCopy;
     };
     done: string;
     doneSubGame: string;
@@ -625,6 +647,47 @@ export interface Strings {
       confirmTitle: string;
       confirmBody: string;
       confirmYes: string;
+      confirmNo: string;
+    };
+    /** Cloud profile sync — the Sync screen (see ui/SyncEditor). */
+    sync: {
+      title: string;
+      /** Body copy while no profile is linked: what the feature is, then one line per action. */
+      intro: string;
+      createDesc: string;
+      linkDesc: string;
+      /** Body copy once linked. */
+      linkedIntro: string;
+      uploadDesc: string;
+      downloadDesc: string;
+      desyncDesc: string;
+      /** Label above the profile id — used for both the readout and the input box. */
+      idLabel: string;
+      idPlaceholder: string;
+      copy: string;
+      copied: string;
+      /** Action buttons. */
+      create: string;
+      link: string;
+      upload: string;
+      download: string;
+      desync: string;
+      done: string;
+      /** Footer hint with no profile linked. */
+      idle: string;
+      /** Footer while a request is in flight. */
+      working: string;
+      /** Footer states once linked — `{when}` is a relative time built from `ago`. */
+      stateSynced: string;
+      statePending: string;
+      stateConflict: string;
+      ago: AgoCopy;
+      /** One line per sync result. Keyed by the store's outcome ids, so adding an outcome
+       *  without its copy is a compile error rather than a blank status line. */
+      outcome: Record<SyncOutcome, string>;
+      /** The three actions that change what this device holds each confirm first. */
+      confirm: Record<'link' | 'download' | 'desync', ConfirmCopy>;
+      /** Shared negative button for all three dialogs above. */
       confirmNo: string;
     };
     enableList: {

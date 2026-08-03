@@ -2093,6 +2093,41 @@ canvas {
   filter: drop-shadow(0 0 2px rgba(220, 40, 40, 0.9));
 }
 
+/* ---- Profile Sync editor ----------------------------------------------------- */
+/* Shares the Import/Export description panel (.ie-list / .ie-intro); adds the id readout
+   and the id input. The readout is monospace CSS text, not a bitmap font: it is a code to be
+   copied character by character, so an unambiguous 0/O-distinct face matters more here than
+   matching the game's typeface (same call as the room code in the lobby). */
+.sync-code-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--green-line-strong);
+}
+.sync-code-value {
+  font:
+    700 22px/1 ui-monospace,
+    monospace;
+  letter-spacing: 0.18em;
+  color: var(--text-light);
+}
+.sync-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.sync-input {
+  padding: 6px 9px;
+  width: min(300px, 70vw);
+  text-align: center;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 18px;
+}
+
 /* Reset confirmation dialog (composed from <Modal> + <ModalButton>). */
 .confirm-card {
   width: min(460px, 90vw);
@@ -2142,7 +2177,8 @@ canvas {
    input with a green accent border + brighter focus (only sizing/padding differ). */
 .taunt-input,
 .player-name,
-.net-input {
+.net-input,
+.sync-input {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--green-line-strong);
   color: var(--text-light);
@@ -2150,7 +2186,8 @@ canvas {
 }
 .taunt-input:focus,
 .player-name:focus,
-.net-input:focus {
+.net-input:focus,
+.sync-input:focus {
   outline: none;
   border-color: var(--green-focus);
   background: rgba(0, 0, 0, 0.55);

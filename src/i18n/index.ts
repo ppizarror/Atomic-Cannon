@@ -22,6 +22,8 @@ export type {
   WeaponCopy,
   RowCopy,
   EntryCopy,
+  AgoCopy,
+  ConfirmCopy,
   HelpItem,
   TitleSection,
 } from './types';

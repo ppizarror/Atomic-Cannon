@@ -21,6 +21,7 @@ import {ControlsEditor} from './ControlsEditor';
 import {PlayersEditor} from './PlayersEditor';
 import {TauntEditor} from './TauntEditor';
 import {ImportExportEditor} from './ImportExportEditor';
+import {SyncEditor} from './SyncEditor';
 
 interface Entry {
   label: string;
@@ -51,6 +52,7 @@ function categories(): Entry[] {
     item(c.players, 'players'),
     item(c.taunts, 'taunts'),
     item(c.importExport, 'importExport'),
+    item(c.sync, 'sync'),
   ];
 }
 
@@ -74,6 +76,7 @@ export function Settings() {
   if (p === 'players') return <PlayersEditor />;
   if (p === 'taunts') return <TauntEditor />;
   if (p === 'importExport') return <ImportExportEditor />;
+  if (p === 'sync') return <SyncEditor />;
   if (p !== 'root') return <SettingsPage id={p} />;
   return <SettingsRoot />;
 }
