@@ -113,17 +113,20 @@ interface Explosion {
   vy?: number;
 }
 
-// A crater "vent": a fresh crater smokes off its disturbed dirt. After the flash fades it keeps
-// venting fumes for a while — SUCCESSIVE GENERATIONS of white puffs rising off the dirt over a
-// radius-scaled window (a big crater smokes longer), tapering out — not one instant cohort. Each
-// vent is independent, so multi-bomb weapons (Black Rain) leave the whole strip smoking; a later
-// blast in the area clears the fumes there (clearSmoke), so only settled smoke persists.
 /** One ignition point on a crater floor: where it lights (fraction of r in [-0.85, 0.85]) and how
  *  far into the emission window it catches. */
 interface VentSeed {
   pos: number;
   start: number;
 }
+
+/**
+ * A crater "vent": a fresh crater smokes off its disturbed dirt. After the flash fades it keeps
+ * venting fumes for a while — SUCCESSIVE GENERATIONS of white puffs rising off the dirt over a
+ * radius-scaled window (a big crater smokes longer), tapering out — not one instant cohort. Each
+ * vent is independent, so multi-bomb weapons (Black Rain) leave the whole strip smoking; a later
+ * blast in the area clears the fumes there (clearSmoke), so only settled smoke persists.
+ */
 interface CraterVent {
   x: number;
   y: number;

@@ -248,30 +248,16 @@ export class CTank {
     this.m_sName = sName; // names keep their given case (upper/lower allowed)
     this.m_nTeamId = nTeamId;
     this.m_sColor = TEAM_COLORS[nTeamId] ?? DEFAULT_TEAM_COLOR; // default until the roster sets it
-    this.m_bIsHuman = false;
     this.m_sTankType = PLAYER_TANKS[Math.floor(Math.random() * PLAYER_TANKS.length)];
 
-    // Position and physics
+    // Only the fields whose fresh value ISN'T their declared default. Health, the state flags and
+    // `m_bIsHuman` already start where a new tank wants them (see MEMBER VARIABLES); `init`/`respawn`
+    // are what set the real match values.
     this.m_vPos = new Vec2(0, 0);
     this.m_vVel = new Vec2(0, 0);
-    this.m_fAngle = 0; // Body rotation angle (radians)
-
-    // Turret state
-    this.m_fTurretAngle = Math.PI / 4; // Default aim: 45 deg up-right
+    this.m_fAngle = 0; // body rotation (radians)
+    this.m_fTurretAngle = Math.PI / 4; // default aim: 45 deg up-right
     this.m_fLastTurretAngle = this.m_fTurretAngle;
-
-    // Health status (life 0..1000, shield 0..1000, armor 0..100%)
-    this.m_health.nLife = 1000;
-    this.m_health.nShield = 0;
-    this.m_health.nArmor = 0;
-    this.m_health.nHazmat = 0;
-    this.m_health.fRadiation = 0;
-
-    // State flags
-    this.m_bIsAlive = true;
-    this.m_bIsMoving = false;
-    this.m_bFalling = false;
-    this.m_bExploded = false;
   }
 
   /** Full health at this match's Hitpoints, every defensive pool empty, no attacker on record —

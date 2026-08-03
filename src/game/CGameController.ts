@@ -837,8 +837,6 @@ export class CGameController implements ShotWorld {
     this.m_land.setLayers(layers, bareImage);
   }
 
-  /** Pick which landscape to load. Honours a `?land=N` override (for reviewing a
-   *  specific map / its weather), otherwise random. */
   /** Everything deployed ON the field that must not survive a battle boundary: mines, ranging pins,
    *  hit markers, crates, speech bubbles and the victory display. Cleared by both a fresh match
    *  (setupBattle) and the next battle of a war (nextBattle). */
@@ -851,6 +849,8 @@ export class CGameController implements ShotWorld {
     this.m_fireworksFx.clear();
   }
 
+  /** Pick which landscape to load. Honours a `?land=N` override (for reviewing a
+   *  specific map / its weather), otherwise random. */
   private pickLandscapeIndex(): number {
     if (typeof location !== 'undefined') {
       const p = new URLSearchParams(location.search).get('land');
@@ -2027,10 +2027,6 @@ export class CGameController implements ShotWorld {
   // VICTORY FIREWORKS (war end, human wins)
   // ========================================================================
 
-  /** True when the war is over AND the human's team leads the final standings — the
-   *  only case the legacy fires victory fireworks. Leader is mode-aware (Deathmatch: kills;
-   *  Rounds/Points: points), via getLeadingTeam — so a points win with no survivors still
-   *  counts. */
   /** The per-frame world slice the victory display reads (camera, ground, wind, the boom). */
   private fireworksEnv(): FireworksEnv {
     return {
@@ -2042,6 +2038,9 @@ export class CGameController implements ShotWorld {
     };
   }
 
+  /** True when the war is over AND the human's team leads the final standings — the only case the
+   *  legacy fires victory fireworks. Leader is mode-aware (Deathmatch: kills; Rounds/Points:
+   *  points), via getLeadingTeam — so a points win with no survivors still counts. */
   private isHumanWarVictory(): boolean {
     if (!this.getWarOver()) return false;
     if (!this.m_tanks.some(t => t.isHuman())) return false;
@@ -3272,7 +3271,6 @@ export class CGameController implements ShotWorld {
     else this.m_land.generateRandomTerrain(seed);
   }
 
-  /** Spawn X for tank `i` of `n`: spread across the world with a little jitter. */
   /** Randomize Position (Gameplay): which spawn SLOT each tank takes, as a permutation of 0..n-1.
    *  Off, tank i takes slot i — tanks are pushed squad by squad, so a player's squad lands as one
    *  contiguous block on the map. On, the slots are shuffled, so squads end up interleaved and no
@@ -3308,6 +3306,7 @@ export class CGameController implements ShotWorld {
     tank.saveLastShot(deg, power);
   }
 
+  /** Spawn X for tank `i` of `n`: spread across the world with a little jitter. */
   private tankSpawnX(i: number, n: number): number {
     const worldW = this.m_worldWidth;
     const margin = Math.min(120, 0.025 * this.m_worldWidth);
@@ -4072,7 +4071,6 @@ export class CGameController implements ShotWorld {
   // SENTRY TURRETS (auto-firing deployables)
   // ========================================================================
 
-  /** The nearest living enemy (different team) to a tank, or null if none remain. */
   /** The terrain as the aim solvers see it — the read-only slice both brains' contexts carry. */
   private aimField(): AimField {
     return {
@@ -4082,6 +4080,7 @@ export class CGameController implements ShotWorld {
     };
   }
 
+  /** The nearest living enemy (different team) to a tank, or null if none remain. */
   private nearestEnemy(from: CTank): CTank | null {
     const p = from.getPosition();
     let best: CTank | null = null;
@@ -4098,10 +4097,6 @@ export class CGameController implements ShotWorld {
     return best;
   }
 
-  /** A Sentry's turn: lock the turret onto the nearest enemy and fire in a direct line
-   *  at full power — the Turret variant shoots a Shell, the Minigun variant a Machine Gun
-   *  burst. No ballistic solve (it "can only fire in a direct line"), so it can miss over
-   *  terrain. With no enemy left it simply passes. */
   /** UI aim-angle (0..359, screen-up = 90) from `pivot` toward `target` — the barrel points
    *  along (cos θ, −sin θ) with screen-Y down, so it's atan2(−dy, dx) folded into range. */
   private aimDegToward(pivot: Vec2, target: Vec2): number {
@@ -4233,6 +4228,10 @@ export class CGameController implements ShotWorld {
     };
   }
 
+  /** A Sentry's turn: lock the turret onto the nearest enemy and fire in a direct line at full
+   *  power — the Turret variant shoots a Shell, the Minigun variant a Machine Gun burst. No
+   *  ballistic solve (it "can only fire in a direct line"), so it can miss over terrain. With no
+   *  enemy left it simply passes. */
   private executeSentryTurn(): void {
     const sentry = this.getCurrentTank();
     if (!sentry.isAlive() || this.m_gameState !== EGameState.Battle) return;
@@ -4391,7 +4390,6 @@ export class CGameController implements ShotWorld {
     this.schedule(0.15, () => this.waitForRest(tank, x, stuck));
   }
 
-  /** Pick a target + weapon, solve the firing arc, degrade by difficulty, and fire. */
   /** One brain per difficulty, rebuilt when the level changes. */
   private botBrain(): CClassicBotAI {
     if (!this.m_bot || this.m_bot.getLevel() !== this.m_difficulty) {
@@ -4567,11 +4565,7 @@ export class CGameController implements ShotWorld {
         gain: CGameController.RANGE_GAIN,
       });
       const origin = botTank.muzzleForAngle(rec.angle);
-      const field = {
-        heightAt: (x: number) => this.m_land.getHeightAt(x),
-        width: this.m_land.width,
-        height: this.m_land.height,
-      };
+      const field = this.aimField();
       const sim = simulateShot(
         origin,
         rec.angle,

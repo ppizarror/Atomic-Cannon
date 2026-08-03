@@ -12,6 +12,7 @@ import {signal} from '@preact/signals';
 import {screen} from './store';
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
+import {loadJSON, saveJSON} from '../util/storage';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -19,24 +20,10 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const KEY = 'atomic.installDismissed';
-
-function lsGet(): boolean {
-  try {
-    return localStorage.getItem(KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-function lsDismiss(): void {
-  try {
-    localStorage.setItem(KEY, '1');
-  } catch {
-    /* private mode — hide for this session only */
-  }
-}
+const lsDismiss = (): void => saveJSON(KEY, true);
 
 // Dismissed state as a signal so tapping ✕ (or a successful install) hides it at once.
-const dismissed = signal(lsGet());
+const dismissed = signal(!!loadJSON<boolean>(KEY, false));
 // The captured Android/Chromium install event (null until the browser offers it).
 const deferred = signal<BeforeInstallPromptEvent | null>(null);
 

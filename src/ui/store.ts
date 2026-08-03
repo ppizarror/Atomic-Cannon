@@ -4,7 +4,7 @@
  * Preact reads these signals; the game controller never touches the DOM. Screens
  * (menu / settings / depot) switch on `screen`.
  */
-import {signal, computed, effect} from '@preact/signals';
+import {signal, computed, effect, type Signal} from '@preact/signals';
 import {strings, fmt} from '../i18n';
 import {getVal} from './settingsStore';
 import {EGameState, type CGameController, type WarStandings, type ActiveTaunt} from '../game/CGameController';
@@ -212,22 +212,35 @@ export function preloadDepotUi(): Promise<unknown> {
 // Pause menu — an overlay over the frozen battle (Resume / Settings / Quit).
 export const showPause = signal(false);
 
-/** Open the pause menu and freeze the sim (ESC during battle). */
-export function openPauseMenu(): void {
+/** Raise a battle overlay that FREEZES the sim (pause / help — the depot deliberately doesn't, so
+ *  its Round Timer keeps running). One place, so a new overlay can't forget the freeze or the route
+ *  push. Paired with {@link closeFrozenOverlay}. */
+function openFrozenOverlay(flag: Signal<boolean>): void {
   if (screen.value !== 'battle') return;
-  showDepot.value = false; // never leave the depot open behind the pause menu
   freezeSim();
-  showPause.value = true;
+  flag.value = true;
   uiOpen();
   pushRoute();
 }
 
-/** Resume: close the pause menu and unfreeze the sim. */
-export function resumeGame(): void {
-  showPause.value = false;
+/** …and lower it again. */
+function closeFrozenOverlay(flag: Signal<boolean>): void {
+  flag.value = false;
   unfreezeSim();
   uiClose();
   popRoute();
+}
+
+/** Open the pause menu and freeze the sim (ESC during battle). */
+export function openPauseMenu(): void {
+  if (screen.value !== 'battle') return;
+  showDepot.value = false; // never leave the depot open behind the pause menu
+  openFrozenOverlay(showPause);
+}
+
+/** Resume: close the pause menu and unfreeze the sim. */
+export function resumeGame(): void {
+  closeFrozenOverlay(showPause);
 }
 
 // ==========================================================================
@@ -240,19 +253,12 @@ export const showHelp = signal(false);
 
 /** Open the Help overlay and freeze the sim. */
 export function openHelp(): void {
-  if (screen.value !== 'battle') return;
-  freezeSim();
-  showHelp.value = true;
-  uiOpen();
-  pushRoute();
+  openFrozenOverlay(showHelp);
 }
 
 /** Close Help and unfreeze the sim. */
 export function closeHelp(): void {
-  showHelp.value = false;
-  unfreezeSim();
-  uiClose();
-  popRoute();
+  closeFrozenOverlay(showHelp);
 }
 
 // ==========================================================================
@@ -595,11 +601,17 @@ export function startBattle(): void {
   enterBattle(playersOf(s), s.humans, s.tanksPerTeam);
 }
 
-/** Play → open the game-setup screen (the "Play" config page). */
-export function openPlaySetup(): void {
-  screen.value = 'setup';
+/** Enter a top-level screen from the main menu: switch, play the forward whirr, push a history
+ *  entry. {@link backToMenu} is the counterpart every one of them returns through. */
+function openScreen(s: Screen): void {
+  screen.value = s;
   uiMenuForward();
   pushRoute();
+}
+
+/** Play → open the game-setup screen (the "Play" config page). */
+export function openPlaySetup(): void {
+  openScreen('setup');
 }
 
 /** Quick Play → start immediately with the last-used setup. If that setup can't start a match
@@ -615,9 +627,7 @@ export function quickPlay(): void {
 
 /** Main menu → Network Game (create / join a room). */
 export function openNetworkGame(): void {
-  screen.value = 'network';
-  uiMenuForward();
-  pushRoute();
+  openScreen('network');
 }
 
 /** A plain 2-player battle (dev URL affordances + boot) — does not touch the setup. */
@@ -628,23 +638,17 @@ export function playNewGame(): void {
 
 /** Main menu → About, and back. */
 export function openAbout(): void {
-  screen.value = 'about';
-  uiMenuForward();
-  pushRoute();
+  openScreen('about');
 }
 
 /** Main menu → Manual (the how-to-play document), and back. */
 export function openManual(): void {
-  screen.value = 'manual';
-  uiMenuForward();
-  pushRoute();
+  openScreen('manual');
 }
 
 /** Main menu → High Scores (the Battle Heroes hall of fame). */
 export function openHighScores(): void {
-  screen.value = 'highscores';
-  uiMenuForward();
-  pushRoute();
+  openScreen('highscores');
 }
 export function backToMenu(): void {
   screen.value = 'menu';
@@ -662,26 +666,26 @@ export function quitToMenu(): void {
 // DEPOT ACTIONS
 // ==========================================================================
 
-/** Depot actions — mutate the controller's economy, then re-sync + play the buy/sell
- *  confirmation (Panel1.wav, as the original did — only on a successful transaction). */
+/** Re-sync the economy signals and play the buy/sell confirmation (Panel1.wav, as the original did).
+ *  Only ever called after a transaction that actually went through. */
+function depotSettled(): void {
+  refreshEconomy();
+  uiDepotTransaction();
+}
+
+/** Depot actions — mutate the controller's economy, then settle. Buy/sell report whether the
+ *  transaction happened (afford / in-stock), so a refused click stays silent. */
 export function depotBuy(i: number): void {
-  if (controller?.buyWeapon(i)) {
-    refreshEconomy();
-    uiDepotTransaction();
-  }
+  if (controller?.buyWeapon(i)) depotSettled();
 }
 
 export function depotSell(i: number): void {
-  if (controller?.sellWeapon(i)) {
-    refreshEconomy();
-    uiDepotTransaction();
-  }
+  if (controller?.sellWeapon(i)) depotSettled();
 }
 
 export function depotAutoBuy(): void {
   controller?.autoBuyWeapons();
-  refreshEconomy();
-  uiDepotTransaction();
+  depotSettled();
 }
 
 // ==========================================================================
@@ -835,10 +839,6 @@ export const windReadout = (): string => {
   return mag < 0.05 ? strings.value.hud.windOff : `${wind.value >= 0 ? '>' : '<'}${mag.toFixed(1)}`;
 };
 
-// Shot-time bar below FIRE: fraction of turn time remaining (1 = full) + its
-// green→yellow→red colour, or null when there's no active countdown. Republished
-// only when the quantised width or colour changes, so the bar animates without
-// churning every frame.
 /** The three style props both turn-timer bars (desktop `Hud`, `MobileHud`) drive off the same
  *  signal — width from the remaining fraction, colour from the state, and NO transition while a
  *  shot charges (the fill must track the charge frame-by-frame, not ease behind it). */
@@ -848,6 +848,10 @@ export const timerFillStyle = (t: {frac: number; color: string; charge?: boolean
   transition: t.charge ? 'none' : undefined,
 });
 
+// Shot-time bar below FIRE: fraction of turn time remaining (1 = full) + its
+// green→yellow→red colour, or null when there's no active countdown. Republished
+// only when the quantised width or colour changes, so the bar animates without
+// churning every frame.
 export const turnTimer = signal<{
   frac: number;
   color: string;
@@ -954,7 +958,8 @@ export function uiTyping(): void {
   controller?.getAudio()?.typingSound();
 }
 
-/** Front-end menu polish sounds (Pacdot2 / Mechanismus1 / Mechanismus2). */
+// Front-end menu polish sounds (Pacdot2 / Mechanismus1 / Mechanismus2).
+
 /** Blip as the highlighted menu item changes (menu-list hover). */
 export function uiMenuHover(): void {
   controller?.getAudio()?.menuHover();

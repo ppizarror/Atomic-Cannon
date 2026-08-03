@@ -96,8 +96,6 @@ export interface IFxSink {
   clearAllHeat(): void;
 }
 
-// A falling overburden block (beam/digger slice collapse): a captured column of pixels
-// (the cap + earth above a cut) sliding DOWN under gravity to land on the substrate below.
 /** A compression wave travelling out from a detonation, compacting the soil as it passes. */
 interface Shock {
   cx: number; // ground zero
@@ -106,6 +104,8 @@ interface Shock {
   front: number; // how far the wave has travelled so far
 }
 
+/** A falling overburden block (beam/digger slice collapse): a captured column of pixels — the cap
+ *  and earth above a cut — sliding DOWN under gravity to land on the substrate below. */
 interface Fall {
   col: number;
   y: number;
