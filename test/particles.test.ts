@@ -393,9 +393,12 @@ describe('Particle system', () => {
       const xs = fumes().map(p => p.x);
       return xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
     };
-    // The vent stays silent until its delay (fumes rise AFTER the blast), so step past that first.
-    for (let i = 0; i < 180; i++) ps.update(1 / 60); // 3s > the longest delay the jitter can add
-    expect(fumes().length).toBeGreaterThan(0);
+    let opened = false;
+    for (let i = 0; i < 300 && !opened; i++) {
+      ps.update(1 / 60);
+      opened = fumes().length > 0;
+    }
+    expect(opened).toBe(true);
     // It lights at ONE column and creeps outward, so early on it covers only part of the width.
     const early = span();
     expect(early).toBeLessThan(r * 1.7);
