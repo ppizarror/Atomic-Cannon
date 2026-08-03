@@ -20,6 +20,7 @@ import {capSet} from '../util/cache';
 import {PixelBlitter} from '../util/PixelBlitter';
 import {tryCanvas2d} from '../util/canvas';
 import {TintedSpriteCache} from './rendering/TintedSpriteCache';
+import {CanvasQuadSink} from './rendering/CanvasQuadSink';
 import particlesRaw from '../data/particles.json';
 import {smokeEnabled} from './CGameConfig';
 import {boundaryFactor, windProfile} from './wind';
@@ -180,7 +181,7 @@ export interface ISmokeSink {
   smokeQuad(
     /** One of FX_LAYER — decides both draw order and blend mode. */
     layer: number,
-    src: CanvasImageSource,
+    src: CanvasImageSource | null,
     sx: number,
     sy: number,
     sw: number,
@@ -447,7 +448,13 @@ const HEAT_TINT_CACHE_MAX = 64;
  * shoved hard by wind; heavy sparks fall and ignore it. Annotated rather than `as const` so a new
  * `RenderKind` fails to compile until both tables cover it.
  */
-const KIND: {GRAV: Record<RenderKind, number>; WIND: Record<RenderKind, number>} = {
+const KIND: {
+  GRAV: Record<RenderKind, number>;
+  WIND: Record<RenderKind, number>;
+  /** Which FX_LAYER this kind composites on — decides draw order and blend for BOTH renderers, so
+   *  a kind cannot be given one blend on the GPU and another on the canvas. */
+  LAYER: Record<RenderKind, number>;
+} = {
   GRAV: {
     disc: 1,
     flare: 0.25,
@@ -467,6 +474,16 @@ const KIND: {GRAV: Record<RenderKind, number>; WIND: Record<RenderKind, number>}
     exhaust: 1.1, // ditto — wind acts on the cluster; the intra-cluster drift is baked
     heat: 0, // ground haze carries its own sideways drift; wind must not smear it off the fallout
     fume: 1.1, // crater smoke rides the wind like the rest of the smoke family
+  },
+  LAYER: {
+    disc: 0, // FX_LAYER.SPARK — crisp dots beneath the smoke
+    smoke: 1, // FX_LAYER.SMOKE
+    exhaust: 1,
+    fume: 1,
+    flare: 2, // FX_LAYER.GLOW — additive, above everything
+    flash: 2,
+    plume: 2,
+    heat: 2, // additive too, though drawn in its own ground-level slot (see drawHeat)
   },
 };
 
@@ -1407,32 +1424,6 @@ export class CParticleSystem {
     this.add(fx, fy, between(-5, 5), -between(5, 26), {r: v, g: v, b: v}, life, size, 'fume', undefined, FUME.GROW, FUME.OP, FUME.GRAV); // prettier-ignore
   }
 
-  // Soot-shaded copies of the white fume sprite, bucketed 5 bits deep — only the 2D fallback needs
-  // these; the GPU path tints per particle. Bounded, so a full range of shades costs 32 canvases.
-  private readonly m_fumeShades = new Map<number, HTMLCanvasElement>();
-
-  /** The fume sprite multiplied down to brightness `v` (0..255), cached per bucket. */
-  private fumeShade(v: number): HTMLCanvasElement | null {
-    const base = this.whiteSmoke();
-    if (!base) return null;
-    const key = v >> 3;
-    const hit = this.m_fumeShades.get(key);
-    if (hit) return hit;
-    const made = tryCanvas2d(base.width, base.height);
-    if (!made) return null;
-    const {cv: c, ctx: g} = made;
-    g.drawImage(base, 0, 0);
-    g.globalCompositeOperation = 'multiply'; // darken, keeping the puff's texture
-    const k = (key << 3) | 4;
-    g.fillStyle = `rgb(${k},${k},${k})`;
-    g.fillRect(0, 0, c.width, c.height);
-    g.globalCompositeOperation = 'destination-in'; // re-mask to the sprite's alpha
-    g.drawImage(base, 0, 0);
-    g.globalCompositeOperation = 'source-over';
-    this.m_fumeShades.set(key, c);
-    return c;
-  }
-
   /** Tank/vehicle destruction — the fixed white-flare + spark + fire profile. */
   tankDeath(x: number, y: number): void {
     const white: RGB = {r: 255, g: 255, b: 255};
@@ -1623,6 +1614,15 @@ export class CParticleSystem {
     g.fill();
     this.m_dotSprite = cv;
     return cv;
+  }
+
+  // The fallback renderer, built on first use: headless tests and any host without a compositor.
+  private m_canvasSink: CanvasQuadSink | null = null;
+
+  private canvasSink(ctx: CanvasRenderingContext2D): CanvasQuadSink {
+    const sink = (this.m_canvasSink ??= new CanvasQuadSink());
+    sink.target(ctx);
+    return sink;
   }
 
   /** Live cosmetic chunks (diagnostics / tests). */
@@ -1928,32 +1928,21 @@ export class CParticleSystem {
   // ========================================================================
 
   draw(ctx: CanvasRenderingContext2D): void {
-    const ps = this.m_particles;
-    const flareSpr = this.m_assets?.getSprite('fx:flare') ?? null; // flares/04.bmp
-
     // Cull range (world X): skip particles whose centre is outside the view. Disabled (viewW≤0) in
     // headless tests → everything draws.
     const cull = this.m_viewW > 0;
     const cullMin = cull ? this.m_viewCamX - CULL_MARGIN : -Infinity;
     const cullMax = cull ? this.m_viewCamX + this.m_viewW + CULL_MARGIN : Infinity;
 
-    // Pass 1a: crisp sparks/debris (normal blend, full-res). Skipped when a batched sink is wired —
-    // the sparks go out as quads on FX_LAYER.SPARK instead (see emitSmokeQuads).
-    for (const p of this.m_smokeSink ? [] : ps) {
-      if (p.kind !== 'disc') continue;
-      if (p.x < cullMin || p.x > cullMax) continue;
-      const t = p.age / p.life;
-      if (t >= 1) continue;
-      const a = 1 - t;
-      ctx.fillStyle = `rgba(${p.r | 0},${p.g | 0},${p.b | 0},${a})`;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.6, p.size * (0.5 + a * 0.5)), 0, TWO_PI);
-      ctx.fill();
-    }
-
-    // Pass 1b: smoke — rendered to a HALF-RES offscreen then upscaled (smoke is soft, so the ½-res
-    // is invisible but the alpha fill drops ~4×). Direct full-res when no viewport is set (tests).
-    this.drawSmokeLayer(ctx, cullMin, cullMax);
+    // ONE description, whichever renderer. The GPU compositor batches these; without one, the
+    // canvas sink draws them — either way the appearance lives in emitFxQuads alone. Emitted in
+    // layer order so a canvas sink's blend mode flips per layer, not per quad.
+    const sink = this.m_smokeSink ?? this.canvasSink(ctx);
+    sink.smokeBegin();
+    this.emitFxQuads(sink, FX_LAYER.SPARK, cullMin, cullMax);
+    this.emitFxQuads(sink, FX_LAYER.SMOKE, cullMin, cullMax);
+    this.emitFxQuads(sink, FX_LAYER.GLOW, cullMin, cullMax);
+    sink.smokeEnd();
 
     // Pass 2: additive — explosion fireball, trail plumes, glows, flashes.
     const prev = ctx.globalCompositeOperation;
@@ -1978,47 +1967,6 @@ export class CParticleSystem {
       } else {
         this.blitGlow(ctx, e.x, e.y, d / 2, 255, 220, 150, a);
       }
-    }
-
-    // Plume embers: an additive sprite blitted along the trail — the weapon's
-    // own sprite (rocket plume / in-flight flare) or the default flares/04 star.
-    for (const p of ps) {
-      if (p.kind !== 'plume') continue;
-      if (p.x < cullMin || p.x > cullMax) continue;
-      const t = p.age / p.life;
-      if (t >= 1) continue;
-      const a = (1 - t) * 0.9;
-      const d = p.size * (2.6 - t * 1.2) * 3;
-      const pspr = p.spr ? (this.m_assets?.getSprite(p.spr) ?? flareSpr) : flareSpr;
-      if (pspr) {
-        ctx.globalAlpha = a;
-        ctx.drawImage(pspr.bitmap, p.x - d / 2, p.y - d / 2, d, d);
-        ctx.globalAlpha = 1;
-      } else {
-        this.blitGlow(ctx, p.x, p.y, d / 2, p.r, p.g, p.b, a);
-      }
-    }
-
-    // Glows likewise move to FX_LAYER.GLOW (additive) when a sink is wired.
-    for (const p of this.m_smokeSink ? [] : ps) {
-      if (p.kind !== 'flare' && p.kind !== 'flash') continue;
-      if (p.x < cullMin || p.x > cullMax) continue;
-      const t = p.age / p.life;
-      if (t >= 1) continue;
-
-      const glow =
-        p.kind === 'flash'
-          ? p.size * (1 + t * 1.2) // flash expands as it fades
-          : p.size * (1.7 - t * 0.9); // flare shrinks
-      const alpha =
-        p.kind === 'flash'
-          ? (1 - t) * (1 - t) * 0.9 // quick, punchy falloff
-          : (1 - t) * 0.5; // softer, so overlapping flares keep their hue
-      if (glow <= 0 || alpha <= 0) continue;
-
-      // Blit the pre-baked glow (its baked 0.4 midpoint is the 3-stop gradient's);
-      // fall back to a live gradient only where no canvas exists (tests).
-      this.blitGlow(ctx, p.x, p.y, glow, p.r, p.g, p.b, alpha);
     }
 
     this.drawBeams(ctx);
@@ -2107,182 +2055,22 @@ export class CParticleSystem {
   }
 
   /**
-   * Draw the baked exhaust clusters — ONE rotated blit per cluster, replacing the EXHAUST.PUFFS
-   * individual blits it stands for.
-   *
-   * The atlas cell is authored in local space (+X along the emission perpendicular), so each blit
-   * needs its own rotation. Rather than save()/rotate()/restore() per particle, the caller's
-   * transform (identity on the main ctx, a half-res scale+translate on the smoke buffer) is read
-   * ONCE and composed by hand with each cluster's rotate+translate — measured at ~28% over an
-   * unrotated blit, versus the per-call state churn save/restore would add.
+   * Describe every live particle as a textured quad in WORLD space. Mirrors the two 2D draw
+   * This is the ONLY description of how a particle looks. Both renderers consume it, so a tuning
+   * change cannot land on one and miss the other — which is exactly what a second, parallel draw
+   * path invites. Called once per FX_LAYER, in layer order: the pool scan repeats, but each
+   * particle's appearance maths runs once, and a canvas sink gets its quads already grouped so the
+   * blend mode flips a few times a frame instead of per quad.
    */
-  private drawExhaust(g: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
-    // Through the cached getter, not the field: setAssets() invalidates the atlas, and any cluster
-    // still in flight at that moment would otherwise draw as nothing until something rebuilt it.
+  private emitFxQuads(sink: ISmokeSink, layer: number, cullMin: number, cullMax: number): void {
     const atlas = this.exhaustAtlas();
-    if (!atlas) return;
-    // A context stub without getTransform (headless mocks) can't be composed with — fall back to
-    // save/restore, which every 2-D context supports.
-    const base = typeof g.getTransform === 'function' ? g.getTransform() : null;
-    const ba = base ? base.a : 1,
-      bb = base ? base.b : 0,
-      bc = base ? base.c : 0,
-      bd = base ? base.d : 1,
-      be = base ? base.e : 0,
-      bf = base ? base.f : 0;
-    let drew = false;
-    for (const p of this.m_particles) {
-      if (p.kind !== 'exhaust') continue;
-      if (p.x < cullMin || p.x > cullMax) continue;
-      const t = p.age / p.life;
-      if (t >= 1) continue;
-      const frame = Math.min(EXHAUST_ATLAS.FRAMES - 1, (t * EXHAUST_ATLAS.FRAMES) | 0);
-      const dw = EXHAUST_ATLAS.CELL_W * p.exScale, // destination size — see EXHAUST_ATLAS.REF_LIFE
-        dh = EXHAUST_ATLAS.CELL_H * p.exScale;
-      const hw = dw / 2,
-        hh = dh / 2;
-      const sx = frame * EXHAUST_ATLAS.CELL_W,
-        sy = p.exVariant * EXHAUST_ATLAS.CELL_H;
-      const c = p.exCos,
-        s = p.exSin;
-      if (base) {
-        // base × translate(p.x, p.y) × rotate(c, s), expanded (the rotation has no shear).
-        g.setTransform(
-          ba * c + bc * s,
-          bb * c + bd * s,
-          ba * -s + bc * c,
-          bb * -s + bd * c,
-          ba * p.x + bc * p.y + be,
-          bb * p.x + bd * p.y + bf,
-        );
-        g.drawImage(atlas, sx, sy, EXHAUST_ATLAS.CELL_W, EXHAUST_ATLAS.CELL_H, -hw, -hh, dw, dh);
-      } else {
-        g.save();
-        g.translate(p.x, p.y);
-        g.rotate(Math.atan2(s, c));
-        g.drawImage(atlas, sx, sy, EXHAUST_ATLAS.CELL_W, EXHAUST_ATLAS.CELL_H, -hw, -hh, dw, dh);
-        g.restore();
-      }
-      drew = true;
-    }
-    // Put the caller's transform back so the crater-fume pass below draws in world space.
-    if (drew && base) g.setTransform(ba, bb, bc, bd, be, bf);
-  }
-
-  /** Draw the smoke puffs to `g` (the main ctx or the half-res buffer): 'smoke' = the plume-table
-   *  puff (tank-death column / pre-atlas exhaust), 'fume' = crater smoke on the soft white sprite,
-   *  shaded from soot-black to grey by its generation. */
-  private drawSmoke(g: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
-    this.drawExhaust(g, cullMin, cullMax);
-    const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null;
-    for (const p of this.m_particles) {
-      if (p.kind !== 'smoke' && p.kind !== 'fume') continue;
-      if (p.x < cullMin || p.x > cullMax) continue;
-      const t = p.age / p.life;
-      if (t >= 1) continue;
-      const alpha = Math.sin(Math.min(1, t) * Math.PI) * p.op; // per-particle peak opacity
-      if (alpha <= 0.01) continue;
-      const d = p.size * (0.9 + t * p.grow) * 2; // small at birth → grows over life
-      if (p.kind === 'smoke') {
-        // Grey = ROCKET EXHAUST: colour from the gui/rocket plume.bmp TABLE (X=age, Y=row via `g`).
-        const img = this.plumeImg();
-        let cr = 210,
-          cg = 216,
-          cb = 226;
-        if (img) {
-          const cx = Math.min(img.width - 1, (Math.min(1, t) * img.width) | 0);
-          const cy = Math.min(img.height - 1, ((p.g / 255) * img.height) | 0);
-          const i = (cy * img.width + cx) * 4;
-          cr = img.data[i];
-          cg = img.data[i + 1];
-          cb = img.data[i + 2];
-        }
-        // Billow to ~3.4× by t=0.72 then shrink+dissolve.
-        const gs = t < 0.72 ? 0.5 + 2.9 * (t / 0.72) : 3.4 * (1 - (t - 0.72) / 0.28);
-        const de = p.size * gs * 2;
-        const ea = Math.min(1, t / 0.1) * (t > 0.72 ? (1 - t) / 0.28 : 1) * p.op;
-        const puff = this.m_puffCache.tint(cr, cg, cb);
-        if (puff) {
-          g.globalAlpha = ea;
-          g.drawImage(puff, p.x - de / 2, p.y - de / 2, de, de);
-          g.globalAlpha = 1;
-        } else {
-          this.blitGlow(g, p.x, p.y, de / 2, cr, cg, cb, ea);
-        }
-      } else if (smokeSpr) {
-        // CRATER FUMES: the soft white sprite, swelling and fading on ABSOLUTE age so the
-        // motion reads the same whether the puff lives 1.5s (small crater) or 9s (a nuke) — see
-        // FUME.SWELL_TAU. The normalised `t` is used only for the tail fade, which SHOULD stretch
-        // with life: that is what keeps a big crater's plume hanging in the sky.
-        const swell = 0.9 + p.grow * (1 - Math.exp(-p.age / FUME.SWELL_TAU));
-        const tail = Math.min(1, (1 - t) / (1 - FUME.HOLD)); // 1 → 0 across the tail
-        // CONTRACT while fading, the way the exhaust puffs do. A puff that keeps its full size and
-        // merely fades stays a big disc all the way out, so the very last thing left on screen is
-        // its own outline — that is what makes a dying crater cloud break up into visibly separate
-        // circles. Pulling the size in as the alpha goes means each puff dissolves instead.
-        const fd = p.size * swell * (1 - FUME.SHRINK * (1 - tail)) * 2;
-        const fa =
-          Math.min(1, p.age / FUME.FADE_IN) * // bloom in fast off the dirt
-          tail * // hold, then fade out over the tail
-          p.op;
-        if (fa > 0.01) {
-          // The soot shade is a MULTIPLY over the white sprite, cached in coarse buckets — the GPU
-          // path does the same thing with a per-particle tint and no cache at all.
-          const spr = this.fumeShade(p.r) ?? this.whiteSmoke() ?? smokeSpr.bitmap;
-          g.globalAlpha = fa;
-          g.drawImage(spr, p.x - fd / 2, p.y - fd / 2, fd, fd);
-          g.globalAlpha = 1;
-        }
-      } else {
-        this.blitGlow(g, p.x, p.y, d / 2, p.r, p.g, p.b, alpha);
-      }
-    }
-  }
-
-  /** Render all particles. Additive kinds are batched to set the blend once. */
-  private drawSmokeLayer(ctx: CanvasRenderingContext2D, cullMin: number, cullMax: number): void {
-    // GPU path: hand the puffs to the compositor as quads so one batched draw call stands in for
-    // the thousands of drawImage calls this layer would otherwise cost. The 2D path below covers
-    // headless tests and any host without a smoke sink.
-    if (this.m_smokeSink) {
-      this.emitSmokeQuads(this.m_smokeSink, cullMin, cullMax);
-      return;
-    }
-    if (this.m_viewW > 0 && this.m_viewH > 0 && typeof document !== 'undefined') {
-      const bw = Math.max(1, Math.ceil(this.m_viewW / 2));
-      const bh = Math.max(1, Math.ceil(this.m_viewH / 2));
-      if (!this.m_smokeBuf) this.m_smokeBuf = document.createElement('canvas');
-      if (this.m_smokeBuf.width !== bw || this.m_smokeBuf.height !== bh) {
-        this.m_smokeBuf.width = bw;
-        this.m_smokeBuf.height = bh;
-      }
-      const bctx = this.m_smokeBuf.getContext('2d');
-      if (bctx) {
-        bctx.setTransform(1, 0, 0, 1, 0, 0);
-        bctx.clearRect(0, 0, bw, bh);
-        bctx.setTransform(0.5, 0, 0, 0.5, -this.m_viewCamX * 0.5, 0); // world → half-res VIEW space
-        this.drawSmoke(bctx, cullMin, cullMax);
-        bctx.setTransform(1, 0, 0, 1, 0, 0);
-        // Blit at world x = camX (→ the view's left edge in the camera-translated ctx), upscaled 2×.
-        ctx.drawImage(this.m_smokeBuf, this.m_viewCamX, 0, this.m_viewW, this.m_viewH);
-        return;
-      }
-    }
-    this.drawSmoke(ctx, cullMin, cullMax);
-  }
-
-  /**
-   * Describe every live smoke puff as a textured quad in WORLD space. Mirrors the two 2D draw
-   * paths term for term — the baked exhaust atlas frame, and the fume/plume sprite with its swell
-   * and fade — but emits instead of blitting, so the caller can batch them.
-   */
-  private emitSmokeQuads(sink: ISmokeSink, cullMin: number, cullMax: number): void {
-    const atlas = this.exhaustAtlas();
+    const flareSpr = this.m_assets?.getSprite('fx:flare') ?? null;
     const dot = this.dotSprite();
     const glow = this.m_glowCache.master();
     const smokeSpr = this.m_assets?.getSprite('fx:smoke') ?? null;
     const white = this.whiteSmoke();
     for (const p of this.m_particles) {
+      if (KIND.LAYER[p.kind] !== layer) continue; // this pass owns one layer only
       if (p.x < cullMin || p.x > cullMax) continue;
       const t = p.age / p.life;
       if (t >= 1) continue;
@@ -2290,16 +2078,14 @@ export class CParticleSystem {
       // SPARKS — crisp dots, normal blend, under the smoke. One tinted quad each replaces a
       // template-string fillStyle plus a path op per particle.
       if (p.kind === 'disc') {
-        if (!dot) continue;
         const a = 1 - t;
         const d = Math.max(0.6, p.size * (0.5 + a * 0.5)) * 2;
-        sink.smokeQuad(FX_LAYER.SPARK, dot, 0, 0, dot.width, dot.height, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
+        sink.smokeQuad(FX_LAYER.SPARK, dot, 0, 0, dot?.width ?? 1, dot?.height ?? 1, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
         continue;
       }
       // GLOWS — the fireball's flares and the nuke flash, ADDITIVE and above everything. The white
       // master carries every colour as a tint, so the whole layer stays one batch.
       if (p.kind === 'flare' || p.kind === 'flash') {
-        if (!glow) continue;
         const radius =
           p.kind === 'flash'
             ? p.size * (1 + t * 1.2) // flash expands as it fades
@@ -2307,7 +2093,22 @@ export class CParticleSystem {
         const a = p.kind === 'flash' ? (1 - t) * (1 - t) * 0.9 : (1 - t) * 0.5;
         if (radius <= 0 || a <= 0.004) continue;
         const d = radius * 2;
-        sink.smokeQuad(FX_LAYER.GLOW, glow, 0, 0, glow.width, glow.height, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
+        sink.smokeQuad(FX_LAYER.GLOW, glow, 0, 0, glow?.width ?? 1, glow?.height ?? 1, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
+        continue;
+      }
+      // PLUME — the sprite riding a projectile, or the muzzle star. Additive, its own sprite where
+      // the weapon names one, else the shared glow tinted to the particle's colour.
+      if (p.kind === 'plume') {
+        const spr = (p.spr ? this.m_assets?.getSprite(p.spr) : null) ?? flareSpr;
+        const a = (1 - t) * 0.9;
+        const d = p.size * (2.6 - t * 1.2) * 3;
+        if (d <= 0 || a <= 0.004) continue;
+        if (spr) {
+          sink.smokeQuad(FX_LAYER.GLOW, spr.bitmap, 0, 0, spr.width, spr.height, p.x, p.y, d, d, 0, a); // prettier-ignore
+        } else {
+          // No sprite at all — the sink falls back to a plain tinted dot rather than dropping it.
+          sink.smokeQuad(FX_LAYER.GLOW, glow, 0, 0, glow?.width ?? 1, glow?.height ?? 1, p.x, p.y, d, d, 0, a, ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff)); // prettier-ignore
+        }
         continue;
       }
       if (p.kind === 'exhaust') {
@@ -2352,25 +2153,23 @@ export class CParticleSystem {
         // distinct canvases, and every distinct canvas is a distinct texture source — i.e. its own
         // batch. One master keeps the whole plume layer in a single draw call.
         const puff = this.m_puffCache.master();
-        if (!puff || de <= 0 || ea <= 0.01) continue;
+        if (de <= 0 || ea <= 0.01) continue;
         const tint = ((cr & 0xff) << 16) | ((cg & 0xff) << 8) | (cb & 0xff);
-        sink.smokeQuad(FX_LAYER.SMOKE, puff, 0, 0, puff.width, puff.height, p.x, p.y, de, de, 0, ea, tint); // prettier-ignore
+        sink.smokeQuad(FX_LAYER.SMOKE, puff, 0, 0, puff?.width ?? 1, puff?.height ?? 1, p.x, p.y, de, de, 0, ea, tint); // prettier-ignore
         continue;
       }
 
       // CRATER FUMES. Same swell/fade curves as the 2D path (see drawSmoke). The soot shade rides
       // as a per-particle TINT on the one white sprite, rather than a tinted canvas per shade —
       // each distinct canvas would be its own texture source, i.e. its own batch.
-      const spr = white ?? (smokeSpr?.bitmap as CanvasImageSource | undefined);
-      if (!spr) continue;
+      const spr = white ?? (smokeSpr?.bitmap as CanvasImageSource | undefined) ?? null;
       const swell = 0.9 + p.grow * (1 - Math.exp(-p.age / FUME.SWELL_TAU));
       const tail = Math.min(1, (1 - t) / (1 - FUME.HOLD));
       const fd = p.size * swell * (1 - FUME.SHRINK * (1 - tail)) * 2;
       const fa = Math.min(1, p.age / FUME.FADE_IN) * tail * p.op;
       if (fa <= 0.01 || fd <= 0) continue;
-      const sw = white ? white.width : (smokeSpr?.width ?? 0);
-      const sh = white ? white.height : (smokeSpr?.height ?? 0);
-      if (!sw || !sh) continue;
+      const sw = white ? white.width : (smokeSpr?.width ?? 1);
+      const sh = white ? white.height : (smokeSpr?.height ?? 1);
       const shade = ((p.r & 0xff) << 16) | ((p.g & 0xff) << 8) | (p.b & 0xff);
       sink.smokeQuad(FX_LAYER.SMOKE, spr, 0, 0, sw, sh, p.x, p.y, fd, fd, 0, fa, shade); // prettier-ignore
     }
@@ -2482,7 +2281,6 @@ export class CParticleSystem {
   private m_viewCamX = 0;
   private m_viewW = 0;
   private m_viewH = 0;
-  private m_smokeBuf: HTMLCanvasElement | null = null; // half-res offscreen for the smoke layer
   private m_smokeSink: ISmokeSink | null = null; // set → smoke goes to the GPU instead of the canvas
 
   // gui/rocket plume.bmp hot→cool STRIP by particle age. This is the trail's real look —
