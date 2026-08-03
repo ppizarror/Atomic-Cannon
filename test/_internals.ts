@@ -155,6 +155,8 @@ export interface LandPriv {
   m_rngState: number;
   // Cached radiation-glow TILES + the layer's origin (rebuilt only when the hot earth changes).
   m_radGlowCanvas: (HTMLCanvasElement | undefined)[];
+  /** The soft halo baked alongside each glow tile — same index, size and origin. */
+  m_radGlowBloom: (HTMLCanvasElement | undefined)[];
   m_radGlowX: number;
   m_radGlowY: number;
   /** Per-slot RGB palette — which colour each detonation's contaminated earth glows. */
@@ -301,6 +303,7 @@ export const LAND_KEYS: Record<keyof LandPriv, true> = {
   m_radParticles: true,
   m_rngState: true,
   m_radGlowCanvas: true,
+  m_radGlowBloom: true,
   m_radGlowX: true,
   m_radGlowY: true,
   m_radSlotRGB: true,

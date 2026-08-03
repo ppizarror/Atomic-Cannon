@@ -3470,9 +3470,9 @@ export class CGameController implements ShotWorld {
 
     // The winner is the LEADING team — Deathmatch: most kills; Rounds/Points: most points
     // (Σ net damage), which may be an entirely dead team. Its representative names the
-    // winner banner, plants the flag, and gloats a post-fire line through the taunt-bubble
-    // system (the bubble persists on the standings screen — bubbles only age in Battle).
-    // A Rounds tie across all teams → no winner (a Draw), so no banner name.
+    // winner banner, plants the flag, and — if it SURVIVED — gloats a post-fire line through
+    // the taunt-bubble system (the bubble persists on the standings screen — bubbles only age
+    // in Battle). A Rounds tie across all teams → no winner (a Draw), so no banner name.
     const leader = this.getLeadingTeam();
     this.m_winnerName = leader ? leader.members[0].getName() : '';
 
@@ -3483,7 +3483,7 @@ export class CGameController implements ShotWorld {
     this.explodeLosingTeams(leader);
     const speaker = leader?.rep ?? null;
     const victorLine = pickTaunt('postFire');
-    if (speaker && victorLine && GameConfig.chatter && !speaker.isSentry()) {
+    if (speaker?.isAlive() && victorLine && GameConfig.chatter && !speaker.isSentry()) {
       this.m_chatter.say(speaker, victorLine); // unconditional: the gate is right here
     }
     this.m_audio?.stopTankMove();

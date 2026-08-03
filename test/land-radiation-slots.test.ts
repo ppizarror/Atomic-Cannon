@@ -206,4 +206,35 @@ describe('CLand — one contamination event, one radiation slot', () => {
     const hot = hotBySlot(l);
     for (const s of kept) expect(hot.get(s) ?? 0).toBeGreaterThan(0);
   });
+
+  it('with every slot still burning, it recycles the FAINTEST rather than the oldest', () => {
+    const l = land();
+    const p = landPriv(l);
+
+    // Eight live events, all still glowing. Seven get an effectively endless clock; the fourth gets
+    // a short one, so after a while it is the FAINTEST while the first is still the OLDEST CLAIM and
+    // burning at full brightness. Those name different slots, which is the whole question:
+    // recycling by age would erase the brightest coat on the map.
+    const slots: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      l.beginRadiationEvent();
+      const hue: [number, number, number] = [40 + i * 20, 255 - i * 10, 60];
+      l.blastIradiate(60 + i * 80, SURFACE, 30, 5, i === 3 ? 10 : 1000, hue);
+      slots.push(p.m_radParticles[p.m_radParticles.length - 1].slot);
+      settle(l);
+    }
+    for (let i = 0; i < 60 * 25; i++) l.update(1 / 60); // the short clock runs most of the way down
+    const fadeOf = (s: number): number => {
+      const z = p.m_radParticles.find(q => q.slot === s)!;
+      return z.timeRemaining / z.duration;
+    };
+    expect(p.m_radParticles.length).toBe(8); // all still burning
+    const faintest = slots.reduce((a, b) => (fadeOf(b) < fadeOf(a) ? b : a));
+    expect(faintest).toBe(slots[3]);
+    expect(fadeOf(slots[0])).toBeGreaterThan(fadeOf(faintest) * 5); // oldest ≠ faintest, by a mile
+
+    l.beginRadiationEvent();
+    l.blastIradiate(400, SURFACE, 30, 5, 900, [10, 20, 200]);
+    expect(p.m_radParticles[p.m_radParticles.length - 1].slot).toBe(faintest);
+  });
 });

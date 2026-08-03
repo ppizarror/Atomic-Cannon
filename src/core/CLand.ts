@@ -104,6 +104,31 @@ interface Shock {
   front: number; // how far the wave has travelled so far
 }
 
+/** Working set + sampling tables for the radiation glow's halo pass (see `CLand.bloomScratch`).
+ *  Sized to one glow layer and kept across bakes, since a settling blast re-bakes every frame. */
+interface BloomScratch {
+  /** Layer size these tables were built for; anything else and they are rebuilt. */
+  w: number;
+  h: number;
+  /** Low-res block averages (RGB), and whether a cell has light within interpolation reach. */
+  sum: Float32Array;
+  lit: Uint8Array;
+  /** One output row's cells, already lerped vertically — the hoisted half of the bilinear tap. */
+  band: Float32Array;
+  /** Source pixel → low-res cell, and how many source pixels each cell covers (the DOWN pass). */
+  cellX: Int32Array;
+  cellY: Int32Array;
+  spanX: Int32Array;
+  spanY: Int32Array;
+  /** Bilinear taps and weights per output pixel (the UP pass). */
+  ux0: Int32Array;
+  ux1: Int32Array;
+  fx: Float32Array;
+  vy0: Int32Array;
+  vy1: Int32Array;
+  fy: Float32Array;
+}
+
 /** A falling overburden block (beam/digger slice collapse): a captured column of pixels — the cap
  *  and earth above a cut — sliding DOWN under gravity to land on the substrate below. */
 interface Fall {
@@ -232,6 +257,11 @@ const GLOW = {
   PULSE_BUCKETS: 3,
   /** Angular rate (rad/s) of that ride. */
   PULSE_RATE: 2.6,
+  /** Longest the coat may go without a rebuild while fallout is merely ACCUMULATING on it (see
+   *  `radGlowStale`). Anything that removes earth or radiation ignores this and rebuilds at once,
+   *  so the only thing it can delay is the coat getting thicker — which at 20Hz, on a sprinkle of
+   *  grains landing at random, is not something an eye can resolve. */
+  REBAKE_SEC: 1 / 20,
   /** How strongly a grain bleeds through its kernel onto the ground around it — the softness of the
    *  join between contaminated earth and clean (see `GLOW_KERNELS`). */
   SPREAD: 0.95,
@@ -607,6 +637,17 @@ export class CLand {
     this.m_pixels = null;
     this.m_material = null;
     this.m_radBoxX1 = this.m_radBoxY1 = -1; // hot-earth extent goes with it
+    // The glow tiles are held across bakes on purpose (see the bake), so they have to be let go
+    // here like every other world-sized buffer — a nuke's layer is half a megabyte and there are
+    // six of them, plus the halo's working set.
+    for (const c of [...this.m_radGlowCanvas, ...this.m_radGlowBloom]) {
+      if (c) c.width = c.height = 0;
+    }
+    this.m_radGlowCanvas.length = 0;
+    this.m_radGlowBloom.length = 0;
+    this.m_radGlowImg.length = 0;
+    this.m_radGlowBloomImg.length = 0;
+    this.m_bloomScratch = null;
     this.m_dirtTile = null;
   }
 
@@ -776,7 +817,7 @@ export class CLand {
           px[yy * W + col] = 0;
           if (mat) mat[yy * W + col] = 0;
         }
-        this.m_radGlowDirty = true;
+        this.m_radGlowDirty = this.m_radGlowUrgent = true;
         this.m_falls.push({col, y: surf, thick: overThick, target: surf + removed, vel: 0, colors, mats}); // prettier-ignore
         h[col] = surf; // surface = the falling block's (current) top
       } else {
@@ -790,7 +831,7 @@ export class CLand {
     } else {
       h[col] = b1; // headless/no-pixel fallback: just drop the surface
     }
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
     return removed;
   }
 
@@ -811,7 +852,7 @@ export class CLand {
         if (draw && CLand.matRad(f.mats[k])) this.growRadBox(f.col, top + k); // it moved, so did its glow
       }
     }
-    this.m_radGlowDirty = true;
+    this.m_radGlowDirty = this.m_radGlowUrgent = true;
   }
 
   /** Advance falling overburden blocks (beam/digger collapse): each slid-down cap accelerates
@@ -841,7 +882,7 @@ export class CLand {
       if (!landed) this.m_falls[w++] = f;
     }
     this.m_falls.length = w;
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
   }
 
   /** Finalize (snap to target) every active falling block in the column range [lo,hi] and clear it
@@ -868,7 +909,7 @@ export class CLand {
       h[f.col] = top; // surface = the settled block top
     }
     this.m_falls.length = w;
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
   }
 
   /**
@@ -1014,7 +1055,7 @@ export class CLand {
       }
     }
     if (slump) this.startSlump(lo, hi); // detonation bowl only; the bore stays a straight-down cut
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
     // A detonation crater blows the ground (and any fallout on it) away — drop the radiation the
     // blast actually REACHED (inside the disc), not the whole column band.
     this.clearRadiationDisc(x, y, r);
@@ -1166,7 +1207,7 @@ export class CLand {
         px[y * W + col] = (rgba | 0xff000000) >>> 0; // opaque structure pixel
       }
     }
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
     this.preBlast(Math.max(0, left), Math.min(W - 1, left + bw));
   }
 
@@ -1446,6 +1487,11 @@ export class CLand {
     const i = yy * this.m_nWidth + col;
     mat[i] = CLand.matSetRad(mat[i], amount, slot);
     this.growRadBox(col, yy);
+    // Dirty, but NOT urgent — the one dirtier in the class that only ever ADDS. A grain of fallout
+    // landing makes the coat a grain thicker; nothing that was drawn a moment ago has become wrong,
+    // so this can wait for the next scheduled bake (see `radGlowStale`). Every other dirtier cuts
+    // terrain or strips radiation, where a stale layer is glow left hanging over ground that is no
+    // longer there — so those all set `m_radGlowUrgent` and rebuild the same frame.
     this.m_radGlowDirty = true;
   }
 
@@ -1464,12 +1510,45 @@ export class CLand {
    * and old earth stays alight forever because some zone is always the max. Per slot, a slot with
    * no live zone simply is not blitted.
    */
+  /**
+   * The terrain's pixels were edited. Everything baked off them is now stale — including the glow
+   * layer, whose halo is masked against exactly this buffer, so a carve invalidates the coat even
+   * where it removed no radiation at all. Routed through one call so that stays true of any edit
+   * written later: forgetting it leaves glow drawn over ground that is no longer there.
+   */
+  private pixelsChanged(): void {
+    this.m_pixelsDirty = true;
+    this.m_radGlowDirty = this.m_radGlowUrgent = true;
+  }
+
+  /**
+   * Does the glow layer have to be rebuilt THIS frame?
+   *
+   * A blast's fallout stamps thousands of grains into the channel over the second or two it takes to
+   * come down, so the layer is dirty on essentially every frame of the settle — and a full rebuild
+   * of a nuke's layer is the most expensive thing in the frame. But a grain landing does not make
+   * what is already on screen WRONG, it only makes it a grain out of date, on a coat that is a
+   * stochastic sprinkle to begin with: rebuilding that at 20Hz instead of 60 is invisible and costs
+   * a third as much.
+   *
+   * Anything that CUTS — a crater, a collapse, a slot recycled, a zone decaying — is a different
+   * matter, because there the stale layer draws glow over ground that no longer exists. Those set
+   * `m_radGlowUrgent` and rebuild the same frame, at any rate. So the throttle only ever delays
+   * light being ADDED, never light being taken away.
+   */
+  private radGlowStale(): boolean {
+    if (!this.m_radGlowCanvas.length) return true; // nothing baked yet
+    if (!this.m_radGlowDirty) return false;
+    return this.m_radGlowUrgent || this.m_radGlowWait >= GLOW.REBAKE_SEC;
+  }
+
   private drawRadGlow(ctx: CanvasRenderingContext2D): void {
     const mat = this.m_material;
     if (!mat || !this.m_radParticles.length || typeof document === 'undefined') return;
     const W = this.m_nWidth;
-    if (this.m_radGlowDirty || !this.m_radGlowCanvas.length) {
-      this.m_radGlowDirty = false;
+    if (this.radGlowStale()) {
+      this.m_radGlowDirty = this.m_radGlowUrgent = false;
+      this.m_radGlowWait = 0;
       // Bounds of the HOT EARTH itself, padded by everything that reaches PAST the last hot pixel
       // so the coat's outer ring is not clipped into a hard edge. Never the zones' bounds — the
       // earth is the extent.
@@ -1589,17 +1668,50 @@ export class CLand {
           for (const oK of kern) bleed(out, x + oK.dx, y + oK.dy, zr, zg, zb, k * oK.w);
         }
       }
+      // Tiles are REUSED across bakes whenever the layer has not changed size — canvas AND its
+      // ImageData. A settling blast re-bakes every frame for a second or two and a nuke's layer is
+      // half a megabyte, so allocating six of these per frame and dropping them is ~250MB of garbage
+      // over one detonation: a GC hitch on exactly the frames that can least afford one. Stale
+      // buckets (a slot whose earth is gone) fall away with the length reset below.
+      const oldSharp = this.m_radGlowCanvas.slice(),
+        oldSharpImg = this.m_radGlowImg.slice();
+      const oldHalo = this.m_radGlowBloom.slice(),
+        oldHaloImg = this.m_radGlowBloomImg.slice();
       this.m_radGlowCanvas.length = 0;
+      this.m_radGlowBloom.length = 0;
+      this.m_radGlowImg.length = 0;
+      this.m_radGlowBloomImg.length = 0;
       for (let idx = 0; idx < bufs.length; idx++) {
         const buf = bufs[idx];
         if (!buf) continue;
-        const made = tryCanvas2d(w, h);
-        if (!made) continue;
-        const {cv, ctx: g} = made;
-        const img = g.createImageData(w, h);
-        img.data.set(buf);
-        g.putImageData(img, 0, 0);
-        this.m_radGlowCanvas[idx] = cv;
+        const sharp = this.glowTile(oldSharp[idx], oldSharpImg[idx], w, h);
+        if (!sharp) continue;
+        sharp.img.data.set(buf);
+        sharp.ctx.putImageData(sharp.img, 0, 0);
+        this.m_radGlowCanvas[idx] = sharp.cv;
+        this.m_radGlowImg[idx] = sharp.img;
+      }
+      // The halo is baked ONCE PER SLOT, not once per phase bucket — the single biggest cost in
+      // here, cut by the bucket count. The buckets exist so neighbouring grains twinkle out of step,
+      // and that reads in the sharp specks; it cannot read in the halo, which is a diffuse wash
+      // where every grain's glow already overlaps its neighbours'. Nor is any light lost: the three
+      // phases sit 120° apart, so their pulses sum to exactly `PULSE_BASE` at every instant, and the
+      // blur is linear — one halo over the summed buckets blitted at `PULSE_BASE` is the same light
+      // the three separately-pulsing halos added up to, minus a shimmer nobody could see.
+      for (let slot = 0; slot < MAT.RAD_SLOTS; slot++) {
+        const group: Uint8ClampedArray[] = [];
+        for (let b = 0; b < GLOW.PULSE_BUCKETS; b++) {
+          const bf = bufs[slot * GLOW.PULSE_BUCKETS + b];
+          if (bf) group.push(bf);
+        }
+        if (!group.length) continue;
+        const halo = this.glowTile(oldHalo[slot], oldHaloImg[slot], w, h);
+        if (!halo) continue;
+        // Painted straight into the tile's own ImageData — no intermediate buffer, no copy.
+        this.bloomLayer(group, halo.img.data, w, h, x0, y0, glowPx, heights);
+        halo.ctx.putImageData(halo.img, 0, 0);
+        this.m_radGlowBloom[slot] = halo.cv;
+        this.m_radGlowBloomImg[slot] = halo.img;
       }
       this.m_radGlowX = x0;
       this.m_radGlowY = y0;
@@ -1612,6 +1724,18 @@ export class CLand {
       fades[z.slot] = Math.max(fades[z.slot] ?? 0, z.timeRemaining / Math.max(0.5, z.duration));
     const prevOp = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'lighter';
+    // BLOOM first, then the sharp specks over it, so every speck sits in a soft halo of its own
+    // colour and the coat glows rather than looking like paint. One halo per SLOT, at the pulse's
+    // mean — see the bake. Both layers are baked (`bloomLayer`), the halo's ground mask included,
+    // so neither can light empty air.
+    for (let slot = 0; slot < this.m_radGlowBloom.length; slot++) {
+      const halo = this.m_radGlowBloom[slot];
+      if (!halo) continue;
+      const fade = fades[slot] ?? 0;
+      if (fade <= 0) continue;
+      ctx.globalAlpha = clamp01(fade) * GLOW.PULSE_BASE * GLOW.BLOOM_ALPHA;
+      ctx.drawImage(halo, this.m_radGlowX, this.m_radGlowY);
+    }
     for (let i = 0; i < this.m_radGlowCanvas.length; i++) {
       const cv = this.m_radGlowCanvas[i];
       if (!cv) continue;
@@ -1622,31 +1746,213 @@ export class CLand {
       // coat shimmers instead of the whole map brightening and dimming as one.
       const phase = (i % GLOW.PULSE_BUCKETS) * ((2 * Math.PI) / GLOW.PULSE_BUCKETS);
       const pulse = GLOW.PULSE_BASE + GLOW.PULSE_AMP * Math.sin(this.m_radPulseT * GLOW.PULSE_RATE + phase); // prettier-ignore
-      const a = clamp01(fade) * pulse;
-      // BLOOM first, then the sharp specks over it. The layer is drawn once shrunk hard and blown
-      // back up — the scaler's own filtering is the blur — so every speck sits in a soft halo of its
-      // own colour and the coat glows rather than looking like paint. Cheap: two more blits of an
-      // already-baked layer, no per-pixel work, and it reads as light because it IS the same light
-      // spread wider and dimmer.
-      const bw = Math.max(1, (cv.width / GLOW.BLOOM_SHRINK) | 0),
-        bh = Math.max(1, (cv.height / GLOW.BLOOM_SHRINK) | 0);
-      const bcv = this.bloomScratch(bw, bh);
-      if (bcv) {
-        const bg = bcv.getContext('2d');
-        if (bg) {
-          bg.clearRect(0, 0, bw, bh);
-          bg.imageSmoothingEnabled = true;
-          bg.drawImage(cv, 0, 0, bw, bh);
-          ctx.globalAlpha = a * GLOW.BLOOM_ALPHA;
-          ctx.imageSmoothingEnabled = true;
-          ctx.drawImage(bcv, 0, 0, bw, bh, this.m_radGlowX, this.m_radGlowY, cv.width, cv.height);
-        }
-      }
-      ctx.globalAlpha = a;
+      ctx.globalAlpha = clamp01(fade) * pulse;
       ctx.drawImage(cv, this.m_radGlowX, this.m_radGlowY);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = prevOp;
+  }
+
+  /**
+   * The soft halo under the sharp specks: the same light, spread wide and dim — and then CUT TO THE
+   * GROUND, which is the whole reason this is baked rather than blitted.
+   *
+   * It used to be two live blits, the layer drawn once shrunk hard and blown back up so the scaler's
+   * own filtering did the blur. That is cheap and it looks right, but a scaler has no idea where the
+   * earth is: it spread the coat's light straight off a crater wall into the open air of the bowl and
+   * out over the rim, up to ~40px of glow hanging on nothing. The sharp layer never did that — its
+   * `bleed` refuses any pixel without earth under it — so the invariant existed and the bloom simply
+   * was not subject to it. Doing the spread here, over the same buffer and behind the same test,
+   * puts BOTH passes under one rule: the glow layer never contains light in the air. It also costs
+   * one blit a frame instead of two, since the blur is now paid once per terrain edit.
+   *
+   * The spread reproduces what the scaler did — average `BLOOM_SHRINK`-square blocks, then bilinear
+   * back up — so the halo keeps the shape and weight it was tuned at; only the part in the sky goes.
+   */
+  private bloomLayer(
+    group: Uint8ClampedArray[],
+    out: Uint8ClampedArray,
+    w: number,
+    h: number,
+    x0: number,
+    y0: number,
+    glowPx: Uint32Array | null,
+    heights: Int16Array | null,
+  ): void {
+    const S = GLOW.BLOOM_SHRINK;
+    const bw = Math.max(1, (w / S) | 0),
+      bh = Math.max(1, (h / S) | 0);
+    const W = this.m_nWidth;
+    const sc = this.bloomScratch(w, h, bw, bh);
+    const {sum, lit, cellX, cellY, ux0, ux1, fx, vy0, vy1, fy} = sc;
+    sum.fill(0);
+    lit.fill(0);
+    out.fill(0);
+    // DOWN: block averages, exactly the cells a `drawImage(layer, 0, 0, bw, bh)` would land in.
+    // Unpainted texels are SKIPPED on their alpha byte — `add` stamps 255 on everything it touches,
+    // and most of a layer is untouched — so the pass costs one read per empty pixel. The block sizes
+    // come from the same LUTs rather than being counted, since counting would defeat the skip.
+    for (const buf of group) {
+      for (let y = 0; y < h; y++) {
+        const rowC = cellY[y] * bw,
+          rowO = y * w * 4;
+        for (let x = 0; x < w; x++) {
+          const o = rowO + x * 4;
+          if (!buf[o + 3]) continue; // nothing painted here
+          const c = (rowC + cellX[x]) * 3;
+          sum[c] += buf[o];
+          sum[c + 1] += buf[o + 1];
+          sum[c + 2] += buf[o + 2];
+        }
+      }
+    }
+    for (let cy = 0; cy < bh; cy++) {
+      // Cells are whole blocks of the source, so a cell's pixel count is its span product.
+      const ny = sc.spanY[cy];
+      for (let cx = 0; cx < bw; cx++) {
+        const c = cy * bw + cx,
+          n = ny * sc.spanX[cx] || 1;
+        const r = (sum[c * 3] /= n),
+          g = (sum[c * 3 + 1] /= n),
+          b = (sum[c * 3 + 2] /= n);
+        if (r + g + b > 0) lit[c] = 1;
+      }
+    }
+    // Any light in the 2×2 block a pixel interpolates from? Precomputed per cell, so the upsample
+    // can skip the dead majority of a layer on one lookup instead of four.
+    for (let cy = 0; cy < bh; cy++)
+      for (let cx = 0; cx < bw; cx++) {
+        const c = cy * bw + cx;
+        if (lit[c] !== 1) continue;
+        for (let dy = -1; dy <= 0; dy++)
+          for (let dx = -1; dx <= 0; dx++) {
+            const nx = cx + dx,
+              ny2 = cy + dy;
+            if (nx >= 0 && ny2 >= 0 && lit[ny2 * bw + nx] === 0) lit[ny2 * bw + nx] = 2; // neighbour of light
+          }
+      }
+    // UP: bilinear, sampling on pixel CENTRES the way the scaler does — this is where the softness
+    // comes from, one small cell smeared across ~`S` px in each direction.
+    //
+    // Done SEPARABLY. A bilinear tap is a lerp between two row-lerps, and the row part depends only
+    // on the output ROW — so it is hoisted into `band`, one lerp per cell rather than per pixel
+    // (`bw` is a tenth of `w`, so that is ~1% of the work), leaving each pixel a single lerp along
+    // the band. Same arithmetic, a third of the operations, and at a nuke's layer size this pass is
+    // the bake.
+    const band = sc.band;
+    for (let y = 0; y < h; y++) {
+      const vy = vy0[y],
+        vyb = vy1[y],
+        wy = fy[y];
+      const rowT = vy * bw,
+        rowB = vyb * bw,
+        rowO = y * w * 4,
+        wy0 = y0 + y;
+      const rowPx = glowPx ? wy0 * W : 0;
+      const airRow = !glowPx && heights ? wy0 : -1;
+      for (let c = 0; c < bw; c++) {
+        const t = (rowT + c) * 3,
+          b = (rowB + c) * 3,
+          d = c * 3;
+        band[d] = sum[t] + (sum[b] - sum[t]) * wy;
+        band[d + 1] = sum[t + 1] + (sum[b + 1] - sum[t + 1]) * wy;
+        band[d + 2] = sum[t + 2] + (sum[b + 2] - sum[t + 2]) * wy;
+      }
+      for (let x = 0; x < w; x++) {
+        const ux = ux0[x];
+        if (!lit[rowT + ux]) continue; // no light within reach of this pixel
+        // No earth here → no light here. The one line the live bloom could not have.
+        const wx = x0 + x;
+        if (glowPx ? (glowPx[rowPx + wx] & 0xff000000) === 0 : airRow >= 0 && airRow < heights![wx]) continue;
+        const a = ux * 3,
+          bIdx = ux1[x] * 3,
+          wx2 = fx[x];
+        const o = rowO + x * 4;
+        out[o] = band[a] + (band[bIdx] - band[a]) * wx2;
+        out[o + 1] = band[a + 1] + (band[bIdx + 1] - band[a + 1]) * wx2;
+        out[o + 2] = band[a + 2] + (band[bIdx + 2] - band[a + 2]) * wx2;
+        out[o + 3] = 255;
+      }
+    }
+  }
+
+  /**
+   * One tile of the baked glow layer — canvas plus the ImageData it is written through — reusing
+   * the pair from the previous bake whenever the layer is still the same size (see the bake).
+   */
+  private glowTile(
+    prevCv: HTMLCanvasElement | undefined,
+    prevImg: ImageData | undefined,
+    w: number,
+    h: number,
+  ): {cv: HTMLCanvasElement; ctx: CanvasRenderingContext2D; img: ImageData} | null {
+    let made: {cv: HTMLCanvasElement; ctx: CanvasRenderingContext2D} | null = null;
+    if (prevCv && prevCv.width === w && prevCv.height === h) {
+      const g = prevCv.getContext('2d');
+      if (g) made = {cv: prevCv, ctx: g};
+    }
+    made ??= tryCanvas2d(w, h);
+    if (!made) return null;
+    const img = prevImg && prevImg.width === w && prevImg.height === h ? prevImg : made.ctx.createImageData(w, h);
+    return {cv: made.cv, ctx: made.ctx, img};
+  }
+
+  /**
+   * Reusable working set for {@link bloomLayer}, plus the sampling tables the two passes would
+   * otherwise recompute per pixel — a multiply and a divide each, which at a nuke's layer size is
+   * most of the cost of the pass. Grown on demand and kept: a settling blast re-bakes every frame,
+   * so anything allocated here is allocated sixty times a second.
+   */
+  private bloomScratch(w: number, h: number, bw: number, bh: number): BloomScratch {
+    let s = this.m_bloomScratch;
+    if (!s || s.w !== w || s.h !== h) {
+      const cellX = new Int32Array(w),
+        cellY = new Int32Array(h);
+      const spanX = new Int32Array(bw),
+        spanY = new Int32Array(bh);
+      const ux0 = new Int32Array(w),
+        ux1 = new Int32Array(w),
+        fx = new Float32Array(w);
+      const vy0 = new Int32Array(h),
+        vy1 = new Int32Array(h),
+        fy = new Float32Array(h);
+      for (let x = 0; x < w; x++) {
+        const c = Math.min(bw - 1, ((x * bw) / w) | 0);
+        cellX[x] = c;
+        spanX[c]++;
+        const u = clamp(((x + 0.5) * bw) / w - 0.5, 0, bw - 1);
+        ux0[x] = Math.min(bw - 1, u | 0);
+        ux1[x] = Math.min(bw - 1, ux0[x] + 1);
+        fx[x] = u - ux0[x];
+      }
+      for (let y = 0; y < h; y++) {
+        const c = Math.min(bh - 1, ((y * bh) / h) | 0);
+        cellY[y] = c;
+        spanY[c]++;
+        const v = clamp(((y + 0.5) * bh) / h - 0.5, 0, bh - 1);
+        vy0[y] = Math.min(bh - 1, v | 0);
+        vy1[y] = Math.min(bh - 1, vy0[y] + 1);
+        fy[y] = v - vy0[y];
+      }
+      s = this.m_bloomScratch = {
+        w,
+        h,
+        sum: new Float32Array(bw * bh * 3),
+        lit: new Uint8Array(bw * bh),
+        band: new Float32Array(bw * 3),
+        cellX,
+        cellY,
+        spanX,
+        spanY,
+        ux0,
+        ux1,
+        fx,
+        vy0,
+        vy1,
+        fy,
+      };
+    }
+    return s;
   }
 
   /**
@@ -1729,17 +2035,32 @@ export class CLand {
    */
   private pickRadSlot(): number {
     if (this.m_radSlotRGB.length < MAT.RAD_SLOTS) return this.m_radSlotRGB.length;
-    const live = new Set(this.m_radParticles.map(z => z.slot));
+    // Recycle the DIMMEST — the coat with least left to lose. A burnt-out slot scores zero and so is
+    // always taken first, and recycling one of those destroys nothing anybody can see: `update` has
+    // already returned its earth to ordinary soil. Only when every slot is still burning does this
+    // have to take live contamination, and then it takes whichever is closest to going out rather
+    // than whichever was claimed longest ago — those are not the same slot, and by age alone the
+    // oldest is very often the one that has been glowing longest and brightest. A coat vanishing
+    // mid-glow is the most jarring thing this system can do, so when it is unavoidable it should at
+    // least happen to the faintest one on the map.
+    const fade: number[] = [];
+    for (const z of this.m_radParticles)
+      fade[z.slot] = Math.max(fade[z.slot] ?? 0, z.timeRemaining / Math.max(0.5, z.duration));
     // A slot this same event already claimed is not a candidate at any price — the event is still
     // depositing into it and its zone may not even be pushed yet.
     const held = new Set(this.m_radEventSlot.values());
     let best = -1;
     for (let i = 0; i < MAT.RAD_SLOTS; i++) {
       if (held.has(i)) continue;
-      if (best < 0) best = i;
-      else if (live.has(best) !== live.has(i))
-        best = live.has(i) ? best : i; // dead beats live
-      else if (this.m_radSlotAge[i] < this.m_radSlotAge[best]) best = i; // then oldest
+      if (best < 0) {
+        best = i;
+        continue;
+      }
+      const fi = fade[i] ?? 0,
+        fb = fade[best] ?? 0;
+      if (fi !== fb)
+        best = fi < fb ? i : best; // dimmest first (0 = burnt out)
+      else if (this.m_radSlotAge[i] < this.m_radSlotAge[best]) best = i; // tie → oldest claim
     }
     return best < 0 ? 0 : best; // every slot spoken for (8 colours in one event) — reuse the first
   }
@@ -1754,7 +2075,7 @@ export class CLand {
         const i = y * W + x;
         if (CLand.matRad(mat[i]) && CLand.matSlot(mat[i]) === slot) {
           mat[i] &= 1; // keep the dirt tag, drop amount + slot
-          this.m_radGlowDirty = true;
+          this.m_radGlowDirty = this.m_radGlowUrgent = true;
         }
       }
     }
@@ -1890,21 +2211,9 @@ export class CLand {
     }
     h[col] = top + sink;
     if (this.m_baseHeights) this.m_baseHeights[col] = Math.max(this.m_baseHeights[col], h[col]);
-    this.m_pixelsDirty = true;
-    this.m_radGlowDirty = true;
+    this.pixelsChanged();
+    this.m_radGlowDirty = this.m_radGlowUrgent = true;
     this.preBlast(col - 1, col + 1);
-  }
-
-  /** Reusable low-res scratch the glow layer is shrunk into to make its bloom. */
-  private bloomScratch(w: number, h: number): HTMLCanvasElement | null {
-    if (typeof document === 'undefined') return null;
-    let cv = this.m_bloomCanvas;
-    if (!cv) cv = this.m_bloomCanvas = document.createElement('canvas');
-    if (cv.width < w || cv.height < h) {
-      cv.width = Math.max(cv.width, w);
-      cv.height = Math.max(cv.height, h);
-    }
-    return cv;
   }
 
   /** Record that a column owes `px` of subsidence, to be paid off over the next moment. */
@@ -1954,31 +2263,6 @@ export class CLand {
     if (x > this.m_radBoxX1) this.m_radBoxX1 = x;
     if (y < this.m_radBoxY0) this.m_radBoxY0 = y;
     if (y > this.m_radBoxY1) this.m_radBoxY1 = y;
-  }
-
-  /** Clear the radiation channel inside a disc — the zone decayed, so this earth is no longer hot.
-   *  Without it the marks outlive their zone and a later blast overlapping the spot would relight
-   *  ground that stopped glowing turns ago. */
-  private coolRadiation(cx: number, cy: number, r: number): void {
-    const mat = this.m_material;
-    if (!mat) return;
-    const W = this.m_nWidth;
-    const [x0, x1] = this.clampCols(Math.floor(cx - r), Math.ceil(cx + r));
-    const y0 = Math.max(0, Math.floor(cy - r)),
-      y1 = Math.min(this.m_nHeight - 1, Math.ceil(cy + r));
-    const r2 = r * r;
-    for (let y = y0; y <= y1; y++) {
-      const dy = y - cy;
-      for (let x = x0; x <= x1; x++) {
-        const dx = x - cx;
-        if (dx * dx + dy * dy > r2) continue;
-        const i = y * W + x;
-        if (CLand.matRad(mat[i])) {
-          mat[i] &= 1; // keep the dirt tag, drop the radioactivity
-          this.m_radGlowDirty = true;
-        }
-      }
-    }
   }
 
   /** Arm the angle-of-repose slump over a span for a few seconds — it runs in `update()`
@@ -2131,6 +2415,7 @@ export class CLand {
     const foutY = realistic ? wind!.y * WIND_ACCEL.FALLOUT : 0;
 
     this.m_radPulseT += dt; // drives the sinusoidal glow shimmer on the radiation specks
+    this.m_radGlowWait += dt; // …and paces the rebuilds of the coat itself (see `radGlowStale`)
     this.stepShocks(dt); // compression waves compacting the soil as they travel out
     this.drainSink(dt); // …and the ground they passed over still settling
     this.stepFalls(dt); // advance any beam/digger overburden falling under gravity
@@ -2247,16 +2532,34 @@ export class CLand {
     }
 
     let rw = 0;
+    let spent: number[] | null = null;
     for (let i = 0; i < this.m_radParticles.length; i++) {
       const r = this.m_radParticles[i];
       r.timeRemaining -= dt;
       if (r.timeRemaining <= 0) {
-        this.coolRadiation(r.x, r.y, r.radius); // decayed → the earth here is clean again
+        (spent ??= []).push(r.slot);
         continue; // zone expired → drop
       }
       this.m_radParticles[rw++] = r;
     }
     this.m_radParticles.length = rw;
+    // A contamination EVENT decays when its LAST zone does, and what decays is that event's earth —
+    // identified by its slot, wherever it lies. Not "every hot pixel within the dead zone's radius",
+    // which this used to be and which was wrong in both directions at once. It MISSED its own coat,
+    // because the disc is centred on the surface while the coat hugs a bowl carved below it: at the
+    // same radius the bowl face sits just outside the disc, so a crater's own fallout was never
+    // cleaned and the ground stayed hot — and damaging — for the rest of the match. And it HIT
+    // everyone else's, because it never looked at the slot: any neighbouring crater whose earth fell
+    // inside the disc was decontaminated too, at whatever brightness it happened to be glowing.
+    // Once the map had a few overlapping craters that read as a live coat vanishing outright.
+    if (spent) {
+      for (let i = 0; i < spent.length; i++) {
+        const slot = spent[i];
+        if (spent.indexOf(slot) !== i) continue; // a cluster expires several zones on one slot
+        if (this.m_radParticles.some(z => z.slot === slot)) continue; // still burning elsewhere
+        this.clearRadSlot(slot); // its clock ran out → this earth is ordinary soil again
+      }
+    }
 
     // Radiation specks: fall until they hit the surface, then settle and glow.
     let sw = 0;
@@ -2532,12 +2835,12 @@ export class CLand {
       const [ya, yb] = nt < old ? [nt, old] : [old, nt];
       for (let y = ya; y < yb; y++) {
         const i = y * W + col;
-        if (CLand.matRad(matB[i])) this.m_radGlowDirty = true;
+        if (CLand.matRad(matB[i])) this.m_radGlowDirty = this.m_radGlowUrgent = true;
         matB[i] = tagB;
       }
     }
     h[col] = nt;
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
   }
 
   /** Char the terrain pixels inside a disc — permanent scorch, baked into the buffer (the
@@ -2608,7 +2911,7 @@ export class CLand {
         px[i] = ((0xff << 24) | (bb << 16) | (gg << 8) | rr) >>> 0;
       }
     }
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
   }
 
   /** Build the tiled bare-earth colour sampler from the land's dirt texture (once per land). */
@@ -2703,7 +3006,7 @@ export class CLand {
     if (!this.m_dirtTile) this.buildDirtTile();
     this.buildBackdrop(); // snapshot the PRISTINE shape (darkened) for the Filled-Craters back layer
     this.m_needsBake = false;
-    this.m_pixelsDirty = true;
+    this.pixelsChanged();
   }
 
   /**
@@ -3142,10 +3445,20 @@ export class CLand {
   // fade (that is the blit alpha), so the decay cannot step.
   /** One baked glow layer per radiation slot (per blast), so each blits on its own zone's clock. */
   private m_radGlowCanvas: (HTMLCanvasElement | undefined)[] = [];
+  /** …and its soft halo, blurred and ground-masked at bake time (see `bloomLayer`). Parallel to
+   *  `m_radGlowCanvas`: same index, same size, same origin. */
+  private m_radGlowBloom: (HTMLCanvasElement | undefined)[] = [];
+  /** The ImageData each tile above is written through, kept so a re-bake reuses it (see `glowTile`). */
+  private m_radGlowImg: (ImageData | undefined)[] = [];
+  private m_radGlowBloomImg: (ImageData | undefined)[] = [];
+  private m_bloomScratch: BloomScratch | null = null;
   private m_radGlowX = 0;
   private m_radGlowY = 0;
   private m_radGlowDirty = false;
-  private m_bloomCanvas: HTMLCanvasElement | null = null;
+  /** Set by any dirtier that CUTS (terrain or radiation), forcing a same-frame rebuild. */
+  private m_radGlowUrgent = false;
+  /** Seconds since the last rebuild, for the accumulation-only throttle. */
+  private m_radGlowWait = 0;
   // The colours those slots stand for, in claim order, and when each was claimed (see `pickRadSlot`
   // for which one the next event takes).
   private m_radSlotRGB: [number, number, number][] = [];

@@ -47,11 +47,25 @@ function settleFallout(land: CLand): void {
   for (let i = 0; i < 500 && p.m_radSpecks.length > 0; i++) land.update(1 / 60);
 }
 
-/** Every lit texel of the baked glow, in WORLD coordinates. */
+/**
+ * Every lit texel of the baked glow, in WORLD coordinates — BOTH passes.
+ *
+ * The halo counts. It is the same light spread wide and dim, and for a long time it was applied as
+ * two live blits (shrink the layer, blow it back up, let the scaler's filtering be the blur) which
+ * put it outside this invariant entirely: the sharp layer refused to light air, and then the bloom
+ * smeared that same light ~40px off a crater wall into the open bowl. Baking it is what brings it
+ * under the rule, and sweeping it here is what keeps it there.
+ */
 function litTexels(land: CLand): {x: number; y: number}[] {
   const p = landPriv(land);
+  return litIn(land, [...p.m_radGlowCanvas, ...p.m_radGlowBloom]);
+}
+
+/** The lit texels of one set of baked tiles, in WORLD coordinates. */
+function litIn(land: CLand, tiles: (HTMLCanvasElement | undefined)[]): {x: number; y: number}[] {
+  const p = landPriv(land);
   const out: {x: number; y: number}[] = [];
-  for (const cv of p.m_radGlowCanvas) {
+  for (const cv of tiles) {
     if (!cv) continue;
     const img = (cv as unknown as {lastImage: MockImage | null}).lastImage;
     if (!img) continue;
@@ -67,13 +81,24 @@ function litTexels(land: CLand): {x: number; y: number}[] {
   return out;
 }
 
+/** Lit texels with no terrain under them — the whole point of this file. */
+function inAir(land: CLand, lit: {x: number; y: number}[]): {x: number; y: number}[] {
+  const p = landPriv(land);
+  const W = p.m_nWidth,
+    H = p.m_nHeight;
+  const px = p.m_pixels;
+  return lit.filter(t => {
+    if (t.x < 0 || t.x >= W || t.y < 0 || t.y >= H) return true; // off-world is air too
+    return (px[t.y * W + t.x] & 0xff000000) === 0; // lit, but no terrain there
+  });
+}
+
 describe('CLand — the radiation glow never lights empty space', () => {
   it('a coat along a cliff edge does not glow off into the sky', () => {
     const W = 400,
       H = 300,
       cliffX = 200;
     const land = cliffLand(W, H, cliffX, 120, 220); // 100px sheer drop
-    const p = landPriv(land);
 
     // Contaminate the high ground right up to the edge.
     land.blastIradiate(cliffX - 40, 120, 60, 12, 30, [255, 46, 20]);
@@ -83,13 +108,7 @@ describe('CLand — the radiation glow never lights empty space', () => {
 
     const lit = litTexels(land);
     expect(lit.length).toBeGreaterThan(50); // the coat really did bake something
-
-    const px = p.m_pixels!;
-    const inAir = lit.filter(t => {
-      if (t.x < 0 || t.x >= W || t.y < 0 || t.y >= H) return true; // off-world is air too
-      return (px[t.y * W + t.x] & 0xff000000) === 0; // lit, but no terrain there
-    });
-    expect(inAir).toHaveLength(0);
+    expect(inAir(land, lit)).toHaveLength(0);
   });
 
   it('a fresh crater rim does not leave a halo hanging over the hole', () => {
@@ -97,7 +116,6 @@ describe('CLand — the radiation glow never lights empty space', () => {
       H = 300,
       surf = 150;
     const land = cliffLand(W, H, W, surf, surf); // flat
-    const p = landPriv(land);
 
     land.blastIradiate(200, surf, 90, 12, 30, [255, 46, 20]);
     settleFallout(land);
@@ -108,11 +126,58 @@ describe('CLand — the radiation glow never lights empty space', () => {
 
     land.draw(makeCanvas(W, H).getContext('2d') as CanvasRenderingContext2D);
 
-    const px = p.m_pixels!;
-    const inAir = litTexels(land).filter(t => {
-      if (t.x < 0 || t.x >= W || t.y < 0 || t.y >= H) return true;
-      return (px[t.y * W + t.x] & 0xff000000) === 0;
-    });
-    expect(inAir).toHaveLength(0);
+    expect(inAir(land, litTexels(land))).toHaveLength(0);
+  });
+
+  it('a carve rebuilds the layer THAT frame, however recently it was baked', () => {
+    const W = 400,
+      H = 300,
+      surf = 150;
+    const land = cliffLand(W, H, W, surf, surf); // flat
+    const ctx = makeCanvas(W, H).getContext('2d') as CanvasRenderingContext2D;
+
+    land.blastIradiate(200, surf, 90, 12, 30, [255, 46, 20]);
+    settleFallout(land);
+    land.draw(ctx); // baked, and the rebuild clock is now at zero
+
+    // Fallout merely ACCUMULATING is allowed to wait for the next scheduled rebuild, because a
+    // thicker coat does not make the drawn one wrong. Cutting is the opposite: this hole has to
+    // appear in the layer immediately or the next frame draws the old coat over ground that has
+    // just been removed — glow hanging in a fresh crater, which is the whole failure this file
+    // exists for. Drawn with NO `update()` in between, so nothing but urgency can trigger the bake.
+    land.carveDiscCollapse(200, surf + 8, 45, true, false, true);
+    land.draw(ctx);
+
+    const lit = litTexels(land);
+    expect(lit.length).toBeGreaterThan(50); // still a coat around the hole
+    expect(inAir(land, lit)).toHaveLength(0);
+  });
+
+  it('the soft HALO obeys the same rule as the specks it sits under', () => {
+    const W = 400,
+      H = 300,
+      surf = 150;
+    const land = cliffLand(W, H, W, surf, surf); // flat
+    const p = landPriv(land);
+
+    // Coat the ground, then blow a crater through the middle of it — the reported case. The walls
+    // it leaves are near-vertical and hot on both faces, which is the geometry that makes a
+    // ground-blind blur spray glow sideways into the open bowl.
+    land.blastIradiate(200, surf, 90, 12, 30, [255, 200, 0]);
+    settleFallout(land);
+    land.carveDiscCollapse(200, surf + 8, 45, true, false, true);
+    for (let i = 0; i < 200; i++) land.update(1 / 60);
+
+    land.draw(makeCanvas(W, H).getContext('2d') as CanvasRenderingContext2D);
+
+    // The halo is REAL — it was baked and it is bright. Without this the sweep below would pass on
+    // an empty buffer, which is exactly how a bloom that lights the sky slips past a test.
+    const halo = litIn(land, p.m_radGlowBloom);
+    expect(halo.length).toBeGreaterThan(200);
+    // Wider than the specks that cast it, or it is not a halo at all.
+    expect(halo.length).toBeGreaterThan(litIn(land, p.m_radGlowCanvas).length);
+    // …and every texel of it has earth beneath it. Live-blitted through a downscale and back up,
+    // this ran to hundreds of texels of glow hanging in the crater's airspace.
+    expect(inAir(land, halo)).toHaveLength(0);
   });
 });
