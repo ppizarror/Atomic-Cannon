@@ -200,7 +200,15 @@ export interface ParticlesPriv {
   m_explosions: {x: number; y: number; age: number; life: number}[];
   /** `seeds` are the crater's ignition points — how many a vent gets is radius-derived, and a test
    *  that reasons about the emission front spreading has to pin it down (see the fume-curtain test). */
-  m_craterVents: {x: number; y: number; r: number; age: number; seeds: {pos: number; start: number}[]}[];
+  m_craterVents: {
+    x: number;
+    y: number;
+    r: number;
+    age: number;
+    /** Emission clock — 0 until the vent actually opens, so a test can time when a crater lit. */
+    emit: number;
+    seeds: {pos: number; start: number}[];
+  }[];
   /** Push one particle of a given render kind straight into the pool — the private emitter, so a
    *  test can exercise a single kind's draw branch without a whole blast. */
   add(
