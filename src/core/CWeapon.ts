@@ -52,44 +52,40 @@ export interface RawWeapon {
   damage: number;
   radius: number;
   cost: number;
-  variance: number;
-  spawn: number;
-  spread: number;
-  sucNum: number;
-  sucSec: number;
-  batSec: number;
-  cluNum: number;
-  cluStart: number;
-  cluEnd: number;
-  cluRecurse: number;
-  earth: number;
-  crackle: number;
-  fodder: number;
-  trail: string;
-  blast: string;
-  soundFire: string;
-  soundHit: string;
-  trailType: number;
-  trailLength: number;
-  flareType: number;
-  flareBmp: string;
-  flareSize: number;
-  muzzleFlash: number;
-  muzzleSmoke: number;
-  extType: number;
-  iradiate: number;
-  irDmg: number;
-  irTime: number;
-  irRed: number;
-  irGreen: number;
-  irBlue: number;
-  expType: number;
+  variance?: number;
+  spawn?: number;
+  spread?: number;
+  sucNum?: number;
+  sucSec?: number;
+  batSec?: number;
+  cluNum?: number;
+  cluStart?: number;
+  cluEnd?: number;
+  cluRecurse?: number;
+  earth?: number;
+  crackle?: number;
+  fodder?: number;
+  trail?: string;
+  blast?: string;
+  soundFire?: string;
+  soundHit?: string;
+  trailType?: number;
+  trailLength?: number;
+  flareType?: number;
+  flareBmp?: string;
+  flareSize?: number;
+  muzzleFlash?: number;
+  muzzleSmoke?: number;
+  extType?: number;
+  iradiate?: number;
+  irDmg?: number;
+  irTime?: number;
+  irRed?: number;
+  irGreen?: number;
+  irBlue?: number;
+  expType?: number;
   expBitmap: string;
-  /** HOMING guidance (extType 19), all optional — a row that omits them gets the defaults below.
-   *  `homMaxDeg` is the authority band either side of the apex heading: the whole character of a
-   *  guided round, and the knob that separates a cheap seeker from an expensive one. `homStepDeg`
-   *  / `homFineDeg` are how finely it searches that band — a coarse search is a dumber missile
-   *  that settles for a worse correction, which is a legitimate way to price one down. */
+  /** HOMING guidance, all optional. */
   homMaxDeg?: number;
   homStepDeg?: number;
   homFineDeg?: number;
@@ -115,9 +111,14 @@ const PARTICLES = particlesRaw as unknown as Record<string, ParticleDef>;
 
 /** A weapon's on-screen tint, from its blast (else trail) particle effect. */
 function weaponColor(w: RawWeapon): string {
-  const p = PARTICLES[w.blast] || PARTICLES[w.trail];
+  const p = PARTICLES[w.blast ?? ''] || PARTICLES[w.trail ?? ''];
   return p ? rgbToHex(p.colorr, p.colorg, p.colorb) : '#ffaa00';
 }
+
+/** Asset path of a flare sprite from its weapons.json basename (`"28.bmp"` → `"flares/28.bmp"`).
+ *  The data stores bare filenames — like `bitmap` (assets/weapons/) and the icons — so the
+ *  folder is spelled ONCE, here, and the preloader in CGameController keys off the same helper. */
+export const flarePath = (file: string): string => `flares/${file}`;
 
 export interface WeaponDef extends RawWeapon {
   index: number;
@@ -327,19 +328,19 @@ export class CWeapon {
 
   // ---- EFFECTS -----------------------------------------------------------
   getBlastParticle(): string {
-    return this.m_def.blast;
+    return this.m_def.blast ?? '';
   }
 
   getTrailParticle(): string {
-    return this.m_def.trail;
+    return this.m_def.trail ?? '';
   }
 
   getFireSound(): string {
-    return this.m_def.soundFire;
+    return this.m_def.soundFire ?? '';
   }
 
   getHitSound(): string {
-    return this.m_def.soundHit;
+    return this.m_def.soundHit ?? '';
   }
 
   /** Explosion style as the authoritative {@link ExpType} token ({@link EXP.NUKE} = biggest +
@@ -349,9 +350,9 @@ export class CWeapon {
     return toExpType(this.m_def.expType || 0);
   }
 
-  /** The weapon's explosion flare sprite, e.g. `flares/00.bmp`. */
+  /** The weapon's explosion flare sprite as an asset path, e.g. `flares/00.bmp`. */
   getExpBitmap(): string {
-    return this.m_def.expBitmap || '';
+    return this.m_def.expBitmap ? flarePath(this.m_def.expBitmap) : '';
   }
 
   // ---- TRAIL / MUZZLE / FLARE --------------------------------------------
@@ -394,7 +395,7 @@ export class CWeapon {
 
   /** In-flight glowing flare sprite on the projectile (rockets), else ''. */
   getInFlightFlare(): string {
-    return this.m_def.flareType ? `flares/${this.m_def.flareBmp}` : '';
+    return this.m_def.flareType ? flarePath(this.m_def.flareBmp ?? '') : '';
   }
 
   getFlareSize(): number {
@@ -416,15 +417,20 @@ export class CWeapon {
  *  battery / succession / cluster factors (they compound). Cluster is integer
  *  `cluNum^cluRecurse`, except cluNum==1 which sets m = cluRecurse outright. */
 function impactMultiplier(w: RawWeapon): number {
+  const spawn = w.spawn ?? 0,
+    batSec = w.batSec ?? 0,
+    sucNum = w.sucNum ?? 0,
+    cluNum = w.cluNum ?? 0,
+    cluRecurse = w.cluRecurse ?? 0;
   let m = 1;
-  if ((w.spawn ?? 0) > 0) m = w.spawn; // m = spawn (assign)
-  if ((w.batSec ?? 0) > 0) m = m * w.batSec * 3; // × batSec × 3
-  if ((w.sucNum ?? 0) > 0) m = m * (w.sucNum + 1); // × (sucNum + 1)
-  if (w.cluNum === 1)
-    m = w.cluRecurse; // cluNum==1: m = cluRecurse
-  else if ((w.cluNum ?? 0) > 0)
+  if (spawn > 0) m = spawn; // m = spawn (assign)
+  if (batSec > 0) m = m * batSec * 3; // × batSec × 3
+  if (sucNum > 0) m = m * (sucNum + 1); // × (sucNum + 1)
+  if (cluNum === 1)
+    m = cluRecurse; // cluNum==1: m = cluRecurse
+  else if (cluNum > 0)
     // else: × cluNum^cluRecurse (int)
-    m = m * Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse ?? 0));
+    m = m * Math.pow(Math.trunc(cluNum), Math.trunc(cluRecurse));
   return m;
 }
 

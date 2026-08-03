@@ -330,7 +330,7 @@ function DepotBody() {
                   [d.stat.dmgArea, weaponDamagePerArea(selW).toFixed(0)],
                   [d.stat.variance, (selW.variance ?? 0).toFixed(1)],
                   [d.stat.fodder, (selW.fodder ?? 0).toFixed(1)],
-                  [d.stat.cluster, selW.cluNum > 0 ? selW.cluNum : '-'],
+                  [d.stat.cluster, (selW.cluNum ?? 0) > 0 ? selW.cluNum : '-'],
                   [d.stat.cost, `$${selW.cost}`],
                   [d.stat.owned, owned[sel] === UNLIMITED ? '∞' : String(owned[sel] ?? 0)],
                 ] as const

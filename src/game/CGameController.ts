@@ -22,6 +22,7 @@ import {landEnabled, weaponEnabled} from '../core/CGameContent';
 import {
   BIG_BLAST_RADIUS,
   CWeapon,
+  flarePath,
   getDefaultWeaponIndex,
   getWeapon,
   weaponIndices,
@@ -729,13 +730,15 @@ export class CGameController implements ShotWorld {
     this.m_assets.loadImage('fx:flare', '/assets/flares/04.bmp');
     // The generic fallback fireball, keyed on its light blue-purple bg.
     this.m_assets.loadSprite('fx:explosion', '/assets/effects/explosion1.bmp', [127, 127, 255]);
-    // Each weapon explodes with its OWN flare sprite (expBitmap): load the distinct
-    // set. They're on a black background → additive blit, no colorkey needed.
+    // Each weapon explodes with its OWN flare sprite (expBitmap, a bare basename under
+    // assets/flares/): load the distinct set. They're on a black background → additive
+    // blit, no colorkey needed.
     for (const b of new Set(WEAPON_DATABASE.map(w => w.expBitmap).filter(Boolean))) {
-      this.m_assets.loadImage(`fx:${b}`, `/assets/${b}`);
+      this.m_assets.loadImage(`fx:${flarePath(b)}`, `/assets/${flarePath(b)}`);
     }
-    // The in-flight rocket flare (flareType/flareBmp), black-bg → additive.
-    this.m_assets.loadImage('fx:flares/01.bmp', '/assets/flares/01.bmp');
+    // The in-flight rocket flare (flareType/flareBmp), black-bg → additive. Keyed through
+    // flarePath so it matches what CWeapon.getInFlightFlare() asks the particle system for.
+    this.m_assets.loadImage(`fx:${flarePath('01.bmp')}`, `/assets/${flarePath('01.bmp')}`);
     this.m_particles.setAssets(this.m_assets);
 
     // Pick a landscape (background + depth-layered terrain textures + weather). Keep the
@@ -2327,10 +2330,19 @@ export class CGameController implements ShotWorld {
       // proper exhaust plume for the initial burn. Both the fume trail and the thrust flare are
       // gated on this same "motor burning" window.
       const isTracer = weapon.getExtType() === EXT.TRACER;
-      // A HOMING round relights at the apex and burns all the way down, so its plume must not stop
-      // where every other rocket's does — `homingBurn` is the guidance telling us the motor is lit.
-      const motorBurning =
-        shot.homingBurn || !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
+      // A HOMING round's motor is NOT the usual "burns until apex": it runs, cuts while the round
+      // coasts up to the top, then relights and burns all the way down. The guidance owns that
+      // state, so read it INSTEAD of the generic rule — OR-ing the two kept the plume alight
+      // through the coast, which is exactly the phase the player should see it go dark.
+      const isHoming = weapon.getExtType() === EXT.HOMING;
+      const motorBurning = isHoming
+        ? shot.homingBurn
+        : !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
+      // …and announce the relight, once, so the apex is audible as well as visible.
+      if (isHoming && !shot.homingRelit && !Number.isNaN(shot.homingBase)) {
+        shot.homingRelit = true;
+        this.m_audio?.fire(weapon.getFireSound(), sp.x);
+      }
       if (isTracer) {
         // Tracer: NO exhaust, NO smoke, NO nose flare — just a thin white streak.
         // Stationary white puffs planted along the whole path (it emits rising AND

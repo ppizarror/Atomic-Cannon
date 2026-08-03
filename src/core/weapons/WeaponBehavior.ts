@@ -741,7 +741,11 @@ function homingStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number):
   }
 
   // --- act 2: coast down --------------------------------------------------
-  if (homingProgress(shot) > HOMING.COAST_FROM) {
+  if (homingProgress(shot) <= HOMING.COAST_FROM) {
+    shot.homingBurn = true; // act 1: still under power, so the plume is lit
+    return;
+  }
+  {
     const v = shot.getVelocity();
     if (shot.homingVyCut === 0) shot.homingVyCut = Math.min(-1, v.y); // v.y < 0 while rising
     // Bleed the HORIZONTAL component only, so the arc still rises and falls under gravity as

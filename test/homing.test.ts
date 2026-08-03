@@ -107,7 +107,9 @@ describe('Homing Missile', () => {
   it('is a HOMING-behaviour Missile in the data', () => {
     expect(getWeapon(HOMING.index).getExtType()).toBe(EXT.HOMING);
     expect(HOMING.type).toBe('Missile');
-    expect(HOMING.spawn).toBe(1); // one guided round, not a fan
+    // One guided round, not a fan. Read through the getter: the row omits `spawn` because 1
+    // is the engine default, so the raw record has no such key.
+    expect(getWeapon(HOMING.index).getSpawnCount()).toBe(1);
   });
 
   it('reads its guidance limits from the weapon row, with defaults when absent', () => {

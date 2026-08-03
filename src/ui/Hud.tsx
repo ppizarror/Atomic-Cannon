@@ -529,7 +529,7 @@ function WeaponDetails2() {
   const w = currentWeapon();
   const cluster = w
     ? (w.cluRecurse ?? 0) > 0
-      ? Math.pow(Math.trunc(w.cluNum), Math.trunc(w.cluRecurse))
+      ? Math.pow(Math.trunc(w.cluNum ?? 0), Math.trunc(w.cluRecurse ?? 0))
       : (w.cluNum ?? 0)
     : 0;
   const h = strings.value.hud;
@@ -539,7 +539,9 @@ function WeaponDetails2() {
       {w && (
         <>
           <LcdLine text={`${h.lcd.earth} ${w.earth ?? 0}`} />
-          <LcdLine text={`${h.lcd.spawn} ${w.spawn ?? 0}`} />
+          {/* Rounds per fan — the ENGINE default (getSpawnCount) is 1, not 0: a row that omits
+              `spawn` (or, in the legacy table, set it to 0) still fires one round. */}
+          <LcdLine text={`${h.lcd.spawn} ${w.spawn || 1}`} />
           <LcdLine text={`${h.lcd.cluster} ${cluster}`} />
           <LcdLine text={`${h.lcd.succession} ${(w.sucNum ?? 0) + 1}`} />
           <LcdLine text={`${h.lcd.battery} ${w.batSec ?? 0}`} />

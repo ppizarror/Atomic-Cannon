@@ -5,7 +5,7 @@ import {describe, it, expect} from 'vitest';
 
 import {CLand} from '../src/core/CLand';
 import {CShot} from '../src/core/CShot';
-import {WEAPON_DATABASE, getWeapon, weaponName} from '../src/core/CWeapon';
+import {WEAPON_DATABASE, flarePath, getWeapon, weaponName} from '../src/core/CWeapon';
 import {Vec2} from '../src/math/Vec2';
 import {
   weaponFlyStep,
@@ -115,6 +115,41 @@ class MockWorld implements ShotWorld {
 
   hitSound() {}
 }
+
+// The source table is DEFAULT-OMITTING: a row spells out only the columns that do something,
+// and the fallbacks live in the CWeapon getters. Two ways that quietly rots — a copy-pasted row
+// that pads every column back in ("cluStart": 0 on a weapon with no cluster), and an asset
+// column that grows a folder the loader also prepends — so pin both. See references/schema.md
+// in the add-weapon skill.
+describe('weapons.json is minimal', () => {
+  // value(s) indistinguishable from the key being absent, per column
+  const DEFAULTS: Record<string, unknown[]> = {
+    variance: [0], spawn: [0, 1], spread: [0], sucNum: [0], sucSec: [0], batSec: [0],
+    cluNum: [0], cluStart: [0], cluEnd: [0], cluRecurse: [0], earth: [0], crackle: [0],
+    fodder: [0], secret: [0], trail: [''], blast: [''], soundFire: [''], soundHit: [''],
+    trailType: [0], trailLength: [0], flareType: [0], flareBmp: [''], flareSize: [0],
+    muzzleFlash: [0], muzzleSmoke: [0], extType: [0], rayMask: [''], rayColor: [''],
+    rayScroll: [0], iradiate: [0], irDmg: [0], irTime: [0], irRed: [0], irGreen: [0],
+    irBlue: [0], expType: [0],
+  }; // prettier-ignore
+
+  it('carries no column that merely restates its default', () => {
+    const padded = WEAPON_DATABASE.flatMap(w =>
+      Object.keys(DEFAULTS)
+        .filter(k => k in w && DEFAULTS[k].includes((w as Record<string, unknown>)[k]))
+        .map(k => `${w.id}.${k}`),
+    );
+    expect(padded).toEqual([]);
+  });
+
+  it('stores flare sprites as bare basenames — the folder comes from flarePath()', () => {
+    for (const w of WEAPON_DATABASE) {
+      expect(w.expBitmap).toMatch(/^[\w.-]+\.bmp$/);
+      if (w.flareBmp) expect(w.flareBmp).toMatch(/^[\w.-]+\.bmp$/);
+    }
+    expect(getWeapon(0).getExpBitmap()).toBe(flarePath(WEAPON_DATABASE[0].expBitmap));
+  });
+});
 
 describe('Weapon behaviour', () => {
   it('a Cleaner (Earth Destroy) REMOVES terrain across its radius when it detonates at the surface', () => {

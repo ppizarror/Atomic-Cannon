@@ -538,9 +538,12 @@ export class CShot {
   homingApplied: number = 0;
   /** Tank the guidance is steering at, for the on-screen lock marker (null = coasting blind). */
   homingTarget: CTank | null = null;
-  /** True on any frame the sustainer is lit — the exhaust plume reads this, so a guided round
-   *  keeps smoking through its descent instead of coasting dark like an ordinary rocket. */
+  /** True on any frame the sustainer is lit. The exhaust plume reads this INSTEAD of the generic
+   *  "burns until apex" rule, so a guided round smokes under power, goes dark through the coast,
+   *  and smokes again once it relights — the profile is legible in the trail itself. */
   homingBurn: boolean = false;
+  /** Set once the relight has been announced, so the motor barks at the apex and not every frame. */
+  homingRelit: boolean = false;
   /** The reachable region, refreshed every few frames and drawn under the missile: the landing
    *  points across the authority band, plus the two EXTREME trajectories that bound them. The
    *  bounding paths are kept because the region has to be drawn along the real curves — chords

@@ -13,7 +13,7 @@ import {makeCanvas} from './_dom';
 import {priv} from './_internals';
 
 import {CGameController} from '../src/game/CGameController';
-import {WEAPON_DATABASE} from '../src/core/CWeapon';
+import {getWeapon, WEAPON_DATABASE} from '../src/core/CWeapon';
 import {REF_TIME_SCALE} from '../src/core/CShot';
 
 const idOf = (id: string) => WEAPON_DATABASE.findIndex(w => w.id === id);
@@ -33,6 +33,14 @@ function fireGame(): CGameController {
   return gc;
 }
 
+/** The multi-fire stats as the ENGINE sees them. weapons.json omits any column holding its
+ *  default, so a row is read through CWeapon's getters (spawn defaults to 1, the rest to 0)
+ *  rather than off the raw record, where an omitted `spawn` reads as undefined. */
+function multiFire(index: number): {spawn: number; sucNum: number; sucSec: number} {
+  const w = getWeapon(index);
+  return {spawn: w.getSpawnCount(), sucNum: w.getSuccessionCount(), sucSec: w.getSuccessionSec()};
+}
+
 /** Delays (relative to now) of every currently-scheduled timer, ascending. */
 function pendingDelays(gc: CGameController): number[] {
   const p = priv(gc);
@@ -42,7 +50,7 @@ function pendingDelays(gc: CGameController): number[] {
 describe('Multi-fire cadence', () => {
   it('a spawn weapon fires its whole fan in one frame (no over-time salvos)', () => {
     const gc = fireGame();
-    const def = WEAPON_DATABASE[STINGERS];
+    const def = multiFire(STINGERS);
     gc.selectWeapon(STINGERS);
     gc.fire();
 
@@ -54,7 +62,7 @@ describe('Multi-fire cadence', () => {
 
   it('a succession weapon fires salvo 0 now and queues the rest sequentially', () => {
     const gc = fireGame();
-    const def = WEAPON_DATABASE[HELLFIRE];
+    const def = multiFire(HELLFIRE);
     gc.selectWeapon(HELLFIRE);
     gc.fire();
 
@@ -67,7 +75,7 @@ describe('Multi-fire cadence', () => {
 
   it('succession salvos are spaced sucSec·REF_TIME_SCALE apart (fixed, not divided/clamped)', () => {
     const gc = fireGame();
-    const def = WEAPON_DATABASE[HELLFIRE];
+    const def = multiFire(HELLFIRE);
     gc.selectWeapon(HELLFIRE);
     gc.fire();
 
@@ -85,7 +93,7 @@ describe('Multi-fire cadence', () => {
 
   it('a fan + succession weapon fires the WHOLE fan on every salvo', () => {
     const gc = fireGame();
-    const def = WEAPON_DATABASE[KATYUSHA];
+    const def = multiFire(KATYUSHA);
     gc.selectWeapon(KATYUSHA);
     gc.fire();
 
@@ -102,7 +110,7 @@ describe('Multi-fire cadence', () => {
 
   it('advancing sim time releases the queued salvos one at a time', () => {
     const gc = fireGame();
-    const def = WEAPON_DATABASE[HELLFIRE];
+    const def = multiFire(HELLFIRE);
     gc.selectWeapon(HELLFIRE);
     gc.fire();
 
