@@ -1,7 +1,8 @@
 /**
  * Two gameplay rules:
- *  1. A weapon/bomb crate grants to WHOEVER grabs it — a CPU tank driving over one collects the
- *     contents like anybody else, rather than the crate vanishing for free.
+ *  1. A weapon crate grants to WHOEVER grabs it — a CPU tank driving over one collects the
+ *     contents like anybody else, rather than the crate vanishing for free. (A `bomb` crate is a
+ *     trap and pays out nothing; that path is covered in crate-bomb.test.ts.)
  *  2. Radiation fallout DOT is neutralized in NET matches (cosmetic only), because it accrues per
  *     frame over the un-synchronized aim phase and would drift/false-desync lockstep clients — the
  *     same treatment wind gusts already get. Solo keeps full radiation damage.

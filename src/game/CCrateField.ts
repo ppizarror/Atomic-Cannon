@@ -2,10 +2,11 @@
  * CCrateField — the supply crates (Gameplay → Crates), split out of CGameController.
  *
  * Owns the falling/landed crates, their physics and their draw, plus the floating pickup messages.
- * What it deliberately does NOT own is the AWARD: handing a tank credits/health/ammo touches the
- * economy, the squad credit pool and the audio bus, so this detects the pickup and calls back
- * through {@link CrateEnv.onCollect}. The field decides where crates are and who reached one; the
- * controller decides what that's worth.
+ * What it deliberately does NOT own is the OUTCOME: paying a tank credits/health/ammo touches the
+ * economy, the squad credit pool and the audio bus, and a bomb crate is a trap that detonates on
+ * the taker (terrain + damage), so this detects the pickup and calls back through
+ * {@link CrateEnv.onCollect}. The field decides where crates are and who reached one; the
+ * controller decides what that's worth — or what it costs.
  *
  * Crate positions ride the net snapshot, so `list`/`adopt` expose the array for serialisation —
  * the one place this isn't a closed box.
@@ -72,7 +73,8 @@ export interface CrateEnv {
   worldWidth: number;
   wind: {x: number; y: number};
   tanks: readonly CrateTaker[];
-  /** A live tank reached `crate` — award its contents (controller-owned: economy, credits, audio). */
+  /** A live tank reached `crate` — resolve its contents (controller-owned: economy, credits, audio;
+   *  or, for a `bomb` crate, the trap detonating on `taker`). */
   onCollect(crate: Crate, taker: CrateTaker): void;
 }
 

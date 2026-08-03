@@ -2079,7 +2079,9 @@ export class CGameController implements ShotWorld {
     };
   }
 
-  /** A random enabled, non-staple weapon index for a weapon crate (falls back to Bomb). */
+  /** The weapon a crate carries: a random enabled, non-staple pick for a `weapon` crate (falling
+   *  back to Bomb), or — for a `bomb` crate — the Bomb itself, which is the charge it cooks off
+   *  rather than a prize. Matches the original, which resolves the trap by the name "Bomb". */
   private crateWeaponFor(kind: CrateKind): number {
     const bomb = WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
     if (kind === 'bomb') return bomb;
@@ -2088,8 +2090,9 @@ export class CGameController implements ShotWorld {
     return pool.length ? pool[this.m_rng.int(pool.length)] : bomb;
   }
 
-  /** Award a crate's contents to `tank` and announce it (message shown for the human). The field
-   *  detects the pickup; the payout is the controller's because it touches economy + audio. */
+  /** Resolve a crate's contents onto `tank` and announce it (message shown for the human). The field
+   *  detects the pickup; the payout is the controller's because it touches economy + audio. Note a
+   *  `bomb` crate pays out NOTHING — it is a trap, and cooks off on the taker (see detonateCrate). */
   private collectCrate(c: Crate, tank: CTank): void {
     let msg = '',
       color = '#ffffff';
@@ -2108,11 +2111,16 @@ export class CGameController implements ShotWorld {
         break;
       }
       case 'weapon':
-      case 'bomb':
         if (c.weaponIndex >= 0) this.economyFor(tank).grant(c.weaponIndex);
         msg = fmt(strings.value.game.foundWeapon, {weapon: getWeapon(c.weaponIndex).getName()});
         color = '#bfe9b0';
         break;
+      case 'bomb':
+        // A trap, not a prize. Returns early: no pickup chime and no float text — the original
+        // prints nothing for this crate type, and the blast is the feedback.
+        this.detonateCrate(c, tank);
+        this.markDirty();
+        return;
     }
     this.m_audio?.crate(c.x);
     if (tank.isHuman() && msg) {
@@ -2120,6 +2128,46 @@ export class CGameController implements ShotWorld {
       this.m_crateField.addText(p.x, p.y - 42, msg, color);
     }
     this.markDirty();
+  }
+
+  /**
+   * A bomb crate cooks off on whoever opened it (the original's crate type 3: it looks up the Bomb
+   * weapon by name and detonates it at the crate rather than paying anything out).
+   *
+   * Blast, crater and scorch mirror a deployed mine's, but the DAMAGE deliberately does not go
+   * through {@link applyBlast}: the original hits only the tank that opened the crate, with no
+   * distance falloff, no kickback and no owner attribution, so a bystander parked beside the crate
+   * is untouched and a bomb-crate death is credited to nobody. Nearby crates survive too — the
+   * original's crate-clear runs on the shot-blast path, not this one.
+   */
+  private detonateCrate(c: Crate, tank: CTank): void {
+    const w = getWeapon(c.weaponIndex);
+    const r = this.scaledBlastRadius(w);
+    this.m_audio?.hit(w.getHitSound(), c.x); // the weapon's impact sound, not the pickup chime
+    this.explode(
+      c.x,
+      c.y,
+      1.3,
+      w.getColor(),
+      r,
+      w.isNuclear(),
+      w.getBlastParticle(),
+      w.getExpType(),
+      w.getExpBitmap(),
+      w.getEarth() > 0,
+      w.isCleaner(),
+    );
+    // Same shake rule as a mine: reserved for bomb/nuke-scale blasts, and option-gated.
+    if (GameConfig.cameraShake && w.isBigBlast(w.getRadius()))
+      this.shake(w.isNukeClass() ? 16 : 8, w.isNukeClass() ? 1.0 : 0.3);
+    this.m_land.carveDiscCollapse(Math.floor(c.x), Math.floor(c.y), r, true, false, true);
+    const crackle = w.getCrackle();
+    if (crackle > 0) this.m_land.scorch(Math.floor(c.x), Math.floor(c.y), Math.round(r * (0.4 + crackle * 0.85)));
+    // Direct hit on the opener, through the usual shield → armor pipeline (the original passes its
+    // damage straight to the tank's hit routine with the piercing flag clear).
+    const removed = tank.hit(w.getDamage(), false);
+    this.m_markers.spawnDamage(tank.getPosition(), removed); // Show Points: floating damage text
+    if (!tank.isAlive()) this.handleTankDestroyed(tank);
   }
 
   /** Drop one crate at world column `x` (optionally forcing its contents). */
