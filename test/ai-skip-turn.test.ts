@@ -166,8 +166,7 @@ describe('Ultra economy digs itself out', () => {
     const owned = (): number => {
       const econ = gc.economyFor(tank);
       let n = 0;
-      for (let i = 0; i < WEAPON_DATABASE.length; i++)
-        if (getWeapon(i).isCleaner()) n += econ.getOwned(i);
+      for (let i = 0; i < WEAPON_DATABASE.length; i++) if (getWeapon(i).isCleaner()) n += econ.getOwned(i);
       return n;
     };
     expect(owned()).toBe(0);

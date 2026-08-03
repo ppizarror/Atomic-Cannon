@@ -11,8 +11,7 @@ import {GameConfig} from '../src/core/CGameConfig';
 
 // Analytic flat-ground range at the 45° max-range angle: v²·sin(90°)/g = v²/g. The integrator
 // scales gravity by √worldScale (same map-size zoom as the launch speed), so use that here.
-const maxRange = (): number =>
-  launchSpeed(1000) ** 2 / (SHOT_GRAVITY * Math.sqrt(GameConfig.worldScale));
+const maxRange = (): number => launchSpeed(1000) ** 2 / (SHOT_GRAVITY * Math.sqrt(GameConfig.worldScale));
 
 afterAll(() => {
   GameConfig.viewWidth = 1000;

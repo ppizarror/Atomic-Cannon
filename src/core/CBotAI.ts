@@ -320,8 +320,7 @@ export function pickTarget(
     if (r < 0.4) {
       // weakest (lowest health)
       let best = 0;
-      for (let i = 1; i < enemies.length; i++)
-        if (enemies[i].healthFrac < enemies[best].healthFrac) best = i;
+      for (let i = 1; i < enemies.length; i++) if (enemies[i].healthFrac < enemies[best].healthFrac) best = i;
       return best;
     }
     if (r < 0.8) {
@@ -362,9 +361,9 @@ export function pickMoveWeapon(rnd: () => number = Math.random): number {
 /** Indices of weapons a bot can aim as a simple ballistic arc (damage on impact). */
 export function ballisticWeaponIndices(): number[] {
   const ok = new Set(['Shell', 'Bomb', 'Rocket', 'Missile', 'NUKE', 'Organic', 'DOT']);
-  return WEAPON_DATABASE.filter(
-    w => ok.has(String(w.type)) && w.damage > 0 && weaponEnabled(w.index),
-  ).map(w => w.index);
+  return WEAPON_DATABASE.filter(w => ok.has(String(w.type)) && w.damage > 0 && weaponEnabled(w.index)).map(
+    w => w.index,
+  );
 }
 
 /**
@@ -577,13 +576,7 @@ export class CClassicBotAI extends CBotAI<BotTurnCtx> {
     let ballisticPower: number;
     let solutionFound = false;
     if (willAim) {
-      const aim = bestAim(
-        ctx.muzzleFor,
-        {x: target.x, y: target.y},
-        ctx.wind,
-        ctx.field,
-        ctx.gustTAtLaunch,
-      );
+      const aim = bestAim(ctx.muzzleFor, {x: target.x, y: target.y}, ctx.wind, ctx.field, ctx.gustTAtLaunch);
       ballisticAngle = aim.angleDeg;
       ballisticPower = aim.power;
       solutionFound = aim.dist <= target.hitRadius + 6; // the arc lands on the target

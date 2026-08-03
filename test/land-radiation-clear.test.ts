@@ -15,11 +15,7 @@ import {CParticleSystem} from '../src/core/CParticleSystem';
 /** A flat land with a REAL pixel buffer so `blastCircle` can actually carve.
  *  The heat wisps live in CParticleSystem (CLand only decides where fallout fumes), so the land is
  *  wired to one and the tests count wisps there. */
-function landWithPixels(
-  W: number,
-  H: number,
-  surfaceY: number,
-): {land: CLand; fx: CParticleSystem} {
+function landWithPixels(W: number, H: number, surfaceY: number): {land: CLand; fx: CParticleSystem} {
   const land = new CLand(W, H);
   land.generateFlat();
   const p = landPriv(land);

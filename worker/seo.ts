@@ -11,8 +11,7 @@
 import {headTags} from '../src/seo';
 
 /** Tags whose URL must be absolute; `link` carries it in href, the metas in content. */
-const ABSOLUTE_URL_TAGS =
-  'meta[property="og:url"], meta[property="og:image"], meta[name="twitter:image"]';
+const ABSOLUTE_URL_TAGS = 'meta[property="og:url"], meta[property="og:image"], meta[name="twitter:image"]';
 
 /** Rewrite an asset response in place when it is the HTML shell; anything else passes through. */
 export function withSeo(res: Response, origin: string): Response {

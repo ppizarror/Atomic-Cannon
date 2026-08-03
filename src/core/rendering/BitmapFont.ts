@@ -12,10 +12,8 @@ import {capSet} from '../../util/cache';
 // GLYPH STRIP HELPERS
 // ==========================================================================
 
-const isMagenta = (px: Uint8ClampedArray, i: number) =>
-  px[i] > 170 && px[i + 1] < 90 && px[i + 2] > 170;
-const isCyan = (px: Uint8ClampedArray, i: number) =>
-  px[i] < 90 && px[i + 1] > 170 && px[i + 2] > 170;
+const isMagenta = (px: Uint8ClampedArray, i: number) => px[i] > 170 && px[i + 1] < 90 && px[i + 2] > 170;
+const isCyan = (px: Uint8ClampedArray, i: number) => px[i] < 90 && px[i + 1] > 170 && px[i + 2] > 170;
 
 const FIRST = 33; // '!'  — the strip starts here; space (32) is advance-only.
 
@@ -159,8 +157,7 @@ export class BitmapFont {
     text = asciiFold(text);
     let w = 0;
     for (const c of text)
-      w +=
-        (c === ' ' ? this.spaceW() : (this.glyph(c.charCodeAt(0))?.w ?? this.spaceW())) + spacing;
+      w += (c === ' ' ? this.spaceW() : (this.glyph(c.charCodeAt(0))?.w ?? this.spaceW())) + spacing;
     // `spacing` sits BETWEEN glyphs, not after the last — otherwise a negative
     // spacing under-sizes the canvas and clips the final glyph.
     return Math.max(1, w - spacing);

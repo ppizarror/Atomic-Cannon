@@ -19,22 +19,10 @@ import {useForceRender} from './useForceRender';
 import {useMenuNav} from './useMenuNav';
 import {backToMenu, startBattle, MIN_PLAYERS} from './store';
 import {type Widget, stepper, enumW} from './settingsPages';
-import {
-  setup,
-  setSetup,
-  MAX_HUMANS,
-  MAX_COMPUTERS,
-  MIN_TANKS_PER_TEAM,
-  MAX_TANKS_PER_TEAM,
-} from './setupStore';
+import {setup, setSetup, MAX_HUMANS, MAX_COMPUTERS, MIN_TANKS_PER_TEAM, MAX_TANKS_PER_TEAM} from './setupStore';
 
 // A stepper bound to one field of the per-match setup (Humans / Computers / Tanks).
-const countRow = (
-  c: RowCopy,
-  key: 'humans' | 'computers' | 'tanksPerTeam',
-  min: number,
-  max: number,
-): Widget => ({
+const countRow = (c: RowCopy, key: 'humans' | 'computers' | 'tanksPerTeam', min: number, max: number): Widget => ({
   label: c.label,
   tip: c.tip,
   kind: 'stepper',
@@ -67,10 +55,7 @@ export function PlaySetup() {
   ];
 
   return (
-    <MenuScreen
-      subtitle={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))}
-      spacing={-1}
-    >
+    <MenuScreen subtitle={sub ?? (canStart ? p.ready : fmt(p.needPlayers, {min: MIN_PLAYERS}))} spacing={-1}>
       <div class="menu-list settings-rows" ref={navRef}>
         <BigButton
           label={p.startGame}

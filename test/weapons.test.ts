@@ -409,14 +409,7 @@ describe('Weapon behaviour', () => {
     // Spawn a shot at muzzle-Y `my` with the given weapon and owner.
     const muzzleShot = (w: ReturnType<typeof getWeapon>, my: number, buried: boolean): CShot => {
       const shot = new CShot();
-      shot.initFromVelocity(
-        new Vec2(400, my),
-        300,
-        -300,
-        w.getDamage(),
-        w.getRadius(),
-        owner(buried),
-      );
+      shot.initFromVelocity(new Vec2(400, my), 300, -300, w.getDamage(), w.getRadius(), owner(buried));
       shot.setWeaponIndex(w.getIndex());
       return shot;
     };

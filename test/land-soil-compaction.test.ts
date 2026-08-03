@@ -24,8 +24,7 @@ function bandedLand(W: number, H: number, surf: number): CLand {
   for (let x = 0; x < W; x++) {
     p.m_arrHeights[x] = surf;
     // 10px stripes: alternating so we can count how many rows a band occupies.
-    for (let y = surf; y < H; y++)
-      px[y * W + x] = (Math.floor((y - surf) / 10) & 1) === 0 ? 0xff203040 : 0xff607080;
+    for (let y = surf; y < H; y++) px[y * W + x] = (Math.floor((y - surf) / 10) & 1) === 0 ? 0xff203040 : 0xff607080;
   }
   p.m_pixels = px;
   return land;

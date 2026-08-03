@@ -161,8 +161,7 @@ export const startMatch = (): void =>
   );
 
 /** Host-only: change a lobby room setting (wind / map size / max players); broadcast to all. */
-export const updateSettings = (patch: Partial<RoomClientState['settings']>): void =>
-  client?.updateSettings(patch);
+export const updateSettings = (patch: Partial<RoomClientState['settings']>): void => client?.updateSettings(patch);
 
 /** Host-only: change a gameplay config field in the lobby. Merges onto the live published
  *  config and re-publishes so every player sees it (and it's applied identically at Start). */

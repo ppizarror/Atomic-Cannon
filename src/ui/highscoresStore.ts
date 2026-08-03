@@ -30,9 +30,7 @@ interface HeroData {
 const cleanList = (v: unknown): HeroEntry[] =>
   Array.isArray(v)
     ? v
-        .filter(
-          (e): e is HeroEntry => !!e && typeof e.name === 'string' && Number.isFinite(e.value),
-        )
+        .filter((e): e is HeroEntry => !!e && typeof e.name === 'string' && Number.isFinite(e.value))
         .map(e => ({name: String(e.name).slice(0, NAME_MAX), value: Math.round(e.value)}))
         .sort((a, b) => b.value - a.value)
         .slice(0, CAP)

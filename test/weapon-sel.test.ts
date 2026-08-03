@@ -11,8 +11,7 @@ import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE, weaponName} from '../src/core/CWeapon';
 import {GameContent} from '../src/core/CGameContent';
 
-const indexOfName = (name: string): number =>
-  WEAPON_DATABASE.find(w => weaponName(w) === name)!.index;
+const indexOfName = (name: string): number => WEAPON_DATABASE.find(w => weaponName(w) === name)!.index;
 
 /** Switch weapons off the way the shipped default does (the secret Organic set). */
 function disable(...names: string[]): void {

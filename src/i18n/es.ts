@@ -68,8 +68,7 @@ export const es: Strings = {
         'intercambian disparos sobre un terreno destructible: ajusta tu ángulo y potencia, ten ' +
         'en cuenta el viento y saca al otro tanque del mapa. Juega contra la computadora o en ' +
         'línea con amigos.',
-      requires:
-        'Para jugar se necesita JavaScript y WebGL — activa JavaScript para comenzar una batalla.',
+      requires: 'Para jugar se necesita JavaScript y WebGL — activa JavaScript para comenzar una batalla.',
     },
   },
 

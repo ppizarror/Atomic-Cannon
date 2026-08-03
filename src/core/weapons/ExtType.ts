@@ -63,10 +63,7 @@ export type ExtType = {readonly [EXT_BRAND]: never};
  * nominal-enum boilerplate is shared via {@link makeNominalEnum}; only the brand + fallback
  * differ per module, so `ExtType` stays a DISTINCT type from `ExpType`.
  */
-export const {tokens: EXT, toType: toExtType} = makeNominalEnum<ExtType, typeof EXT_CODES>(
-  EXT_CODES,
-  'BALLISTIC',
-);
+export const {tokens: EXT, toType: toExtType} = makeNominalEnum<ExtType, typeof EXT_CODES>(EXT_CODES, 'BALLISTIC');
 
 /** Beam-family behaviour (an instant carving ray) — BEAM or the reserved BEAM_ALT. */
 export const isBeamExt = (ext: ExtType): boolean => ext === EXT.BEAM || ext === EXT.BEAM_ALT;

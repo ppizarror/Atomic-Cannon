@@ -63,10 +63,7 @@ const powerOf = weaponPower;
 // The magenta-keyed sort caret next to the active column header. Keeps a fixed-size
 // placeholder while the bitmap loads so nothing reflows and no broken-image glyph shows.
 function SortArrow({dir}: {dir: 1 | -1}) {
-  const src = useAsyncImage(
-    () => loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`),
-    [dir],
-  );
+  const src = useAsyncImage(() => loadUiBmp(`gui/sort arrow ${dir === 1 ? 'up' : 'down'}.bmp`), [dir]);
   return src ? <img class="dep-sort" src={src} alt="" /> : <span class="dep-sort" />;
 }
 
@@ -124,14 +121,7 @@ function DepBtn({
   disabled?: boolean;
   span?: boolean;
 }) {
-  return (
-    <ModalButton
-      label={label}
-      onClick={onClick}
-      disabled={disabled}
-      class={`dep-btn${span ? ' span' : ''}`}
-    />
-  );
+  return <ModalButton label={label} onClick={onClick} disabled={disabled} class={`dep-btn${span ? ' span' : ''}`} />;
 }
 
 // ---- THE MODAL -----------------------------------------------------------
@@ -219,10 +209,7 @@ function DepotBody() {
 
   return (
     <div class="overlay dep-overlay" onClick={closeAndEquip}>
-      <div
-        class={`dep-card${GameConfig.smallBuyFonts ? ' small-buy' : ''}`}
-        onClick={e => e.stopPropagation()}
-      >
+      <div class={`dep-card${GameConfig.smallBuyFonts ? ' small-buy' : ''}`} onClick={e => e.stopPropagation()}>
         <div class="dep-head">
           <BmpText font="bazouk-28" text={d.title} />
           <div class="dep-sub">
@@ -231,46 +218,11 @@ function DepotBody() {
         </div>
 
         <div class="dep-cols">
-          <Header
-            k="qty"
-            label={d.col.qty}
-            cls="c-qty"
-            activeKey={sort.key}
-            dir={sort.dir}
-            onSort={clickHeader}
-          />
-          <Header
-            k="name"
-            label={d.col.name}
-            cls="c-name"
-            activeKey={sort.key}
-            dir={sort.dir}
-            onSort={clickHeader}
-          />
-          <Header
-            k="type"
-            label={d.col.type}
-            cls="c-type"
-            activeKey={sort.key}
-            dir={sort.dir}
-            onSort={clickHeader}
-          />
-          <Header
-            k="power"
-            label={d.col.power}
-            cls="c-num"
-            activeKey={sort.key}
-            dir={sort.dir}
-            onSort={clickHeader}
-          />
-          <Header
-            k="cost"
-            label={d.col.cost}
-            cls="c-num"
-            activeKey={sort.key}
-            dir={sort.dir}
-            onSort={clickHeader}
-          />
+          <Header k="qty" label={d.col.qty} cls="c-qty" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="name" label={d.col.name} cls="c-name" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="type" label={d.col.type} cls="c-type" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="power" label={d.col.power} cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          <Header k="cost" label={d.col.cost} cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
         </div>
 
         <ClassicScrollbar class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>
@@ -315,9 +267,7 @@ function DepotBody() {
           })}
         </ClassicScrollbar>
 
-        {hover !== null && WEAPON_DATABASE[hover] && (
-          <WeaponTip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y} />
-        )}
+        {hover !== null && WEAPON_DATABASE[hover] && <WeaponTip w={WEAPON_DATABASE[hover]} x={pos.x} y={pos.y} />}
         {showStats && selW && (
           <div class="dep-stats" onClick={() => setShowStats(false)}>
             <BmpText font="bazouk-28" text={weaponName(selW)} />

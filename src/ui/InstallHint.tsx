@@ -45,9 +45,7 @@ const deferred = signal<BeforeInstallPromptEvent | null>(null);
 const iosEligible = (() => {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') return false;
   const ua = navigator.userAgent;
-  const iOS =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
   const standalone =
     (navigator as {standalone?: boolean}).standalone === true ||
@@ -100,8 +98,7 @@ function InstallIcon() {
 export function InstallHint() {
   const canPrompt = deferred.value != null; // Android / desktop Chromium
   // Touch-only, on the title screen, not dismissed, and something to offer.
-  if (!isTouch || dismissed.value || screen.value !== 'menu' || !(canPrompt || iosEligible))
-    return null;
+  if (!isTouch || dismissed.value || screen.value !== 'menu' || !(canPrompt || iosEligible)) return null;
   const a = strings.value.app;
   const dismiss = () => {
     lsDismiss();

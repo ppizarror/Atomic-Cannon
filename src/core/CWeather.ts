@@ -245,8 +245,7 @@ export class CWeather {
         const vx = windDx * wf + sway + (tune.hover ? p.drift : 0);
         // Vertical: fall speed (dust barely falls — it bobs on the oscillator instead).
         const vy = tune.hover
-          ? Math.sin(t * tune.swayFreq + p.seed * 1.7) * tune.fallVar +
-            Math.cos(t * 0.3 + p.seed) * tune.sway
+          ? Math.sin(t * tune.swayFreq + p.seed * 1.7) * tune.fallVar + Math.cos(t * 0.3 + p.seed) * tune.sway
           : (tune.fall + p.size * 6) * p.speedMul + Math.sin(t * 2 + p.seed) * tune.fallVar * 0.15;
 
         p.x += vx * dt;

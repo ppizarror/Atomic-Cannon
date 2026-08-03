@@ -15,11 +15,7 @@
  * hard-broken by characters so it never overflows. Explicit '\n' in the source force
  * a break (and empty lines are preserved as blank paragraph gaps).
  */
-export function wrapWords(
-  text: string,
-  maxWidth: number,
-  measure: (s: string) => number,
-): string[] {
+export function wrapWords(text: string, maxWidth: number, measure: (s: string) => number): string[] {
   const out: string[] = [];
   // A non-positive width can't fit anything meaningful — degrade to one line rather
   // than looping forever on the char-break path below.

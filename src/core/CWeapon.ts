@@ -168,10 +168,7 @@ export class CWeapon {
   // ========================================================================
 
   constructor(defOrIndex: WeaponDef | number) {
-    this.m_def =
-      typeof defOrIndex === 'number'
-        ? WEAPON_DATABASE[defOrIndex] || WEAPON_DATABASE[0]
-        : defOrIndex;
+    this.m_def = typeof defOrIndex === 'number' ? WEAPON_DATABASE[defOrIndex] || WEAPON_DATABASE[0] : defOrIndex;
   }
 
   // ========================================================================

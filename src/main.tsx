@@ -279,8 +279,7 @@ async function main(): Promise<void> {
     const tag = el.tagName;
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
   };
-  const gameplayKeys = (e: KeyboardEvent): boolean =>
-    screen.value === 'battle' && !isTypingTarget(e.target);
+  const gameplayKeys = (e: KeyboardEvent): boolean => screen.value === 'battle' && !isTypingTarget(e.target);
 
   // Keyboard shortcuts (the on-screen controls live in the Preact HUD). Gameplay
   // actions are resolved through the player's key bindings (Customize Controls); the
@@ -293,8 +292,7 @@ async function main(): Promise<void> {
     // capture-phase listener stops propagation first). Escape is always honoured so an unbound /
     // rebound Exit can never lock the player out.
     const isExit =
-      e.code === 'Escape' ||
-      (screen.value === 'battle' && resolveAction(bindings.value, e.code) === 'exit');
+      e.code === 'Escape' || (screen.value === 'battle' && resolveAction(bindings.value, e.code) === 'exit');
     if (isExit && !isTypingTarget(e.target)) {
       e.preventDefault();
       escapeBack();
@@ -579,11 +577,7 @@ async function main(): Promise<void> {
     if (sizePollMs >= 250) {
       sizePollMs = 0;
       const r = compositor.app.renderer;
-      if (
-        Math.round(r.width) !== container.clientWidth ||
-        Math.round(r.height) !== container.clientHeight
-      )
-        refit();
+      if (Math.round(r.width) !== container.clientWidth || Math.round(r.height) !== container.clientHeight) refit();
     }
     // Keep the scene render target at the world's LOGICAL size. It only changes when a new
     // match sets it (solo = the window size at start; net = a fixed shared resolution), so
@@ -621,10 +615,7 @@ async function main(): Promise<void> {
       const cr = container.getBoundingClientRect();
       fxCtx.save();
       fxCtx.translate(cr.left, cr.top);
-      fxCtx.scale(
-        cr.width / gameController.getViewWidth(),
-        cr.height / gameController.getViewHeight(),
-      );
+      fxCtx.scale(cr.width / gameController.getViewWidth(), cr.height / gameController.getViewHeight());
       gameController.drawOverlay(fxCtx);
       fxCtx.restore();
     }

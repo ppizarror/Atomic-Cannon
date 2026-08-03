@@ -40,10 +40,7 @@ export type ExpType = {readonly [EXP_BRAND]: never};
  * any value not in the table (missing / garbage) falls back to `PLAIN`. Shares the nominal-enum
  * boilerplate via {@link makeNominalEnum}; the brand keeps `ExpType` DISTINCT from `ExtType`.
  */
-export const {tokens: EXP, toType: toExpType} = makeNominalEnum<ExpType, typeof EXP_CODES>(
-  EXP_CODES,
-  'PLAIN',
-);
+export const {tokens: EXP, toType: toExpType} = makeNominalEnum<ExpType, typeof EXP_CODES>(EXP_CODES, 'PLAIN');
 
 /** Nuke-tier explosion style — the only one that fires the full-screen white-out. */
 export const isNukeExp = (exp: ExpType | undefined): boolean => exp === EXP.NUKE;

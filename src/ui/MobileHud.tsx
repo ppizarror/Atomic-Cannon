@@ -75,12 +75,7 @@ function Btn({
   children?: JSX.Element;
 }) {
   return (
-    <button
-      class={`mbtn${cls ? ' ' + cls : ''}`}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
+    <button class={`mbtn${cls ? ' ' + cls : ''}`} onClick={onClick} disabled={disabled} title={title}>
       {children}
       {text !== undefined && <BmpText class="mbtn-txt" font="arial-14-out" text={text} />}
     </button>
@@ -124,11 +119,7 @@ function MobileBar() {
   return (
     <div id="mhud">
       <div class="mbar">
-        <Btn
-          cls={`mweapon${off ? ' blocked' : ''}${open('weapon')}`}
-          onClick={() => toggle('weapon')}
-          disabled={off}
-        >
+        <Btn cls={`mweapon${off ? ' blocked' : ''}${open('weapon')}`} onClick={() => toggle('weapon')} disabled={off}>
           <>
             {wp && <WeaponIcon name={wp.icon} size={12} cls="micon" />}
             <BmpText class="mbtn-txt" font="arial-14-out" text={wp ? weaponName(wp) : ''} />

@@ -7,12 +7,7 @@
 import {signal, computed, effect} from '@preact/signals';
 import {strings, fmt} from '../i18n';
 import {getVal} from './settingsStore';
-import {
-  EGameState,
-  type CGameController,
-  type WarStandings,
-  type ActiveTaunt,
-} from '../game/CGameController';
+import {EGameState, type CGameController, type WarStandings, type ActiveTaunt} from '../game/CGameController';
 import type {WeaponDef} from '../core/CWeapon';
 import {applyGameSettings} from './applySettings';
 import {setup, playersOf} from './setupStore';
@@ -25,8 +20,7 @@ import {knockoutWhere, makeCanvas2d} from '../util/canvas';
 // SCREEN STATE
 // ==========================================================================
 
-export type Screen =
-  'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'setup' | 'highscores' | 'network';
+export type Screen = 'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'setup' | 'highscores' | 'network';
 
 export const screen = signal<Screen>('battle');
 
@@ -90,8 +84,7 @@ function applyNotchInset(): boolean {
     // Notch Side only — the whole inset on whichever edge the notch is on.
     let notchLeft = l > r;
     if (l === r && side > 0) {
-      const angle =
-        window.screen?.orientation?.angle ?? (window as {orientation?: number}).orientation ?? 0;
+      const angle = window.screen?.orientation?.angle ?? (window as {orientation?: number}).orientation ?? 0;
       notchLeft = angle === 90; // 90° = rotated so the notch is on the left
     }
     root.setProperty('--sa-l', notchLeft ? `${side}px` : '0px');
@@ -421,8 +414,7 @@ function navUrl(): string {
 const baseOf = (id: string): string => id.split('~')[0];
 /** The page one level up from `id` in the Settings tree (editors nest under `content`; everything
  *  else — including paginated sub-pages, whose Done returns to root — sits directly under root). */
-const parentPage = (id: string): string =>
-  id === 'root' ? 'root' : id.includes('.') ? id.split('.')[0] : 'root';
+const parentPage = (id: string): string => (id === 'root' ? 'root' : id.includes('.') ? id.split('.')[0] : 'root');
 
 /** Push a forward entry for the just-changed navigation state. */
 function pushRoute(): void {
@@ -1072,9 +1064,7 @@ export function syncHud(): void {
   // Shot-time bar — republish only when the drawn width (quantised to whole
   // percent) or colour flips, so the drain animates smoothly but cheaply.
   const t = c.getTurnTimer();
-  const tSig = t
-    ? `${Math.round(t.frac * 100)}|${t.color}|${t.charge ? 'c' : t.off ? 'o' : 't'}`
-    : '';
+  const tSig = t ? `${Math.round(t.frac * 100)}|${t.color}|${t.charge ? 'c' : t.off ? 'o' : 't'}` : '';
   if (tSig !== lastTimerSig) {
     lastTimerSig = tSig;
     turnTimer.value = t;
@@ -1106,8 +1096,7 @@ const KEYERS: Record<BmpKey, (p: Uint8ClampedArray, i: number) => boolean> = {
   // black background + magenta registration pixels both keyed — the angle-dial pointer
   // (guiAnglePointerBig.bmp) is a red needle on black with a few magenta mount pixels.
   blackmagenta: (p, i) =>
-    (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40) ||
-    (p[i] > 200 && p[i + 1] < 70 && p[i + 2] > 200),
+    (p[i] < 40 && p[i + 1] < 40 && p[i + 2] < 40) || (p[i] > 200 && p[i + 1] < 70 && p[i + 2] > 200),
 };
 
 /** Shared core: load an /assets image, knock out every pixel the `hit` predicate

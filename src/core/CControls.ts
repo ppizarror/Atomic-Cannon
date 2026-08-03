@@ -15,15 +15,7 @@
  */
 
 export type ActionId =
-  | 'fire'
-  | 'prevWeapon'
-  | 'nextWeapon'
-  | 'aimLeft'
-  | 'powerUp'
-  | 'aimRight'
-  | 'powerDown'
-  | 'exit'
-  | 'taunt';
+  'fire' | 'prevWeapon' | 'nextWeapon' | 'aimLeft' | 'powerUp' | 'aimRight' | 'powerDown' | 'exit' | 'taunt';
 
 export interface ActionDef {
   id: ActionId;

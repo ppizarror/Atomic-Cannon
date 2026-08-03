@@ -5,15 +5,7 @@
  * and the atom logo in the corner. Play opens the game-setup screen; Quick Play starts
  * immediately with the last-used setup; Settings/About navigate.
  */
-import {
-  openPlaySetup,
-  quickPlay,
-  openNetworkGame,
-  openSettings,
-  openManual,
-  openAbout,
-  openHighScores,
-} from './store';
+import {openPlaySetup, quickPlay, openNetworkGame, openSettings, openManual, openAbout, openHighScores} from './store';
 import {strings} from '../i18n';
 import {BmpText} from './BmpText';
 import {MenuButton} from './MenuButton';
@@ -70,13 +62,7 @@ export function MainMenu() {
         <MenuButton label={strings.value.menu.manual} onClick={openManual} />
         <MenuButton label={strings.value.menu.about} onClick={openAbout} />
       </div>
-      <a
-        class="mainmenu-repo"
-        href={__REPO_URL__}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={__REPO_URL__}
-      >
+      <a class="mainmenu-repo" href={__REPO_URL__} target="_blank" rel="noopener noreferrer" title={__REPO_URL__}>
         <BmpText font="beijing-16-out" text={strings.value.menu.repoLabel} />
         <AtomLogo />
       </a>

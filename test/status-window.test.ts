@@ -26,8 +26,7 @@ describe('status overlay window', () => {
   });
 
   it('compact with scrolling: the window rolls forward with the turn', () => {
-    const w = (activeIdx: number) =>
-      names(statusWindow(rows(13, activeIdx), {compact: true, scroll: true, rows: 4}));
+    const w = (activeIdx: number) => names(statusWindow(rows(13, activeIdx), {compact: true, scroll: true, rows: 4}));
     expect(w(0)).toBe('1,2,3,4'); // player 1 acting
     expect(w(1)).toBe('2,3,4,5'); // …player 1 done, the list steps on
     expect(w(2)).toBe('3,4,5,6');
@@ -35,8 +34,7 @@ describe('status overlay window', () => {
   });
 
   it('the window wraps past the end instead of running short', () => {
-    const w = (activeIdx: number) =>
-      names(statusWindow(rows(13, activeIdx), {compact: true, scroll: true, rows: 4}));
+    const w = (activeIdx: number) => names(statusWindow(rows(13, activeIdx), {compact: true, scroll: true, rows: 4}));
     expect(w(10)).toBe('11,12,13,1'); // rolls around to the top
     expect(w(12)).toBe('13,1,2,3');
   });
@@ -49,9 +47,7 @@ describe('status overlay window', () => {
   });
 
   it('falls back to the top of the list when no row is active', () => {
-    expect(names(statusWindow(rows(13, -1), {compact: true, scroll: true, rows: 4}))).toBe(
-      '1,2,3,4',
-    );
+    expect(names(statusWindow(rows(13, -1), {compact: true, scroll: true, rows: 4}))).toBe('1,2,3,4');
     expect(statusWindow([], {compact: true, scroll: true, rows: 4})).toEqual([]);
   });
 });

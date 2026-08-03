@@ -98,14 +98,7 @@ export class CShot {
     this.m_maxTrailPoints = 20;
   }
 
-  init(
-    pos: Vec2,
-    angleDegrees: number,
-    power: number,
-    damage: number,
-    radius: number,
-    owner?: CTank | null,
-  ): void {
+  init(pos: Vec2, angleDegrees: number, power: number, damage: number, radius: number, owner?: CTank | null): void {
     this.m_pos = pos.clone();
     this.m_owner = owner || null;
     this.m_damage = damage;
@@ -153,14 +146,7 @@ export class CShot {
   }
 
   /** Spawn with an explicit velocity — used for cluster submunitions. */
-  initFromVelocity(
-    pos: Vec2,
-    vx: number,
-    vy: number,
-    damage: number,
-    radius: number,
-    owner: CTank | null,
-  ): void {
+  initFromVelocity(pos: Vec2, vx: number, vy: number, damage: number, radius: number, owner: CTank | null): void {
     this.m_pos = pos.clone();
     this.m_vel = new Vec2(vx, vy);
     this.m_owner = owner || null;
@@ -355,10 +341,7 @@ export class CShot {
    * must go through this with the SAME alpha, or it drifts against the sprite it is pointing at.
    */
   renderPosition(alpha: number): Vec2 {
-    return new Vec2(
-      lerp(this.m_prevX, this.m_pos.x, alpha),
-      lerp(this.m_prevY, this.m_pos.y, alpha),
-    );
+    return new Vec2(lerp(this.m_prevX, this.m_pos.x, alpha), lerp(this.m_prevY, this.m_pos.y, alpha));
   }
 
   /** Exhaust point — the missile's REAR, where the trail/plume pours from. The trail

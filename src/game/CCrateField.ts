@@ -140,8 +140,7 @@ export class CCrateField {
    *  / 20% credits / 20% health / 10% bomb (or a forced `kind` for dev previews). */
   add(x: number, env: CrateEnv, weaponFor: (kind: CrateKind) => number, forced?: CrateKind): void {
     const roll = env.rng.float() * 100;
-    const kind: CrateKind =
-      forced ?? (roll < 50 ? 'weapon' : roll < 70 ? 'credits' : roll < 90 ? 'health' : 'bomb');
+    const kind: CrateKind = forced ?? (roll < 50 ? 'weapon' : roll < 70 ? 'credits' : roll < 90 ? 'health' : 'bomb');
     let amount = 0,
       weaponIndex = -1;
     if (kind === 'weapon') weaponIndex = weaponFor('weapon');

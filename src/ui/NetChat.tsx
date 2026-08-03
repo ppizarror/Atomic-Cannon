@@ -39,8 +39,7 @@ export function NetChat() {
         <div class="net-chat-log" ref={listRef}>
           {log.map(m => (
             <div key={m.seq} class={`net-chat-line${m.mine ? ' mine' : ''}`}>
-              <span class="net-chat-name">{m.name}:</span>{' '}
-              <span class="net-chat-text">{m.text}</span>
+              <span class="net-chat-name">{m.name}:</span> <span class="net-chat-text">{m.text}</span>
             </div>
           ))}
         </div>

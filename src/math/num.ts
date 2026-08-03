@@ -22,8 +22,7 @@ export const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
  * viewport, or a track shorter than its own margins, yields `hi < lo`, and pinning to the near
  * edge keeps the element on screen instead of pushing it off the far one.
  */
-export const clampSafe = (v: number, lo: number, hi: number): number =>
-  Math.min(Math.max(v, lo), Math.max(lo, hi));
+export const clampSafe = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), Math.max(lo, hi));
 
 /** Degrees → radians. */
 export const deg2rad = (deg: number): number => deg * DEG;

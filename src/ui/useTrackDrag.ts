@@ -35,9 +35,7 @@ export function useTrackDrag<T extends HTMLElement>(
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
     const frac =
-      axis === 'y'
-        ? clamp01((e.clientY - rect.top) / rect.height)
-        : clamp01((e.clientX - rect.left) / rect.width);
+      axis === 'y' ? clamp01((e.clientY - rect.top) / rect.height) : clamp01((e.clientX - rect.left) / rect.width);
     if (game().turnSeq() === grabSeq.current) apply(frac);
   };
 

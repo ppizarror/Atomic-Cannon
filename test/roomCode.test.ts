@@ -5,13 +5,7 @@
  */
 import {describe, it, expect} from 'vitest';
 import {Prng} from '../src/math/prng';
-import {
-  newRoomCode,
-  normalizeRoomCode,
-  isValidRoomCode,
-  formatRoomCode,
-  formatCodeInput,
-} from '../src/net/roomCode';
+import {newRoomCode, normalizeRoomCode, isValidRoomCode, formatRoomCode, formatCodeInput} from '../src/net/roomCode';
 
 const seededRandInt = (p: Prng) => (n: number) => p.int(n);
 

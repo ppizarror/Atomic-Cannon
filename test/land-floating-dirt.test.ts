@@ -51,8 +51,7 @@ function floatingPixels(land: CLand): number {
 }
 
 function settleAll(land: CLand): void {
-  for (let i = 0; i < 400 && (land as unknown as {isSettling(): boolean}).isSettling(); i++)
-    land.update(1 / 60);
+  for (let i = 0; i < 400 && (land as unknown as {isSettling(): boolean}).isSettling(); i++) land.update(1 / 60);
   land.update(1 / 60); // one more, in case the last landing just cleared
 }
 

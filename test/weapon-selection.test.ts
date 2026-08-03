@@ -47,9 +47,7 @@ describe('Weapon selection', () => {
     // full arsenal (which always contains whatever the human currently holds).
     const defs = gc.getWeaponDefs();
     const locked = defs.length === 1;
-    expect(
-      locked ? weaponName(defs[0]) === CTRL_NAME : defs.some(d => weaponName(d) === CTRL_NAME),
-    ).toBe(true);
+    expect(locked ? weaponName(defs[0]) === CTRL_NAME : defs.some(d => weaponName(d) === CTRL_NAME)).toBe(true);
   });
 
   it('selectWeapon persists onto the acting tank', () => {

@@ -144,8 +144,7 @@ export function sanitizeMatchConfig(raw?: Partial<MatchConfig> | null): MatchCon
       out[key] = typeof v === 'boolean' ? v : spec.dflt;
     } else {
       const n = spec as NumField;
-      const clamped =
-        typeof v === 'number' && Number.isFinite(v) ? Math.min(n.hi, Math.max(n.lo, v)) : n.dflt;
+      const clamped = typeof v === 'number' && Number.isFinite(v) ? Math.min(n.hi, Math.max(n.lo, v)) : n.dflt;
       out[key] = n.snap ? n.snap(clamped) : clamped;
     }
   }
@@ -347,19 +346,15 @@ export type ErrorCode =
 function parseTagged<T>(raw: string): T | null {
   try {
     const m: unknown = JSON.parse(raw);
-    return m && typeof m === 'object' && typeof (m as {t?: unknown}).t === 'string'
-      ? (m as T)
-      : null;
+    return m && typeof m === 'object' && typeof (m as {t?: unknown}).t === 'string' ? (m as T) : null;
   } catch {
     return null;
   }
 }
 
-export const parseClientMessage = (raw: string): ClientMessage | null =>
-  parseTagged<ClientMessage>(raw);
+export const parseClientMessage = (raw: string): ClientMessage | null => parseTagged<ClientMessage>(raw);
 
-export const parseServerMessage = (raw: string): ServerMessage | null =>
-  parseTagged<ServerMessage>(raw);
+export const parseServerMessage = (raw: string): ServerMessage | null => parseTagged<ServerMessage>(raw);
 
 // ==========================================================================
 // VALIDATION
@@ -397,8 +392,7 @@ export function isValidShotResult(r: unknown, tankCount: number): r is ShotResul
       return false;
     }
   }
-  if (!Array.isArray(o.heights) || o.heights.length === 0 || o.heights.length > 100_000)
-    return false;
+  if (!Array.isArray(o.heights) || o.heights.length === 0 || o.heights.length > 100_000) return false;
   for (const h of o.heights) if (!isFiniteNum(h)) return false;
   const w = o.wind as Record<string, unknown> | undefined;
   if (!w || typeof w !== 'object' || !isFiniteNum(w.x) || !isFiniteNum(w.y)) return false;
@@ -474,9 +468,7 @@ export function isValidGameCommand(cmd: unknown): boolean {
     case 'move':
       return isFiniteNum(c.destX);
     case 'jet':
-      return (
-        typeof c.up === 'boolean' && typeof c.left === 'boolean' && typeof c.right === 'boolean'
-      );
+      return typeof c.up === 'boolean' && typeof c.left === 'boolean' && typeof c.right === 'boolean';
     default:
       return false;
   }

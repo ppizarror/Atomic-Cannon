@@ -281,13 +281,11 @@ describe('Particle system', () => {
   });
 
   // Helper: the live 'smoke' particles of a system.
-  const smokeOf = (ps: CParticleSystem) =>
-    particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke');
+  const smokeOf = (ps: CParticleSystem) => particlesPriv(ps).m_particles.filter(p => p.kind === 'smoke');
 
   /** Crater fumes are their OWN kind, not 'smoke' told apart by brightness (r >= 200) — a
    *  brightness test is exactly what would stop them from ever being soot-dark. */
-  const fumesOf = (ps: CParticleSystem) =>
-    particlesPriv(ps).m_particles.filter(p => p.kind === 'fume');
+  const fumesOf = (ps: CParticleSystem) => particlesPriv(ps).m_particles.filter(p => p.kind === 'fume');
 
   it('a ROCKET (trailType≥2) fumes only while the MOTOR is burning — then coasts silently', () => {
     const on = new CParticleSystem();

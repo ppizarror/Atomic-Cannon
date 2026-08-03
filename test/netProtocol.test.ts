@@ -77,12 +77,8 @@ describe('isValidShotResult', () => {
       ...o,
     });
     expect(isValidShotResult({...goodResult(1), crates: [crate({})]}, 1)).toBe(true);
-    expect(isValidShotResult({...goodResult(1), crates: [crate({kind: 'lolgrenade'})]}, 1)).toBe(
-      false,
-    );
-    expect(isValidShotResult({...goodResult(1), crates: [crate({weaponIndex: 1.5})]}, 1)).toBe(
-      false,
-    );
+    expect(isValidShotResult({...goodResult(1), crates: [crate({kind: 'lolgrenade'})]}, 1)).toBe(false);
+    expect(isValidShotResult({...goodResult(1), crates: [crate({weaponIndex: 1.5})]}, 1)).toBe(false);
     expect(isValidShotResult({...goodResult(1), crates: [crate({landed: 'yes'})]}, 1)).toBe(false);
   });
 });

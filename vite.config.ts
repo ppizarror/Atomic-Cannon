@@ -6,10 +6,7 @@ import {renderShell} from './src/shell.ts';
 export default defineConfig({
   root: '.',
   publicDir: 'public',
-  plugins: [
-    preact({prefreshEnabled: false}),
-    {name: 'shell-copy', transformIndexHtml: renderShell},
-  ],
+  plugins: [preact({prefreshEnabled: false}), {name: 'shell-copy', transformIndexHtml: renderShell}],
   // Expose the package version + repository URL to the app (shown on the main menu).
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

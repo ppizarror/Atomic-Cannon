@@ -48,8 +48,7 @@ interface WX {
 const W = 1280,
   H = 720;
 const make = (w = W, h = H) => new CWeather(w, h) as unknown as WX;
-const countOf = (wx: WX, type: string) =>
-  wx.m_layers.find(l => l.type === type)?.particles.length ?? 0;
+const countOf = (wx: WX, type: string) => wx.m_layers.find(l => l.type === type)?.particles.length ?? 0;
 
 describe('Weather system', () => {
   it('field density is a fixed function of screen size × per-type multiplier', () => {
@@ -113,9 +112,7 @@ describe('Weather system', () => {
 
     const ps = wx.m_layers[0].particles;
     const m = wx.m_margin;
-    const inBounds = ps.every(
-      p => p.x >= -m - 1 && p.x <= W + m + 1 && p.y >= -m - 1 && p.y <= H + m + 1,
-    );
+    const inBounds = ps.every(p => p.x >= -m - 1 && p.x <= W + m + 1 && p.y >= -m - 1 && p.y <= H + m + 1);
     expect(inBounds).toBe(true); // all particles stay within padded bounds after wrapping
 
     const moved = ps.some((p, i) => before[i] && (p.x !== before[i].x || p.y !== before[i].y));

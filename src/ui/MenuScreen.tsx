@@ -36,11 +36,7 @@ export function MenuScreen({
   onClick?: () => void;
   children: ComponentChildren;
 }) {
-  const body = scroll ? (
-    <ClassicScrollbar class="settings-scroll">{children}</ClassicScrollbar>
-  ) : (
-    children
-  );
+  const body = scroll ? <ClassicScrollbar class="settings-scroll">{children}</ClassicScrollbar> : children;
   return (
     <div class={`settings-screen bg-${backdrop}${cls ? ' ' + cls : ''}`} onClick={onClick}>
       {body}

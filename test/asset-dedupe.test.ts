@@ -58,18 +58,14 @@ describe('CAssetManager load dedupe', () => {
 
     // Eight turrets deployed → eight more requests for an already-decoded name, no extra work.
     await Promise.all(
-      Array.from({length: 8}, () =>
-        a.loadSprite('tanks/Sentry body', '/assets/tanks/Sentry body.bmp'),
-      ),
+      Array.from({length: 8}, () => a.loadSprite('tanks/Sentry body', '/assets/tanks/Sentry body.bmp')),
     );
     expect(built).toHaveLength(1);
   });
 
   it('concurrent loads of one name share a single fetch', async () => {
     const a = new CAssetManager();
-    await Promise.all(
-      Array.from({length: 5}, () => a.loadSprite('gui/crate', '/assets/gui/crate.bmp')),
-    );
+    await Promise.all(Array.from({length: 5}, () => a.loadSprite('gui/crate', '/assets/gui/crate.bmp')));
     expect(built).toHaveLength(1);
     expect(a.getSprite('gui/crate')).not.toBeNull();
   });

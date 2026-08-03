@@ -21,8 +21,7 @@ function squadGame(): CGameController {
   gc.startGame(2);
   return gc;
 }
-const humansOf = (gc: CGameController) =>
-  (gc as unknown as {m_tanks: CTank[]}).m_tanks.filter(t => t.isHuman());
+const humansOf = (gc: CGameController) => (gc as unknown as {m_tanks: CTank[]}).m_tanks.filter(t => t.isHuman());
 
 describe('Squad credit pooling', () => {
   it('a mid-cost weapon exists to buy', () => {

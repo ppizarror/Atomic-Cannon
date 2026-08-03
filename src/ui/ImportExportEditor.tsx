@@ -85,13 +85,7 @@ export function ImportExportEditor() {
     <>
       <EditorScreen
         title={e.title}
-        footer={
-          <BmpText
-            font="beijing-16-out"
-            text={status || e.idle}
-            class={failed ? 'ie-status-fail' : undefined}
-          />
-        }
+        footer={<BmpText font="beijing-16-out" text={status || e.idle} class={failed ? 'ie-status-fail' : undefined} />}
         actions={
           <>
             <Button label={e.import} onClick={onImport} />
@@ -110,13 +104,7 @@ export function ImportExportEditor() {
       </EditorScreen>
 
       {/* Hidden native picker driven by the Import button. */}
-      <input
-        ref={fileInput}
-        type="file"
-        accept="application/json,.json"
-        style={{display: 'none'}}
-        onChange={onFile}
-      />
+      <input ref={fileInput} type="file" accept="application/json,.json" style={{display: 'none'}} onChange={onFile} />
 
       {confirmReset && (
         <Modal backdrop="scrim" onClose={() => setConfirmReset(false)} class="confirm-card">

@@ -47,9 +47,7 @@ const store = createPersistedSignal<Setup>(KEY, {
   // Heal an unstartable stored setup (e.g. 1 human + 0 CPU) so the initial view is a valid match.
   revive: raw => {
     const s = clampSetup(raw as Partial<Setup>);
-    return s.humans + s.computers >= MIN_PLAYERS
-      ? s
-      : {...DEFAULT_SETUP, tanksPerTeam: s.tanksPerTeam};
+    return s.humans + s.computers >= MIN_PLAYERS ? s : {...DEFAULT_SETUP, tanksPerTeam: s.tanksPerTeam};
   },
   seed: () => ({...DEFAULT_SETUP}),
 });

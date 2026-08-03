@@ -91,9 +91,7 @@ function HudWave() {
     // Target the HUD elements themselves (NOT #ui-root): a filter on an ancestor
     // of a position:fixed panel changes its containing block and breaks its layout;
     // a filter on the fixed element itself leaves its own position untouched.
-    const els = ['hud', 'battle-status']
-      .map(id => document.getElementById(id))
-      .filter((e): e is HTMLElement => !!e);
+    const els = ['hud', 'battle-status'].map(id => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
     if (!el || !els.length) return;
     const peak = Math.min(34, 10 + hudWaveStrength.peek() * 6); // px of displacement
     const dur = 1200; // ms — ~matches the game wave lifetime
@@ -124,13 +122,7 @@ function HudWave() {
   return (
     <svg width="0" height="0" style={{position: 'absolute'}} aria-hidden="true">
       <filter id="hud-wave" x="-15%" y="-15%" width="130%" height="130%">
-        <feTurbulence
-          type="fractalNoise"
-          baseFrequency="0.012 0.028"
-          numOctaves="2"
-          seed="7"
-          result="noise"
-        />
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.028" numOctaves="2" seed="7" result="noise" />
         <feDisplacementMap
           ref={disp}
           in="SourceGraphic"
@@ -150,11 +142,7 @@ function FramerateHud() {
   if (!showFramerate.value) return null;
   return (
     <div id="fps-hud">
-      <BmpText
-        font="beijing-16-out"
-        text={fmt(strings.value.app.fps, {n: fps.value})}
-        spacing={-1}
-      />
+      <BmpText font="beijing-16-out" text={fmt(strings.value.app.fps, {n: fps.value})} spacing={-1} />
     </div>
   );
 }
@@ -164,11 +152,7 @@ function FrameCountHud() {
   if (!showFrameCount.value) return null;
   return (
     <div id="frame-hud">
-      <BmpText
-        font="beijing-16-out"
-        text={fmt(strings.value.app.frame, {n: frameCount.value})}
-        spacing={-1}
-      />
+      <BmpText font="beijing-16-out" text={fmt(strings.value.app.frame, {n: frameCount.value})} spacing={-1} />
     </div>
   );
 }

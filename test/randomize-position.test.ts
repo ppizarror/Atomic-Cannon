@@ -81,9 +81,7 @@ describe('Randomize Position', () => {
 
     // The array order IS the turn queue and the snapshot index space: it must still run squad by
     // squad, with each tank keeping its own name/team, whatever the map layout.
-    expect(tanksOf(shuffled).map(t => t.getTeamId())).toEqual(
-      tanksOf(plain).map(t => t.getTeamId()),
-    );
+    expect(tanksOf(shuffled).map(t => t.getTeamId())).toEqual(tanksOf(plain).map(t => t.getTeamId()));
     expect(tanksOf(shuffled).map(t => t.getName())).toEqual(tanksOf(plain).map(t => t.getName()));
     // Same set of spawn slots either way — the option permutes them, it doesn't invent positions
     // (so tanks stay evenly spread and never pile up).

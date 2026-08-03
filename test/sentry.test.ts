@@ -142,9 +142,7 @@ describe('Sentry turrets', () => {
     gc.setTanksPerTeam(5);
     gc.startGame(16);
     const tanks = priv(gc).m_tanks.slice();
-    const leaders = tanks.filter(
-      (t, i) => tanks.findIndex(x => x.getTeamId() === t.getTeamId()) === i,
-    );
+    const leaders = tanks.filter((t, i) => tanks.findIndex(x => x.getTeamId() === t.getTeamId()) === i);
     expect(leaders).toHaveLength(16); // 16 distinct teams on the field
 
     for (const t of leaders) {

@@ -33,16 +33,7 @@ export interface NetGameHost {
 // ==========================================================================
 
 /** Distinct team colours assigned by turn order (same on every client). */
-const TEAM_HEX = [
-  '#e23b3b',
-  '#3b7de2',
-  '#3bd06a',
-  '#e0c23b',
-  '#b23be0',
-  '#3bd8e0',
-  '#e07f3b',
-  '#c8c8c8',
-];
+const TEAM_HEX = ['#e23b3b', '#3b7de2', '#3bd06a', '#e0c23b', '#b23be0', '#3bd8e0', '#e07f3b', '#c8c8c8'];
 
 /** How long every client lingers on the battle-winner celebration before the next Deathmatch
  *  battle starts. Client-side (not server-timed) — the server sends nextBattle immediately and
@@ -179,12 +170,7 @@ export class NetGame {
   // TURN APPLICATION
   // ========================================================================
 
-  private applyTurn(
-    playerIdx: number,
-    handoff: boolean,
-    roundWrapped: boolean,
-    turnGen: number,
-  ): void {
+  private applyTurn(playerIdx: number, handoff: boolean, roundWrapped: boolean, turnGen: number): void {
     this.m_turnGen = turnGen; // remember this turn's generation so our shotResult echoes it (idempotency)
     // NOTE: m_hasSimulated is flipped in onTurnSettled (after we actually simulate a turn), NOT here.
     // A client that reconnects/joins DURING a shot's flight misses the already-broadcast fire cmd, so

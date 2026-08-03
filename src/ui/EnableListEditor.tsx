@@ -15,38 +15,19 @@ import {WeaponIcon} from './WeaponIcon';
 import {EditorScreen} from './EditorScreen';
 import {WEAPON_DATABASE, weaponName, weaponTypeName} from '../core/CWeapon';
 import landData from '../data/land.json';
-import {
-  isWeaponOff,
-  toggleWeapon,
-  isLandOff,
-  toggleLand,
-  weaponsOff,
-  landsOff,
-} from './contentStore';
+import {isWeaponOff, toggleWeapon, isLandOff, toggleLand, weaponsOff, landsOff} from './contentStore';
 import {strings, fmt} from '../i18n';
 
 const LANDS = landData as {bg: string}[];
 
-function EditorRow({
-  off,
-  onToggle,
-  children,
-}: {
-  off: boolean;
-  onToggle: () => void;
-  children: ComponentChildren;
-}) {
+function EditorRow({off, onToggle, children}: {off: boolean; onToggle: () => void; children: ComponentChildren}) {
   return (
     <button class={`editor-row ${off ? 'off' : 'on'}`} onClick={onToggle}>
       <span class="editor-body">{children}</span>
       <span class="editor-state">
         <BmpText
           font="beijing-16-out"
-          text={
-            off
-              ? strings.value.editors.enableList.disabled
-              : strings.value.editors.enableList.enabled
-          }
+          text={off ? strings.value.editors.enableList.disabled : strings.value.editors.enableList.enabled}
         />
       </span>
     </button>
@@ -55,9 +36,7 @@ function EditorRow({
 
 // First-render guess (refined by measuring the panel) so the initial page isn't empty.
 const estimatePerPage = (rowHeight: number): number =>
-  typeof window !== 'undefined'
-    ? Math.max(3, Math.floor((window.innerHeight * 0.6) / rowHeight))
-    : 12;
+  typeof window !== 'undefined' ? Math.max(3, Math.floor((window.innerHeight * 0.6) / rowHeight)) : 12;
 
 function Editor({
   title,
@@ -149,10 +128,7 @@ export function WeaponsEditor() {
           body: (
             <>
               <WeaponIcon name={w.icon} size={16} cls="wicon" />
-              <BmpText
-                font="beijing-16-out"
-                text={`${weaponName(w)} (${weaponTypeName(w.type)})`}
-              />
+              <BmpText font="beijing-16-out" text={`${weaponName(w)} (${weaponTypeName(w.type)})`} />
             </>
           ),
         };

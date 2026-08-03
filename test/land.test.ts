@@ -38,8 +38,7 @@ describe('CLand terrain', () => {
       land.initFromArray(h, 1, 1);
       land.carveDiscCollapse(300, 200, 50, false, ragged); // slump OFF so we read the raw disc profile
       let sumAbsDiff = 0;
-      for (let x = 255; x < 345; x++)
-        sumAbsDiff += Math.abs(land.getHeightAt(x) - land.getHeightAt(x - 1));
+      for (let x = 255; x < 345; x++) sumAbsDiff += Math.abs(land.getHeightAt(x) - land.getHeightAt(x - 1));
       return sumAbsDiff;
     };
     const smooth = floorVariation(false);

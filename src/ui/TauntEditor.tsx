@@ -43,11 +43,7 @@ export function TauntEditor() {
           <BmpText font="beijing-16-out" text={meta.desc} />
           <BmpText
             font="beijing-16-out"
-            text={
-              lines.length === 1
-                ? fmt(e.lineOne, {n: lines.length})
-                : fmt(e.lineMany, {n: lines.length})
-            }
+            text={lines.length === 1 ? fmt(e.lineOne, {n: lines.length}) : fmt(e.lineMany, {n: lines.length})}
           />
         </>
       }

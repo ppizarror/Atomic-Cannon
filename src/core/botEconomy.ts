@@ -176,11 +176,7 @@ export function ultraOwnsPremium(econ: CEconomy): boolean {
  */
 export function botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boolean {
   const cands = WEAPON_DATABASE.filter(
-    w =>
-      (w.extType ?? 0) === ext &&
-      w.cost > 0 &&
-      weaponEnabled(w.index) &&
-      econ.getCredits() >= w.cost * afford,
+    w => (w.extType ?? 0) === ext && w.cost > 0 && weaponEnabled(w.index) && econ.getCredits() >= w.cost * afford,
   );
   if (!cands.length) return false;
   return econ.buy(cands[Math.floor(Math.random() * cands.length)].index);
@@ -191,11 +187,7 @@ export function botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boo
  * else the cheapest. Used to guarantee a specific class (nuke / beam / gas) actually gets bought,
  * unlike the weighted-random fill. Returns whether it bought.
  */
-export function ultraBuyMatching(
-  econ: CEconomy,
-  pred: (i: number) => boolean,
-  strongest: boolean,
-): boolean {
+export function ultraBuyMatching(econ: CEconomy, pred: (i: number) => boolean, strongest: boolean): boolean {
   const cands = weaponIndices(i => {
     const cost = WEAPON_DATABASE[i].cost ?? 0;
     return cost > 0 && cost <= econ.getCredits() && weaponEnabled(i) && pred(i);
@@ -214,11 +206,7 @@ export function ultraBuyMatching(
  * higher damage — so Ultra stocks a VARIED arsenal (not four of the single strongest round) and its
  * firing actually differs turn to turn. Skips utilities/self-buffs. Returns whether it bought.
  */
-export function ultraBuyBestOffense(
-  econ: CEconomy,
-  maxCost: number,
-  rng: {float(): number},
-): boolean {
+export function ultraBuyBestOffense(econ: CEconomy, maxCost: number, rng: {float(): number}): boolean {
   const cands = weaponIndices(i => {
     const w = WEAPON_DATABASE[i];
     const cost = w.cost ?? 0;
@@ -253,10 +241,8 @@ export function ultraBuyBestOffense(
  */
 export function aiRestock(ctx: BotBuyCtx): void {
   const {econ, stats: s, difficulty: L} = ctx;
-  if (L > 5 && !botOwnsExt(econ, EXT_SHIELD) && s.shield < BOT_SHIELD_NEED)
-    botBuyOneOfExt(econ, EXT_SHIELD, 2);
-  if (L > 5 && !botOwnsExt(econ, EXT_HEAL) && s.life < s.maxLife * 0.7)
-    botBuyOneOfExt(econ, EXT_HEAL, 2);
+  if (L > 5 && !botOwnsExt(econ, EXT_SHIELD) && s.shield < BOT_SHIELD_NEED) botBuyOneOfExt(econ, EXT_SHIELD, 2);
+  if (L > 5 && !botOwnsExt(econ, EXT_HEAL) && s.life < s.maxLife * 0.7) botBuyOneOfExt(econ, EXT_HEAL, 2);
   if (L > 6 && !botOwnsExt(econ, EXT_ARMOR) && s.armor === 0) botBuyOneOfExt(econ, EXT_ARMOR, 2.5);
   if (L > 7 && !botOwnsExt(econ, EXT_DEATH)) botBuyOneOfExt(econ, EXT_DEATH, 2.5);
   if (L > 4 && !botOwnsExt(econ, EXT_MINE)) botBuyOneOfExt(econ, EXT_MINE, 2.5);
@@ -290,8 +276,7 @@ export function ultraManageEconomy(ctx: UltraBuyCtx): void {
   // critical, and a bot with money always has the self-heal option the desperation curve will use.
   if (s.life < s.maxLife * 0.6 && !botOwnsExt(econ, EXT_HEAL)) botBuyOneOfExt(econ, EXT_HEAL, 1);
   if (s.armor <= 0 && !botOwnsExt(econ, EXT_ARMOR)) botBuyOneOfExt(econ, EXT_ARMOR, 1);
-  if (ctx.onRadiation && s.hazmat <= 0 && !botOwnsExt(econ, EXT_HAZMAT))
-    botBuyOneOfExt(econ, EXT_HAZMAT, 1);
+  if (ctx.onRadiation && s.hazmat <= 0 && !botOwnsExt(econ, EXT_HAZMAT)) botBuyOneOfExt(econ, EXT_HAZMAT, 1);
 
   // COUNTER-NUKE DOCTRINE. Weapons are visible, so read the other side's arsenal before spending:
   // once they hold nuke-class ordnance, the answer is not to race them to a bigger one — it's to
@@ -315,13 +300,10 @@ export function ultraManageEconomy(ctx: UltraBuyCtx): void {
   // Leverage weapons — a NUKE (cheapest true nuke, so it affords one AND keeps credits for variety
   // — not blowing the whole purse on the single priciest), then a BEAM, then a GAS round.
   if (econ.getCredits() > R && !ultraOwnsPremium(econ)) ultraBuyMatching(econ, isNukeWeapon, false);
-  if (econ.getCredits() > R && !botOwnsMatching(econ, isBeamWeapon))
-    ultraBuyMatching(econ, isBeamWeapon, false);
-  if (econ.getCredits() > R && !botOwnsMatching(econ, isRadWeapon))
-    ultraBuyMatching(econ, isRadWeapon, false);
+  if (econ.getCredits() > R && !botOwnsMatching(econ, isBeamWeapon)) ultraBuyMatching(econ, isBeamWeapon, false);
+  if (econ.getCredits() > R && !botOwnsMatching(econ, isRadWeapon)) ultraBuyMatching(econ, isRadWeapon, false);
   // A MINE for area denial (cheapest); one is enough.
-  if (econ.getCredits() > R && !botOwnsMatching(econ, isExt(EXT_MINE)))
-    ultraBuyMatching(econ, isExt(EXT_MINE), false);
+  if (econ.getCredits() > R && !botOwnsMatching(econ, isExt(EXT_MINE))) ultraBuyMatching(econ, isExt(EXT_MINE), false);
 
   // SAVE toward a nuke: if the bot doesn't hold a real nuke yet, STOP here — don't fritter credits
   // on cheap fill; let the balance build up so it can buy a nuke ($4000+) in a turn or two. Only

@@ -37,8 +37,7 @@
   --steel-plate: var(--bg-base) url('/assets/panels/steel.webp') center / cover no-repeat;
   --title-plate: var(--bg-base) url('/assets/panels/title.webp') top center / cover no-repeat;
   /* Title plate darkened with a flat black wash (Settings / Network screens read text over it). */
-  --title-plate-dim:
-    linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
+  --title-plate-dim: linear-gradient(rgba(9, 12, 16, 0.55), rgba(9, 12, 16, 0.55)), var(--title-plate);
 
   /* Text inks — dark label on metal (buttons/selected rows), light text on dark panels. */
   --ink-metal: #14171a;

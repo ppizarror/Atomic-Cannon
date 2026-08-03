@@ -79,8 +79,7 @@ export function findNearestInPalette(data: ImageData, hex: string): {fx: number;
   return {fx: w > 1 ? bx / (w - 1) : 0, fy: h > 1 ? by / (h - 1) : 0};
 }
 
-const lumaOf = (r: number, g: number, b: number): number =>
-  (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+const lumaOf = (r: number, g: number, b: number): number => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 
 // The sprite bitmaps carry an opaque colour-key background (no alpha); the top-left
 // corner pixel is the key. Matches CAssetManager's tolerance.

@@ -4,10 +4,7 @@
  * knockout scan that the bitmap-font parser, the sprite colour-keyer and the UI bmp loader
  * each hand-wrote. Runs at load time only, so a per-pixel predicate call is fine.
  */
-export function knockoutWhere(
-  px: Uint8ClampedArray,
-  matches: (px: Uint8ClampedArray, i: number) => boolean,
-): void {
+export function knockoutWhere(px: Uint8ClampedArray, matches: (px: Uint8ClampedArray, i: number) => boolean): void {
   for (let i = 0; i < px.length; i += 4) {
     if (matches(px, i)) px[i + 3] = 0;
   }
@@ -60,12 +57,7 @@ export function tryCanvas2d(
  * Backs both the tank's High-Contrast silhouette and the particle system's colour-bucketed
  * sprite tints, which had hand-written copies of the same four-step dance.
  */
-export function recolorOpaque(
-  src: CanvasImageSource,
-  w: number,
-  h: number,
-  color: string,
-): HTMLCanvasElement {
+export function recolorOpaque(src: CanvasImageSource, w: number, h: number, color: string): HTMLCanvasElement {
   const {cv, ctx} = makeCanvas2d(w, h);
   ctx.imageSmoothingEnabled = false; // 1:1 blit — no resampling of the source art
   ctx.drawImage(src, 0, 0);

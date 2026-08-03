@@ -178,11 +178,7 @@ function SegField<T extends number | boolean>({
       {editable ? (
         <div class="net-seg">
           {options.map((o, i) => (
-            <button
-              key={i}
-              class={`net-seg-btn ${o.val === value ? 'net-seg-on' : ''}`}
-              onClick={() => onPick(o.val)}
-            >
+            <button key={i} class={`net-seg-btn ${o.val === value ? 'net-seg-on' : ''}`} onClick={() => onPick(o.val)}>
               <BmpText font="beijing-16-out" text={o.label} spacing={-1} />
             </button>
           ))}
@@ -197,10 +193,7 @@ function SegField<T extends number | boolean>({
 }
 
 // Numeric choice presets → segmented options, labelled by `fmt` (defaults to the raw number).
-function numOpts(
-  vals: number[],
-  fmt: (v: number) => string = String,
-): {label: string; val: number}[] {
+function numOpts(vals: number[], fmt: (v: number) => string = String): {label: string; val: number}[] {
   return vals.map(v => ({label: fmt(v), val: v}));
 }
 
@@ -394,10 +387,7 @@ function Lobby() {
       <div class="net-roster">
         {s.players.map(p => (
           <div key={p.id} class={`net-row ${p.id === s.youId ? 'net-you' : ''}`}>
-            <span
-              class="net-swatch"
-              style={{background: p.color, opacity: p.connected ? 1 : 0.4}}
-            />
+            <span class="net-swatch" style={{background: p.color, opacity: p.connected ? 1 : 0.4}} />
             <span class="net-row-name">
               <BmpText font="beijing-16-out" text={p.name} spacing={-1} />
             </span>
@@ -419,11 +409,7 @@ function Lobby() {
       </div>
 
       <button class="net-info-btn" onClick={() => setShowInfo(true)}>
-        <BmpText
-          font="beijing-16-out"
-          text={s.isHost ? n.matchInfo.edit : n.matchInfo.view}
-          spacing={-1}
-        />
+        <BmpText font="beijing-16-out" text={s.isHost ? n.matchInfo.edit : n.matchInfo.view} spacing={-1} />
       </button>
       {showInfo && <MatchSettingsDialog onClose={() => setShowInfo(false)} />}
 

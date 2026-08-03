@@ -82,9 +82,7 @@ describe('Depot economy', () => {
     const SKIP = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
     const e = new CEconomy(200000, []); // plenty of credits → it would grab everything affordable
     e.autoBuy();
-    const boughtUtility = WEAPON_DATABASE.some(
-      (w, i) => e.getOwned(i) > 0 && SKIP.has(w.extType ?? 0),
-    );
+    const boughtUtility = WEAPON_DATABASE.some((w, i) => e.getOwned(i) > 0 && SKIP.has(w.extType ?? 0));
     expect(boughtUtility).toBe(false); // utility/support types are filtered out
   });
 

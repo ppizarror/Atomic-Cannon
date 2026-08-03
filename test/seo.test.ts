@@ -270,8 +270,7 @@ describe('browser tab title (per screen)', () => {
       expect(m.sectionTitle).toContain('{section}');
       expect(Object.keys(m.sections).sort()).toEqual([...keys].sort());
       // A missing/blank label would silently render "Atomic Cannon — ".
-      for (const k of keys)
-        expect(documentTitle(code, k).trim().length).toBeGreaterThan(GAME_NAME.length + 2);
+      for (const k of keys) expect(documentTitle(code, k).trim().length).toBeGreaterThan(GAME_NAME.length + 2);
     }
   });
 

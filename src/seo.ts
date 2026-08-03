@@ -41,8 +41,7 @@ const attr = (value: string): string =>
  */
 export function headTags(origin: string): string {
   return (
-    `<link rel="canonical" href="${attr(origin)}/">` +
-    `<script type="application/ld+json">${jsonLd(origin)}</script>`
+    `<link rel="canonical" href="${attr(origin)}/">` + `<script type="application/ld+json">${jsonLd(origin)}</script>`
   );
 }
 

@@ -227,9 +227,7 @@ export class CEconomy {
       const pick = opts?.deterministic
         ? affordable[guard % affordable.length]
         : opts?.conserve && Math.random() < 0.5
-          ? affordable.reduce((lo, i) =>
-              WEAPON_DATABASE[i].damage < WEAPON_DATABASE[lo].damage ? i : lo,
-            )
+          ? affordable.reduce((lo, i) => (WEAPON_DATABASE[i].damage < WEAPON_DATABASE[lo].damage ? i : lo))
           : affordable[Math.floor(Math.random() * affordable.length)];
       this.buy(pick);
     }

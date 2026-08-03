@@ -38,13 +38,7 @@ export function HelpOverlay() {
     {...h.controls.shotTimer},
   ];
   return (
-    <Modal
-      backdrop="scrim"
-      onClose={closeHelp}
-      width="min(620px, 94vw)"
-      maxHeight="88vh"
-      class="help-card"
-    >
+    <Modal backdrop="scrim" onClose={closeHelp} width="min(620px, 94vw)" maxHeight="88vh" class="help-card">
       <div class="help-head">
         <BmpText font="bazouk-28" text={h.title} />
       </div>

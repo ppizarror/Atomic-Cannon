@@ -666,9 +666,8 @@ describe('network match boot', () => {
     // tank on the spectator, feed it the relayed up-thrust, and confirm it lifts off the surface.
     const spec = netController(1); // I am tank 1; tank 0 (remote) is the one flying
     spec.netSetActivePlayer(0);
-    const tank = (
-      spec as unknown as {m_tanks: {igniteJet(s: number): boolean; getPosition(): {y: number}}[]}
-    ).m_tanks[0];
+    const tank = (spec as unknown as {m_tanks: {igniteJet(s: number): boolean; getPosition(): {y: number}}[]})
+      .m_tanks[0];
     tank.igniteJet(15); // give the flight fuel (the ignite the actor's `fire` performed)
     forceFlying(spec);
     const startY = tank.getPosition().y;
@@ -694,9 +693,7 @@ describe('network match boot', () => {
     const a = shoot();
     const b = shoot();
     // Same seed + synced rates → identical per-tank credit balances on both clients.
-    expect(a.getNetSnapshot().tanks.map(t => t.credits)).toEqual(
-      b.getNetSnapshot().tanks.map(t => t.credits),
-    );
+    expect(a.getNetSnapshot().tanks.map(t => t.credits)).toEqual(b.getNetSnapshot().tanks.map(t => t.credits));
   });
 
   it('two clients with different local settings still simulate a shot to the same hash', () => {
@@ -1078,9 +1075,7 @@ describe('lockstep sync (desync detector + turn queuing)', () => {
     // crates are excluded from the hash AND re-pinned from the keyframe even though we trust our own
     // sim for everything else.
     const snap = gc.getNetSnapshot();
-    snap.crates = [
-      {x: 123, y: 45, vy: 0, kind: 'health', amount: 300, weaponIndex: -1, landed: false},
-    ];
+    snap.crates = [{x: 123, y: 45, vy: 0, kind: 'health', amount: 300, weaponIndex: -1, landed: false}];
 
     ng.handle({t: 'stateUpdate', from: 1, seq: 1, result: snap, hash: inSync});
 

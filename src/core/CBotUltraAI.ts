@@ -467,8 +467,7 @@ function scoreBlast(
     // disturbing WHICH weapon we pick for the job.
     value += weakness(e) * wt.finisherBonus;
     // FOCUS: the squad's agreed target. Converging turns three wounded enemies into one dead one.
-    if (focusX !== undefined && Math.abs(e.x - focusX) <= TEAM.FOCUS_TOL)
-      value += TEAM.FOCUS * wt.teamplay;
+    if (focusX !== undefined && Math.abs(e.x - focusX) <= TEAM.FOCUS_TOL) value += TEAM.FOCUS * wt.teamplay;
     if (raw >= hp) {
       kills++;
       value += wt.killBonus;
@@ -541,8 +540,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
   // Higher value wins; at equal value the CHEAPER weapon does (bank the pricey stuff).
   const better = (a: ShotPlan, b: ShotPlan): boolean =>
     a.value > b.value ||
-    (a.value === b.value &&
-      weaponCost(weapons, a.weaponIndex) < weaponCost(weapons, b.weaponIndex));
+    (a.value === b.value && weaponCost(weapons, a.weaponIndex) < weaponCost(weapons, b.weaponIndex));
 
   // Our own squad, each priced by how much of a target they've become (grudge / late-game betrayal).
   const allies: AllyTarget[] = (ctx.allies ?? []).map(a => ({
@@ -552,10 +550,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
   const focusX = ctx.focusX;
   // Where we're willing to AIM. Enemies always; a teammate only once they're a real target — otherwise
   // we'd never solve an arc onto them and a traitor could shell their own side unanswered forever.
-  const aimAt: AimTarget[] = [
-    ...enemies,
-    ...allies.filter(t => t.hostility > 0.05).map(t => t.ally),
-  ];
+  const aimAt: AimTarget[] = [...enemies, ...allies.filter(t => t.hostility > 0.05).map(t => t.ally)];
 
   for (const e of aimAt) {
     // BEAMS are hitscan straight rays: only score them when the LINE from the muzzle to the enemy is
@@ -570,8 +565,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     // here — the engine's beam is pure hitscan that only ever stops on a TANK (see EXT.BEAM in
     // WeaponBehavior), so shooting it out from under the dirt is exactly what it's for.
     const beamAngle = ctx.aimDegToward({x: e.x, y: e.y});
-    const beamClear =
-      ctx.self.buried || !beamBlocked(muzzleFor(beamAngle), {x: e.x, y: e.y}, field);
+    const beamClear = ctx.self.buried || !beamBlocked(muzzleFor(beamAngle), {x: e.x, y: e.y}, field);
     if (beamClear)
       for (const w of firers.filter(f => f.isBeam)) {
         const s = scoreBlast(e.x, e.y, w, enemies, wt, allies, focusX);
@@ -598,16 +592,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     const solve = (homing: boolean) => {
       const a = bestAim(muzzleFor, {x: e.x, y: e.y}, wind, field, gustT0, homing);
       const o = muzzleFor(a.angleDeg);
-      const sh = simulateShot(
-        o,
-        a.angleDeg,
-        a.power,
-        wind,
-        field,
-        {x: e.x, y: e.y},
-        gustT0,
-        homing,
-      );
+      const sh = simulateShot(o, a.angleDeg, a.power, wind, field, {x: e.x, y: e.y}, gustT0, homing);
       const hit = sh.minDist <= e.hitRadius;
       return {arc: a, shot: sh, hit, cx: hit ? sh.nearX : sh.hitX, cy: hit ? sh.nearY : sh.hitY};
     };
@@ -678,8 +663,7 @@ function weightedPick(cands: ShotPlan[], rnd: () => number): ShotPlan {
   return cands[cands.length - 1];
 }
 
-const weaponCost = (weapons: UltraWeapon[], index: number): number =>
-  weapons.find(w => w.index === index)?.cost ?? 0;
+const weaponCost = (weapons: UltraWeapon[], index: number): number => weapons.find(w => w.index === index)?.cost ?? 0;
 
 /**
  * Ranging correction: given where the LAST shot landed vs where it was aimed, return the power to
@@ -721,16 +705,13 @@ function adjustForPremium(
   // The "is this shot big enough to be worth a nuke?" test reads raw DAMAGE on purpose: the composite
   // value carries positional bonuses (finisher/focus) that say nothing about whether the round itself
   // landed hard, and letting those inflate it past the bar would spend nukes on grazes.
-  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || damage >= VALUE.PREMIUM_MIN)
-    return value;
+  if (!w.isPremium || desperate || kills > 0 || hits >= 2 || damage >= VALUE.PREMIUM_MIN) return value;
   return value - wt.premiumWaste;
 }
 
 /** Is there a weak (≤40% life) enemy near the blast — a good candidate to bury rather than kill? */
 function enemyIsWeak(enemies: UltraEnemy[], cx: number, cy: number): boolean {
-  return enemies.some(
-    e => e.life <= e.maxLife * 0.4 && Math.hypot(e.x - cx, e.y - cy) < e.hitRadius + 40,
-  );
+  return enemies.some(e => e.life <= e.maxLife * 0.4 && Math.hypot(e.x - cx, e.y - cy) < e.hitRadius + 40);
 }
 
 const describe = (s: {kills: number; hits: number}) => `k${s.kills} h${s.hits}`;
@@ -767,8 +748,7 @@ const radPenalty = (ctx: UltraCtx, x: number): number => radCost(ctx, x) ?? 0;
 function bestCrateGrab(ctx: UltraCtx): {destX: number; value: number; note: string} | null {
   const {self, crates, enemies, moveMaxDist} = ctx;
   if (moveMaxDist <= 0) return null;
-  const distToEnemies = (x: number) =>
-    enemies.length ? Math.min(...enemies.map(e => Math.abs(e.x - x))) : Infinity;
+  const distToEnemies = (x: number) => (enemies.length ? Math.min(...enemies.map(e => Math.abs(e.x - x))) : Infinity);
   const dNow = distToEnemies(self.x);
   let best: {destX: number; value: number; note: string} | null = null;
   for (const c of crates) {
@@ -805,19 +785,12 @@ function bestRadiationEscape(ctx: UltraCtx): {destX: number; value: number; note
   const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
   const urgency = Math.max(0.5, (1 - lifeFrac) * 2.2);
   const dose = radCost(ctx, self.x);
-  const value =
-    dose !== undefined && dose > 0
-      ? dose * urgency
-      : VALUE.RAD_FLEE * Math.max(0.12, (1 - lifeFrac) * 1.4);
+  const value = dose !== undefined && dose > 0 ? dose * urgency : VALUE.RAD_FLEE * Math.max(0.12, (1 - lifeFrac) * 1.4);
   // When it DOES flee, prefer escaping TOWARD a reachable crate — ONE move both flees and grabs the
   // loot. Same value as a plain flee (the crate is a free bonus of the destination, not a reason to run
   // when healthy), so it never overrides a shot the low base wouldn't.
   const crate = ctx.crates.find(
-    c =>
-      c.landed &&
-      c.kind !== 'bomb' &&
-      Math.abs(c.x - self.x) <= moveMaxDist &&
-      reachableCleanSafe(c.x),
+    c => c.landed && c.kind !== 'bomb' && Math.abs(c.x - self.x) <= moveMaxDist && reachableCleanSafe(c.x),
   );
   if (crate) return {destX: crate.x, value, note: 'flee-to-crate'};
   // Else hop to the nearest clean ground (fully off the carpet, so it's a ONE-turn escape).
@@ -905,8 +878,7 @@ function bestCoverMove(ctx: UltraCtx): {destX: number; value: number; note: stri
       // A ridge that shields us is worth less if we have to stand in fallout to get behind it — price
       // the dose against the cover before deciding this spot is "safer".
       const cover = coverScore(x, ex, field) - radPenalty(ctx, x);
-      if (cover > here + VALUE.COVER_MARGIN && (!best || cover > best.cover))
-        best = {destX: x, cover};
+      if (cover > here + VALUE.COVER_MARGIN && (!best || cover > best.cover)) best = {destX: x, cover};
     }
   }
   return best ? {destX: best.destX, value: VALUE.COVER, note: 'cover'} : null;
@@ -1147,12 +1119,7 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   // is worth a little expected value; passing on a shot that would take a third of someone's health is not.
   const trickChance = (ctx.weights ?? ULTRA_WEIGHTS_DEFAULT).trickChance;
   const bigHit = (shot?.value ?? 0) >= PRIORITY.TRICK_MAX_SHOT_VALUE;
-  if (
-    top.plan.action === 'fire' &&
-    !bigHit &&
-    (shot?.kills ?? 0) === 0 &&
-    ctx.rnd() < trickChance
-  ) {
+  if (top.plan.action === 'fire' && !bigHit && (shot?.kills ?? 0) === 0 && ctx.rnd() < trickChance) {
     const trick = cands.find(c => c.trick && c.value >= top.value * 0.6);
     if (trick) return trick.plan;
   }

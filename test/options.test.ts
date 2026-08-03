@@ -140,9 +140,7 @@ describe('Settings options that must reach the engine', () => {
 
     const staple = WEAPON_DATABASE.findIndex(w => w.id === 'shell');
     // Two enabled non-staple weapons, one with a HIGHER database index than the other.
-    const others = WEAPON_DATABASE.filter(w => w.index !== staple && weaponEnabled(w.index)).map(
-      w => w.index,
-    );
+    const others = WEAPON_DATABASE.filter(w => w.index !== staple && weaponEnabled(w.index)).map(w => w.index);
     const wHi = others[others.length - 1];
     const wLo = others[0];
     expect(wHi).toBeGreaterThan(wLo); // db order alone would put wLo first

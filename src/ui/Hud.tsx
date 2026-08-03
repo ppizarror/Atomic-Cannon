@@ -234,12 +234,7 @@ function Needle() {
   const rot = `rotate(${90 - a} 50 50)`;
   const src = useAsyncImage(() => loadUiBmp('gui/guiAnglePointerBig.bmp', 'blackmagenta'), []);
   return (
-    <svg
-      class="ov dial-overlay"
-      style={pos(DIAL_BOX)}
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-    >
+    <svg class="ov dial-overlay" style={pos(DIAL_BOX)} viewBox="0 0 100 100" preserveAspectRatio="none">
       {src ? (
         <image
           class="needle-sprite"
@@ -297,10 +292,7 @@ function DialGrab() {
 
 function WindReadout() {
   const w = wind.value;
-  const txt =
-    Math.abs(w) < 0.05
-      ? strings.value.hud.windOff
-      : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
+  const txt = Math.abs(w) < 0.05 ? strings.value.hud.windOff : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
   return (
     <ReadoutBox r={R.wind}>
       <BmpText font="silkscreen-8-white" text={txt} />
@@ -369,12 +361,7 @@ function WeaponList() {
     }
   };
   return (
-    <div
-      class={`ov wlist${blocked.value ? ' blocked' : ''}`}
-      style={pos(R.list)}
-      ref={listRef}
-      onWheel={onWheel}
-    >
+    <div class={`ov wlist${blocked.value ? ' blocked' : ''}`} style={pos(R.list)} ref={listRef} onWheel={onWheel}>
       {weapons.value.map((wp, i) => {
         const active = wp.index === idx;
         return (
@@ -545,9 +532,7 @@ function WeaponDetails2() {
           <LcdLine text={`${h.lcd.cluster} ${cluster}`} />
           <LcdLine text={`${h.lcd.succession} ${(w.sucNum ?? 0) + 1}`} />
           <LcdLine text={`${h.lcd.battery} ${w.batSec ?? 0}`} />
-          <LcdLine
-            text={`${h.lcd.radiation} ${Math.round((w.irDmg ?? 0) * (w.fodder ?? 0) * w.radius * 100)}`}
-          />
+          <LcdLine text={`${h.lcd.radiation} ${Math.round((w.irDmg ?? 0) * (w.fodder ?? 0) * w.radius * 100)}`} />
         </>
       )}
     </div>

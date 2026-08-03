@@ -800,13 +800,7 @@ export class CLand {
 
   /** Blit a falling block's captured column at row `top`: `draw` writes its pixels+material,
    *  else clears them (erase). Shared by stepFalls (per frame) + settleFallsIn (on re-carve). */
-  private blitFall(
-    px: Uint32Array,
-    mat: Uint8Array | null,
-    f: Fall,
-    top: number,
-    draw: boolean,
-  ): void {
+  private blitFall(px: Uint32Array, mat: Uint8Array | null, f: Fall, top: number, draw: boolean): void {
     const W = this.m_nWidth;
     for (let k = 0; k < f.thick; k++) {
       const idx = (top + k) * W + f.col;
@@ -905,10 +899,8 @@ export class CLand {
       const t = Math.abs(dx) < 1e-3 ? 0 : (c - x0) / dx;
       if (t < 0 || t > 1) continue;
       const beamY = y0 + (y1 - y0) * t;
-      const jTop =
-        3.4 * Math.sin(c * 0.17 + pT1) + 2.0 * Math.sin(c * 0.44 + pT2) + (rnd() - 0.5) * 1.8;
-      const jBot =
-        3.4 * Math.sin(c * 0.2 + pB1) + 2.0 * Math.sin(c * 0.51 + pB2) + (rnd() - 0.5) * 1.8;
+      const jTop = 3.4 * Math.sin(c * 0.17 + pT1) + 2.0 * Math.sin(c * 0.44 + pT2) + (rnd() - 0.5) * 1.8;
+      const jBot = 3.4 * Math.sin(c * 0.2 + pB1) + 2.0 * Math.sin(c * 0.51 + pB2) + (rnd() - 0.5) * 1.8;
       const surfBefore = this.getHeightAt(c); // spawn ejecta at the ground, BEFORE the slice lowers it
       const removed = this.sliceColumn(c, beamY, Math.max(1, fireHalf + jTop), Math.max(1, fireHalf + jBot)); // prettier-ignore
       // The original EJECTS the removed earth as falling debris — the ray visibly emits dirt, not a
@@ -949,14 +941,7 @@ export class CLand {
    * thickness (grass ends up that much lower), with NO lateral slumping. Otherwise the steep
    * bore walls avalanche sideways every frame and stack into a wide funnel/V (the wrong look).
    */
-  carveDiscCollapse(
-    x: number,
-    y: number,
-    r: number,
-    slump = true,
-    ragged = false,
-    coatDirt = false,
-  ): void {
+  carveDiscCollapse(x: number, y: number, r: number, slump = true, ragged = false, coatDirt = false): void {
     if (!this.m_arrHeights) return;
     const [lo, hi] = this.clampCols(Math.floor(x - r), Math.ceil(x + r));
     this.settleFallsIn(lo, hi); // settle any active overburden first → no concurrent falls
@@ -1067,9 +1052,7 @@ export class CLand {
     // crater that was supposed to have swept them away, so a cleaner fired into a settling cloud
     // comes out glowing and fuming a second later.
     if (this.m_radSpecks.length)
-      this.m_radSpecks = this.m_radSpecks.filter(
-        s => outside(s.x, s.y) && !(s.y < y && Math.abs(s.x - x) <= r),
-      );
+      this.m_radSpecks = this.m_radSpecks.filter(s => outside(s.x, s.y) && !(s.y < y && Math.abs(s.x - x) <= r));
   }
 
   /**
@@ -1095,8 +1078,7 @@ export class CLand {
       if (this.sliceColumn(c, yy, Math.round(r)) > 0) cut = true;
     }
     if (cut) {
-      if (this.m_radSpecks.length)
-        this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
+      if (this.m_radSpecks.length) this.m_radSpecks = this.m_radSpecks.filter(s => s.x < lo || s.x > hi);
       this.preBlast(lo, hi);
     }
   }
@@ -1398,9 +1380,7 @@ export class CLand {
       // instead of settling. Landing LAST needs no compensation — the fallout simply coats whatever
       // the ground finally is. An AIRBURST is exempt: it rains from a mid-air burst point and is
       // never thrown up in the first place.
-      s.vy = raining
-        ? Math.abs(Math.sin(ang)) * speed + between(25, 80)
-        : Math.sin(ang) * speed - between(...RAD.UP);
+      s.vy = raining ? Math.abs(Math.sin(ang)) * speed + between(25, 80) : Math.sin(ang) * speed - between(...RAD.UP);
       s.age = 0;
       s.life = dur * between(0.85, 1.05); // lingers ~the stretched irTime
       s.settled = false;
@@ -1434,12 +1414,7 @@ export class CLand {
    * saturating, so overlapping blasts and the grains of a single one BUILD UP a hotter patch
    * rather than each overwriting the last.
    */
-  private stampRadiation(
-    col: number,
-    y: number,
-    slot: number,
-    amount = between(RAD.STAMP_MIN, MAT.RAD_MAX),
-  ): void {
+  private stampRadiation(col: number, y: number, slot: number, amount = between(RAD.STAMP_MIN, MAT.RAD_MAX)): void {
     // Allocated on first use, and deliberately NOT conditioned on the pixel buffer: radioactivity
     // is terrain STATE, not colour. A land that never ran `bakeTerrain` (headless sim, a net client
     // mid-boot, tests) still has a heightmap and still has to answer `radiationAt`, or fallout
@@ -2049,15 +2024,7 @@ export class CLand {
    *  `radSlot`: the colour slot this earth is CONTAMINATED with (−1 = clean). A nuke's spoil is not
    *  clean soil that fallout later dusts — it is the irradiated material itself, so it lands hot
    *  through its whole thickness and the glow accumulates exactly where the dirt does. */
-  addShowerParticles(
-    x: number,
-    y: number,
-    count: number,
-    radius = 24,
-    gentle = false,
-    fill = 1,
-    radSlot = -1,
-  ): void {
+  addShowerParticles(x: number, y: number, count: number, radius = 24, gentle = false, fill = 1, radSlot = -1): void {
     const pool = this.m_spoilPool;
     // This ejecta WRITES the heightmap, so every draw that shapes its motion must come from the
     // seeded LCG — two clients that throw it differently end up with different terrain.
@@ -2114,11 +2081,7 @@ export class CLand {
       // fallout grains already keep.
       p.radSlot = flung ? -1 : radSlot;
       p.vx = flung ? Math.cos(ang) * speed : (r() * 2 - 1) * DIRT.THROW_SCATTER;
-      p.vy = gentle
-        ? r() * 12
-        : flung
-          ? Math.sin(ang) * speed * 0.7 - up
-          : -lerp(...DIRT.THROW_UP, r()) - up * 0.35;
+      p.vy = gentle ? r() * 12 : flung ? Math.sin(ang) * speed * 0.7 - up : -lerp(...DIRT.THROW_UP, r()) - up * 0.35;
       p.color = this.dirtColor(v);
       p.rgba = this.packSolid(v, v >> 1, 0);
       p.size = 1; // the original plots each chunk as a single 1px pixel — no 2px squares
@@ -2186,9 +2149,7 @@ export class CLand {
       // Wind (Realistic mode only): the shared profile eases the push near the ground so settling
       // chunks barely drift while high-arcing ejecta leans on the wind. windX/Y are 0 in Linear mode.
       if (windX !== 0 || windY !== 0) {
-        const wf = windProfile(
-          this.getHeightAt(clamp(Math.floor(p.x), 0, this.m_nWidth - 1)) - p.y,
-        );
+        const wf = windProfile(this.getHeightAt(clamp(Math.floor(p.x), 0, this.m_nWidth - 1)) - p.y);
         p.vx += windX * wf * dt;
         p.vy += windY * wf * dt;
       }
@@ -2491,8 +2452,7 @@ export class CLand {
     }
 
     const dx = 2;
-    const dy =
-      this.m_arrHeights[Math.min(x + 1, this.m_nWidth - 1)] - this.m_arrHeights[Math.max(x - 1, 0)];
+    const dy = this.m_arrHeights[Math.min(x + 1, this.m_nWidth - 1)] - this.m_arrHeights[Math.max(x - 1, 0)];
 
     const len = Math.sqrt(dx * dx + dy * dy);
 
@@ -2510,10 +2470,7 @@ export class CLand {
    * Set the depth-sorted texture layers: the smallest depth is
    * the surface cap, larger depths are deeper strata. Rebuilds the cached bitmap.
    */
-  setLayers(
-    layers: {image: CanvasImageSource; depth: number}[],
-    bareImage?: CanvasImageSource,
-  ): void {
+  setLayers(layers: {image: CanvasImageSource; depth: number}[], bareImage?: CanvasImageSource): void {
     // Layer depths are authored for a ~480px play area; scale them
     // to our (taller) terrain so the strata bands stay proportional.
     const scale = this.m_nHeight / 480;
@@ -2557,8 +2514,7 @@ export class CLand {
     if (px) {
       const W = this.m_nWidth;
       if (nt < old) {
-        for (let y = nt; y < old; y++)
-          px[y * W + col] = colorFn ? colorFn(col, y) : this.dirtColorAt(col, y);
+        for (let y = nt; y < old; y++) px[y * W + col] = colorFn ? colorFn(col, y) : this.dirtColorAt(col, y);
       } else if (nt > old) {
         for (let y = old; y < nt; y++) px[y * W + col] = 0;
       }
@@ -2796,9 +2752,7 @@ export class CLand {
         r = (r + (lum - r) * DESAT) * DARK * TR;
         g = (g + (lum - g) * DESAT) * DARK * TG;
         b = (b + (lum - b) * DESAT) * DARK * TB;
-        out[hy * hw + hx] =
-          (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>>
-          0;
+        out[hy * hw + hx] = (0xff000000 | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r)) >>> 0;
       }
     }
     bctx.putImageData(img, 0, 0);
@@ -2934,10 +2888,7 @@ export class CLand {
     // A compression wave counts: it is still reshaping ground tanks are standing on, so the round
     // must not hand off the turn until it has passed.
     return (
-      this.m_falls.length > 0 ||
-      this.m_shocks.length > 0 ||
-      this.m_sinkX1 >= this.m_sinkX0 ||
-      this.m_spoil.length > 0
+      this.m_falls.length > 0 || this.m_shocks.length > 0 || this.m_sinkX1 >= this.m_sinkX0 || this.m_spoil.length > 0
     );
   }
 
@@ -3041,11 +2992,7 @@ export class CLand {
           }
           const g = cv.getContext('2d');
           if (g) {
-            if (
-              !this.m_speckImage ||
-              this.m_speckImage.width !== dw ||
-              this.m_speckImage.height !== dh
-            )
+            if (!this.m_speckImage || this.m_speckImage.width !== dw || this.m_speckImage.height !== dh)
               this.m_speckImage = g.createImageData(dw, dh);
             const img = this.m_speckImage;
             const out = img.data;

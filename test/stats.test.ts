@@ -8,14 +8,7 @@ import {makeCanvas} from './_dom';
 import {CGameController, EGameType, type StatsFlush} from '../src/game/CGameController';
 import {Roster} from '../src/core/CRoster';
 import type {CTank} from '../src/core/CTank';
-import {
-  sanitizeDelta,
-  STAT_CAPS,
-  MATCH_COUNTERS,
-  emptyDelta,
-  isEmptyDelta,
-  mergeDelta,
-} from '../src/net/stats';
+import {sanitizeDelta, STAT_CAPS, MATCH_COUNTERS, emptyDelta, isEmptyDelta, mergeDelta} from '../src/net/stats';
 import {flagEmoji, countryName} from '../src/ui/worldGeo';
 
 const ROSTER = [

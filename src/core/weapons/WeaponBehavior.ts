@@ -232,12 +232,7 @@ function tankAt(shot: CShot, world: ShotWorld, x: number, y: number): CTank | nu
  * shot's integrator step. Returns whether the shot keeps flying, detonates, or
  * was consumed (deployed / left the world) with no explosion.
  */
-export function weaponFlyStep(
-  shot: CShot,
-  weapon: CWeapon,
-  world: ShotWorld,
-  dt: number,
-): FlyAction {
+export function weaponFlyStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number): FlyAction {
   const land = world.land;
   let p = shot.getPosition();
 
@@ -929,11 +924,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // Burnt-rim scorch scaled by `crackle` (skipped when it's 0); `craterR` differs per branch.
   const scorchRim = (craterR: number) => {
     if (crackle > 0) {
-      land.scorch(
-        Math.floor(pos.x),
-        Math.floor(surfaceY),
-        Math.round(craterR * (0.4 + crackle * 0.85)),
-      );
+      land.scorch(Math.floor(pos.x), Math.floor(surfaceY), Math.round(craterR * (0.4 + crackle * 0.85)));
     }
   };
 

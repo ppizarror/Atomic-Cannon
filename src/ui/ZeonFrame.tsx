@@ -75,8 +75,7 @@ export function ZeonFrame() {
         dxw: number,
         dxh: number,
       ) => {
-        if (sw > 0 && sh > 0 && dxw > 0 && dxh > 0)
-          g.drawImage(img!, sx, sy, sw, sh, dx, dy, dxw, dxh);
+        if (sw > 0 && sh > 0 && dxw > 0 && dxh > 0) g.drawImage(img!, sx, sy, sw, sh, dx, dy, dxw, dxh);
       };
       // 4 corners (1:1, never scaled)
       blit(0, 0, C, C, 0, 0, C, C);

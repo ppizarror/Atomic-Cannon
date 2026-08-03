@@ -87,9 +87,7 @@ describe('Settings → game', () => {
     expect(GameConfig.explosionWaves).toBe(false); // Explosion Waves off is applied
 
     gc.startGame(2);
-    const tank = (
-      gc as unknown as {m_tanks: {getMaxLife(): number; getHealth(): {nLife: number}}[]}
-    ).m_tanks[0];
+    const tank = (gc as unknown as {m_tanks: {getMaxLife(): number; getHealth(): {nLife: number}}[]}).m_tanks[0];
     expect(tank.getMaxLife()).toBe(2500); // Hitpoints → tank max life
     expect(tank.getHealth().nLife).toBe(2500); // Hitpoints → tank spawns full
   });

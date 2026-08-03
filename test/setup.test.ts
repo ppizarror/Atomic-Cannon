@@ -130,8 +130,6 @@ describe('Play setup', () => {
     // A legacy persisted setup ({total, humans}, no computers / tanksPerTeam) must not yield
     // NaN — the missing fields fall back to sensible defaults.
     setSetup({total: 4, humans: 1} as unknown as Parameters<typeof setSetup>[0]);
-    expect(
-      Number.isFinite(setup.value.computers) && Number.isFinite(setup.value.tanksPerTeam),
-    ).toBe(true); // legacy setup never produces NaN
+    expect(Number.isFinite(setup.value.computers) && Number.isFinite(setup.value.tanksPerTeam)).toBe(true); // legacy setup never produces NaN
   });
 });

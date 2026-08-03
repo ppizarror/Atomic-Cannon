@@ -62,13 +62,7 @@ export function MenuTargets() {
 
   const rows = [];
   for (let i = 0; i < ROWS; i++) {
-    rows.push(
-      <div
-        key={i}
-        class={`tgt-row ${i % 2 ? 'tgt-r' : 'tgt-l'}`}
-        style={{backgroundImage: `url(${tile})`}}
-      />,
-    );
+    rows.push(<div key={i} class={`tgt-row ${i % 2 ? 'tgt-r' : 'tgt-l'}`} style={{backgroundImage: `url(${tile})`}} />);
   }
   return <div class="tgt-rows">{rows}</div>;
 }

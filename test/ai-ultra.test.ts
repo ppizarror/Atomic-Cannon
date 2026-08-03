@@ -300,9 +300,7 @@ describe('Ultra when BURIED', () => {
   });
 
   it('attacks with a beam (never a ballistic) while buried', () => {
-    const shot = bestOffensiveShot(
-      ctx({self: buriedSelf, weapons: [shell, beam], enemies: [enemy({x: 700})]}),
-    );
+    const shot = bestOffensiveShot(ctx({self: buriedSelf, weapons: [shell, beam], enemies: [enemy({x: 700})]}));
     expect(shot?.weaponIndex).toBe(5); // only the beam is considered
   });
 
@@ -485,9 +483,7 @@ describe('Ultra desperation — low life', () => {
   it('a badly hurt bot with a heal in stock HEALS instead of chipping', () => {
     const heal = weapon({index: 5, ext: 10, damage: 0, offensive: false, count: 1});
     const shell = weapon({index: 0, damage: 60, radius: 30});
-    const plan = planUltraTurn(
-      ctx({weapons: [shell, heal], enemies: [enemy({x: 700, life: 1000})], self: hurt(200)}),
-    );
+    const plan = planUltraTurn(ctx({weapons: [shell, heal], enemies: [enemy({x: 700, life: 1000})], self: hurt(200)}));
     expect(plan.action).toBe('buff'); // the urgency curve makes healing beat a 60-dmg chip shot at 20% life
   });
 

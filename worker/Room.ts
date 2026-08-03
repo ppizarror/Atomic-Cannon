@@ -286,11 +286,7 @@ export class Room {
     }
   }
 
-  private async onHello(
-    ws: WebSocket,
-    s: RoomState,
-    msg: Extract<ClientMessage, {t: 'hello'}>,
-  ): Promise<void> {
+  private async onHello(ws: WebSocket, s: RoomState, msg: Extract<ClientMessage, {t: 'hello'}>): Promise<void> {
     if (msg.v !== PROTOCOL_VERSION) {
       return this.send(ws, {
         t: 'error',
@@ -316,10 +312,7 @@ export class Room {
         // double-opened tab can leave TWO live sockets for one id, and the stale one's later close
         // would then flip this now-live player to disconnected (and possibly end the match).
         for (const old of this.ctx.getWebSockets()) {
-          if (
-            old !== ws &&
-            (old.deserializeAttachment() as Attachment | null)?.playerId === existing.id
-          ) {
+          if (old !== ws && (old.deserializeAttachment() as Attachment | null)?.playerId === existing.id) {
             try {
               // Unbind the evicted socket FIRST so its (async) close can't be mistaken for the live
               // player still holding a socket, nor mask a genuine disconnect of the new one.
@@ -487,13 +480,7 @@ export class Room {
     this.broadcast({t: 'config', config: s.config});
   }
 
-  private async onStart(
-    s: RoomState,
-    pid: number,
-    viewW: number,
-    viewH: number,
-    config: MatchConfig,
-  ): Promise<void> {
+  private async onStart(s: RoomState, pid: number, viewW: number, viewH: number, config: MatchConfig): Promise<void> {
     const host = this.socketFor(pid);
     if (s.hostId !== pid) {
       if (host) this.send(host, {t: 'error', code: 'not_host', message: 'only the host can start'});
@@ -503,8 +490,7 @@ export class Room {
     // (or a client spoofing `start`) could re-roll the seed and yank every client into a fresh world
     // mid-turn.
     if (s.phase !== 'lobby') {
-      if (host)
-        this.send(host, {t: 'error', code: 'game_in_progress', message: 'match already started'});
+      if (host) this.send(host, {t: 'error', code: 'game_in_progress', message: 'match already started'});
       return;
     }
     const connected = Object.values(s.players).filter(p => p.connected);
@@ -608,17 +594,10 @@ export class Room {
       return;
     }
     // Relay the intent so spectators mirror the acting player's aim/inventory.
-    this.broadcast(
-      {t: 'cmd', from: pid, seq: msg.seq, cmd: msg.cmd},
-      this.socketFor(pid) ?? undefined,
-    );
+    this.broadcast({t: 'cmd', from: pid, seq: msg.seq, cmd: msg.cmd}, this.socketFor(pid) ?? undefined);
   }
 
-  private async onShotResult(
-    s: RoomState,
-    pid: number,
-    msg: Extract<ClientMessage, {t: 'shotResult'}>,
-  ): Promise<void> {
+  private async onShotResult(s: RoomState, pid: number, msg: Extract<ClientMessage, {t: 'shotResult'}>): Promise<void> {
     if (s.phase !== 'playing' || Room.ownerOf(s, s.turnIdx) !== pid) {
       const ws = this.socketFor(pid);
       if (ws) this.send(ws, {t: 'error', code: 'not_your_turn', message: 'not your turn'});
@@ -665,8 +644,7 @@ export class Room {
     // living tank. A hostile/buggy actor can't end a battle (or cycle seeds / reach gameOver) early;
     // an unfounded `over` falls through to a normal turn advance. Rounds ends on the round count (the
     // server doesn't track it), so trust `over` there.
-    const overIsLegit =
-      !!msg.over && (!s.config || s.config.gameType !== 1 || Room.battleDecided(s, msg.result));
+    const overIsLegit = !!msg.over && (!s.config || s.config.gameType !== 1 || Room.battleDecided(s, msg.result));
     if (overIsLegit) {
       // The acting client says this BATTLE ended. If the war has more battles, advance to a
       // fresh one (new seed → new terrain, everyone respawns); otherwise the war is over.
@@ -814,12 +792,7 @@ export class Room {
    *  the reporter keeps its own (trusted) state, so we don't overwrite anything server-side — we log
    *  the divergence so a cheating/desyncing match is visible to the operator. (No auto-resolution:
    *  in a 2-player game there's no majority to arbitrate; this is detection, not correction.) */
-  private async onDesync(
-    s: RoomState,
-    pid: number,
-    localHash: number,
-    keyframeHash: number,
-  ): Promise<void> {
+  private async onDesync(s: RoomState, pid: number, localHash: number, keyframeHash: number): Promise<void> {
     console.warn(
       `[desync] room=${s.code} reporter=${pid} turnActor=${Room.ownerOf(s, s.turnIdx)} ` +
         `localHash=${localHash} keyframeHash=${keyframeHash}`,
@@ -857,10 +830,7 @@ export class Room {
     // If another socket is STILL bound to this player (a superseded reconnect socket closing late),
     // this close is stale — the player is live on the newer socket, so it must not drop them.
     for (const other of this.ctx.getWebSockets()) {
-      if (
-        other !== ws &&
-        (other.deserializeAttachment() as Attachment | null)?.playerId === att.playerId
-      ) {
+      if (other !== ws && (other.deserializeAttachment() as Attachment | null)?.playerId === att.playerId) {
         return;
       }
     }

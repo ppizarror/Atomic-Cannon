@@ -163,10 +163,7 @@ export function Tooltip({
   // Anchored mode: the Tooltip places itself (fixed) so its tail tip meets the anchor
   // and the box grows up from it, edge-clamped horizontally.
   return (
-    <div
-      class={`tooltip-anchor ${anchorClass ?? ''}`}
-      style={{left: `${left}px`, top: `${anchorY}px`, opacity: fade}}
-    >
+    <div class={`tooltip-anchor ${anchorClass ?? ''}`} style={{left: `${left}px`, top: `${anchorY}px`, opacity: fade}}>
       {box}
     </div>
   );

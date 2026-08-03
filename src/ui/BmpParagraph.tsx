@@ -47,11 +47,7 @@ export function BmpParagraph({
     <div ref={hostRef} class={cls}>
       {lines.map((ln, i) =>
         // A blank wrapped line is an intentional gap — give it height with a space.
-        ln ? (
-          <BmpText key={i} font={font} text={ln} spacing={spacing} />
-        ) : (
-          <div key={i} class="bmp-para-gap" />
-        ),
+        ln ? <BmpText key={i} font={font} text={ln} spacing={spacing} /> : <div key={i} class="bmp-para-gap" />,
       )}
     </div>
   );

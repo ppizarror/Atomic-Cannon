@@ -49,10 +49,7 @@ export function localeName(code: LocaleCode): string {
 /** Best-fit shipped locale for the browser's language preferences, else the default.
  *  Matches on the primary subtag (`en-US` → `en`) in preference order. */
 export function detectLocale(): LocaleCode {
-  const prefs =
-    typeof navigator !== 'undefined'
-      ? (navigator.languages ?? [navigator.language]).filter(Boolean)
-      : [];
+  const prefs = typeof navigator !== 'undefined' ? (navigator.languages ?? [navigator.language]).filter(Boolean) : [];
   for (const pref of prefs) {
     const base = pref.toLowerCase().split('-')[0];
     const hit = availableLocales.find(code => code === base);

@@ -42,11 +42,7 @@ export class CMusicPlayer extends GainChannel {
   private m_loop = false; // whether the current track loops
   private m_playGen = 0; // bumped per play() so a superseded in-flight load doesn't also post 'play'
   private m_onEnded: (() => void) | null = null;
-  private readonly m_modules = new AudioAssetCache<ArrayBuffer>(
-    MUSIC_BASE,
-    res => res.arrayBuffer(),
-    'music',
-  );
+  private readonly m_modules = new AudioAssetCache<ArrayBuffer>(MUSIC_BASE, res => res.arrayBuffer(), 'music');
 
   constructor(ctx: AudioContext, destination: AudioNode) {
     super(ctx, destination);

@@ -9,8 +9,7 @@ import {CParticleSystem} from '../src/core/CParticleSystem';
 import {EXP, type ExpType} from '../src/core/weapons/ExpType';
 
 type Explosion = {x: number; y: number; size: number; shrink?: boolean};
-const membersOf = (ps: CParticleSystem) =>
-  (ps as unknown as {m_explosions: Explosion[]}).m_explosions;
+const membersOf = (ps: CParticleSystem) => (ps as unknown as {m_explosions: Explosion[]}).m_explosions;
 
 const R = 60;
 const CX = 400;
@@ -24,8 +23,7 @@ function burst(expType: ExpType): Explosion[] {
 }
 
 /** Furthest lit edge from the blast centre, in units of the blast radius. */
-const reach = (ms: Explosion[]) =>
-  Math.max(...ms.map(m => (Math.hypot(m.x - CX, m.y - CY) + m.size / 2) / R));
+const reach = (ms: Explosion[]) => Math.max(...ms.map(m => (Math.hypot(m.x - CX, m.y - CY) + m.size / 2) / R));
 
 describe('flare burst extent', () => {
   for (const [label, expType] of [
@@ -69,9 +67,9 @@ describe('flare burst extent', () => {
     for (const r of [30, 60, 90, 150]) {
       const ps = new CParticleSystem();
       ps.blast(CX, CY, r, '#ff00ff', false, undefined, EXP.DENSE, 'flares/05.bmp');
-      const spray = (
-        ps as unknown as {m_particles: {vx: number; vy: number; kind: string}[]}
-      ).m_particles.filter(p => p.kind !== 'smoke');
+      const spray = (ps as unknown as {m_particles: {vx: number; vy: number; kind: string}[]}).m_particles.filter(
+        p => p.kind !== 'smoke',
+      );
       expect(spray.length).toBeGreaterThan(20);
       const speeds = spray.map(p => Math.hypot(p.vx, p.vy) / r);
       expect(Math.max(...speeds)).toBeLessThanOrEqual(1.8); // capped in units of r, at every size

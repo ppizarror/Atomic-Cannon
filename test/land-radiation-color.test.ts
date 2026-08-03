@@ -46,9 +46,7 @@ describe('CLand — radiation speck colour jitter', () => {
 
     // Channels vary INDEPENDENTLY: the red order doesn't lock-step the green/blue (a flat tint or a
     // single shared scalar would make r/g/b perfectly correlated). Just check they aren't identical.
-    const someDiffProfile = specks.some(
-      (s, i) => i > 0 && (s.g !== specks[0].g || s.b !== specks[0].b),
-    );
+    const someDiffProfile = specks.some((s, i) => i > 0 && (s.g !== specks[0].g || s.b !== specks[0].b));
     expect(someDiffProfile).toBe(true);
   });
 });

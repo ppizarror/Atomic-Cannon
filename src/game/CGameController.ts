@@ -48,13 +48,7 @@ import {drawStars, drawWinnerFlag} from './CVictoryScene';
 import {CChatter, TAUNT, type ActiveTaunt} from './CChatter';
 export type {ActiveTaunt} from './CChatter';
 import {CFireworks, type FireworksEnv} from './CFireworks';
-import {
-  CCrateField,
-  type Crate,
-  type CrateDrawEnv,
-  type CrateEnv,
-  type CrateKind,
-} from './CCrateField';
+import {CCrateField, type Crate, type CrateDrawEnv, type CrateEnv, type CrateKind} from './CCrateField';
 import {Vec2} from '../math/Vec2';
 import {CParticleSystem, type ISmokeSink} from '../core/CParticleSystem';
 import {RenderGate} from './RenderGate';
@@ -422,9 +416,7 @@ export class CGameController implements ShotWorld {
    *  detonated on the corpse (posthumous "cook-off"). Memoised — the database is immutable after
    *  load. */
   private static deathWeaponIndices(): number[] {
-    return (CGameController.deathWeapons ??= weaponIndices(
-      i => getWeapon(i).getExtType() === EXT.DEATH,
-    ));
+    return (CGameController.deathWeapons ??= weaponIndices(i => getWeapon(i).getExtType() === EXT.DEATH));
   }
 
   /** A zeroed per-player tally for one battle. */
@@ -489,9 +481,7 @@ export class CGameController implements ShotWorld {
     // Initialize weapon list (index into WEAPON_DATABASE). The control-weapon
     // override (if set) forces the FX-test weapon.
     this.m_currentWeaponIndex =
-      CGameController.controlWeaponIndex() >= 0
-        ? CGameController.controlWeaponIndex()
-        : getDefaultWeaponIndex();
+      CGameController.controlWeaponIndex() >= 0 ? CGameController.controlWeaponIndex() : getDefaultWeaponIndex();
 
     // Wind: positive = right, negative = left
     this.m_wind = new Vec2(0, 0);
@@ -621,17 +611,12 @@ export class CGameController implements ShotWorld {
           // cosmetic — collision comes from tankSizeScale, not the model — so it isn't hashed.
           {
             name: netCfg.name,
-            model:
-              PLAYER_TANKS[
-                (((this.m_terrainSeed ?? 0) ^ (p * 0x9e3779b9)) >>> 0) % PLAYER_TANKS.length
-              ],
+            model: PLAYER_TANKS[(((this.m_terrainSeed ?? 0) ^ (p * 0x9e3779b9)) >>> 0) % PLAYER_TANKS.length],
             color: netCfg.color,
           }
         : (roster[rosterIdx] ?? {
             name:
-              rosterIdx === 0
-                ? strings.value.game.defaultPlayer
-                : playerNames[(rosterIdx - 1) % playerNames.length],
+              rosterIdx === 0 ? strings.value.game.defaultPlayer : playerNames[(rosterIdx - 1) % playerNames.length],
             model: '',
             color: TEAM_COLORS[rosterIdx] ?? DEFAULT_TEAM_COLOR,
           });
@@ -656,8 +641,7 @@ export class CGameController implements ShotWorld {
       // slot of a colour wins, mirroring how that slot's colour defined the team above.
       if (!this.m_teamNames.has(team)) this.m_teamNames.set(team, baseName);
       for (let k = 0; k < perTeam; k++) {
-        const name =
-          perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
+        const name = perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
         spawns.push({name, color: cfg.color, model: cfg.model, team, human});
       }
     }
@@ -681,9 +665,7 @@ export class CGameController implements ShotWorld {
       // squad of N spends against N × CreditStart — not a flat CreditStart). ULTRA CPU tanks get a
       // bigger floor so they can actually afford a real nuke ($4000-8000) instead of only cheap rounds.
       const ultraBot = !s.human && this.m_difficulty === AI_LEVEL_ULTRA;
-      const seed = ultraBot
-        ? Math.max(this.m_startCredits, CGameController.ULTRA_START_CREDITS)
-        : this.m_startCredits;
+      const seed = ultraBot ? Math.max(this.m_startCredits, CGameController.ULTRA_START_CREDITS) : this.m_startCredits;
       pTank.setCredits(seed * perTeam);
 
       this.m_tanks.push(pTank);
@@ -796,9 +778,7 @@ export class CGameController implements ShotWorld {
     // Warm the combat SFX set and start a random battle track.
     this.m_audio?.preloadCombat();
     // Mid-flight sounds get no lazy-load grace (see preloadSounds), so warm every distinct one.
-    this.m_audio?.preloadSounds([
-      ...new Set(WEAPON_DATABASE.map(w => w.homSound).filter((n): n is string => !!n)),
-    ]);
+    this.m_audio?.preloadSounds([...new Set(WEAPON_DATABASE.map(w => w.homSound).filter((n): n is string => !!n))]);
     this.m_audio?.battleMusic();
   }
 
@@ -914,10 +894,7 @@ export class CGameController implements ShotWorld {
     // then has to resync, leaving a visible dirt patch). A frame hitch (e.g. a big blast)
     // is fully caught up within MAX_ACCUM; only a multi-second stall (backgrounded tab)
     // clamps — and that client resyncs from the next keyframe anyway.
-    this.m_simAccum = Math.min(
-      this.m_simAccum + realDt * this.m_speedScale,
-      CGameController.MAX_SIM_ACCUM,
-    );
+    this.m_simAccum = Math.min(this.m_simAccum + realDt * this.m_speedScale, CGameController.MAX_SIM_ACCUM);
     const step = CGameController.FIXED_DT;
     while (this.m_simAccum >= step) {
       this.update(step);
@@ -1067,8 +1044,7 @@ export class CGameController implements ShotWorld {
     if (this.m_crateField.hasAny()) return true; // crates falling/wobbling, pickup messages fading
     for (const s of this.m_shots) if (!s.isDead()) return true;
     for (const m of this.m_mines) if (m.armed > 0) return true; // arming → colour flips
-    for (const t of this.m_tanks)
-      if (t.isMoving() || t.isFalling() || t.isThrustingUp()) return true;
+    for (const t of this.m_tanks) if (t.isMoving() || t.isFalling() || t.isThrustingUp()) return true;
     return false;
   }
 
@@ -1505,13 +1481,7 @@ export class CGameController implements ShotWorld {
     // The smoke layer is GPU-batched when a sink is wired (see ISmokeSink): the puffs are emitted
     // as world-space quads here instead of being blitted, and drawn in ONE call by the compositor.
     // Its transform has to match the world transform this canvas is under — camera and shake.
-    this.m_smokeSink?.setSmokeTransform(
-      camX,
-      shakeOffset.x,
-      shakeOffset.y,
-      this.m_viewW,
-      this.m_viewH,
-    );
+    this.m_smokeSink?.setSmokeTransform(camX, shakeOffset.x, shakeOffset.y, this.m_viewW, this.m_viewH);
     this.m_smokeSink?.smokeBegin();
     this.m_particles.draw(ctx);
     this.m_smokeSink?.smokeEnd();
@@ -1539,9 +1509,7 @@ export class CGameController implements ShotWorld {
     // exactly like a real projectile but purely visual.
     for (const g of this.m_ghostShots) {
       if (g.isDead()) continue;
-      const gw = getWeapon(
-        g.getWeaponIndex() >= 0 ? g.getWeaponIndex() : this.m_currentWeaponIndex,
-      );
+      const gw = getWeapon(g.getWeaponIndex() >= 0 ? g.getWeaponIndex() : this.m_currentWeaponIndex);
       const sprite = this.m_assets.getSprite(`weapons/${gw.getBitmap()}`);
       g.draw(ctx, gw.getColor(), sprite?.bitmap ?? null, gw.getSize(), alpha);
     }
@@ -1609,9 +1577,7 @@ export class CGameController implements ShotWorld {
     }
 
     // Floating damage numbers (Show Points), world space.
-    this.m_markers.drawNumbers((s, x, y, a) =>
-      this.drawBmpCentered(octx, 'beijing-16-out', s, x, y, a),
-    );
+    this.m_markers.drawNumbers((s, x, y, a) => this.drawBmpCentered(octx, 'beijing-16-out', s, x, y, a));
 
     octx.restore();
     octx.restore();
@@ -1720,11 +1686,7 @@ export class CGameController implements ShotWorld {
         ctx.drawImage(left.bitmap, 0, clampY(Math.round(p.y - left.height / 2), left.height));
       }
       if (sx > W && right) {
-        ctx.drawImage(
-          right.bitmap,
-          W - right.width,
-          clampY(Math.round(p.y - right.height / 2), right.height),
-        );
+        ctx.drawImage(right.bitmap, W - right.width, clampY(Math.round(p.y - right.height / 2), right.height));
       }
     }
     ctx.restore();
@@ -1974,8 +1936,7 @@ export class CGameController implements ShotWorld {
     this.m_movePlacing = false;
     const tank = this.getCurrentTank();
     // A buried tank can't drive — refuse the placement without consuming the Move or ending the turn.
-    if (this.m_paused || !tank.isAlive() || tank.isMoving() || !tank.isHuman() || tank.isBuried())
-      return;
+    if (this.m_paused || !tank.isAlive() || tank.isMoving() || !tank.isHuman() || tank.isBuried()) return;
     const weapon = getWeapon(this.m_currentWeaponIndex);
     if (weapon.getExtType() !== EXT.MOVE) return;
 
@@ -2061,8 +2022,7 @@ export class CGameController implements ShotWorld {
     };
 
     // Faded marker at the turn's initial power/angle (Graphics → Show Last Aim).
-    if (GameConfig.showLastAim)
-      cross(this.aimPoint(this.m_turnStartAngle, this.m_turnStartPower), 0.35);
+    if (GameConfig.showLastAim) cross(this.aimPoint(this.m_turnStartAngle, this.m_turnStartPower), 0.35);
     // While dragging, the arrow's tip already marks the current aim — hide the
     // active cross and show it again on release.
     if (!this.m_aim.active) cross(this.aimPoint(this.m_angle, this.m_power), 1);
@@ -2115,8 +2075,7 @@ export class CGameController implements ShotWorld {
       assets: this.m_assets,
       groundAt: x => this.m_land.getHeightAt(x),
       time: this.m_time,
-      drawText: (text, x, y, alpha) =>
-        this.drawBmpCentered(ctx, 'beijing-16-out', text, x, y, alpha),
+      drawText: (text, x, y, alpha) => this.drawBmpCentered(ctx, 'beijing-16-out', text, x, y, alpha),
     };
   }
 
@@ -2241,11 +2200,7 @@ export class CGameController implements ShotWorld {
     // closures first — its scheduled fire()/executeBotTurn/waitForRest read getCurrentTank() FRESH at
     // fire time, so once endTurn advances to the next tank they'd otherwise drive the WRONG tank (a
     // premature/double shot, or a Move-drive poll racing the new turn). Mirrors finishBattle's clear.
-    if (
-      this.m_gameState === EGameState.Battle &&
-      !this.m_turnForfeited &&
-      !this.getCurrentTank().isAlive()
-    ) {
+    if (this.m_gameState === EGameState.Battle && !this.m_turnForfeited && !this.getCurrentTank().isAlive()) {
       this.m_turnForfeited = true;
       this.m_timers = [];
       this.endTurn();
@@ -2264,8 +2219,7 @@ export class CGameController implements ShotWorld {
     // free (not lockstep) — each client would apply a different tick count over an actor's think time
     // and drift/false-desync. So it's neutralized in net exactly as wind gusts are (the initial
     // radioactive blast, being resolved in the deterministic shot window, still lands normally).
-    const zones =
-      GameConfig.radiationDamage && !this.m_netMode ? this.m_land.getRadiationZones() : null;
+    const zones = GameConfig.radiationDamage && !this.m_netMode ? this.m_land.getRadiationZones() : null;
     // The strongest live zone drives the DOT rate; fallout only exists while a zone is live.
     let radDps = 0;
     if (zones) for (const z of zones) if (z.damagePerSecond > radDps) radDps = z.damagePerSecond;
@@ -2344,9 +2298,7 @@ export class CGameController implements ShotWorld {
 
     for (const shot of activeShots) {
       // Per-frame behaviour dispatch (extType): roller/digger/airburst/beam/…
-      const weapon = getWeapon(
-        shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex,
-      );
+      const weapon = getWeapon(shot.getWeaponIndex() >= 0 ? shot.getWeaponIndex() : this.m_currentWeaponIndex);
 
       // Fired from inside solid terrain (a buried tank whose muzzle sits below the piled-up
       // surface): detonate right at the muzzle, blasting the dirt around the tank, BEFORE the
@@ -2374,9 +2326,7 @@ export class CGameController implements ShotWorld {
       // state, so read it INSTEAD of the generic rule — OR-ing the two kept the plume alight
       // through the coast, which is exactly the phase the player should see it go dark.
       const isHoming = weapon.getExtType() === EXT.HOMING;
-      const motorBurning = isHoming
-        ? shot.homingBurn
-        : !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
+      const motorBurning = isHoming ? shot.homingBurn : !shot.isMovingDown() || shot.getAge() < ROCKET_MIN_BURN;
       // …and announce the relight, once, so the apex is audible as well as visible.
       if (isHoming && !shot.homingRelit && !Number.isNaN(shot.homingBase)) {
         shot.homingRelit = true;
@@ -2408,12 +2358,7 @@ export class CGameController implements ShotWorld {
         // the rocket at its nozzle instead of overlapping the middle of the sprite.
         const iff = weapon.getInFlightFlare();
         if (motorBurning && iff)
-          this.m_particles.inflightFlare(
-            ex.x,
-            ex.y,
-            `fx:${iff}`,
-            1.5 + weapon.getFlareSize() * 2.5,
-          );
+          this.m_particles.inflightFlare(ex.x, ex.y, `fx:${iff}`, 1.5 + weapon.getFlareSize() * 2.5);
       }
       const action = weaponFlyStep(shot, weapon, this, dt);
       if (action === 'detonate') {
@@ -2495,18 +2440,7 @@ export class CGameController implements ShotWorld {
       this.m_markers.spawnCircle(x, y, radiusPx);
     }
     if (color !== undefined && radiusPx !== undefined) {
-      this.m_particles.blast(
-        x,
-        y,
-        radiusPx,
-        color,
-        nuclear,
-        blastPreset,
-        expType,
-        expBitmap,
-        deposit,
-        isCleaner,
-      );
+      this.m_particles.blast(x, y, radiusPx, color, nuclear, blastPreset, expType, expBitmap, deposit, isCleaner);
       // Stage 1: the big flash whites out the WHOLE screen (incl. the HUD) — a
       // full-viewport DOM overlay, since the game canvas can't reach the HUD layer.
       // It inherits the weapon's colour (uranium reads red, plutonium green, …).
@@ -2514,8 +2448,7 @@ export class CGameController implements ShotWorld {
       // gets a lighter half-flash (port embellishment) — but a Cleaner is an earth-remover, not a
       // fiery blast, so it never flashes.
       if (isNukeExp(expType) || nuclear) this.flashScreen(1, color ?? '#ffffff');
-      else if (!isCleaner && (radiusPx ?? 0) >= BIG_BLAST_RADIUS)
-        this.flashScreen(0.45, color ?? '#ffffff');
+      else if (!isCleaner && (radiusPx ?? 0) >= BIG_BLAST_RADIUS) this.flashScreen(0.45, color ?? '#ffffff');
     } else this.m_particles.explode(x, y, scale);
   }
 
@@ -2566,10 +2499,7 @@ export class CGameController implements ShotWorld {
    *  down — it does NOT stamp it at native size, which would be a giant tower). Drawn from the
    *  magenta-keyed sprite (transparent stays alpha 0), nearest-neighbour so the key stays crisp,
    *  and cached by bmp+scale — this only runs when a player uses a Bunker/Wall utility. */
-  private structureImage(
-    bmp: string,
-    scale: number,
-  ): {width: number; height: number; data: Uint32Array} | null {
+  private structureImage(bmp: string, scale: number): {width: number; height: number; data: Uint32Array} | null {
     const key = `${bmp}@${scale.toFixed(3)}`;
     const cached = this.m_structImages.get(key);
     if (cached) return cached;
@@ -2734,8 +2664,7 @@ export class CGameController implements ShotWorld {
             ctx.beginPath();
             ctx.moveTo(run[0].x, run[0].y);
             for (const q of run) ctx.lineTo(q.x, q.y);
-            for (let i = run.length - 1; i >= 0; i--)
-              ctx.lineTo(run[i].x, run[i].y + HOMING.GLOW_H);
+            for (let i = run.length - 1; i >= 0; i--) ctx.lineTo(run[i].x, run[i].y + HOMING.GLOW_H);
             ctx.closePath();
             ctx.fill();
           }
@@ -2891,11 +2820,7 @@ export class CGameController implements ShotWorld {
       // Scorch is crackle-gated + scaled, matching weaponDetonate (a clean charge leaves no burn).
       const mineCrackle = w.getCrackle();
       if (mineCrackle > 0)
-        this.m_land.scorch(
-          Math.floor(m.x),
-          Math.floor(m.y),
-          Math.round(mineR * (0.4 + mineCrackle * 0.85)),
-        );
+        this.m_land.scorch(Math.floor(m.x), Math.floor(m.y), Math.round(mineR * (0.4 + mineCrackle * 0.85)));
       this.applyBlast(
         new Vec2(m.x, m.y),
         mineR,
@@ -3006,14 +2931,7 @@ export class CGameController implements ShotWorld {
     const pos = tank.getPosition();
     const surf = this.m_land.getHeightAt(Math.floor(pos.x));
     const drop = new CShot();
-    drop.initFromVelocity(
-      new Vec2(pos.x, surf),
-      0,
-      0,
-      weapon.getDamage(),
-      weapon.getRadius(),
-      tank,
-    );
+    drop.initFromVelocity(new Vec2(pos.x, surf), 0, 0, weapon.getDamage(), weapon.getRadius(), tank);
     drop.setWeaponIndex(idx);
     // Same base-power seed as the live-fire Death path: a cooked-off drilling Death weapon (Six Under,
     // Toxic Grave) drills at 0.5× the CORPSE's power, not the CShot default (which would fix it at a
@@ -3080,10 +2998,7 @@ export class CGameController implements ShotWorld {
     // than a fixed lean); sign points away from the blast centre, magnitude varies the launch.
     const away = tank.getPosition().x - fromX >= 0 ? 1 : -1;
     const dir = new Vec2(away * (0.25 + this.m_rng.float() * 0.7), -1).normalize();
-    tank.kick(
-      dir,
-      Math.min(1, removed * 0.001) * KICK.BASE * sizeFactor * GameConfig.kickbackScale,
-    );
+    tank.kick(dir, Math.min(1, removed * 0.001) * KICK.BASE * sizeFactor * GameConfig.kickbackScale);
   }
 
   /** Award `perTank` to every alive tank (Turn / Round). Credits are shared per team,
@@ -3270,11 +3185,7 @@ export class CGameController implements ShotWorld {
     const offScreen = focusX < this.m_camera.x() || focusX > this.m_camera.x() + this.m_viewW;
     if (GameConfig.cameraMode === CAMERA.MODE_INSTANT && offScreen) {
       this.m_camera.centerOn(focusX, this.camBounds());
-    } else if (
-      GameConfig.cameraMode === CAMERA.MODE_CINEMATIC &&
-      offScreen &&
-      this.m_impactThisTurn
-    ) {
+    } else if (GameConfig.cameraMode === CAMERA.MODE_CINEMATIC && offScreen && this.m_impactThisTurn) {
       // Only linger if a blast actually landed on the turn that just ended — a shotless hand-off
       // (a shot-clock forfeit, a move-only turn) has no impact to dwell on, so we'd otherwise pan the
       // wrong way toward a stale/zero m_lastImpactX. Without an impact, fall through to the Smooth ease.
@@ -3317,8 +3228,7 @@ export class CGameController implements ShotWorld {
     // terrain; Date.now() keeps solo play freshly random.
     const seed = this.m_terrainSeed ?? Date.now();
     if (this.m_flatLand) this.m_land.generateFlat();
-    else if (this.m_landMode >= 0 && this.m_landMode <= 4)
-      this.m_land.generateTerrainMode(this.m_landMode, seed);
+    else if (this.m_landMode >= 0 && this.m_landMode <= 4) this.m_land.generateTerrainMode(this.m_landMode, seed);
     else this.m_land.generateRandomTerrain(seed);
   }
 
@@ -3362,10 +3272,7 @@ export class CGameController implements ShotWorld {
     const worldW = this.m_worldWidth;
     const margin = Math.min(120, 0.025 * this.m_worldWidth);
     const frac = n <= 1 ? 0.5 : i / (n - 1);
-    return Math.max(
-      60,
-      Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + this.m_rng.plusMinus(20)),
-    );
+    return Math.max(60, Math.min(worldW - 60, margin + frac * (worldW - 2 * margin) + this.m_rng.plusMinus(20)));
   }
 
   /** Start the next battle of a war: fresh LANDSCAPE (climate + terrain), tanks respawned
@@ -3440,9 +3347,7 @@ export class CGameController implements ShotWorld {
   /** True once the war's final battle has been played (Deathmatch multi-battle);
    *  Rounds/Points is a single battle, so it is "over" as soon as it ends. */
   private getWarOver(): boolean {
-    return this.m_gameType === EGameType.Deathmatch
-      ? this.m_currentBattle >= this.m_totalBattles
-      : true;
+    return this.m_gameType === EGameType.Deathmatch ? this.m_currentBattle >= this.m_totalBattles : true;
   }
 
   /** End the current turn: declare a winner, or hand off to the next player. The
@@ -3493,9 +3398,7 @@ export class CGameController implements ShotWorld {
       this.awardSurvivorCredit(this.m_creditRound);
       // Roll the Crates chance ONCE per ROUND (the setting is "chance each round") — rolling on
       // every turn hand-off gives an N-player round N rolls → multiple crates per round.
-      this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k =>
-        this.crateWeaponFor(k),
-      );
+      this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k => this.crateWeaponFor(k));
     }
     this.awardSurvivorCredit(this.m_creditTurn);
 
@@ -3630,10 +3533,7 @@ export class CGameController implements ShotWorld {
     const tank = this.getCurrentTank();
     if (fresh) this.m_turnElapsed = 0;
     this.m_turnTimerRunning =
-      GameConfig.roundTime > 0 &&
-      tank.isHuman() &&
-      !this.m_weaponTest &&
-      (!this.m_netMode || this.isLocalNetTurn());
+      GameConfig.roundTime > 0 && tank.isHuman() && !this.m_weaponTest && (!this.m_netMode || this.isLocalNetTurn());
   }
 
   /**
@@ -3668,10 +3568,7 @@ export class CGameController implements ShotWorld {
     if (!this.m_charging) return;
     this.m_chargeElapsed += dt;
     this.markDirty();
-    if (
-      this.m_chargeElapsed >=
-      CGameController.FIRE_CHARGE_TIME + CGameController.FIRE_GREEN_HOLD
-    ) {
+    if (this.m_chargeElapsed >= CGameController.FIRE_CHARGE_TIME + CGameController.FIRE_GREEN_HOLD) {
       this.m_charging = false;
       this.fire(); // wind-up done → launch for real (fire() clears m_charging too, defensively)
     }
@@ -3689,9 +3586,7 @@ export class CGameController implements ShotWorld {
     if (this.m_charging) return; // already winding up — ignore repeat presses
     const tank = this.getCurrentTank();
     // Humans wind up on their local turn (incl. net); bots wind up only in single-player.
-    const actorEligible = tank.isHuman()
-      ? !this.m_netMode || this.isLocalNetTurn()
-      : !this.m_netMode;
+    const actorEligible = tank.isHuman() ? !this.m_netMode || this.isLocalNetTurn() : !this.m_netMode;
     if (
       actorEligible &&
       this.m_gameState === EGameState.Battle &&
@@ -3770,11 +3665,7 @@ export class CGameController implements ShotWorld {
     // brightens; the next click on it drives the tank there, via placeMove). It never consumes or
     // ends the turn here. Bots drive directly (botMove); the AI-driven Demo tank keeps the old
     // aim-point move below.
-    if (
-      tank.isHuman() &&
-      !GameConfig.demo &&
-      getWeapon(this.m_currentWeaponIndex).getExtType() === EXT.MOVE
-    ) {
+    if (tank.isHuman() && !GameConfig.demo && getWeapon(this.m_currentWeaponIndex).getExtType() === EXT.MOVE) {
       if (!this.m_movePlacing) {
         this.m_movePlacing = true;
         this.markDirty();
@@ -3898,14 +3789,7 @@ export class CGameController implements ShotWorld {
     // the shooter, not a bomb materialising high in the sky.
     if (ext === EXT.DEATH) {
       const drop = new CShot();
-      drop.initFromVelocity(
-        tank.muzzleForAngle(90),
-        0,
-        0,
-        weapon.getDamage(),
-        weapon.getRadius(),
-        tank,
-      );
+      drop.initFromVelocity(tank.muzzleForAngle(90), 0, 0, weapon.getDamage(), weapon.getRadius(), tank);
       drop.setWeaponIndex(this.m_currentWeaponIndex);
       // A Death round drops at power 0, but its submunition DRILL (Six Under, Toxic Grave, …) launches
       // at 0.5× the FIRER's power. initFromVelocity never sets the shot's power, so its base-power
@@ -4036,8 +3920,7 @@ export class CGameController implements ShotWorld {
     for (const t of this.m_tanks) {
       if (!t.isAlive() || t === owner) continue;
       const tp = t.getPosition();
-      if (CGameController.pointSegDist(tp.x, tp.y, muzzle.x, muzzle.y, end.x, end.y) > halfWidth)
-        continue;
+      if (CGameController.pointSegDist(tp.x, tp.y, muzzle.x, muzzle.y, end.x, end.y) > halfWidth) continue;
       const removed = t.hit(weapon.getDamage());
       this.creditDamage(owner, t, removed); // shooter earns per life removed
       this.kickTank(t, muzzle.x, removed, r); // beam kick scaled by the weapon's radius
@@ -4091,14 +3974,7 @@ export class CGameController implements ShotWorld {
   }
 
   /** Distance from point (px,py) to segment (ax,ay)-(bx,by). */
-  private static pointSegDist(
-    px: number,
-    py: number,
-    ax: number,
-    ay: number,
-    bx: number,
-    by: number,
-  ): number {
+  private static pointSegDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
     const dx = bx - ax,
       dy = by - ay;
     const len2 = dx * dx + dy * dy;
@@ -4204,9 +4080,7 @@ export class CGameController implements ShotWorld {
 
   /** Living SQUADMATES of `tank` — its own team, itself excluded. */
   private alliesOf(tank: CTank): CTank[] {
-    return this.m_tanks.filter(
-      t => t !== tank && t.isAlive() && !t.isSentry() && t.getTeamId() === tank.getTeamId(),
-    );
+    return this.m_tanks.filter(t => t !== tank && t.isAlive() && !t.isSentry() && t.getTeamId() === tank.getTeamId());
   }
 
   /** A tank's standing in the race the battle is actually scored on — the same measure
@@ -4329,9 +4203,7 @@ export class CGameController implements ShotWorld {
     // Aim straight at the target, then commit the aim + weapon (as a bot would).
     const norm = this.aimDegToward(sentry.getTurretPivot(), target.getPosition());
     this.commitAim(sentry, norm, SENTRY.FIRE_POWER);
-    const wi = this.m_sentryMinigun.has(sentry)
-      ? CGameController.sentryMachineGunIndex()
-      : getDefaultWeaponIndex();
+    const wi = this.m_sentryMinigun.has(sentry) ? CGameController.sentryMachineGunIndex() : getDefaultWeaponIndex();
     this.setCurrentWeapon(sentry, wi);
 
     // Fire after a brief beat; the shot resolving hands the turn on (as for a bot).
@@ -4636,8 +4508,7 @@ export class CGameController implements ShotWorld {
     if (Math.abs(plan.targetX - botTank.getPosition().x) < 1)
       return {weaponIndex: plan.weaponIndex, angleDeg: plan.angleDeg, power: plan.power};
     const rec = this.m_ultraShot.get(botTank);
-    const sameTarget =
-      rec && Math.abs(rec.targetX - plan.targetX) <= CGameController.RANGE_TARGET_TOL;
+    const sameTarget = rec && Math.abs(rec.targetX - plan.targetX) <= CGameController.RANGE_TARGET_TOL;
 
     // WALK IT IN: same target + a recorded landing → LOCK the angle we last fired and correct only the
     // POWER off the observed miss (overshoot ⇒ less, short ⇒ more). This is the empirical feedback the
@@ -4788,8 +4659,7 @@ export class CGameController implements ShotWorld {
         if (w.getEarth() > 0) threat.hasEarth = true;
         if (w.isCleaner()) threat.hasCleaner = true;
         const dmg = w.getDamage();
-        if (dmg > threat.bigBlastDamage && !BOT_UTILITY_EXT.has(def.extType ?? 0))
-          threat.bigBlastDamage = dmg;
+        if (dmg > threat.bigBlastDamage && !BOT_UTILITY_EXT.has(def.extType ?? 0)) threat.bigBlastDamage = dmg;
       }
       // What they can bring NEXT turn, not just what's on the panel now: the credit readout is on the
       // same LCD as the arsenal, so a war chest deep enough for the cheapest nuke is public knowledge
@@ -4857,8 +4727,7 @@ export class CGameController implements ShotWorld {
    *  teammate (see the planner's `hostility`). Retaliation against one who shot US needs no endgame. */
   private ultraEndgame(botTank: CTank): boolean {
     if (this.enemiesOf(botTank).length <= 1) return true;
-    if (this.m_gameType === EGameType.Rounds)
-      return this.m_currentRound > this.m_totalRounds * 0.75;
+    if (this.m_gameType === EGameType.Rounds) return this.m_currentRound > this.m_totalRounds * 0.75;
     return false;
   }
 
@@ -4897,9 +4766,7 @@ export class CGameController implements ShotWorld {
         isCleaner: w.isCleaner(), // earth-remover (no damage) — digs the tank out when buried
         isMine: extNum === 16, // deploys a persistent mine on impact (area denial)
         // Reserve nukes and other pricey ordnance for high-value shots.
-        isPremium:
-          w.isNukeClass() ||
-          (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE,
+        isPremium: w.isNukeClass() || (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE,
         // Offensive = a damaging round the bot may fire AT a target (Shell + beams included; the
         // utility/self-buff/death/mine/move/tracer/jet types are not).
         // Airburst (ext 13) detonates at the ARC APEX, not on the ground — the planner aims ballistic,
@@ -4912,9 +4779,7 @@ export class CGameController implements ShotWorld {
     // out (cleaner), beam, or heal instead.
     const buried = botTank.isBuried();
     let moveMaxDist = 0;
-    if (!buried)
-      for (const i of moveWeaponIndices())
-        moveMaxDist = Math.max(moveMaxDist, this.moveRange(getWeapon(i)));
+    if (!buried) for (const i of moveWeaponIndices()) moveMaxDist = Math.max(moveMaxDist, this.moveRange(getWeapon(i)));
 
     return {
       self: {
@@ -4945,9 +4810,7 @@ export class CGameController implements ShotWorld {
         };
       }),
       weapons,
-      crates: this.m_crateField
-        .list()
-        .map(c => ({x: c.x, kind: c.kind, amount: c.amount, landed: c.landed})),
+      crates: this.m_crateField.list().map(c => ({x: c.x, kind: c.kind, amount: c.amount, landed: c.landed})),
       field: {
         heightAt: (x: number) => this.m_land.getHeightAt(x),
         width: this.m_land.width,
@@ -4956,8 +4819,7 @@ export class CGameController implements ShotWorld {
       wind: this.m_wind,
       gustT0: this.m_gustT + CGameController.BOT_FIRE_DELAY,
       muzzleFor: (deg: number) => botTank.muzzleForAngle(deg),
-      aimDegToward: (t: {x: number; y: number}) =>
-        this.aimDegToward(botTank.getTurretPivot(), new Vec2(t.x, t.y)),
+      aimDegToward: (t: {x: number; y: number}) => this.aimDegToward(botTank.getTurretPivot(), new Vec2(t.x, t.y)),
       moveMaxDist,
       radiationAt: (x: number) => this.m_land.radiationAt(Math.floor(x)),
       radiationCostAt: (x: number) => this.ultraRadiationCost(x),
@@ -5183,8 +5045,7 @@ export class CGameController implements ShotWorld {
     gameType: {
       get: c => c.m_gameType,
       // Anything that isn't exactly Rounds is Deathmatch (the damage model has no third state).
-      set: (c, v) =>
-        void (c.m_gameType = v === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch),
+      set: (c, v) => void (c.m_gameType = v === EGameType.Rounds ? EGameType.Rounds : EGameType.Deathmatch),
     },
     // Economy rates must match on every client — buys are relayed and earning runs in each
     // client's sim, so a mismatch would diverge the (otherwise deterministic) credit totals.
@@ -5243,10 +5104,7 @@ export class CGameController implements ShotWorld {
   isLocalNetTurn(): boolean {
     // The active TANK (m_currentPlayerIndex is a tank index) is mine when its owning player —
     // contiguous squads: owner = floor(tankIdx / tanksPerTeam) — is my local player index.
-    return (
-      this.m_netMode &&
-      Math.floor(this.m_currentPlayerIndex / this.m_netTanksPerTeam) === this.m_netLocalIndex
-    );
+    return this.m_netMode && Math.floor(this.m_currentPlayerIndex / this.m_netTanksPerTeam) === this.m_netLocalIndex;
   }
 
   /** True when this client is a mid-match SPECTATOR: online, but not in the turn order (local index
@@ -5272,9 +5130,7 @@ export class CGameController implements ShotWorld {
     for (const k of MATCH_COUNTERS) snap[k] = this.m_stats[k];
     // damageDealt is the only counter NOT accumulated as it happens — it is summed from the tanks,
     // which already track their own dealt damage for the standings.
-    snap.damageDealt = Math.round(
-      this.m_tanks.reduce((sum, t) => sum + Math.max(0, t.getDamageDealt()), 0),
-    );
+    snap.damageDealt = Math.round(this.m_tanks.reduce((sum, t) => sum + Math.max(0, t.getDamageDealt()), 0));
     return snap;
   }
 
@@ -5331,9 +5187,7 @@ export class CGameController implements ShotWorld {
   netAwardRoundCredit(): void {
     if (!this.m_netMode) return;
     this.awardSurvivorCredit(this.m_creditRound);
-    this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k =>
-      this.crateWeaponFor(k),
-    ); // seeded → identical crate (or none) on every client, once per round
+    this.m_crateField.maybeSpawn(GameConfig.crateChance, this.crateEnv(), k => this.crateWeaponFor(k)); // seeded → identical crate (or none) on every client, once per round
   }
 
   /** Show the battle-winner celebration (standings if the war is over). Idempotent — a second
@@ -5623,10 +5477,7 @@ export class CGameController implements ShotWorld {
   /** Seed a fresh random wind at the start of a game (scaled by Settings → Wind). */
   private updateWind(): void {
     const max = CGameController.MAX_WIND * this.m_windScale;
-    this.m_wind = new Vec2(
-      this.m_rng.plusMinus(max),
-      this.m_rng.plusMinus(max * CGameController.WIND_Y_RATIO),
-    );
+    this.m_wind = new Vec2(this.m_rng.plusMinus(max), this.m_rng.plusMinus(max * CGameController.WIND_Y_RATIO));
     this.m_windTimer = 0;
   }
 
@@ -5997,9 +5848,7 @@ export class CGameController implements ShotWorld {
     // higher team life%). The leader (getLeadingTeam) also decides Rounds ties → Draw.
     const rounds = !deathmatch;
     rows.sort((a, b) =>
-      rounds
-        ? b.points - a.points || b.lifePct - a.lifePct
-        : b.kills - a.kills || b.lifePct - a.lifePct,
+      rounds ? b.points - a.points || b.lifePct - a.lifePct : b.kills - a.kills || b.lifePct - a.lifePct,
     );
     const leader = this.getLeadingTeam();
     const draw = !leader && rows.length > 0; // Rounds only: every team finished level
@@ -6285,10 +6134,7 @@ export class CGameController implements ShotWorld {
   private readonly m_friendlyDamage = new Map<CTank, number>();
   // What each TEAM has actually been firing (nukes / beams / dirt), so an opponent can read intent on
   // top of inventory: a side that has thrown two nukes is telling you what the third one is for.
-  private readonly m_ultraEnemyFire = new Map<
-    number,
-    {nukes: number; beams: number; earth: number; shots: number}
-  >();
+  private readonly m_ultraEnemyFire = new Map<number, {nukes: number; beams: number; earth: number; shots: number}>();
   private m_mapName = ''; // set (localised) on each map load; '' pre-load, never surfaced
   private m_assets: CAssetManager;
   private m_onImpact: ((x: number, y: number, strength: number) => void) | null = null;

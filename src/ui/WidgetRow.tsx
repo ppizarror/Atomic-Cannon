@@ -13,26 +13,14 @@ import {clamp, wrapIndex} from '../math/num';
 
 const ROW_FONT = 'bazouk-28';
 
-export function WidgetRow({
-  w,
-  bump,
-  onHover,
-}: {
-  w: Widget;
-  bump: () => void;
-  onHover: (s: string | null) => void;
-}) {
+export function WidgetRow({w, bump, onHover}: {w: Widget; bump: () => void; onHover: (s: string | null) => void}) {
   const enter = () => onHover(w.tip);
   const leave = () => onHover(null);
 
   // A nav row (opens a sub-page / editor): whole-row button, trailing `>`.
   if (w.kind === 'nav') {
     return (
-      <button
-        class="settings-row srow-nav menu-btn"
-        {...hoverProps(enter, leave)}
-        onClick={() => w.onClick?.()}
-      >
+      <button class="settings-row srow-nav menu-btn" {...hoverProps(enter, leave)} onClick={() => w.onClick?.()}>
         <span class="srow-side">
           <BmpText font={ROW_FONT} text={w.label} />
         </span>
@@ -81,18 +69,14 @@ export function WidgetRow({
           <BmpText font={ROW_FONT} text={w.label} />
         </button>
         <button class="srow-half srow-right" onClick={() => change(1)}>
-          <BmpText
-            font={ROW_FONT}
-            text={val ? strings.value.common.on : strings.value.common.off}
-          />
+          <BmpText font={ROW_FONT} text={val ? strings.value.common.on : strings.value.common.off} />
         </button>
       </div>
     );
   }
 
   // Enum / stepper: `< Label` (prev) on the left, `Value >` (next) on the right.
-  const valueText =
-    w.kind === 'enum' ? (w.options![val] ?? String(val)) : w.fmt ? w.fmt(val) : String(val);
+  const valueText = w.kind === 'enum' ? (w.options![val] ?? String(val)) : w.fmt ? w.fmt(val) : String(val);
   return (
     <div class="settings-row menu-btn" {...hoverProps(enter, leave)} onKeyDown={onRowKey}>
       <button class="srow-half srow-left" onClick={() => change(-1)}>

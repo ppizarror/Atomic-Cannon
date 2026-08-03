@@ -79,14 +79,8 @@ export function ControlsEditor() {
       }
       actions={
         <>
-          <Button
-            label={e.customize}
-            onClick={() => (uiClick(), setSweep(true), setArmed(firstAction()))}
-          />
-          <Button
-            label={e.defaults}
-            onClick={() => (uiClick(), setArmed(null), setSweep(false), resetDefaults())}
-          />
+          <Button label={e.customize} onClick={() => (uiClick(), setSweep(true), setArmed(firstAction()))} />
+          <Button label={e.defaults} onClick={() => (uiClick(), setArmed(null), setSweep(false), resetDefaults())} />
           <EditorDone label={e.done} />
         </>
       }
@@ -113,10 +107,7 @@ export function ControlsEditor() {
                 <BmpText font="beijing-16-out" text={e.actions[a.id]} />
               </span>
               <span class="editor-state">
-                <BmpText
-                  font="beijing-16-out"
-                  text={isArmed ? e.pressKey : keyName(map[a.id]) || e.unassigned}
-                />
+                <BmpText font="beijing-16-out" text={isArmed ? e.pressKey : keyName(map[a.id]) || e.unassigned} />
               </span>
             </button>
           );

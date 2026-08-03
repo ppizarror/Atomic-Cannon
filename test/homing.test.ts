@@ -193,9 +193,7 @@ describe('Homing Missile', () => {
     expect(shot.homingTarget).not.toBeNull(); // it did acquire…
     // …and still refused to over-turn. The bound is the WEAPON's own `homMaxDeg`, so retuning the
     // row retunes this assertion with it rather than stranding a magic 15 here.
-    expect(Math.abs(shot.homingAim)).toBeLessThanOrEqual(
-      getWeapon(HOMING.index).getHomingMaxTurn(),
-    );
+    expect(Math.abs(shot.homingAim)).toBeLessThanOrEqual(getWeapon(HOMING.index).getHomingMaxTurn());
   });
 
   it('ignores team-mates and empty ground', () => {

@@ -240,17 +240,13 @@ describe('Ultra and its allies', () => {
 
   it('shoots BACK at a teammate who has been shelling its own side', () => {
     const traitor = ally({x: 600, betrayal: 500}); // well past the full-grudge threshold
-    const shot = bestOffensiveShot(
-      ctx({enemies: [enemy({x: 5000})], weapons: [sniper], allies: [traitor]}),
-    );
+    const shot = bestOffensiveShot(ctx({enemies: [enemy({x: 5000})], weapons: [sniper], allies: [traitor]}));
     expect(shot).not.toBeNull();
     expect(shot!.targetX).toBe(600); // the traitor, not the unreachable enemy
   });
 
   it('leaves a clean teammate alone even when they are the only thing in range', () => {
-    const shot = bestOffensiveShot(
-      ctx({enemies: [enemy({x: 5000})], weapons: [sniper], allies: [ally({x: 600})]}),
-    );
+    const shot = bestOffensiveShot(ctx({enemies: [enemy({x: 5000})], weapons: [sniper], allies: [ally({x: 600})]}));
     expect(shot).toBeNull(); // no target worth a round
   });
 

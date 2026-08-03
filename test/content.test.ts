@@ -9,11 +9,7 @@ import {makeCanvas} from './_dom';
 import {CGameController} from '../src/game/CGameController';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from '../src/core/CWeapon';
 import {GameContent, weaponEnabled, landEnabled} from '../src/core/CGameContent';
-import {
-  weaponsOff as pendingWeaponsOff,
-  weaponsOffFromStored,
-  weaponsOffToStored,
-} from '../src/ui/contentStore';
+import {weaponsOff as pendingWeaponsOff, weaponsOffFromStored, weaponsOffToStored} from '../src/ui/contentStore';
 import landData from '../src/data/land.json';
 
 const LAND_COUNT = (landData as unknown[]).length;
@@ -97,9 +93,7 @@ describe('Game Content', () => {
   });
 
   it('the landscape picker only chooses enabled landscapes', () => {
-    GameContent.landsOff = new Set(
-      Array.from({length: LAND_COUNT}, (_, i) => i).filter(i => i !== 7),
-    );
+    GameContent.landsOff = new Set(Array.from({length: LAND_COUNT}, (_, i) => i).filter(i => i !== 7));
     const gc = new CGameController(makeCanvas());
     const pick = gc as unknown as {pickLandscapeIndex(): number};
     let onlySeven = true;

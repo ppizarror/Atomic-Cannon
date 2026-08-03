@@ -29,10 +29,7 @@ export function TauntLayer() {
   const bubbles = tauntBubbles.value;
   if (!bubbles.length || !w) return null;
   return (
-    <div
-      class="taunt-layer"
-      style={{left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`}}
-    >
+    <div class="taunt-layer" style={{left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`}}>
       {bubbles.map(b => {
         const {title, content} = splitTaunt(b.text);
         return (

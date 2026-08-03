@@ -135,8 +135,7 @@ describe('Ultra AI (level 11) — end-to-end wiring', () => {
     const ownsDeath = (gc: GC, tank: Tank): boolean => {
       const e = gc.economyFor(tank);
       for (let i = 0; i < WEAPON_DATABASE.length; i++) {
-        if (!e.isUnlimited(i) && e.getOwned(i) > 0 && (WEAPON_DATABASE[i].extType ?? 0) === 12)
-          return true;
+        if (!e.isUnlimited(i) && e.getOwned(i) > 0 && (WEAPON_DATABASE[i].extType ?? 0) === 12) return true;
       }
       return false;
     };

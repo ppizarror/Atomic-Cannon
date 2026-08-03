@@ -4,12 +4,7 @@
  * hello WITH the token; errors surface; roster updates recompute host.
  */
 import {describe, it, expect} from 'vitest';
-import {
-  RoomClient,
-  roomUrl,
-  type RoomClientState,
-  type RoomClientOptions,
-} from '../src/net/roomClient';
+import {RoomClient, roomUrl, type RoomClientState, type RoomClientOptions} from '../src/net/roomClient';
 import type {NetTransport, ConnStatus} from '../src/net/transport';
 import type {ClientMessage, ServerMessage, PlayerInfo, MatchConfig} from '../src/net/protocol';
 import {sanitizeMatchConfig} from '../src/net/protocol';

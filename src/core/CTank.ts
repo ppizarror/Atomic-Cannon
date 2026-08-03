@@ -771,12 +771,7 @@ export class CTank {
    * Render the tank to the canvas. Uses the loaded hull sprite when available
    * and falls back to a vector silhouette while assets are still loading.
    */
-  draw(
-    ctx: CanvasRenderingContext2D,
-    assets?: ISpriteSource,
-    showDetail = false,
-    withBadge = true,
-  ): void {
+  draw(ctx: CanvasRenderingContext2D, assets?: ISpriteSource, showDetail = false, withBadge = true): void {
     if (!this.m_bIsAlive && !this.m_bExploded) return;
 
     const cx = this.m_vPos.x;
@@ -816,13 +811,7 @@ export class CTank {
       // Wargame Detail preset: draw the hull as a flat pale-blue silhouette (tactical-map
       // look), not the textured/coloured sprite.
       if (isWargame() && !this.m_bExploded) {
-        ctx.drawImage(
-          CTank.silhouette(sprite, TINT.WARGAME, `${bodyKey}|wargame`),
-          -w / 2,
-          -h,
-          w,
-          h,
-        );
+        ctx.drawImage(CTank.silhouette(sprite, TINT.WARGAME, `${bodyKey}|wargame`), -w / 2, -h, w, h);
       } else {
         // High Contrast: stamp a white silhouette at 8 offsets behind the hull so the
         // tank reads as white-outlined against busy terrain.
@@ -853,9 +842,7 @@ export class CTank {
     // The body is drawn rotated about its GROUND-CONTACT pivot (cx, surfaceY), so on a slope its
     // sprite centre swings out — track that rotated centre so the bubble stays concentric.
     if (this.m_bIsAlive && this.m_health.nShield > 0) {
-      const bodyH = sprite
-        ? (sprite.height / sprite.width) * CTank.hullDrawWidth(sprite)
-        : CTank.tankHeight();
+      const bodyH = sprite ? (sprite.height / sprite.width) * CTank.hullDrawWidth(sprite) : CTank.tankHeight();
       const halfH = bodyH * 0.5;
       const a = this.m_fAngle;
       this.drawShieldDome(ctx, cx + halfH * Math.sin(a), surfaceY - halfH * Math.cos(a));
@@ -1081,13 +1068,7 @@ export class CTank {
         if (icon) {
           const iw = icon.width, // 12
             ih = icon.height; // 15
-          ctx.drawImage(
-            icon.bitmap,
-            Math.round(bx + bw - 2),
-            Math.round(by + (bh - ih) / 2),
-            iw,
-            ih,
-          );
+          ctx.drawImage(icon.bitmap, Math.round(bx + bw - 2), Math.round(by + (bh - ih) / 2), iw, ih);
         }
       }
       y = by + bh + 1;
@@ -1096,17 +1077,12 @@ export class CTank {
     // full stat lines: on hover, or via the two disjoint always-on toggles —
     // Show Tank Stats for the human's own tanks, Show AI Stats ("Show the computer's
     // stats") for the computer tanks. Each toggle owns exactly its tank type. ---
-    if (
-      showDetail ||
-      (GameConfig.showTankStats && !this.isBot()) ||
-      (GameConfig.showAiStats && this.isBot())
-    ) {
+    if (showDetail || (GameConfig.showTankStats && !this.isBot()) || (GameConfig.showAiStats && this.isBot())) {
       const g = strings.value.game;
       y = line(fmt(g.tankTeam, {n: this.m_nTeamId + 1}), y);
       y = line(fmt(g.tankLife, {n: Math.round(this.m_health.nLife)}), y);
       if (armor > 0) y = line(fmt(g.tankArmor, {n: Math.round(armor)}), y);
-      if (this.m_health.nShield > 0)
-        y = line(fmt(g.tankShield, {n: Math.round(this.m_health.nShield)}), y);
+      if (this.m_health.nShield > 0) y = line(fmt(g.tankShield, {n: Math.round(this.m_health.nShield)}), y);
       // Floored (not rounded) to match the depot's credit readout and affordability —
       // credits accumulate fractional damage-based earnings, but only whole credits are
       // spendable, so show the whole part.
@@ -1137,9 +1113,7 @@ export class CTank {
    *  then follows the tank on a slope. Bots always solve and fire absolute angles, so the
    *  aid never applies to them (matching the original, where the AI compensates for it). */
   firingAngle(): number {
-    return (
-      this.m_fTurretAngle + (GameConfig.relativeTurrets && this.m_bIsHuman ? this.m_fAngle : 0)
-    );
+    return this.m_fTurretAngle + (GameConfig.relativeTurrets && this.m_bIsHuman ? this.m_fAngle : 0);
   }
 
   /**

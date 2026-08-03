@@ -10,15 +10,7 @@
  * the screen-warp live here regardless.
  */
 
-import {
-  Application,
-  Container,
-  Particle,
-  ParticleContainer,
-  Rectangle,
-  Sprite,
-  Texture,
-} from 'pixi.js';
+import {Application, Container, Particle, ParticleContainer, Rectangle, Sprite, Texture} from 'pixi.js';
 import {ShockwaveFilter} from 'pixi-filters';
 
 const WAVE_LIFETIME = 1.5; // seconds a shockwave stays active
@@ -56,13 +48,7 @@ export class CPixiCompositor {
    * shift by the camera and the screen-shake, then scale the logical view up to the presentation.
    * Called once per frame before the puffs are handed over.
    */
-  setSmokeTransform(
-    camX: number,
-    shakeX: number,
-    shakeY: number,
-    viewW: number,
-    viewH: number,
-  ): void {
+  setSmokeTransform(camX: number, shakeX: number, shakeY: number, viewW: number, viewH: number): void {
     if (viewW <= 0 || viewH <= 0) return;
     const sx = this.m_app.screen.width / viewW;
     const sy = this.m_app.screen.height / viewH;
@@ -139,10 +125,7 @@ export class CPixiCompositor {
    *  Keyed on both because Pixi requires a single texture source per container, while the layer
    *  decides where the batch sits and how it blends. `zIndex` is the layer, so batches sort into
    *  spark → smoke → glow regardless of the order their sources first appear. */
-  private layerFor(
-    layer: number,
-    id: number,
-  ): {c: ParticleContainer; pool: Particle[]; used: number} {
+  private layerFor(layer: number, id: number): {c: ParticleContainer; pool: Particle[]; used: number} {
     const key = layer * 1e6 + id;
     let l = this.m_smokeLayers.get(key);
     if (!l) {
@@ -219,10 +202,7 @@ export class CPixiCompositor {
    * own view canvas, exposed via `app.canvas` for the caller to mount. Forces
    * the WebGL backend so a single GLSL post-filter works everywhere.
    */
-  async init(
-    sceneCanvas: HTMLCanvasElement,
-    resizeTo: HTMLElement | Window = window,
-  ): Promise<void> {
+  async init(sceneCanvas: HTMLCanvasElement, resizeTo: HTMLElement | Window = window): Promise<void> {
     this.m_worldW = sceneCanvas.width;
     this.m_worldH = sceneCanvas.height;
     this.m_sceneCanvas = sceneCanvas;

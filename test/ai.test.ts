@@ -120,9 +120,7 @@ describe('Bot AI', () => {
   it('move utilities resolve (bot movement spends a turn on one of these)', () => {
     const moves = moveWeaponIndices();
     expect(moves).toHaveLength(3); // the three Move utilities resolve
-    expect(
-      moves.every(i => WEAPON_DATABASE[i].extType === 3 && WEAPON_DATABASE[i].type === 'Utility'),
-    ).toBe(true); // Move utilities are extType-3 Utility weapons
+    expect(moves.every(i => WEAPON_DATABASE[i].extType === 3 && WEAPON_DATABASE[i].type === 'Utility')).toBe(true); // Move utilities are extType-3 Utility weapons
     expect(moves).toContain(pickMoveWeapon(() => 0.5)); // pickMoveWeapon returns one of them
   });
 });

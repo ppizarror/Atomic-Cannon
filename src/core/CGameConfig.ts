@@ -124,11 +124,7 @@ export const DETAIL = {OLD_SCHOOL: 0, SIMPLE: 1, HIGH: 2, WARGAME: 3} as const;
 /** Ground smoke draws only when Draw Smoke is on AND the Detail preset allows it — Old
  *  School and Wargame both force smoke off (matching the original's derived sub-flags). */
 export function smokeEnabled(): boolean {
-  return (
-    GameConfig.drawSmoke &&
-    GameConfig.detail !== DETAIL.OLD_SCHOOL &&
-    GameConfig.detail !== DETAIL.WARGAME
-  );
+  return GameConfig.drawSmoke && GameConfig.detail !== DETAIL.OLD_SCHOOL && GameConfig.detail !== DETAIL.WARGAME;
 }
 
 /** Wargame Detail preset — the tactical-map theme (silhouette tanks, "Whopper" bots, etc.). */

@@ -33,11 +33,7 @@ export function Modal({
   if (maxHeight) style.maxHeight = maxHeight;
   return (
     <div class={`overlay modal-overlay modal-${backdrop}`} onClick={onClose}>
-      <div
-        class={`modal-card dialog-frame ${cls ?? ''}`}
-        style={style}
-        onClick={e => e.stopPropagation()}
-      >
+      <div class={`modal-card dialog-frame ${cls ?? ''}`} style={style} onClick={e => e.stopPropagation()}>
         {children}
       </div>
     </div>

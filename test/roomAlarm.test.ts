@@ -20,8 +20,7 @@ const makeSocket = (playerId: number | null = null): FakeSocket => {
     deserializeAttachment: () => ({playerId}),
   };
 };
-const msgs = (ws: FakeSocket): Record<string, unknown>[] =>
-  ws.sent.map(s => JSON.parse(s) as Record<string, unknown>);
+const msgs = (ws: FakeSocket): Record<string, unknown>[] => ws.sent.map(s => JSON.parse(s) as Record<string, unknown>);
 
 /** Deliver a client message through the DO's handler (the FakeSocket stands in for a WebSocket). */
 type WsParam = Parameters<Room['webSocketMessage']>[0];
@@ -100,10 +99,7 @@ function playingState(over: Record<string, unknown> = {}): Record<string, unknow
 }
 
 /** A well-formed ShotResult for `n` tanks (all alive at full life unless overridden). */
-function shotResultFor(
-  n: number,
-  patch: (i: number) => Record<string, unknown> = () => ({}),
-): Record<string, unknown> {
+function shotResultFor(n: number, patch: (i: number) => Record<string, unknown> = () => ({})): Record<string, unknown> {
   return {
     tanks: Array.from({length: n}, (_v, i) => ({
       x: i,
@@ -145,9 +141,7 @@ describe('Room AFK forfeit alarm', () => {
 
   it('a deadline still in the future re-arms without forfeiting', async () => {
     const a = makeSocket();
-    const {room, stored, alarmAt} = makeRoom(playingState({turnDeadline: Date.now() + 60_000}), [
-      a,
-    ]);
+    const {room, stored, alarmAt} = makeRoom(playingState({turnDeadline: Date.now() + 60_000}), [a]);
 
     await room.alarm();
 
@@ -290,9 +284,7 @@ describe('Room shotResult hardening', () => {
     // frame is dropped before it even replies, so the response count is bounded well under the flood.
     // overRate() runs synchronously at the top of each handler, so firing them together still counts
     // them all against the one 1s window.
-    await Promise.all(
-      Array.from({length: 400}, () => room.webSocketMessage(a as unknown as WsParam, '{bad')),
-    );
+    await Promise.all(Array.from({length: 400}, () => room.webSocketMessage(a as unknown as WsParam, '{bad')));
     expect(a.sent.length).toBeLessThan(400); // some frames were dropped by the rate cap
     expect(a.sent.length).toBeLessThanOrEqual(310); // ~SERVER_MAX_MSG_PER_SEC (300) in the 1s window
   });

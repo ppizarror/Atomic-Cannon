@@ -76,11 +76,7 @@ function setMeta(doc: Document, attr: 'name' | 'property', key: string, content:
  * Only `<title>` follows the player: og/twitter keep the marketing headline, so a link
  * unfurled from a paused battle still reads as the game rather than "Paused".
  */
-export function applyDocumentMeta(
-  doc: Document,
-  code: LocaleCode,
-  section: TitleSection | null = null,
-): void {
+export function applyDocumentMeta(doc: Document, code: LocaleCode, section: TitleSection | null = null): void {
   const {title, description, social} = stringsFor(code).meta;
   doc.documentElement.lang = code;
   doc.title = documentTitle(code, section);

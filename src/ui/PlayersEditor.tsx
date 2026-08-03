@@ -66,13 +66,7 @@ function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => v
       <BmpText font="beijing-16-out" text={e.color} />
       <span class="player-swatch" style={{background: value}} />
       <span class="player-palette-wrap">
-        <img
-          ref={imgRef}
-          class="player-palette"
-          src="/assets/gui/color pallette.bmp"
-          alt={e.palette}
-          {...drag}
-        />
+        <img ref={imgRef} class="player-palette" src="/assets/gui/color pallette.bmp" alt={e.palette} {...drag} />
         {mark ? (
           <span
             class="palette-crosshair"
@@ -115,10 +109,7 @@ export function PlayersEditor() {
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
-          <BmpText
-            font="beijing-16-out"
-            text={fmt(isHuman ? e.playerName : e.botName, {n: slotN})}
-          />
+          <BmpText font="beijing-16-out" text={fmt(isHuman ? e.playerName : e.botName, {n: slotN})} />
           <span class={`player-kind ${isHuman ? 'is-human' : 'is-cpu'}`}>
             <BmpText font="beijing-16-out" text={isHuman ? e.human : e.computer} spacing={-1} />
           </span>
@@ -140,11 +131,7 @@ export function PlayersEditor() {
         <div class="player-tank">
           <TankPreview model={cfg.model} color={cfg.color} />
           <div class="player-model">
-            <Button
-              label="<"
-              onClick={() => (uiClick(), cycleModel(idx, -1))}
-              class="player-page"
-            />
+            <Button label="<" onClick={() => (uiClick(), cycleModel(idx, -1))} class="player-page" />
             <span class="player-model-name">
               <BmpText font="beijing-16-out" text={cfg.model} />
             </span>

@@ -168,13 +168,7 @@ export const FX_LAYER = {
  */
 export interface ISmokeSink {
   /** Place the layer in the frame: camera, screen-shake, and the logical view being presented. */
-  setSmokeTransform(
-    camX: number,
-    shakeX: number,
-    shakeY: number,
-    viewW: number,
-    viewH: number,
-  ): void;
+  setSmokeTransform(camX: number, shakeX: number, shakeY: number, viewW: number, viewH: number): void;
   /** Puffs are re-emitted from scratch each frame; these bracket one frame's worth. */
   smokeBegin(): void;
   smokeEnd(): void;
@@ -688,9 +682,7 @@ export class CParticleSystem {
             cb = img.data[i + 2];
           // Billow to EXHAUST.GROW_MAX by tp=0.72, then shrink and dissolve (drawSmoke's curve).
           const gs =
-            tp < 0.72
-              ? 0.5 + (EXHAUST.GROW_MAX - 0.5) * (tp / 0.72)
-              : EXHAUST.GROW_MAX * (1 - (tp - 0.72) / 0.28);
+            tp < 0.72 ? 0.5 + (EXHAUST.GROW_MAX - 0.5) * (tp / 0.72) : EXHAUST.GROW_MAX * (1 - (tp - 0.72) / 0.28);
           const rad = p.size * gs;
           const ea = Math.min(1, tp / 0.1) * (tp > 0.72 ? (1 - tp) / 0.28 : 1) * EXHAUST.OP;
           if (rad <= 0 || ea <= 0.004) continue;
@@ -743,11 +735,7 @@ export class CParticleSystem {
    *   4. feather that mask with {@link SOFT_FALLOFF} — still under `destination-in`, so it
    *      multiplies the mask rather than painting over the texture.
    */
-  private tintedSmoke(
-    op: 'multiply' | 'screen',
-    color: string,
-    spr: Sprite,
-  ): HTMLCanvasElement | null {
+  private tintedSmoke(op: 'multiply' | 'screen', color: string, spr: Sprite): HTMLCanvasElement | null {
     const w = spr.width,
       h = spr.height;
     const made = tryCanvas2d(w, h); // null when headless (tests): no canvas to tint
@@ -889,16 +877,7 @@ export class CParticleSystem {
   /** A beam from muzzle to impact. `spr` is the weapon's colour texture; `width` its
    *  drawn thickness (the weapon `size`); `life` how long it stays on screen — set this
    *  to the collapse delay so the ray VANISHES the instant the earth falls. */
-  beam(
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-    color: string,
-    spr?: string,
-    width = 8,
-    life = 0.5,
-  ): void {
+  beam(x0: number, y0: number, x1: number, y1: number, color: string, spr?: string, width = 8, life = 0.5): void {
     const c = CParticleSystem.parseColor(color);
     this.m_beams.push({x0, y0, x1, y1, r: c.r, g: c.g, b: c.b, age: 0, life, spr, width});
   }
@@ -928,12 +907,8 @@ export class CParticleSystem {
     isCleaner = false,
   ): void {
     // `eLlightBlue` is a typo in the weapon data table for `eLightBlue`.
-    const preset = presetName
-      ? (PRESETS[presetName] ?? PRESETS[presetName.replace('Llight', 'Light')])
-      : undefined;
-    const c = preset
-      ? {r: preset.colorr, g: preset.colorg, b: preset.colorb}
-      : CParticleSystem.parseColor(color);
+    const preset = presetName ? (PRESETS[presetName] ?? PRESETS[presetName.replace('Llight', 'Light')]) : undefined;
+    const c = preset ? {r: preset.colorr, g: preset.colorg, b: preset.colorb} : CParticleSystem.parseColor(color);
     // Floor low so a small round (machine gun r8, shotgun r4) stays a small puff — a floor up at
     // grenade radius would force every blast to grenade size and make bullets "explode".
     const r = Math.max(4, radiusPx);
@@ -979,17 +954,7 @@ export class CParticleSystem {
 
     // Compact spark puff for small rounds, then stop — no firework/rings/fire/ejecta.
     if (small) {
-      this.emitBox(
-        x,
-        y,
-        Math.round(r * 1.2) + 4,
-        20,
-        0.25,
-        0.6,
-        1.1,
-        CParticleSystem.toward255(c, 0.2),
-        'disc',
-      );
+      this.emitBox(x, y, Math.round(r * 1.2) + 4, 20, 0.25, 0.6, 1.1, CParticleSystem.toward255(c, 0.2), 'disc');
       return;
     }
 
@@ -1012,32 +977,12 @@ export class CParticleSystem {
       }
       if (big) {
         this.emitEjectaRing(x, y, r);
-        this.emitBox(
-          x,
-          y,
-          Math.round(r * 1.4) + 26,
-          190,
-          0.4,
-          1.1,
-          1.6,
-          CParticleSystem.toward255(c, 0.2),
-          'disc',
-        );
+        this.emitBox(x, y, Math.round(r * 1.4) + 26, 190, 0.4, 1.1, 1.6, CParticleSystem.toward255(c, 0.2), 'disc');
       } else {
         // Spark spray, speed scaled by the crater for the same reason as emitFireballRing: a fixed
         // px/s throws a small blast's sparks clear of its own hole. Feeding `r` in as the speed
         // gives ~90 px/s of reach at r ≈ 90 and stays proportional below and above it.
-        this.emitBox(
-          x,
-          y,
-          Math.round(r * 0.7) + 16,
-          r,
-          0.4,
-          1.0,
-          1.5,
-          CParticleSystem.toward255(c, 0.2),
-          'disc',
-        );
+        this.emitBox(x, y, Math.round(r * 0.7) + 16, r, 0.4, 1.0, 1.5, CParticleSystem.toward255(c, 0.2), 'disc');
       }
     }
 
@@ -1077,16 +1022,7 @@ export class CParticleSystem {
     kind: RenderKind,
   ): void {
     for (let i = 0; i < count; i++) {
-      this.add(
-        x,
-        y,
-        between(-speed, speed),
-        between(-speed, speed) - speed * 0.4,
-        c,
-        between(lmin, lmax),
-        size,
-        kind,
-      );
+      this.add(x, y, between(-speed, speed), between(-speed, speed) - speed * 0.4, c, between(lmin, lmax), size, kind);
     }
   }
 
@@ -1118,16 +1054,7 @@ export class CParticleSystem {
     const step = Math.max(3, half / 5);
     const hot = CParticleSystem.toward255(c, 0.4);
     for (let fx = x - half; fx <= x + half; fx += step) {
-      this.add(
-        fx,
-        y,
-        between(-20, 20),
-        between(-140, -60),
-        hot,
-        between(0.5, 1.0),
-        between(2.5, 4),
-        'flare',
-      );
+      this.add(fx, y, between(-20, 20), between(-140, -60), hot, between(0.5, 1.0), between(2.5, 4), 'flare');
     }
   }
 
@@ -1167,14 +1094,7 @@ export class CParticleSystem {
    * EXPANDS and the centre stays clear. The central puff of the same sprite adds ~nothing for a dim
    * sprite (the centre reads through) and a hot core for a bright one. All additive at true intensity.
    */
-  private emitFlareBurst(
-    x: number,
-    y: number,
-    r: number,
-    sprite: string,
-    expType: ExpType,
-    big: boolean,
-  ): void {
+  private emitFlareBurst(x: number, y: number, r: number, sprite: string, expType: ExpType, big: boolean): void {
     // PLAIN (style 0) emits no burst at all — but those are small kinetic rounds that never reach
     // here (the `small` gate handles them); guard anyway so a big-radius PLAIN weapon stays quiet.
     if (!big && expType === EXP.PLAIN) return;
@@ -1223,8 +1143,7 @@ export class CParticleSystem {
       const theta = deg2rad(t0 + Math.random() * (t1 - t0));
       const speed = (p.minv + Math.random() * (p.maxv - p.minv)) * 14 + 20; // preset units → px/s
       const life = (p.minlife + Math.random() * (p.maxlife - p.minlife)) * 0.16 + 0.25;
-      const jc = (base: number) =>
-        Math.max(0, Math.min(255, base + (Math.random() * 2 - 1) * p.colorVar));
+      const jc = (base: number) => Math.max(0, Math.min(255, base + (Math.random() * 2 - 1) * p.colorVar));
       this.add(
         x + (Math.random() * 2 - 1) * p.posVar,
         y + (Math.random() * 2 - 1) * p.posVar,
@@ -1255,16 +1174,7 @@ export class CParticleSystem {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * TWO_PI;
       const sp = between(smin, smax);
-      this.add(
-        x,
-        y,
-        Math.cos(a) * sp,
-        Math.sin(a) * sp - upBias,
-        c,
-        between(lmin, lmax),
-        size,
-        kind,
-      );
+      this.add(x, y, Math.cos(a) * sp, Math.sin(a) * sp - upBias, c, between(lmin, lmax), size, kind);
     }
   }
 
@@ -1327,16 +1237,7 @@ export class CParticleSystem {
       const a = between(-0.5, 0.5); // rad spread around the heading
       const bx = dir.x * Math.cos(a) - dir.y * Math.sin(a);
       const by = dir.x * Math.sin(a) + dir.y * Math.cos(a);
-      this.add(
-        x,
-        y,
-        bx * s,
-        by * s - between(0, 18),
-        c,
-        between(0.12, 0.3),
-        between(1, 2.4),
-        'disc',
-      );
+      this.add(x, y, bx * s, by * s - between(0, 18), c, between(0.12, 0.3), between(1, 2.4), 'disc');
     }
   }
 
@@ -1401,9 +1302,7 @@ export class CParticleSystem {
     const dx = between(lo, hi) * r; // across the disturbed strip (stay off the far rim)
     const fx = x + dx + between(-3, 3);
     // The actual carved surface at this column = the dirt the smoke rises from (fallback: bowl arc).
-    const surf = this.m_groundAt
-      ? this.m_groundAt(fx)
-      : y + Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.7;
+    const surf = this.m_groundAt ? this.m_groundAt(fx) : y + Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.7;
     // Fume only from SOIL. Where the ground has been eroded down to the world floor (surface at the
     // view height → no land left in this column), there's nothing to smoke — don't puff into the void.
     if (this.m_groundAt && this.m_viewH > 0 && surf >= this.m_viewH) return;
@@ -1851,11 +1750,7 @@ export class CParticleSystem {
       if (p.spin !== 0) p.rot += p.spin * dt; // heat wisps tumble slowly as they lift
 
       const dead =
-        p.age >= p.life ||
-        p.x < this.m_minX ||
-        p.y < this.m_minY ||
-        p.x >= this.m_maxX ||
-        p.y >= this.m_maxY;
+        p.age >= p.life || p.x < this.m_minX || p.y < this.m_minY || p.x >= this.m_maxX || p.y >= this.m_maxY;
 
       if (!dead) this.m_particles[w++] = p; // compact live particles forward
     }
@@ -1958,8 +1853,7 @@ export class CParticleSystem {
       // stack into a bright core that collapses inward.
       const d = e.shrink ? e.size * (1 - t) : e.size * (0.7 + t * 1.8) * 2;
       const a = e.shrink ? (1 - t) * 0.9 : (1 - t) * (t < 0.15 ? t / 0.15 : 1);
-      const spr =
-        this.m_assets?.getSprite(e.sprite) ?? this.m_assets?.getSprite('fx:explosion') ?? null;
+      const spr = this.m_assets?.getSprite(e.sprite) ?? this.m_assets?.getSprite('fx:explosion') ?? null;
       if (spr) {
         ctx.globalAlpha = a;
         ctx.drawImage(spr.bitmap, e.x - d / 2, e.y - d / 2, d, d);
@@ -2195,23 +2089,14 @@ export class CParticleSystem {
   hasActiveBlast(): boolean {
     if (this.m_explosions.length > 0 || this.m_beams.length > 0) return true;
     for (const p of this.m_particles)
-      if (
-        p.kind !== 'smoke' &&
-        p.kind !== 'plume' &&
-        p.kind !== 'exhaust' &&
-        p.kind !== 'heat' &&
-        p.kind !== 'fume'
-      )
+      if (p.kind !== 'smoke' && p.kind !== 'plume' && p.kind !== 'exhaust' && p.kind !== 'heat' && p.kind !== 'fume')
         return true;
     return false;
   }
 
   hasActiveExplosions(): boolean {
     return (
-      this.m_particles.length > 0 ||
-      this.m_beams.length > 0 ||
-      this.m_explosions.length > 0 ||
-      this.m_debris.length > 0
+      this.m_particles.length > 0 || this.m_beams.length > 0 || this.m_explosions.length > 0 || this.m_debris.length > 0
     );
   }
 
