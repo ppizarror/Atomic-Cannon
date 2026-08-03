@@ -42,6 +42,10 @@ import {strings} from '../i18n';
 import {weaponEnabled} from '../core/CGameContent';
 import {UNLIMITED} from '../core/CEconomy';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
 
 // Every panel (header, stats popup, footer) uses the game's OUTLINED bitmap faces
@@ -55,7 +59,7 @@ const tableFont = () => (GameConfig.smallBuyFonts ? 'silkscreen-8-out' : 'beijin
 // see `weaponPower` in CWeapon.ts.
 const powerOf = weaponPower;
 
-// ---- small leaf pieces ------------------------------------------------------
+// ---- SMALL LEAF PIECES ---------------------------------------------------
 // The magenta-keyed sort caret next to the active column header. Keeps a fixed-size
 // placeholder while the bitmap loads so nothing reflows and no broken-image glyph shows.
 function SortArrow({dir}: {dir: 1 | -1}) {
@@ -130,7 +134,7 @@ function DepBtn({
   );
 }
 
-// ---- the modal --------------------------------------------------------------
+// ---- THE MODAL -----------------------------------------------------------
 // `<DepotPanel />` lives permanently in the App tree, so the panel body is split into its own
 // component that is only rendered while the depot is OPEN — that way it genuinely mounts/unmounts
 // each time. Putting the hooks behind an early `return null` in ONE persistent instance never

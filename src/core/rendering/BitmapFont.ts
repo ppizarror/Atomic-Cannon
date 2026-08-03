@@ -8,12 +8,20 @@
 import {knockoutWhere, makeCanvas2d} from '../../util/canvas';
 import {capSet} from '../../util/cache';
 
+// ==========================================================================
+// GLYPH STRIP HELPERS
+// ==========================================================================
+
 const isMagenta = (px: Uint8ClampedArray, i: number) =>
   px[i] > 170 && px[i + 1] < 90 && px[i + 2] > 170;
 const isCyan = (px: Uint8ClampedArray, i: number) =>
   px[i] < 90 && px[i + 1] > 170 && px[i + 2] > 170;
 
 const FIRST = 33; // '!'  — the strip starts here; space (32) is advance-only.
+
+// ==========================================================================
+// ASCII FOLDING
+// ==========================================================================
 
 // The bitmap strips cover ASCII 33..126 ONLY. Authored copy (and future translations) uses typographic
 // punctuation outside that range — em/en dash, ellipsis, middle dot, curly quotes, nbsp — which would
@@ -64,6 +72,10 @@ export const asciiFold = (text: string): string => text.replace(FOLD_RE, m => AS
 // value — over a long multi-battle session that would grow without bound.
 const FONT_CACHE_MAX = 512;
 
+// ==========================================================================
+// BitmapFont CLASS
+// ==========================================================================
+
 export class BitmapFont {
   ready = false;
   height = 0;
@@ -72,6 +84,10 @@ export class BitmapFont {
   private waiters: (() => void)[] = [];
   private rendered = new Map<string, HTMLCanvasElement>();
   private bounds = new Map<string, {top: number; height: number}>();
+
+  // ========================================================================
+  // CONSTRUCTION & LOADING
+  // ========================================================================
 
   constructor(private spec: FontSpec) {
     const img = new Image();
@@ -126,6 +142,10 @@ export class BitmapFont {
     this.flush();
   }
 
+  // ========================================================================
+  // GLYPH METRICS
+  // ========================================================================
+
   private glyph(code: number) {
     const i = code - FIRST;
     return i >= 0 && i < this.glyphs.length ? this.glyphs[i] : undefined;
@@ -145,6 +165,10 @@ export class BitmapFont {
     // spacing under-sizes the canvas and clips the final glyph.
     return Math.max(1, w - spacing);
   }
+
+  // ========================================================================
+  // RENDERING
+  // ========================================================================
 
   /** Render text to a fresh canvas at native pixel size (transparent bg).
    *  Colour comes from the font's baked .bmp — the fallback draws in the font's own
@@ -238,14 +262,17 @@ export class BitmapFont {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Font catalog. Short, memorable ids → the real `.bmp` under public/assets/fonts
-// PLUS the HTML font each one falls back to when its `.bmp` can't be loaded. The
-// fallback is declared HERE, per font (a family that approximates the bitmap face and
-// its px size), so no caller ever picks a fallback font — text is never blank and never
-// an ad-hoc `sans-serif`. Everything that draws bitmap text takes a `FontId`, so only
-// fonts that exist can be referenced (a typo is a compile error). Add a font by dropping
-// its `.bmp` in the fonts folder and adding one line here.
+// ==========================================================================
+// FONT CATALOG
+//
+// Short, memorable ids → the real `.bmp` under public/assets/fonts PLUS the HTML
+// font each one falls back to when its `.bmp` can't be loaded. The fallback is
+// declared HERE, per font (a family that approximates the bitmap face and its px
+// size), so no caller ever picks a fallback font — text is never blank and never
+// an ad-hoc `sans-serif`. Everything that draws bitmap text takes a `FontId`, so
+// only fonts that exist can be referenced (a typo is a compile error). Add a font
+// by dropping its `.bmp` in the fonts folder and adding one line here.
+// ==========================================================================
 export interface FontSpec {
   /** `.bmp` filename under public/assets/fonts (no extension). */
   file: string;

@@ -138,7 +138,7 @@ export class CSoundManager extends GainChannel {
     };
   }
 
-  // ── Looping named sounds (tank moving / jet) ───────────────────────────────
+  // ---- LOOPING NAMED SOUNDS ----------------------------------------------
 
   /** Start (or keep) a looping sound keyed by name. Idempotent — a second call
    *  while it's already playing just repans it (the movement dedup check:

@@ -45,7 +45,8 @@ export interface SettingMeta {
 }
 
 const CATALOG = {
-  // ── Economy ── (only Buy Time mirrors GameConfig; the credit rates go to the controller)
+  // ---- ECONOMY -----------------------------------------------------------
+  // Only Buy Time mirrors GameConfig; the credit rates go to the controller.
   'eco.buyTime': {default: 0, cfg: 'buyTime'},
   'eco.creditStart': {default: 3000},
   'eco.creditRound': {default: 1000},
@@ -54,7 +55,8 @@ const CATALOG = {
   'eco.creditDamage': {default: 1},
   'eco.sellBack': {default: 50, map: v => v / 100}, // stored %, engine fraction
 
-  // ── Tank ── (kickback / player-size carry engine scalars; index → multiplier)
+  // ---- TANK --------------------------------------------------------------
+  // Kickback / player-size carry engine scalars; index -> multiplier.
   'tank.kickback': {default: 2, scale: [0, 0.6, 1, 1.5], cfg: 'kickbackScale'},
   'tank.size': {default: 1, scale: [0.72, 1, 1.35], cfg: 'tankSizeScale'},
   'tank.relTurrets': {default: false, cfg: 'relativeTurrets'},
@@ -64,7 +66,7 @@ const CATALOG = {
   'tank.chatter': {default: true, cfg: 'chatter'},
   'tank.colorize': {default: false, cfg: 'colorizeTeam'},
 
-  // ── Gameplay ──
+  // ---- GAMEPLAY ----------------------------------------------------------
   'gp.battles': {default: 2},
   'gp.rounds': {default: 10},
   'gp.gameType': {default: 1},
@@ -94,7 +96,7 @@ const CATALOG = {
   // standing — a tactical change, not a visual one, and not something legacy did.
   'gp.soilCompaction': {default: false, cfg: 'soilCompaction'},
 
-  // ── Graphics ──
+  // ---- GRAPHICS ----------------------------------------------------------
   'gfx.tracking': {default: true, cfg: 'tracking'},
   'gfx.smoke': {default: true, cfg: 'drawSmoke'},
   // render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame
@@ -130,7 +132,8 @@ const CATALOG = {
   'gfx.ambientLight': {default: true, cfg: 'ambientLight'},
   'gfx.hideSplash': {default: false}, // hide the tilted "fan recreation" splash on the title screen
 
-  // ── Audio ── (Sound/Music/volumes/Stereo all bind live to CAudio, not stored here)
+  // ---- AUDIO -------------------------------------------------------------
+  // Sound/Music/volumes/Stereo all bind live to CAudio, not stored here.
 } satisfies Record<string, SettingMeta>;
 
 /** The id of any stored setting — the keys of the catalog. A widget or engine getter for an

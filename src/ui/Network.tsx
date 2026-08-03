@@ -26,6 +26,10 @@ import {
   resetNet,
 } from './networkStore';
 
+// ==========================================================================
+// LOBBY ENTRY
+// ==========================================================================
+
 function toMenu(): void {
   resetNet();
   goToMenu();
@@ -76,6 +80,10 @@ function Entry() {
     </div>
   );
 }
+
+// ==========================================================================
+// CONNECTION STATUS
+// ==========================================================================
 
 function Connecting() {
   const n = strings.value.net;
@@ -132,6 +140,10 @@ function CodeDisplay({code}: {code: string}) {
     </>
   );
 }
+
+// ==========================================================================
+// MATCH SETTINGS DIALOG
+// ==========================================================================
 
 // Format a physics scalar as a multiplier, e.g. 1 → "1x", 1.35 → "1.35x". Uses ASCII "x"
 // (the bitmap font has no "×" glyph) and trims float noise to at most 2 decimals.
@@ -361,6 +373,10 @@ function MatchSettingsDialog({onClose}: {onClose: () => void}) {
   );
 }
 
+// ==========================================================================
+// LOBBY
+// ==========================================================================
+
 function Lobby() {
   const n = strings.value.net;
   const s = netState.value;
@@ -435,6 +451,10 @@ function Lobby() {
   );
 }
 
+// ==========================================================================
+// SCREEN STATES
+// ==========================================================================
+
 function Playing() {
   const n = strings.value.net;
   return (
@@ -474,6 +494,10 @@ function Inner() {
       return <Entry />;
   }
 }
+
+// ==========================================================================
+// ROOT COMPONENT
+// ==========================================================================
 
 export function Network() {
   return (

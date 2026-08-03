@@ -8,9 +8,14 @@ import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind} from './wind';
 import {TWO_PI, lerp} from '../math/num';
 
+// ==========================================================================
+// TUNING
+//
 // Trajectory constants — the single source of truth, shared with the aim AI so a
 // simulated shot matches a real one exactly. Calibrated to our px/second space,
 // preserving the ratios between gravity, launch speed and wind.
+// ==========================================================================
+
 export const SHOT_GRAVITY = 500; // px/s^2 downward
 export const SHOT_WIND_ACCEL = 15; // wind display units -> px/s^2 of sideways drift
 export const SHOT_SPEED_SCALE = 1; // launch speed per unit power
@@ -57,15 +62,27 @@ export function launchSpeed(power: number): number {
   );
 }
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 interface TrailPoint {
   x: number;
   y: number;
   age: number;
 }
 
+// ==========================================================================
+// CShot CLASS
+// ==========================================================================
+
 export class CShot {
   private static GRAVITY = SHOT_GRAVITY;
   private static WIND_ACCEL = SHOT_WIND_ACCEL; // wind display units -> px/s^2 of drift
+
+  // ========================================================================
+  // CONSTRUCTION & INITIALIZATION
+  // ========================================================================
 
   constructor() {
     this.m_pos = new Vec2(0, 0);
@@ -156,6 +173,10 @@ export class CShot {
     this.addTrailPoint();
   }
 
+  // ========================================================================
+  // SIMULATION
+  // ========================================================================
+
   /**
    * Semi-implicit Euler step: gravity + wind added as acceleration, then position
    * advances. Beam-type shots skip gravity so they fly straight.
@@ -217,6 +238,10 @@ export class CShot {
       this.pruneTrailPoints(dt);
     }
   }
+
+  // ========================================================================
+  // PROJECTILE STATE & TRAIL
+  // ========================================================================
 
   setAntiGrav(on: boolean): void {
     this.m_antiGrav = on;
@@ -302,6 +327,10 @@ export class CShot {
     this.m_trailPoints = this.m_trailPoints.filter(pt => pt.age < this.m_maxTrailAge);
   }
 
+  // ========================================================================
+  // COLLISION & POSITION
+  // ========================================================================
+
   checkTankCollision(tank: CTank): boolean {
     if (!tank.isAlive()) return false;
 
@@ -333,9 +362,9 @@ export class CShot {
   }
 
   /** Exhaust point — the missile's REAR, where the trail/plume pours from. The trail
-   * emits here, not at the centre: it offsets back from the centre along the heading
-   * by half the on-screen sprite length, `0.5 × size × scale`. `size` = the weapon
-   * display size. */
+   *  emits here, not at the centre: it offsets back from the centre along the heading
+   *  by half the on-screen sprite length, `0.5 × size × scale`. `size` = the weapon
+   *  display size. */
   getExhaustPoint(size: number): Vec2 {
     const v = this.m_vel;
     const spd = Math.hypot(v.x, v.y);
@@ -347,6 +376,10 @@ export class CShot {
   isDead(): boolean {
     return this.m_bIsDead;
   }
+
+  // ========================================================================
+  // RENDERING
+  // ========================================================================
 
   /**
    * `alpha` is the RENDER interpolation factor (see CGameController.renderAlpha): how far real time
@@ -414,6 +447,10 @@ export class CShot {
     ctx.restore();
   }
 
+  // ========================================================================
+  // ACCESSORS & QUERIES
+  // ========================================================================
+
   getDamage(): number {
     return this.m_damage;
   }
@@ -444,6 +481,10 @@ export class CShot {
     return this.m_generation;
   }
 
+  // ========================================================================
+  // MEMBER VARIABLES
+  // ========================================================================
+
   m_bIsDead: boolean;
 
   private m_pos: Vec2;
@@ -473,4 +514,39 @@ export class CShot {
   digDepth: number = -1; // per-shot randomised digger bore depth (px); -1 = not yet chosen
   digEntryY: number = -1; // shot Y where it first went below the surface; -1 = not yet
   digCols: Set<number> | null = null; // columns already bored (each dug ONCE → trench backfills, no re-cave)
+  // ---- HOMING (EXT.HOMING) ------------------------------------------------
+  // Three phases, all keyed off the launch geometry captured in `homingSpanX`:
+  // cruise → coast-down → apex relight, then powered guidance inside a fixed band.
+  /** Predicted UNGUIDED horizontal range, captured on the first frame. The phase clock is
+   *  progress along it, so "a quarter of the way out" means the same on every map. 0 = not set. */
+  homingSpanX: number = 0;
+  /** Launch position/velocity the phase profile is measured against. */
+  homingX0: number = 0;
+  homingVx0: number = 0;
+  /** Upward speed the instant the motor cut. The brake is measured against it, so the horizontal
+   *  speed reaches its floor exactly AT the apex (vy = 0) on every shot — keying the ramp to
+   *  x-progress instead never finishes, because braking pulls the apex earlier than the unbraked
+   *  range it was measured against. 0 = the motor has not cut yet. */
+  homingVyCut: number = 0;
+  /** Heading (deg) at the apex — the CENTRE of the ±band every later correction is measured from,
+   *  so the missile can weave inside its authority without the band drifting with it. NaN until
+   *  the apex, which is also the "guidance has not armed yet" test. */
+  homingBase: number = Number.NaN;
+  /** Commanded offset from `homingBase` (deg), re-solved during the descent, and how much of it
+   *  the airframe has actually swung through so far — the gap between them is what it is turning. */
+  homingAim: number = 0;
+  homingApplied: number = 0;
+  /** Tank the guidance is steering at, for the on-screen lock marker (null = coasting blind). */
+  homingTarget: CTank | null = null;
+  /** True on any frame the sustainer is lit — the exhaust plume reads this, so a guided round
+   *  keeps smoking through its descent instead of coasting dark like an ordinary rocket. */
+  homingBurn: boolean = false;
+  /** The reachable region, refreshed every few frames and drawn under the missile: the landing
+   *  points across the authority band, plus the two EXTREME trajectories that bound them. The
+   *  bounding paths are kept because the region has to be drawn along the real curves — chords
+   *  from the missile to the landing points cut through any rising ground in between. */
+  homingFan: {x: number; y: number}[] = [];
+  homingFanL: {x: number; y: number}[] = [];
+  homingFanR: {x: number; y: number}[] = [];
+  homingFanAge: number = 0;
 }

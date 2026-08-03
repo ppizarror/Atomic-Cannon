@@ -127,7 +127,7 @@ export class CCamera {
     this.m_manual = false;
   }
 
-  // ── detonation shake ──────────────────────────────────────────────────────
+  // ---- DETONATION SHAKE --------------------------------------------------
 
   /** Kick the view: `intensity` px of peak offset, decaying linearly over `durationSec`. */
   shake(intensity: number, durationSec: number): void {
@@ -186,7 +186,8 @@ export class CCamera {
     this.m_x = this.m_prevX = this.m_targetX; // a snap, not a pan — leave nothing to interpolate from
   }
 
-  // ── the minimap strip (the camera's own control widget) ───────────────────
+  // ---- MINIMAP STRIP -----------------------------------------------------
+  // The camera's own control widget.
 
   /** Is there a minimap at all? Only when the world is wider than the view. */
   hasMinimap(b: CameraBounds): boolean {

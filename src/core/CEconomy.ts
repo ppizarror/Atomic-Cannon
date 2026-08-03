@@ -35,7 +35,7 @@ export const UNLIMITED = Number.POSITIVE_INFINITY;
 const AUTO_BUY_SKIP_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
 
 /** Weapons that start unlimited (always fireable, not sold/bought). By default the
- * basic Shell, so the player can always take a shot. */
+ *  basic Shell, so the player can always take a shot. */
 function defaultUnlimited(): number[] {
   return [getDefaultWeaponIndex()];
 }
@@ -190,7 +190,7 @@ export class CEconomy {
   }
 
   /** Consume one round on fire. Unlimited staples never deplete. Returns whether a
-   * shot was allowed (always true for unlimited / in-stock, false if empty). */
+   *  shot was allowed (always true for unlimited / in-stock, false if empty). */
   consume(index: number): boolean {
     if (this.isUnlimited(index)) return true;
     if (this.getOwned(index) <= 0) return false;

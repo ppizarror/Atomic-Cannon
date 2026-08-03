@@ -14,6 +14,10 @@ import {plusMinus} from '../math/random';
 import {windProfile} from '../core/wind';
 import {tryCanvas2d} from '../util/canvas';
 
+// ==========================================================================
+// TUNING
+// ==========================================================================
+
 const FW = {
   /** Downward accel (px/s²) — the burst rains down (semi-implicit Euler, no drag). */
   GRAVITY: 95,
@@ -36,6 +40,10 @@ const FW = {
   /** Launch-trail spark lifetime (s). */
   TRAIL_LIFE: 0.4,
 } as const;
+
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
 
 /** One burst/trail spark. */
 interface Firework {
@@ -72,6 +80,10 @@ export interface FireworksEnv {
   /** The burst boom (panned across the WORLD, so it takes a world X). */
   onBoom(worldX: number): void;
 }
+
+// ==========================================================================
+// BURST SPRITES
+// ==========================================================================
 
 // Sampled lit pixels per burst shape, indexed like FW.NAMES; null until that bmp loads. Module
 // scope (not per-instance): the bitmaps are immutable art shared by every match.
@@ -110,11 +122,19 @@ export function loadBurstPixels(): void {
   });
 }
 
+// ==========================================================================
+// CFireworks CLASS
+// ==========================================================================
+
 export class CFireworks {
   private m_sparks: Firework[] = [];
   private m_rockets: FwRocket[] = [];
   private m_timer = 0;
   private m_active = false;
+
+  // ========================================================================
+  // LIFECYCLE
+  // ========================================================================
 
   /** Arm (or disarm) the display. Arming warms the burst bitmaps and schedules the first launch
    *  shortly after the standings screen appears. */
@@ -141,6 +161,10 @@ export class CFireworks {
   hasVisible(): boolean {
     return this.m_sparks.length > 0 || this.m_rockets.length > 0;
   }
+
+  // ========================================================================
+  // EMISSION
+  // ========================================================================
 
   /** Launch a firework: pick a random sky target above the terrain and send a rocket up
    *  from the ground toward it (it detonates into the burst on arrival). */
@@ -178,6 +202,10 @@ export class CFireworks {
     }
     env.onBoom(cx); // Slapthunder1/2.wav (the boom); pan spans the WORLD, so pass world-X
   }
+
+  // ========================================================================
+  // SIMULATION
+  // ========================================================================
 
   /** Tick the display: launch on the interval, rise the rockets (trailing sparks) until they
    *  detonate, then integrate every spark (gravity + wind drift ×0.7), dropping the expired /
@@ -228,6 +256,10 @@ export class CFireworks {
       this.m_sparks = this.m_sparks.filter(p => p.age < p.life && p.y < env.groundAt(p.x));
     }
   }
+
+  // ========================================================================
+  // RENDERING
+  // ========================================================================
 
   /** Draw the sparks coloured by their burst pixel. Additive ('lighter') so they read as bright
    *  fireworks on any sky (the legacy screenshots show bright, glowing sparks — the raw disc

@@ -13,6 +13,10 @@ import type {GameCommand} from './commands';
 /** Protocol version — clients declare it on hello; the room rejects mismatches. */
 export const PROTOCOL_VERSION = 1;
 
+// ==========================================================================
+// ROOM & PLAYER TYPES
+// ==========================================================================
+
 /** A player's lobby/roster identity (never carries secrets — reconnectToken stays server-side). */
 export interface PlayerInfo {
   readonly id: number;
@@ -39,6 +43,10 @@ export interface RoomSettings {
   /** Interleave team turns (A1,B1,A2,B2) instead of contiguous squads (A1,A2,B1,B2). */
   readonly alternateTurns: boolean;
 }
+
+// ==========================================================================
+// MATCH CONFIG
+// ==========================================================================
 
 /**
  * The host's gameplay settings, captured at Start and applied identically on every client so
@@ -144,6 +152,10 @@ export function sanitizeMatchConfig(raw?: Partial<MatchConfig> | null): MatchCon
   return out as unknown as MatchConfig;
 }
 
+// ==========================================================================
+// SHOT RESULTS
+// ==========================================================================
+
 /**
  * Authoritative post-turn state the acting client broadcasts once its shot resolves;
  * everyone applies it so tanks + terrain + wind stay in sync. Structurally matches the
@@ -191,7 +203,11 @@ export interface ShotResult {
   }>;
 }
 
-// ── Client → room ──────────────────────────────────────────────────────────
+// ==========================================================================
+// WIRE MESSAGES
+// ==========================================================================
+
+// ---- CLIENT -> ROOM ------------------------------------------------------
 
 export type ClientMessage =
   | {
@@ -234,7 +250,7 @@ export type ClientMessage =
   | {readonly t: 'desync'; readonly localHash: number; readonly keyframeHash: number}
   | {readonly t: 'leave'};
 
-// ── Room → client ──────────────────────────────────────────────────────────
+// ---- ROOM -> CLIENT ------------------------------------------------------
 
 export type ServerMessage =
   | {
@@ -315,6 +331,10 @@ export type ErrorCode =
   | 'not_enough_players'
   | 'name_taken';
 
+// ==========================================================================
+// PARSING
+// ==========================================================================
+
 /**
  * Narrowing helpers (defensive parse at the socket boundary). Both directions of the protocol
  * are `t`-tagged unions, so one parse covers them; only the asserted type differs. Malformed
@@ -340,6 +360,10 @@ export const parseClientMessage = (raw: string): ClientMessage | null =>
 
 export const parseServerMessage = (raw: string): ServerMessage | null =>
   parseTagged<ServerMessage>(raw);
+
+// ==========================================================================
+// VALIDATION
+// ==========================================================================
 
 const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);

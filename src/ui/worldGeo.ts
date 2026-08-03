@@ -26,10 +26,7 @@ export function countryName(cc: string): string {
   }
 }
 
-// ── World map (lazy) ──────────────────────────────────────────────────────────
-// A low-res (Natural Earth 110m) world map, shipped as a static GeoJSON asset and loaded only when
-// the About screen opens. Each country becomes one SVG path (equirectangular: x = lng+180, y = 90−lat)
-// tagged with its alpha-2 code, so the choropleth can fill it by game count.
+// ---- WORLD MAP -----------------------------------------------------------
 
 type Ring = [number, number][];
 interface GeoFeature {

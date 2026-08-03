@@ -54,6 +54,10 @@ import {usePointerDrag} from './usePointerDrag';
 import {useTrackDrag} from './useTrackDrag';
 import {useAsyncImage} from './useAsyncImage';
 
+// ==========================================================================
+// LAYOUT & HOTSPOTS
+// ==========================================================================
+
 // Element rectangles within the gui.bmp panel: [left%, top%, width%, height%].
 // Measured off a gridded render of the 640x120 panel.
 const R = {
@@ -126,7 +130,8 @@ function Hotspot({
   );
 }
 
-// ---- leaf readouts (each subscribes to exactly one live signal) -------------
+// ---- LEAF READOUTS -------------------------------------------------------
+// Each subscribes to exactly one live signal.
 function ReadoutBox({r, children}: {r: readonly number[]; children: ComponentChildren}) {
   return (
     <div class="ov readout-box" style={pos(r)}>
@@ -396,7 +401,8 @@ function WeaponList() {
   );
 }
 
-// ---- static structure (renders once) ---------------------------------------
+// ---- STATIC STRUCTURE ----------------------------------------------------
+// Renders once.
 function ControlPanel() {
   const g = () => game();
   const dP = (d: number) => g().setPower(clamp(g().getPower() + d, POWER_MIN, POWER_MAX));
@@ -584,6 +590,10 @@ function WindMeasurements() {
     </div>
   );
 }
+
+// ==========================================================================
+// ROOT COMPONENT
+// ==========================================================================
 
 export function Hud() {
   return (

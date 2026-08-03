@@ -21,10 +21,18 @@ import {initStatsUpload, flushStats} from './statsUpload';
 import {clamp, wrapIndex} from '../math/num';
 import {knockoutWhere, makeCanvas2d} from '../util/canvas';
 
+// ==========================================================================
+// SCREEN STATE
+// ==========================================================================
+
 export type Screen =
   'menu' | 'battle' | 'settings' | 'about' | 'manual' | 'setup' | 'highscores' | 'network';
 
 export const screen = signal<Screen>('battle');
+
+// ==========================================================================
+// VIEWPORT & MOBILE
+// ==========================================================================
 
 // When to use the compact touch HUD (MobileHud) instead of the raster gui.bmp panel:
 //  • too NARROW — below MOBILE_W the 736px-wide panel (640x120 gui.bmp at the bar's
@@ -118,6 +126,10 @@ export function watchViewport(): void {
   });
 }
 
+// ==========================================================================
+// LOADING
+// ==========================================================================
+
 // Loading screen: true while a freshly-launched match loads its landscape textures. A
 // menu-styled overlay (title backdrop + animated dots) covers the still-untextured world
 // and the battle is revealed only once assetsReady() resolves — so the player never sees
@@ -126,6 +138,10 @@ export const loading = signal(false);
 // Generation counter: each launch bumps it so a stale assetsReady() resolution (e.g. a rapid
 // second Play) can't reveal a superseded match.
 let launchToken = 0;
+
+// ==========================================================================
+// WEAPONS DEPOT
+// ==========================================================================
 
 // Weapons Depot overlay — buy/sell screen shown above the battle HUD.
 export const showDepot = signal(false);
@@ -196,6 +212,10 @@ export function preloadDepotUi(): Promise<unknown> {
   ]);
 }
 
+// ==========================================================================
+// PAUSE MENU
+// ==========================================================================
+
 // Pause menu — an overlay over the frozen battle (Resume / Settings / Quit).
 export const showPause = signal(false);
 
@@ -217,6 +237,10 @@ export function resumeGame(): void {
   popRoute();
 }
 
+// ==========================================================================
+// HELP OVERLAY
+// ==========================================================================
+
 // Help overlay — the "?" panel button. Shows a modal control reference. Freeze the
 // sim while it's up so the shot-timer doesn't drain behind it.
 export const showHelp = signal(false);
@@ -237,6 +261,10 @@ export function closeHelp(): void {
   uiClose();
   popRoute();
 }
+
+// ==========================================================================
+// SETTINGS
+// ==========================================================================
 
 // Where the Settings screen returns to when done — the pause menu or the main menu.
 export const settingsOrigin = signal<'pause' | 'menu'>('pause');
@@ -292,10 +320,10 @@ export function closeSettings(): void {
 }
 
 /** Enter the main menu: freeze the battle behind it and play menu music. We freeze only the RENDER
- * loop via the `paused` signal (which skips the sim update). We call `setPaused(false)` rather than
- * `freezeSim` so the gameplay-SFX context is left RUNNING, not suspended — otherwise an effect
- * frozen when the pause menu opened would stay frozen and then bleed into the NEXT battle when it
- * resumes. Menu music and UI sounds live on the always-on context, so they play regardless. */
+ *  loop via the `paused` signal (which skips the sim update). We call `setPaused(false)` rather than
+ *  `freezeSim` so the gameplay-SFX context is left RUNNING, not suspended — otherwise an effect
+ *  frozen when the pause menu opened would stay frozen and then bleed into the NEXT battle when it
+ *  resumes. Menu music and UI sounds live on the always-on context, so they play regardless. */
 export function goToMenu(): void {
   showPause.value = false;
   screen.value = 'menu';
@@ -312,7 +340,7 @@ export function goToMenu(): void {
   resetRoute(); // quitting a game is a fresh root — clear the in-app back stack
 }
 
-// ═══ URL routing ════════════════════════════════════════════════════════════════════════════════
+// ---- URL ROUTING ---------------------------------------------------------
 // Navigation is mirrored to the browser URL (History API). A FORWARD move — opening a screen, a
 // settings page, or a battle overlay — pushes a history entry; a BACK move — the browser Back
 // button, the ESC key, or any in-app Back / Done button — lands on the parent. All three are kept
@@ -327,6 +355,10 @@ let applyingRoute = false; // guards the popstate reconcile from re-pushing
 /** Is `path` inside the battle screen (`/battle`, `/battle/pause`, …)? */
 const isBattlePath = (p: string): boolean => p.replace(/^\/+/, '').split('/')[0] === 'battle';
 
+// ==========================================================================
+// QUIT CONFIRMATION
+// ==========================================================================
+
 // Quit-confirmation modal — shown when the browser Back button would abandon a live battle (see the
 // popstate handler). The actual "quit" action lives in the QuitConfirm component (it decides solo →
 // menu vs net → leave-room, mirroring the pause menu's Quit); store only owns the flag + dismiss so
@@ -337,6 +369,10 @@ export const showQuitConfirm = signal(false);
 export function cancelQuitBattle(): void {
   showQuitConfirm.value = false;
 }
+
+// ==========================================================================
+// ROUTE TABLE & NAVIGATION
+// ==========================================================================
 
 const TOP_SCREEN: Partial<Record<string, Screen>> = {
   '': 'menu',
@@ -521,6 +557,10 @@ export function escapeBack(): void {
   // the main menu is the top level — ESC does nothing there
 }
 
+// ==========================================================================
+// MENU NAVIGATION & BATTLE LAUNCH
+// ==========================================================================
+
 /** A match needs at least two teams (humans + computers) to have an opponent. */
 export const MIN_PLAYERS = 2;
 
@@ -626,6 +666,10 @@ export function quitToMenu(): void {
   uiClick();
 }
 
+// ==========================================================================
+// DEPOT ACTIONS
+// ==========================================================================
+
 /** Depot actions — mutate the controller's economy, then re-sync + play the buy/sell
  *  confirmation (Panel1.wav, as the original did — only on a successful transaction). */
 export function depotBuy(i: number): void {
@@ -648,6 +692,10 @@ export function depotAutoBuy(): void {
   uiDepotTransaction();
 }
 
+// ==========================================================================
+// DEBUG READOUTS
+// ==========================================================================
+
 // Framerate counter (More Graphics Options → Show Framerate): the toggle + the live smoothed
 // value, published from the game loop.
 export const showFramerate = signal(false);
@@ -660,6 +708,10 @@ export const maxFps = signal(0);
 // flag was enabled, published every frame from the game loop. Sits just below the FPS readout.
 export const showFrameCount = signal(false);
 export const frameCount = signal(0);
+
+// ==========================================================================
+// LIVE HUD SIGNALS
+// ==========================================================================
 
 // Active taunt speech bubbles (Chatter), projected to screen-fraction positions and
 // pumped each frame; the TauntLayer overlay renders one <Tooltip> per entry.
@@ -705,6 +757,10 @@ export const winner = signal('');
 // Between-battles "winning the war" standings (null during normal play).
 export const warStandings = signal<WarStandings | null>(null);
 
+// ==========================================================================
+// WAR PROGRESSION
+// ==========================================================================
+
 /** Minimum time the loading plate stays up on a between-battles hand-off (ms) — short enough to
  *  read as a cut, long enough that a cached landscape doesn't flash it. */
 const BATTLE_COVER_MIN_MS = 300;
@@ -747,6 +803,10 @@ export function advanceWar(): void {
   });
 }
 
+// ==========================================================================
+// SCREEN FX
+// ==========================================================================
+
 export const screenFlash = signal(0); // full-viewport white-out intensity (0..1)
 export const screenFlashColor = signal('#ffffff'); // flash tint (the bomb's colour)
 
@@ -759,6 +819,11 @@ export function triggerHudWave(strength: number): void {
   hudWaveStrength.value = strength;
   hudWave.value = hudWave.value + 1;
 }
+
+// ==========================================================================
+// BATTLE HUD STATE
+// ==========================================================================
+
 // True while the sim is paused (P key). DOM FX (the HUD ripple) freeze on it so a
 // paused frame holds the effect for inspection, like the frozen game wave.
 export const paused = signal(false);
@@ -835,6 +900,10 @@ export const POWER_MIN = 10,
 /** Fold any angle (deg) into the wrapping 0..359 range the HUD uses. */
 export const wrapAngle = (deg: number): number => wrapIndex(deg, 360);
 
+// ==========================================================================
+// CONTROLLER BRIDGE
+// ==========================================================================
+
 let controller: CGameController | null = null;
 
 export function setController(c: CGameController): void {
@@ -854,6 +923,10 @@ export function game(): CGameController {
   if (!controller) throw new Error('controller not set');
   return controller;
 }
+
+// ==========================================================================
+// UI SOUND
+// ==========================================================================
 
 /** UI button click (click.wav) — used by menu-style HUD controls. */
 export function uiClick(): void {
@@ -889,6 +962,10 @@ export function uiMenuForward(): void {
 export function uiMenuBack(): void {
   controller?.getAudio()?.menuBack();
 }
+
+// ==========================================================================
+// HUD SIGNAL PUMP
+// ==========================================================================
 
 /** Copy the current game state into the signals (called each frame). */
 export function syncHud(): void {
@@ -1007,7 +1084,8 @@ export function syncHud(): void {
 let lastBattleSig = '';
 let lastTimerSig = '';
 
-// --- generic UI bitmap loader (colour-key → transparent), cached as a data URL ---
+// ---- UI BITMAP LOADER ----------------------------------------------------
+// Colour-key -> transparent, cached as a data URL.
 const bmpCache = new Map<string, Promise<string | null>>();
 
 // Colour-key predicates. The zeon dialog art keys grey (64,64,64) as its outside
@@ -1061,7 +1139,7 @@ function loadColorKeyedBmp(
 }
 
 /** Load an /assets BMP, knock out the `key` colour as transparency, cache it.
- * Used for the depot's colour-keyed UI art (sort arrows, tooltip dialog/pointer). */
+ *  Used for the depot's colour-keyed UI art (sort arrows, tooltip dialog/pointer). */
 export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string | null> {
   return loadColorKeyedBmp(
     bmpCache,
@@ -1071,7 +1149,8 @@ export function loadUiBmp(path: string, key: BmpKey = 'magenta'): Promise<string
   );
 }
 
-// --- weapon icons: load the BMP, knock out magenta, cache as a data URL -------
+// ---- WEAPON ICONS --------------------------------------------------------
+// Load the BMP, knock out magenta, cache as a data URL.
 const iconCache = new Map<string, Promise<string | null>>();
 
 /** Load a weapon icon at the given native pixel size (12 | 16 | 32). Only magenta

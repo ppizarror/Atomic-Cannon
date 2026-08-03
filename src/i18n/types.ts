@@ -15,6 +15,10 @@
 
 import type {ActionId} from '../core/CControls';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 /** One block of the About screen: an optional heading, flowing body paragraphs, and
  *  an optional bullet list. Each paragraph / bullet is a single flowing string. */
 export interface AboutSection {
@@ -50,8 +54,11 @@ export interface WeaponCopy {
   desc?: string;
 }
 
+// ==========================================================================
+// STRINGS
+// ==========================================================================
+
 export interface Strings {
-  // ── Shared atoms ──────────────────────────────────────────────────────────
   common: {
     /** Toggle-row value when enabled. */
     on: string;
@@ -59,7 +66,8 @@ export interface Strings {
     off: string;
   };
 
-  // ── Document metadata (browser tab + link previews) ────────────────────────
+  // ---- DOCUMENT METADATA -------------------------------------------------
+  // Browser tab + link previews.
   /** The `<head>` copy, restamped on the live document whenever the locale changes
    *  (ui/documentMeta). index.html ships the ENGLISH copy statically — that's what a
    *  crawler and a cold share-unfurl see — so the `en` entries here must match it
@@ -74,7 +82,7 @@ export interface Strings {
     social: string;
   };
 
-  // ── Main menu ─────────────────────────────────────────────────────────────
+  // ---- MAIN MENU ---------------------------------------------------------
   menu: {
     play: string;
     quickPlay: string;
@@ -89,7 +97,7 @@ export interface Strings {
     splashes: string[];
   };
 
-  // ── Network / multiplayer ─────────────────────────────────────────────────
+  // ---- NETWORK / MULTIPLAYER ---------------------------------------------
   net: {
     title: string;
     create: string;
@@ -164,7 +172,7 @@ export interface Strings {
     spectating: string;
   };
 
-  // ── About card ────────────────────────────────────────────────────────────
+  // ---- ABOUT CARD --------------------------------------------------------
   about: {
     title: string;
     subtitle: string;
@@ -192,7 +200,8 @@ export interface Strings {
     };
   };
 
-  // ── Manual / How-to-play card (main-menu help document) ────────────────────
+  // ---- MANUAL ------------------------------------------------------------
+  // How-to-play card (main-menu help document).
   manual: {
     title: string;
     subtitle: string;
@@ -202,7 +211,7 @@ export interface Strings {
     back: string;
   };
 
-  // ── Battle Heroes / High Scores ───────────────────────────────────────────
+  // ---- BATTLE HEROES / HIGH SCORES ---------------------------------------
   heroes: {
     title: string;
     callsign: string;
@@ -216,7 +225,8 @@ export interface Strings {
     prompt: string;
   };
 
-  // ── Global overlays (App root) ────────────────────────────────────────────
+  // ---- GLOBAL OVERLAYS ---------------------------------------------------
+  // App root.
   app: {
     /** FPS overlay — `{n}` is the frame rate. */
     fps: string;
@@ -245,7 +255,7 @@ export interface Strings {
     loading: string;
   };
 
-  // ── Pause menu ────────────────────────────────────────────────────────────
+  // ---- PAUSE MENU --------------------------------------------------------
   pause: {
     title: string;
     resume: string;
@@ -253,7 +263,8 @@ export interface Strings {
     quit: string;
   };
 
-  // ── Quit-battle confirmation (browser Back guard) ─────────────────────────
+  // ---- QUIT CONFIRMATION -------------------------------------------------
+  // Browser Back guard.
   quitConfirm: {
     title: string;
     line1: string;
@@ -262,7 +273,8 @@ export interface Strings {
     cancel: string;
   };
 
-  // ── Help overlay (battle controls) ────────────────────────────────────────
+  // ---- HELP OVERLAY ------------------------------------------------------
+  // Battle controls.
   help: {
     title: string;
     subtitle: string;
@@ -281,7 +293,7 @@ export interface Strings {
     };
   };
 
-  // ── Battle HUD ────────────────────────────────────────────────────────────
+  // ---- BATTLE HUD --------------------------------------------------------
   hud: {
     powerTitle: string;
     fire: string;
@@ -338,7 +350,7 @@ export interface Strings {
     underground: string;
   };
 
-  // ── Weapons Depot ─────────────────────────────────────────────────────────
+  // ---- WEAPONS DEPOT -----------------------------------------------------
   depot: {
     title: string;
     subtitle: string;
@@ -371,7 +383,7 @@ export interface Strings {
     };
   };
 
-  // ── Play setup screen ─────────────────────────────────────────────────────
+  // ---- PLAY SETUP SCREEN -------------------------------------------------
   play: {
     /** Guard message — `{min}` minimum players. */
     needPlayers: string;
@@ -391,7 +403,7 @@ export interface Strings {
     ready: string;
   };
 
-  // ── Settings ──────────────────────────────────────────────────────────────
+  // ---- SETTINGS ----------------------------------------------------------
   settings: {
     /** Root category list — label + hover subtitle each. */
     categories: {
@@ -509,7 +521,7 @@ export interface Strings {
     };
   };
 
-  // ── Editor sub-screens ────────────────────────────────────────────────────
+  // ---- EDITOR SUB-SCREENS ------------------------------------------------
   editors: {
     controls: {
       title: string;
@@ -600,7 +612,8 @@ export interface Strings {
     };
   };
 
-  // ── War standings / battle-end overlay ────────────────────────────────────
+  // ---- WAR STANDINGS -----------------------------------------------------
+  // Battle-end overlay.
   warStandings: {
     name: string;
     points: string;
@@ -628,7 +641,7 @@ export interface Strings {
     nextPrompt: string;
   };
 
-  // ── In-game generated text ────────────────────────────────────────────────
+  // ---- IN-GAME GENERATED TEXT --------------------------------------------
   game: {
     /** Default human player name. */
     defaultPlayer: string;
@@ -689,6 +702,10 @@ export interface Strings {
   /** Weapon display names + descriptions, keyed by weapon id (data/weapons.json). */
   weapons: Record<string, WeaponCopy>;
 }
+
+// ==========================================================================
+// LOCALE METADATA
+// ==========================================================================
 
 /** Metadata for a shipped locale: its code, the name shown in the picker (in the
  *  language's own words), and the Open Graph locale tag it maps to. */

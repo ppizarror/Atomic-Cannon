@@ -7,7 +7,7 @@
  * damage-over-time, the `earth` deposit amount) are derived from the data fields.
  */
 import {Vec2} from '../../math/Vec2';
-import {CShot, REF_TIME_SCALE, launchSpeed} from '../CShot';
+import {CShot, REF_TIME_SCALE, SHOT_GRAVITY, SHOT_WIND_ACCEL, launchSpeed} from '../CShot';
 import {CTank} from '../CTank';
 import {CLand} from '../CLand';
 import {CWeapon} from '../CWeapon';
@@ -17,6 +17,10 @@ import {type ExpType} from './ExpType';
 
 export {EXT, isBeamExt} from './ExtType';
 export type {ExtType} from './ExtType';
+
+// ==========================================================================
+// TUNING
+// ==========================================================================
 
 /**
  * Swept-collision resolution: a single Euler step can span 35-50px on big maps vs a ~16px tank hit
@@ -59,10 +63,69 @@ const SHOT = {
   ROLL_SPEED: 260,
 } as const;
 
+/**
+ * Homing missile (EXT.HOMING) — a guided round in the Worms mould, kept inside this engine's
+ * ballistics rather than turned into a free-flying drone. Its flight has three acts:
+ *
+ *  1. CRUISE — it leaves the barrel as an ordinary rocket and climbs on momentum alone.
+ *  2. COAST — a quarter of the way out the motor cuts and the horizontal speed bleeds to half by
+ *     the apex. It never stalls; it slouches, which is what sells the relight that follows.
+ *  3. GUIDED — the sustainer lights at the apex and burns the whole way down. The round picks the
+ *     enemy nearest where it was going to land, then keeps re-solving as it falls: it can switch
+ *     targets mid-descent, and a target that dies stops being chased.
+ *
+ * Authority is a band of ±`homMaxDeg` (a WEAPON stat, not an engine constant, so a pricier seeker
+ * can simply be given more of it) measured from the APEX heading — anchored
+ * there, not to the round's current line, so weaving inside it can never ratchet into a U-turn.
+ * Within that band the airframe swings at a bounded rate, so every correction is a lean the player
+ * can read rather than a kink. The reachable spread across the band is what the on-screen fan
+ * draws, and it narrows as the descent runs out of time to turn.
+ *
+ * The search predicts with the SAME dynamics it will then fly (bounded swing, sustained burn,
+ * gravity, wind), so the correction it commits to is one the missile can actually hold.
+ */
+const HOMING = {
+  /** How far from the UNGUIDED impact point a tank can sit and still be acquired (px). */
+  ACQUIRE_PX: 300,
+  /** Fraction of the predicted range where the motor cuts and the round starts coasting down… */
+  COAST_FROM: 0.25,
+  /** …reaching this fraction of its launch horizontal speed by the apex. It never stops — it
+   *  slouches into the top of the arc, which is what makes the relight afterwards read. */
+  COAST_TO: 0.5,
+  /** Degrees per second the airframe can swing. The command can jump; the missile cannot, so
+   *  every correction is a lean rather than a kink — and a late re-target visibly costs time. */
+  TURN_RATE_DEG: 22,
+  /** Sustainer burn once relit: fraction of current speed added per second, capped so a long
+   *  descent cannot accelerate the round into a railgun. */
+  BURN_PER_SEC: 0.55,
+  BURN_MAX_SCALE: 2.2,
+  /** Guidance re-solves this often (seconds). Every frame is wasted work; too slow and a target
+   *  that dies or moves is chased for a visible beat. */
+  RESOLVE_SEC: 0.1,
+  /** Landing points sampled across the band for the on-screen fan. The drawn edge is smoothed
+   *  through them with midpoint quadratics, so this buys shape, not resolution — each extra
+   *  sample is a whole extra trajectory prediction. */
+  FAN_SAMPLES: 13,
+  /** Prediction step — the SIM's step, not a coarser one. A 1/30 prediction is cheaper but its
+   *  integration error runs the same way for every candidate turn, so the search happily commits
+   *  to a correction that lands ~20px short of where it was told it would. */
+  PREDICT_DT: 1 / 60,
+  /** Runaway cap ≈10 s of flight — past {@link SHOT.MAX_LIFE}, so it never binds in practice. */
+  PREDICT_STEPS: 600,
+} as const;
+
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 /** The world a shot behaves against — implemented by the game controller. */
 export interface ShotWorld {
   readonly land: CLand;
   readonly tanks: CTank[];
+
+  /** Live effective wind (the same vector shots are integrated against). Homing needs it to
+   *  predict where its own corrected arc actually lands. */
+  readonly wind: Vec2;
 
   /** Resolution-based blast scale (√(view area)·C) — sizes the crater/FX/damage radius off the render
    *  surface, exactly like the original. A derived render value (NOT a user setting), so it lives on
@@ -76,9 +139,9 @@ export interface ShotWorld {
   spawnShot(shot: CShot): void;
 
   /** Detonation FX. `color`/`radiusPx`/`nuclear` tint & scale the burst; `blastPreset`
-   * names its particles.json effect; `expType` + `expBitmap` select the weapon's own explosion
-   * flare sprite and style. `isCleaner` suppresses the big-blast screen flash (an earth-remover
-   * is not a fiery blast). */
+   *  names its particles.json effect; `expType` + `expBitmap` select the weapon's own explosion
+   *  flare sprite and style. `isCleaner` suppresses the big-blast screen flash (an earth-remover
+   *  is not a fiery blast). */
   explode(
     x: number,
     y: number,
@@ -102,9 +165,9 @@ export interface ShotWorld {
   ripple(x: number, y: number, strength: number): void;
 
   /** Two-radius blast damage + kick + shield/armor. Full `damage` inside `innerRadius`
-   * (the direct-hit core), then LINEAR falloff to zero at `radius` (the outer field). `full`
-   * skips falloff entirely (beams). `piercing` marks a secondary/piercing weapon, so the
-   * target's Hazmat resistance applies. `innerRadius` defaults to 0 (a point core). */
+   *  (the direct-hit core), then LINEAR falloff to zero at `radius` (the outer field). `full`
+   *  skips falloff entirely (beams). `piercing` marks a secondary/piercing weapon, so the
+   *  target's Hazmat resistance applies. `innerRadius` defaults to 0 (a point core). */
   applyBlast(
     pos: Vec2,
     radius: number,
@@ -126,6 +189,10 @@ export interface ShotWorld {
 }
 
 export type FlyAction = 'continue' | 'detonate' | 'consumed';
+
+// ==========================================================================
+// FLIGHT STEP
+// ==========================================================================
 
 /** First live tank whose hit radius contains (x, y), or null. Point test — the swept walk in
  *  weaponFlyStep calls it per sub-step so a fast shot can't step clean over a tank between frames. */
@@ -163,6 +230,11 @@ export function weaponFlyStep(
 
   // Battery: primary shots drop a bomblet straight down every batSec while descending.
   if (!isBeam) batteryTick(shot, weapon, world, dt);
+
+  // Homing: the ONLY thing that separates this from a plain missile. Everything else — collision,
+  // detonation, crater — is the ballistic path below; guidance just steers the velocity, and only
+  // from the apex onward. Runs before the sweep so the new heading is what the NEXT frame flies.
+  if (ext === EXT.HOMING) homingStep(shot, weapon, world, dt);
 
   // Swept collision: walk this frame's segment (prev→cur) so a fast shot can't tunnel a tank/ridge.
   const prev = shot.getPrevPosition();
@@ -277,7 +349,9 @@ export function weaponFlyStep(
       return hit ? 'detonate' : 'continue';
 
     default: {
-      // Ballistic (Shell/Bomb/Rocket/Dirt/Cleaner/NUKE/DOT/Organic/Missile/Tracer/Death). Detonate at
+      // Ballistic (Shell/Bomb/Rocket/Dirt/Cleaner/NUKE/DOT/Organic/Missile/Homing/Tracer/Death).
+      // A homing round lands here too: guidance above only bent its velocity, so from the
+      // collision's point of view it is an ordinary missile. Detonate at
       // the EARLIER of the tank contact and the first terrain crossing along the swept segment — a fast
       // shot must not tunnel through a ridge to hit a tank sitting behind it. Snap the crater onto it.
       let terrK = -1;
@@ -335,6 +409,10 @@ export function firedIntoTerrain(shot: CShot, weapon: CWeapon, world: ShotWorld)
   const p = shot.getPosition();
   return p.y >= world.land.getHeightAt(Math.floor(p.x)) - 4; // muzzle truly inside the dirt
 }
+
+// ==========================================================================
+// EXT BEHAVIOURS
+// ==========================================================================
 
 /** The screen-Y a digger detonates at. The original is floor-relative ("floor − rand"),
  *  which on our terrain proportions either pops shallow (entry near the floor) or bottoms
@@ -394,6 +472,275 @@ function rollerStep(shot: CShot, world: ShotWorld, surfaceY: number, hit: CTank 
   return 'continue';
 }
 
+// ---- HOMING GUIDANCE ----------------------------------------------------
+// Arms at the apex, eases a bounded correction in while the sustainer burns. See the HOMING
+// tuning block for what each number buys.
+
+/** Turn a velocity by `deg` degrees. Screen space (+Y down), so a positive angle swings the
+ *  heading clockwise as drawn; guidance searches both signs, so the convention only has to be
+ *  consistent between the prediction and the live step. */
+function turnVel(vx: number, vy: number, deg: number): {x: number; y: number} {
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a),
+    s = Math.sin(a);
+  return {x: vx * c - vy * s, y: vx * s + vy * c};
+}
+
+/**
+ * Fly a copy of the round forward with `turnDeg` committed: the SAME ease + sustainer burn +
+ * gravity + wind the live step applies, walked to the ground (or out of the world). Predicting
+ * with the real dynamics is the point — a straight-line or unpowered-ballistic guess would pick a
+ * correction the missile cannot actually fly.
+ *
+ * Returns where the round would DETONATE, applying the same two stopping rules the live sweep
+ * does: contact with `aim` inside `aimR`, or the ground. Both matter. Ranking corrections purely
+ * on the ground crossing biases every one of them short, because the live round stops early on a
+ * hull it would have flown past; ranking on closest approach over-corrects the other way, sending
+ * the missile over the target's head to land well beyond it.
+ *
+ * Two deliberate omissions, both worth far less than the ±15° authority they feed: Realistic-mode
+ * air drag, and the near-ground wind profile.
+ */
+function predictArc(
+  shot: CShot,
+  world: ShotWorld,
+  turnDeg: number,
+  aim?: Vec2,
+  aimR = 0,
+  path?: {x: number; y: number}[],
+): {x: number; y: number} {
+  const land = world.land;
+  const p = shot.getPosition();
+  const v = shot.getVelocity();
+  let x = p.x,
+    y = p.y,
+    vx = v.x,
+    vy = v.y,
+    swung = 0; // degrees of `turnDeg` the airframe has worked through so far
+  const cap = launchSpeed(shot.getPower()) * HOMING.BURN_MAX_SCALE;
+  const ws = Math.sqrt(GameConfig.worldScale);
+  const g = SHOT_GRAVITY * ws;
+  const wx = world.wind.x * SHOT_WIND_ACCEL * ws;
+  const wy = world.wind.y * SHOT_WIND_ACCEL * ws;
+  const dt = HOMING.PREDICT_DT;
+  const clearance = (px: number, py: number): number =>
+    py - (land.getHeightAt(Math.min(land.width - 1, Math.max(0, Math.floor(px)))) - 4);
+  for (let i = 0; i < HOMING.PREDICT_STEPS; i++) {
+    // Mirror the live frame ORDER exactly — CShot.update integrates gravity and moves, and only
+    // then does weaponFlyStep steer. Rotating first instead applies each slice of the turn to a
+    // velocity one gravity-step out of date, which is another way to drift off the real arc.
+    vy += g * dt;
+    vx += wx * dt;
+    vy += wy * dt;
+    const px = x,
+      py = y,
+      above = clearance(x, y);
+    x += vx * dt;
+    y += vy * dt;
+    if (path && i % 5 === 0) path.push({x, y}); // sparse — it is drawn, not integrated
+    // Hull contact stops the live round right here, so it has to stop the prediction too.
+    if (aim && Math.hypot(x - aim.x, y - aim.y) <= aimR) return {x, y};
+    // Same swing-at-a-bounded-rate + sustained burn the live step flies. Predicting an INSTANT
+    // turn instead would promise arcs the airframe can't hold, and the search would keep choosing
+    // them.
+    const want = turnDeg - swung;
+    const step = Math.sign(want) * Math.min(Math.abs(want), HOMING.TURN_RATE_DEG * dt);
+    if (step !== 0) {
+      const r = turnVel(vx, vy, step);
+      vx = r.x;
+      vy = r.y;
+      swung += step;
+    }
+    if (Math.hypot(vx, vy) < cap) {
+      const burn = 1 + HOMING.BURN_PER_SEC * dt;
+      vx *= burn;
+      vy *= burn;
+    }
+    if (x < -60 || x > land.width + 60 || y > land.height + 80) break;
+    const below = clearance(x, y);
+    if (below >= 0) {
+      // INTERPOLATE the crossing inside this step rather than returning the step's endpoint, so
+      // the impact point isn't reported up to a whole step past the ground.
+      const f = below !== above ? above / (above - below) : 1;
+      return {x: px + (x - px) * f, y: py + (y - py) * f};
+    }
+  }
+  return {x, y};
+}
+
+/** Progress along the predicted unguided range, 0 at the muzzle and 1 at the impact point. Drives
+ *  the coast-down profile, so "a quarter of the way out" means the same on any map. */
+function homingProgress(shot: CShot): number {
+  if (shot.homingSpanX <= 1) return 0;
+  return Math.abs(shot.getPosition().x - shot.homingX0) / shot.homingSpanX;
+}
+
+/** The enemy tank nearest `to`, within acquisition range. Team-mates are never candidates — a
+ *  guided round that hunts its own squad is a trap, not a weapon. In a free-for-all every other
+ *  tank is its own team, so nothing is excluded there. */
+function homingTargetNear(shot: CShot, world: ShotWorld, to: {x: number; y: number}): CTank | null {
+  const owner = shot.getOwner();
+  let best: CTank | null = null;
+  let nearest: number = HOMING.ACQUIRE_PX;
+  for (const t of world.tanks) {
+    if (!t.isAlive() || t === owner) continue;
+    if (owner && t.getTeamId() === owner.getTeamId()) continue;
+    const tp = t.getPosition();
+    const d = Math.hypot(tp.x - to.x, tp.y - to.y);
+    if (d < nearest) {
+      nearest = d;
+      best = t;
+    }
+  }
+  return best;
+}
+
+/**
+ * Re-solve guidance from the CURRENT state: which enemy is worth steering at, and which offset
+ * inside the remaining authority band reaches it best. Runs repeatedly through the descent, not
+ * once at the apex — so a round can switch targets mid-fall if a better one comes into range, and
+ * a target that dies stops being chased.
+ *
+ * `base` is the apex heading, and offsets are measured from it, so the band stays anchored where
+ * the missile committed rather than sliding along with each correction it makes.
+ */
+function homingSolve(shot: CShot, weapon: CWeapon, world: ShotWorld): void {
+  const maxTurn = weapon.getHomingMaxTurn();
+  const rel = shot.homingApplied; // where the airframe is now, relative to the band centre
+  const free = predictArc(shot, world, 0);
+  const target = homingTargetNear(shot, world, free);
+  shot.homingTarget = target;
+  if (!target) {
+    shot.homingAim = rel; // nothing to chase: hold the current line rather than snapping back
+    return;
+  }
+
+  const tp = target.getPosition();
+  const tr = target.getHitRadius();
+  let best = rel;
+  let bestMiss = Infinity;
+  const consider = (off: number): void => {
+    if (off < -maxTurn || off > maxTurn) return;
+    // `predictArc` turns relative to the CURRENT heading, while offsets are relative to the band
+    // centre — so what it must fly from here is the difference.
+    const end = predictArc(shot, world, off - rel, tp, tr);
+    const miss = Math.hypot(end.x - tp.x, end.y - tp.y);
+    if (miss < bestMiss) {
+      bestMiss = miss;
+      best = off;
+    }
+  };
+  consider(rel); // holding course competes on equal terms, so it only steers when that helps
+  const step = weapon.getHomingStep();
+  for (let d = -maxTurn; d <= maxTurn; d += step) consider(d);
+  const coarse = best;
+  const fine = weapon.getHomingFineStep();
+  for (let k = -9; k <= 9; k++) if (k !== 0) consider(coarse + k * fine);
+  shot.homingAim = best;
+}
+
+/** Sample where the round could still put itself across the whole band — the region drawn under
+ *  it. Widest at the apex and closing as the descent runs out of time to turn, which is exactly
+ *  the information a player wants: how much correction is left.
+ *
+ *  Returns the landing arc AND the two extreme trajectories bounding it. The bounding paths are
+ *  what the region is drawn along: a straight chord from the missile to a landing point passes
+ *  under any ground that rises in between, so a chord-built wedge gets clipped short on a slope
+ *  and parts company with the very landing points it is supposed to span. */
+function homingFan(
+  shot: CShot,
+  weapon: CWeapon,
+  world: ShotWorld,
+): {
+  land: {x: number; y: number}[];
+  left: {x: number; y: number}[];
+  right: {x: number; y: number}[];
+} {
+  const rel = shot.homingApplied;
+  const land: {x: number; y: number}[] = [];
+  const left: {x: number; y: number}[] = [];
+  const right: {x: number; y: number}[] = [];
+  const maxTurn = weapon.getHomingMaxTurn();
+  const n = HOMING.FAN_SAMPLES;
+  for (let i = 0; i < n; i++) {
+    const off = -maxTurn + (2 * maxTurn * i) / (n - 1);
+    const edge = i === 0 ? left : i === n - 1 ? right : undefined;
+    land.push(predictArc(shot, world, off - rel, undefined, 0, edge));
+  }
+  return {land, left, right};
+}
+
+/**
+ * Per-frame guidance, in three acts.
+ *
+ *  1. CRUISE — nothing to do; it flies like any rocket.
+ *  2. COAST — from {@link HOMING.COAST_FROM} of the way out, the motor cuts and the horizontal
+ *     speed bleeds toward {@link HOMING.COAST_TO} by the apex. The round visibly slouches into
+ *     the top of its arc.
+ *  3. GUIDED — at the apex the sustainer relights: it re-solves toward a target, swings at a
+ *     bounded rate inside its band, and accelerates the whole way down.
+ *
+ * Submunitions are never guided — only the round the player fired.
+ */
+function homingStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number): void {
+  shot.homingBurn = false;
+  if (shot.getGeneration() !== 0) return;
+
+  // Capture the launch geometry once, so the phase clock has a range to measure against.
+  if (shot.homingSpanX <= 0) {
+    const p = shot.getPosition();
+    shot.homingX0 = p.x;
+    shot.homingVx0 = shot.getVelocity().x;
+    shot.homingSpanX = Math.max(1, Math.abs(predictArc(shot, world, 0).x - p.x));
+  }
+
+  // --- act 3: powered guidance -------------------------------------------
+  if (!Number.isNaN(shot.homingBase) || shot.isMovingDown()) {
+    if (Number.isNaN(shot.homingBase)) {
+      const v = shot.getVelocity();
+      shot.homingBase = (Math.atan2(v.y, v.x) * 180) / Math.PI;
+      shot.homingApplied = 0;
+      shot.homingFanAge = Infinity; // force a fan on the very first guided frame
+      homingSolve(shot, weapon, world);
+    } else if ((shot.homingFanAge += dt) >= HOMING.RESOLVE_SEC) {
+      shot.homingFanAge = 0;
+      homingSolve(shot, weapon, world);
+      const f = homingFan(shot, weapon, world);
+      shot.homingFan = f.land;
+      shot.homingFanL = f.left;
+      shot.homingFanR = f.right;
+    }
+
+    // Swing toward the command at a bounded rate — the airframe leans, it never kinks.
+    const want = shot.homingAim - shot.homingApplied;
+    const step = Math.sign(want) * Math.min(Math.abs(want), HOMING.TURN_RATE_DEG * dt);
+    const v = shot.getVelocity();
+    const r = step !== 0 ? turnVel(v.x, v.y, step) : {x: v.x, y: v.y};
+    shot.homingApplied += step;
+
+    // Sustainer: burns for the whole descent (that is what a homing round IS), capped so a long
+    // fall cannot wind it up indefinitely.
+    const speed = Math.hypot(r.x, r.y);
+    const cap = launchSpeed(shot.getPower()) * HOMING.BURN_MAX_SCALE;
+    const burn = speed < cap ? 1 + HOMING.BURN_PER_SEC * dt : 1;
+    shot.setVelocity(r.x * burn, r.y * burn);
+    shot.homingBurn = true;
+    return;
+  }
+
+  // --- act 2: coast down --------------------------------------------------
+  if (homingProgress(shot) > HOMING.COAST_FROM) {
+    const v = shot.getVelocity();
+    if (shot.homingVyCut === 0) shot.homingVyCut = Math.min(-1, v.y); // v.y < 0 while rising
+    // Bleed the HORIZONTAL component only, so the arc still rises and falls under gravity as
+    // normal — it just stops reaching, which is what makes the apex feel like a hand-off. The
+    // ramp runs on how much CLIMB is left, so it lands exactly on COAST_TO as the round tips over.
+    const k = Math.min(1, Math.max(0, 1 - v.y / shot.homingVyCut));
+    const want = shot.homingVx0 * (1 + (HOMING.COAST_TO - 1) * k);
+    if (Math.abs(want) < Math.abs(v.x)) shot.setVelocity(want, v.y);
+  }
+}
+
 /** Battery: drop bomblets straight down at a steady cadence while a primary descends. */
 function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number): void {
   const batSec = weapon.getBatterySeconds();
@@ -412,6 +759,10 @@ function batteryTick(shot: CShot, weapon: CWeapon, world: ShotWorld, _dt: number
   child.setGeneration(1);
   world.spawnShot(child);
 }
+
+// ==========================================================================
+// DETONATION
+// ==========================================================================
 
 /**
  * Detonate a shot: FX + terrain effect + blast damage + radiation + cluster.
@@ -650,6 +1001,10 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
 
   spawnCluster(shot, weapon, world, pos);
 }
+
+// ==========================================================================
+// CLUSTER SPAWNING
+// ==========================================================================
 
 /**
  * Cluster: on detonation spawn cluNum submunitions at the impact point, fanning

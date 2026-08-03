@@ -19,6 +19,10 @@ import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
 import {clamp, deg2rad, rad2deg, wrapIndex} from '../math/num';
 
+// ==========================================================================
+// TUNING
+// ==========================================================================
+
 // extType codes the bot decision reads directly (the original stores extType as the weapon's
 // "type" float, so these ARE the type constants). Utility/non-offensive types the random
 // offensive pick never draws — Move, Tracer, Shield, Heal, Armor, Death, Hazmat, Mine, Jet
@@ -42,6 +46,10 @@ export function isBotSelfBuff(ext: number): boolean {
   return ext === 7 || ext === 10 || ext === 11 || ext === 14;
 }
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 /** A bot's live defensive stats, in the port's units (shield/life 0..1000, armor/hazmat 0..100%). */
 export interface BotStats {
   shield: number;
@@ -50,6 +58,10 @@ export interface BotStats {
   life: number;
   maxLife: number;
 }
+
+// ==========================================================================
+// DIFFICULTY LEVELS
+// ==========================================================================
 
 // Difficulty is a single skill level (0 = "Dummy": never aims; 10 = perfect aim). Level 11 = ULTRA,
 // a wholly different brain (see CBotUltraAI): not just perfect aim but expected-value shot planning,
@@ -60,6 +72,10 @@ export const AI_LEVEL_MAX = 11;
 export const AI_DEFAULT_LEVEL = 5;
 /** The top difficulty: routes the turn to the Ultra planner instead of the scatter-degraded solve. */
 export const AI_LEVEL_ULTRA = 11;
+
+// ==========================================================================
+// AIM SOLVER
+// ==========================================================================
 
 /**
  * Aim search bounds. Power is in the game's 10..1000 scale; the sweep covers 100+. The solve is two
@@ -253,6 +269,10 @@ export function bestAim(
   );
   return best;
 }
+
+// ==========================================================================
+// TARGET & WEAPON SELECTION
+// ==========================================================================
 
 /**
  * Choose whom to shoot. Deliberate targeting fires only for a high-skill bot (level > 7) IN
@@ -465,6 +485,10 @@ export interface BotTurnCtx {
   rnd?: () => number;
 }
 
+// ==========================================================================
+// CBotAI BASE CLASS
+// ==========================================================================
+
 /**
  * CBotAI — a computer player, as an object.
  *
@@ -490,6 +514,10 @@ export abstract class CBotAI<C = BotTurnCtx> {
   /** Decide this turn. The one call the controller makes, whatever the difficulty. */
   abstract planTurn(ctx: C): BotPlan;
 }
+
+// ==========================================================================
+// CClassicBotAI CLASS
+// ==========================================================================
 
 /**
  * The classic level 0..10 brain — the original's doctrine: a difficulty-scaled chance of solving a
@@ -571,6 +599,10 @@ export class CClassicBotAI extends CBotAI<BotTurnCtx> {
     };
   }
 }
+
+// ==========================================================================
+// HELPERS
+// ==========================================================================
 
 /** Barrel angle (deg, 0 = right, screen-up positive) that points `pivot` straight at `to`.
  *  Unrounded — callers that need the HUD's 0..359 integer wrap it themselves. */

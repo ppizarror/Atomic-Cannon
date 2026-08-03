@@ -345,7 +345,8 @@ export class CTank {
     this.m_damageDealt = 0;
   }
 
-  // --- War stats (accumulate across the battles of a war; feed the standings) -----
+  // ---- WAR STATS ---------------------------------------------------------
+  // Accumulate across the battles of a war; feed the standings.
   addShot(): void {
     this.m_shotsFired++;
   }
@@ -560,7 +561,8 @@ export class CTank {
     this.m_driveTargetX = null;
   }
 
-  // ── Ground drive (repositioning along the terrain surface) ───────────────
+  // ---- GROUND DRIVE ------------------------------------------------------
+  // Repositioning along the terrain surface.
 
   /**
    * Begin driving toward `targetX`, crawling along the terrain surface. Stops on
@@ -617,7 +619,8 @@ export class CTank {
     this.m_vPos.y = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
   }
 
-  // ── Jet flight (extType 17) ──────────────────────────────────────────────
+  // ---- JET FLIGHT --------------------------------------------------------
+  // extType 17.
 
   /** Light the jet with `fuelSeconds` of fuel (the weapon's damage field). Refused (returns false)
    *  when the tank is buried — it can't fly out until it's dug free. Returns true when it lit. */
@@ -1045,7 +1048,7 @@ export class CTank {
       }
     }
 
-    // --- name box (team colour @ 50% + solid outline). The shield icon is drawn OUTSIDE the
+    // name box (team colour @ 50% + solid outline). The shield icon is drawn OUTSIDE the
     // box, hanging off its LEFT edge (as in the original), NOT crammed inside next to the name.
     // Gated by Graphics → Show Team Color. Native bitmap-font size. ---
     if (GameConfig.showTeamColor) {
@@ -1090,7 +1093,7 @@ export class CTank {
       y = by + bh + 1;
     }
 
-    // --- full stat lines: on hover, or via the two disjoint always-on toggles —
+    // full stat lines: on hover, or via the two disjoint always-on toggles —
     // Show Tank Stats for the human's own tanks, Show AI Stats ("Show the computer's
     // stats") for the computer tanks. Each toggle owns exactly its tank type. ---
     if (
@@ -1182,7 +1185,7 @@ export class CTank {
   }
 
   // ========================================================================
-  // ACCESSORS & STATE QUERIES
+  // ACCESSORS & QUERIES
   // ========================================================================
 
   isAlive(): boolean {

@@ -47,6 +47,10 @@ import {
 } from './ui/store';
 
 async function main(): Promise<void> {
+  // ========================================================================
+  // DOM ROOTS & VIEWPORT
+  // ========================================================================
+
   const container = document.getElementById('game-container');
   const uiRoot = document.getElementById('ui-root');
   if (!container || !uiRoot) {
@@ -67,6 +71,10 @@ async function main(): Promise<void> {
   // copy for crawlers; this is the live-document half.
   watchDocumentMeta();
 
+  // ========================================================================
+  // SCENE BUFFER & COMPOSITOR
+  // ========================================================================
+
   // Offscreen buffer sized to the WORLD area (above the HUD), not the viewport,
   // so the game renders above the HUD rather than behind it.
   const scene = document.createElement('canvas');
@@ -76,6 +84,10 @@ async function main(): Promise<void> {
   const compositor = new CPixiCompositor();
   await compositor.init(scene, container);
   container.appendChild(compositor.app.canvas);
+
+  // ========================================================================
+  // FOREGROUND FX OVERLAY
+  // ========================================================================
 
   // Foreground FX overlay: a FULL-viewport 2D canvas layered ABOVE the HUD (see
   // #fx-overlay in hud.css). The world scene stops at the HUD's top edge, so the
@@ -94,6 +106,10 @@ async function main(): Promise<void> {
   };
   sizeFx();
 
+  // ========================================================================
+  // GAME CONTROLLER
+  // ========================================================================
+
   const gameController = new CGameController(scene);
   // Smoke bypasses the 2D scene canvas and is batched on the GPU — drawing the layer as thousands
   // of individual drawImage calls is the dominant cost of a heavy frame.
@@ -108,6 +124,11 @@ async function main(): Promise<void> {
     compositor.shockwave(x - gameController.getCameraX(), y, s); // warp the game scene (WebGL)
     triggerHudWave(s); // and ripple the DOM HUD in sync (SVG displacement)
   });
+
+  // ========================================================================
+  // AUDIO
+  // ========================================================================
+
   // Audio: one shared AudioContext (SFX + libopenmpt .it music), unlocked on the
   // first user gesture per the browser autoplay policy. Wired before startGame so
   // the combat preload + battle track kick off with the round.
@@ -127,6 +148,10 @@ async function main(): Promise<void> {
   setController(gameController);
   render(<App />, uiRoot);
   goToMenu();
+
+  // ========================================================================
+  // DEV URL AFFORDANCES
+  // ========================================================================
 
   // Dev/review-only URL affordances. These are gated to a
   // DEV build — a deployed/production bundle ignores them entirely (`import.meta.env.DEV`
@@ -208,12 +233,20 @@ async function main(): Promise<void> {
   // the path to the resting screen (e.g. `?settings=graphics` → `/settings/graphics`).
   initRouter();
 
+  // ========================================================================
+  // SERVICE WORKER
+  // ========================================================================
+
   // Register the minimal service worker (public/sw.js) so the app is installable on
   // Android/Chromium — its `beforeinstallprompt` (the InstallHint's one-tap Install) only
   // fires with a registered SW. PROD-only so it never interferes with the dev HMR socket.
   if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     void navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
+
+  // ========================================================================
+  // JET STEERING INPUT
+  // ========================================================================
 
   // Jet-flight steering: held-key state (arrows / WASD), pushed to the controller
   // each event. Only acts while the game is in the Flying state.
@@ -228,6 +261,10 @@ async function main(): Promise<void> {
         : code === 'ArrowRight' || code === 'KeyD'
           ? 'right'
           : null;
+
+  // ========================================================================
+  // KEYBOARD SHORTCUTS
+  // ========================================================================
 
   // These shortcuts are GAMEPLAY-only. Anywhere else — the menus, the lobby, any
   // Settings/editor text field — the keystroke belongs to the UI (typing a room
@@ -352,6 +389,10 @@ async function main(): Promise<void> {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) resetThrust();
   });
+
+  // ========================================================================
+  // POINTER MAPPING
+  // ========================================================================
 
   // Client coords → the scene's pixel space (SCREEN space; the canvas may be
   // CSS-stretched). The minimap lives here. Adding the camera scroll gives WORLD

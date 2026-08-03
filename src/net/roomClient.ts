@@ -19,6 +19,10 @@ import {
 } from './protocol';
 import {WebSocketTransport, type NetTransport, type ConnStatus} from './transport';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 export type RoomPhase = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error';
 
 export interface RoomIdentity {
@@ -56,6 +60,10 @@ export interface RoomClientOptions {
   onGameMessage?: (msg: ServerMessage) => void;
 }
 
+// ==========================================================================
+// DEFAULTS
+// ==========================================================================
+
 export const DEFAULT_SETTINGS: RoomSettings = {
   maxPlayers: 6,
   minPlayers: 2,
@@ -72,6 +80,10 @@ export function roomUrl(origin: string, code: string): string {
   return `${ws}/room/${encodeURIComponent(code)}`;
 }
 
+// ==========================================================================
+// RoomClient CLASS
+// ==========================================================================
+
 export class RoomClient {
   private m_transport: NetTransport | null = null;
   private m_reconnectToken: string | null = null;
@@ -87,11 +99,19 @@ export class RoomClient {
     lastError: null,
   };
 
+  // ========================================================================
+  // CONSTRUCTION & INITIALIZATION
+  // ========================================================================
+
   constructor(private readonly opts: RoomClientOptions) {}
 
   getState(): RoomClientState {
     return this.m_state;
   }
+
+  // ========================================================================
+  // CONNECTION
+  // ========================================================================
 
   /** Create a brand-new room (mint a code, then connect). Returns the code. */
   async create(): Promise<string> {
@@ -143,6 +163,10 @@ export class RoomClient {
     }
   }
 
+  // ========================================================================
+  // MESSAGE HANDLING
+  // ========================================================================
+
   private onMessage(msg: ServerMessage): void {
     switch (msg.t) {
       case 'welcome':
@@ -192,7 +216,10 @@ export class RoomClient {
     }
   }
 
-  // ── outbound (UI actions) ─────────────────────────────────────────────────
+  // ========================================================================
+  // ACTIONS
+  // ========================================================================
+
   setReady(ready: boolean): void {
     this.send({t: 'ready', ready});
   }
@@ -218,6 +245,10 @@ export class RoomClient {
     this.m_transport?.send(msg);
   }
 
+  // ========================================================================
+  // TEARDOWN
+  // ========================================================================
+
   leave(): void {
     this.send({t: 'leave'});
     this.close();
@@ -234,6 +265,10 @@ export class RoomClient {
     this.opts.onState?.(this.m_state);
   }
 }
+
+// ==========================================================================
+// HELPERS
+// ==========================================================================
 
 /** The lowest-id connected player is the host, matching the room's own rule. */
 function hostOf(players: readonly PlayerInfo[]): number | null {

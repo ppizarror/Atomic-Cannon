@@ -17,7 +17,8 @@ const TYPE_INT: number = 0;
 const TYPE_FLOAT: number = 0;
 
 export const GameConfig = {
-  // ── runtime state (NOT settings — no catalog entry; real values set during play) ──
+  // ---- RUNTIME STATE -----------------------------------------------------
+  // NOT settings — no catalog entry; real values set during play.
 
   // World linear scale = worldWidth / viewWidth (= landSize, 1..5). Set at map load. The
   // original multiplies launch power AND gravity by the map scale so a full-power shot covers
@@ -40,7 +41,8 @@ export const GameConfig = {
   // startGame from the game type; read by CTank.hit()/applyRadiationDamage.
   lethalDamage: true,
 
-  // ── settings mirror ── these fields are OVERWRITTEN by ui/applySettings (applyGameConfig) from
+  // ---- SETTINGS MIRROR ---------------------------------------------------
+  // These fields are OVERWRITTEN by ui/applySettings (applyGameConfig) from
   // settingsCatalog, the sole source of every default; the TYPE_* placeholders are inert (never read
   // as a default). Grouped and ordered to match the catalog (Economy · Tank · Gameplay · Graphics).
 

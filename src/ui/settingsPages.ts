@@ -19,6 +19,10 @@ import {game, openSettingsPage, isMobile, viewportH} from './store';
 import {clamp} from '../math/num';
 import {applyGameSettings} from './applySettings';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 export type WidgetKind = 'toggle' | 'stepper' | 'enum' | 'nav';
 
 export interface Widget {
@@ -43,13 +47,13 @@ export interface PageSpec {
   rows: Widget[];
 }
 
+// ==========================================================================
+// WIDGET BUILDERS
+// ==========================================================================
+
 /** Percent formatter for stepper values (localised suffix). */
 const pct = (v: number): string => fmt(strings.value.settings.percent, {n: v});
 
-// ── stored-preference widget builders ────────────────────────────────────────
-// Default + enum scale come from SETTINGS[id]; label/tip/options come from the passed
-// i18n `RowCopy`. Every stored change persists AND re-applies live, so wired options take
-// effect immediately and start-time ones are ready for the next game.
 export const bind = (id: SettingId) => ({
   get: () => getVal(id),
   set: (v: number) => {
@@ -97,7 +101,10 @@ const navRow = (c: RowCopy, target: string): Widget => ({
   onClick: () => openSettingsPage(target),
 });
 
-// ── pages ────────────────────────────────────────────────────────────────────
+// ==========================================================================
+// PAGE ROW DEFINITIONS
+// ==========================================================================
+
 function economyRows(): Widget[] {
   const s = strings.value.settings.economy;
   return [
@@ -286,6 +293,10 @@ function contentRows(): Widget[] {
   return [navRow(s.weapons, 'content.weapons'), navRow(s.landscapes, 'content.landscapes')];
 }
 
+// ==========================================================================
+// PAGINATION
+// ==========================================================================
+
 /** Row PITCH in px (height + the list's gap), measured off a real rendered row by SettingsPage and
  *  published here. 0 = nothing rendered yet. Measuring beats a constant: the row is bitmap glyphs
  *  plus padding, and the mobile list carries a CSS `zoom`, so its true pitch (32.8px at zoom 0.8 vs
@@ -325,6 +336,10 @@ function paginate(base: string, allRows: Widget[], pageIdx: number): Widget[] {
   }
   return rows;
 }
+
+// ==========================================================================
+// PAGE LOOKUP
+// ==========================================================================
 
 export function getSettingsPage(id: string): PageSpec | null {
   const s = strings.value.settings;

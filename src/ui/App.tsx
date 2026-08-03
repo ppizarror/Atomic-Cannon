@@ -45,6 +45,10 @@ import {NetStatusBanner} from './NetStatusBanner';
 import {NetChat} from './NetChat';
 import {WarStandings} from './WarStandings';
 
+// ==========================================================================
+// OVERLAYS & HUD WIDGETS
+// ==========================================================================
+
 /**
  * Full-viewport flash for big blasts — sits above everything, incl. the HUD.
  * It inherits the bomb's colour, mixed toward white by intensity: a blinding
@@ -189,6 +193,10 @@ function FlightHud() {
   );
 }
 
+// ==========================================================================
+// RESOLUTION GATE
+// ==========================================================================
+
 // Absolute floor below which even the compact mobile HUD can't be laid out — we
 // cover everything with a brushed-steel notice asking the player to enlarge the
 // window. Real phones clear this comfortably; narrow desktop windows and phones
@@ -258,6 +266,10 @@ function RotateOverlay() {
   );
 }
 
+// ==========================================================================
+// SCREEN ROUTER
+// ==========================================================================
+
 function CurrentScreen() {
   switch (screen.value) {
     case 'battle':
@@ -281,6 +293,10 @@ function CurrentScreen() {
       return <Hud />;
   }
 }
+
+// ==========================================================================
+// ROOT COMPONENT
+// ==========================================================================
 
 export function App() {
   return (

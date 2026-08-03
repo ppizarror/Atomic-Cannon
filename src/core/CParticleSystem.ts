@@ -69,7 +69,7 @@ interface Particle {
   grow: number; // smoke swell rate over life (small = stays compact; big = billows out)
   op: number; // smoke peak opacity (crater fumes are near-opaque so their dense cohort reads solid)
   spr?: string; // optional sprite key for plume particles (else the default flare)
-  // ---- 'exhaust' clusters only (0/1/0 on every other kind, so the pool keeps ONE object shape).
+  // 'exhaust' clusters only (0/1/0 on every other kind, so the pool keeps ONE object shape).
   // The baked cell is authored in LOCAL space with +X along the emission perpendicular, so the
   // blit is rotated by this unit vector — stored as cos/sin (= the perpendicular itself) to keep
   // atan2/cos/sin out of the per-frame draw loop.
@@ -77,7 +77,7 @@ interface Particle {
   exSin: number;
   exVariant: number; // which baked seed row to sample (kills the repeating-stamp read)
   exScale: number; // cluster life / EXHAUST_ATLAS.REF_LIFE — see `exhaustAtlas` on why the blit scales
-  // ---- 'heat' wisps only: a slow tumble, so the haze churns instead of sliding up rigidly.
+  // 'heat' wisps only: a slow tumble, so the haze churns instead of sliding up rigidly.
   rot: number;
   spin: number;
 }
@@ -510,7 +510,7 @@ const SMOKE = {
 
 export class CParticleSystem {
   // ========================================================================
-  // PURE HELPERS
+  // STATIC HELPERS
   // ========================================================================
 
   /** Parse `#rrggbb` (falls back to a warm orange). */
@@ -1452,7 +1452,7 @@ export class CParticleSystem {
   }
 
   /** In-flight trail — call each frame while a shot flies. A hot leading glow
-   * plus a grey smoke puff that lingers and drifts downwind. */
+   *  plus a grey smoke puff that lingers and drifts downwind. */
   trail(
     x: number,
     y: number,
@@ -2176,7 +2176,7 @@ export class CParticleSystem {
   }
 
   // ========================================================================
-  // QUERIES
+  // ACCESSORS & QUERIES
   // ========================================================================
 
   /** Live particle count (diagnostics / tests). */

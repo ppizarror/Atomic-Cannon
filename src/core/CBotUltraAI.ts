@@ -23,6 +23,10 @@ import {CBotAI, bestAim, simulateShot, type BotPlan, type Pt, type AimField} fro
 import {clamp} from '../math/num';
 import {AI_LEVEL_ULTRA} from './CBotAI';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 /** One enemy tank, in the units the scorer needs. `life`/`shield` are 0..maxLife / 0..1000. */
 export interface UltraEnemy {
   x: number;
@@ -146,7 +150,7 @@ export interface UltraCtx {
   mines: number[]; // world-x of known mines — a drive must never roll the tank over one
   weights?: UltraWeights; // this bot's personality (defaults to ULTRA_WEIGHTS_DEFAULT when absent)
   rnd: () => number;
-  // ── Optional enrichments. Each has a safe default so the planner still runs on a bare context
+  // Optional enrichments. Each has a safe default so the planner still runs on a bare context
   // (unit tests build one by hand); the controller always supplies them in a real match. ──
   allies?: UltraAlly[]; // living squadmates — splash on them is scored as a cost, never ignored
   threat?: UltraThreat; // the opposition read (arsenal + what they've been firing)
@@ -261,6 +265,10 @@ const VALUE = {
 /** Re-exported for the controller's autobuy, which shops for a dirt round big enough to hide under. */
 export const SELF_BURY_MIN_EARTH = BURY.SELF_MIN_EARTH;
 
+// ==========================================================================
+// PERSONALITY WEIGHTS
+// ==========================================================================
+
 /**
  * PERSONALITY weights — the knobs that make one Ultra bot play differently from another, so two of
  * them don't converge on identical lines. The controller assigns each Ultra bot a personality per
@@ -347,6 +355,10 @@ export const ULTRA_PERSONALITIES: Record<string, UltraWeights> = {
   },
 };
 export const ULTRA_PERSONALITY_NAMES = Object.keys(ULTRA_PERSONALITIES);
+
+// ==========================================================================
+// DAMAGE ESTIMATION
+// ==========================================================================
 
 /** Blast damage this weapon would deal to one enemy centred at (cx,cy) — the engine's two-radius
  *  model (full inside the core, linear falloff to zero at the outer edge; beams = full everywhere).
@@ -485,6 +497,10 @@ function scoreBlast(
   }
   return {value, kills, hits, allyHits, damage};
 }
+
+// ==========================================================================
+// SHOT SELECTION
+// ==========================================================================
 
 /** Anything we're willing to point the gun at — an enemy, or a teammate who has become one. */
 type AimTarget = {x: number; y: number; hitRadius: number; buried?: boolean};
@@ -693,7 +709,9 @@ function enemyIsWeak(enemies: UltraEnemy[], cx: number, cy: number): boolean {
 
 const describe = (s: {kills: number; hits: number}) => `k${s.kills} h${s.hits}`;
 
-// ── Non-firing options ───────────────────────────────────────────────────────────────────────────
+// ==========================================================================
+// MOVEMENT & POSITIONING
+// ==========================================================================
 
 // Fraction of our REMAINING life the fallout at a destination may cost before that destination is off
 // the table entirely. Below it the radiation is priced as a cost and weighed against the prize.
@@ -868,6 +886,10 @@ function bestCoverMove(ctx: UltraCtx): {destX: number; value: number; note: stri
   return best ? {destX: best.destX, value: VALUE.COVER, note: 'cover'} : null;
 }
 
+// ==========================================================================
+// UTILITY ACTIONS
+// ==========================================================================
+
 /**
  * TURTLE UP — bury ourselves on purpose. Reading the enemy arsenal (weapons are visible) and finding a
  * nuke pointed our way, the answer isn't to trade shells with it: it's to pile dirt over our own hull
@@ -1023,6 +1045,10 @@ function lastResortShot(ctx: UltraCtx): UltraPlan | null {
   };
 }
 
+// ==========================================================================
+// TURN PLANNER
+// ==========================================================================
+
 /**
  * The full Ultra decision: score every candidate action in one currency and take the best, with a
  * small "human-ish" chance to prefer a setup/trap play over the raw-best shot so it feels cunning
@@ -1106,6 +1132,10 @@ export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   }
   return top.plan;
 }
+
+// ==========================================================================
+// CBotUltraAI CLASS
+// ==========================================================================
 
 /**
  * CBotUltraAI — the level-11 brain, as an object.

@@ -26,6 +26,10 @@ import {AI_LEVEL_ULTRA, BOT_UTILITY_EXT} from './CBotAI';
 import {SELF_BURY_MIN_EARTH, type UltraThreat} from './CBotUltraAI';
 import {isBeamExt} from './weapons/ExtType';
 
+// ==========================================================================
+// TUNING
+// ==========================================================================
+
 /** Shield below which a mid-level bot considers itself under-defended and buys one. */
 const BOT_SHIELD_NEED = 500;
 
@@ -46,6 +50,10 @@ const EXT_MOVE = 3,
   EXT_DEATH = 12,
   EXT_HAZMAT = 14,
   EXT_MINE = 16;
+
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
 
 /** The buyer's own condition — the stats the defensive rules test. */
 export interface BotBuyStats {
@@ -82,7 +90,9 @@ export interface UltraBuyCtx extends BotBuyCtx {
   enemiesNear: number;
 }
 
-// ── weapon-class predicates ───────────────────────────────────────────────────
+// ==========================================================================
+// WEAPON PREDICATES
+// ==========================================================================
 
 /**
  * A true NUKE — an expensive BALLISTIC blast worth reserving and ranging with a Shell first, not a
@@ -106,7 +116,9 @@ export function isRadWeapon(i: number): boolean {
   return getWeapon(i).getRadiation().dmg > 0 && !isNukeWeapon(i);
 }
 
-// ── inventory queries ─────────────────────────────────────────────────────────
+// ==========================================================================
+// INVENTORY QUERIES
+// ==========================================================================
 
 /** Does `econ` own any weapon of this extType? */
 export function botOwnsExt(econ: CEconomy, ext: number): boolean {
@@ -150,7 +162,9 @@ export function ultraOwnsPremium(econ: CEconomy): boolean {
   return botOwnsMatching(econ, isNukeWeapon);
 }
 
-// ── purchases ─────────────────────────────────────────────────────────────────
+// ==========================================================================
+// PURCHASING
+// ==========================================================================
 
 /**
  * Buy one random enabled weapon of `ext`, only if credits cover `afford ×` its cost (the original
@@ -226,7 +240,9 @@ export function ultraBuyBestOffense(
   return econ.buy(pick);
 }
 
-// ── the two doctrines ─────────────────────────────────────────────────────────
+// ==========================================================================
+// RESTOCK POLICIES
+// ==========================================================================
 
 /**
  * Levels 1..10. A difficulty-gated DEFENSIVE front-load — shield/heal (L>5), armor (L>6),

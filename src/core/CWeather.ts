@@ -18,12 +18,20 @@ import {TWO_PI} from '../math/num';
 import {between} from '../math/random';
 import {windProfile} from './wind';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 export type WeatherType = 'snow' | 'rain' | 'hail' | 'dust';
 
 export interface WeatherSpec {
   type: string;
   intensity: number;
 }
+
+// ==========================================================================
+// TUNING
+// ==========================================================================
 
 // Weather draws as small crisp dots, NOT soft gradient blobs.
 // `size` is the dot radius in px — kept tiny so the field reads as flecks, not smudges.
@@ -97,7 +105,7 @@ type Tuning = (typeof TUNING)[WeatherType];
 const DUST_TANS = ['#a37d3b', '#937137', '#896a33', '#7f642f', '#785f2d'];
 
 /** Fixed field size: sqrt(screenArea) · K · 300 · typeMult, where
- * K = 1/900 above 800px wide, else 1/600. Independent of intensity. */
+ *  K = 1/900 above 800px wide, else 1/600. Independent of intensity. */
 function computeCount(w: number, h: number, mult: number): number {
   if (w <= 0 || h <= 0) return 0;
   const K = w > 800 ? 1 / 900 : 1 / 600;
@@ -121,12 +129,20 @@ interface Layer {
   particles: WParticle[];
 }
 
+// ==========================================================================
+// CWeather CLASS
+// ==========================================================================
+
 export class CWeather {
   private m_layers: Layer[] = [];
   private m_w = 0;
   private m_h = 0;
   private m_t = 0; // seconds accumulator for the oscillators
   private m_margin = 24;
+
+  // ========================================================================
+  // CONSTRUCTION & INITIALIZATION
+  // ========================================================================
 
   constructor(width = 0, height = 0) {
     this.m_w = width;
@@ -170,7 +186,7 @@ export class CWeather {
   }
 
   /** (Re)allocate a layer's particle field for the current bounds. Count is a
-   * fixed function of the screen size and the band's density multiplier. */
+   *  fixed function of the screen size and the band's density multiplier. */
   private resize(layer: Layer): void {
     if (this.m_w <= 0 || this.m_h <= 0) {
       layer.particles.length = 0;
@@ -183,7 +199,7 @@ export class CWeather {
   }
 
   /** Make one particle. `anywhere` spreads it across the whole field (initial
-   * seeding); otherwise it enters just above the top edge (recycled flake). */
+   *  seeding); otherwise it enters just above the top edge (recycled flake). */
   private spawn(t: Tuning, anywhere: boolean): WParticle {
     return {
       x: between(-this.m_margin, this.m_w + this.m_margin),
@@ -198,6 +214,10 @@ export class CWeather {
       ci: Math.floor(Math.random() * DUST_TANS.length),
     };
   }
+
+  // ========================================================================
+  // SIMULATION
+  // ========================================================================
 
   /**
    * Advance the field. `wind` is the game's ±5 drift vector; its X component
@@ -250,8 +270,12 @@ export class CWeather {
     }
   }
 
+  // ========================================================================
+  // RENDERING
+  // ========================================================================
+
   /** Draw all weather. Called BEHIND the terrain (between backdrop and ground) so
-   * precipitation only shows against the sky and is occluded by hills. */
+   *  precipitation only shows against the sky and is occluded by hills. */
   draw(ctx: CanvasRenderingContext2D): void {
     for (const layer of this.m_layers) this.drawLayer(ctx, layer);
   }

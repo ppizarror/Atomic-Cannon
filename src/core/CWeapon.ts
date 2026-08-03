@@ -11,6 +11,10 @@ import {strings} from '../i18n';
 import {type ExtType, toExtType} from './weapons/ExtType';
 import {type ExpType, toExpType, isNukeExp} from './weapons/ExpType';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 // The 20 weapon type strings present in the data.
 export type WeaponType =
   | 'Airburst'
@@ -81,6 +85,14 @@ export interface RawWeapon {
   irBlue: number;
   expType: number;
   expBitmap: string;
+  /** HOMING guidance (extType 19), all optional — a row that omits them gets the defaults below.
+   *  `homMaxDeg` is the authority band either side of the apex heading: the whole character of a
+   *  guided round, and the knob that separates a cheap seeker from an expensive one. `homStepDeg`
+   *  / `homFineDeg` are how finely it searches that band — a coarse search is a dumber missile
+   *  that settles for a worse correction, which is a legitimate way to price one down. */
+  homMaxDeg?: number;
+  homStepDeg?: number;
+  homFineDeg?: number;
   disabled?: boolean;
 
   [k: string]: unknown;
@@ -93,6 +105,10 @@ interface ParticleDef {
 
   [k: string]: number;
 }
+
+// ==========================================================================
+// WEAPON DATABASE
+// ==========================================================================
 
 const RAW = weaponsRaw as unknown as RawWeapon[];
 const PARTICLES = particlesRaw as unknown as Record<string, ParticleDef>;
@@ -138,8 +154,16 @@ export function getDefaultWeaponIndex(): number {
  *  (r≈50) and nukes shake. */
 export const BIG_BLAST_RADIUS = 45;
 
+// ==========================================================================
+// CWeapon CLASS
+// ==========================================================================
+
 export class CWeapon {
   private m_def: WeaponDef;
+
+  // ========================================================================
+  // CONSTRUCTION & INITIALIZATION
+  // ========================================================================
 
   constructor(defOrIndex: WeaponDef | number) {
     this.m_def =
@@ -147,6 +171,10 @@ export class CWeapon {
         ? WEAPON_DATABASE[defOrIndex] || WEAPON_DATABASE[0]
         : defOrIndex;
   }
+
+  // ========================================================================
+  // ACCESSORS & QUERIES
+  // ========================================================================
 
   /** Stable, never-localised match key (data/weapons.json `id`). */
   getId(): string {
@@ -218,7 +246,8 @@ export class CWeapon {
     return (this.m_def.iradiate || 0) > 0 || this.isNuclear();
   }
 
-  // --- projectile mechanics for CShot ----------------------------------------
+  // ---- PROJECTILE MECHANICS ----------------------------------------------
+  // For CShot.
   // extType is the behaviour dispatcher — narrowed from the raw JSON number to the
   // authoritative ExtType union (unknown/missing → BALLISTIC) so it can't be misrouted.
   getExtType(): ExtType {
@@ -296,7 +325,7 @@ export class CWeapon {
     };
   }
 
-  // --- effects ---------------------------------------------------------------
+  // ---- EFFECTS -----------------------------------------------------------
   getBlastParticle(): string {
     return this.m_def.blast;
   }
@@ -325,7 +354,7 @@ export class CWeapon {
     return this.m_def.expBitmap || '';
   }
 
-  // --- trail / muzzle / in-flight flare fields ----------
+  // ---- TRAIL / MUZZLE / FLARE --------------------------------------------
   /** 0 = no trail, 1 = basic flare+smoke, 2–6 = rocket-plume exhaust. */
   getTrailType(): number {
     return this.m_def.trailType || 0;
@@ -334,6 +363,25 @@ export class CWeapon {
   /** Trail persistence (0 = short, up to ~100 = long rocket trail). */
   getTrailLength(): number {
     return this.m_def.trailLength || 0;
+  }
+
+  // --- homing guidance (extType 19) ------------------------------------------
+  // Defaults live here rather than in the behaviour, so a row that omits the fields still reads
+  // as a complete weapon. They are the values the Homing Missile shipped with.
+
+  /** Course-correction authority, degrees either way, measured from the APEX heading. */
+  getHomingMaxTurn(): number {
+    return this.m_def.homMaxDeg ?? 15;
+  }
+
+  /** Coarse search resolution across that band. */
+  getHomingStep(): number {
+    return Math.max(0.05, this.m_def.homStepDeg ?? 1);
+  }
+
+  /** Refinement resolution around the coarse winner. */
+  getHomingFineStep(): number {
+    return Math.max(0.01, this.m_def.homFineDeg ?? 0.1);
   }
 
   getMuzzleFlash(): number {
@@ -354,14 +402,14 @@ export class CWeapon {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Derived weapon stats shown in the weapon-details LCD / depot.
+// ==========================================================================
+// DERIVED WEAPON STATS
 //
-// These are NOT columns in the source data — they're computed once at weapon-load
-// (CWeapon post-parse) and stored as Power and Damage-per-area. Reference stat
-// anchors:
+// Shown in the weapon-details LCD / depot. These are NOT columns in the source
+// data — they're computed once at weapon-load (CWeapon post-parse) and stored as
+// Power and Damage-per-area. Reference stat anchors:
 //   Shell 50 · Rocket 100 · Earth Destroy 25 · Plutonium Nuke 650 · Toxic Cow 700.
-// ---------------------------------------------------------------------------
+// ==========================================================================
 
 /** The weapon's "effective impact count" multiplier `m` — the first half of the
  *  Power derivation. Starts at 1, is OVERWRITTEN by spawn, then multiplied by the

@@ -16,6 +16,10 @@ import {CSoundManager} from './CSoundManager';
 import {CMusicPlayer} from './CMusicPlayer';
 import {loadJSON, saveJSON} from '../util/storage';
 
+// ==========================================================================
+// ASSETS & SETTINGS
+// ==========================================================================
+
 // Hardcoded (non-weapon) event sounds — the files present in assets/sound/ that
 // no weapon references. Mapped to game events at their trigger sites.
 export const SFX = {
@@ -73,6 +77,10 @@ const COMBAT_PRELOAD = [
   'bomb.wav',
 ];
 
+// ==========================================================================
+// CAudio CLASS
+// ==========================================================================
+
 export class CAudio {
   // Two audio contexts so a game pause can FREEZE gameplay sound without touching music/UI:
   //  • m_ctxMain — music + UI/chrome SFX (clicks, panels, menu blips, buy/sell). Resumed once at
@@ -93,6 +101,10 @@ export class CAudio {
   private m_debugSilenced = false; // dev debug freeze (Ctrl+P): also suspend the main context (music + UI)
   // Menu navigation blips (hover / forward / back) — a non-legacy nicety, OFF by default.
   private m_menuSfxOn = false;
+
+  // ========================================================================
+  // CONSTRUCTION & UNLOCK
+  // ========================================================================
 
   constructor() {
     const Ctor =
@@ -120,7 +132,7 @@ export class CAudio {
     this.m_gameSfx.setWorldWidth(w);
   }
 
-  // ── Autoplay unlock ────────────────────────────────────────────────────────
+  // ---- AUTOPLAY UNLOCK ---------------------------------------------------
 
   /** Attach one-time gesture listeners that resume the context (autoplay policy). */
   attachUnlock(target: EventTarget = window): void {
@@ -163,7 +175,12 @@ export class CAudio {
     return this.m_unlocked;
   }
 
-  // ── Pause (freeze/restore gameplay audio for a modal game freeze) ─────────────
+  // ---- PAUSE -------------------------------------------------------------
+  // Freeze/restore gameplay audio for a modal game freeze.
+
+  // ========================================================================
+  // CONTEXT SUSPEND & RESUME
+  // ========================================================================
 
   /**
    * Freeze gameplay audio for a game pause (depot / pause menu / help): suspend the gameplay-SFX
@@ -247,6 +264,10 @@ export class CAudio {
     }
   }
 
+  // ========================================================================
+  // PRELOADING
+  // ========================================================================
+
   /** Preload the combat effect set (fire-and-forget). */
   preloadCombat(): void {
     void this.m_gameSfx.preload(COMBAT_PRELOAD);
@@ -258,8 +279,13 @@ export class CAudio {
     void this.m_uiSfx.preload([SFX.MENU_HOVER, SFX.MENU_FORWARD, SFX.MENU_BACK, SFX.CLICK]);
   }
 
-  // ── Semantic game events (the play funnel) ──────────────────────────────────
+  // ---- SEMANTIC GAME EVENTS ----------------------------------------------
+  // The play funnel.
   // Gameplay effects go through m_gameSfx (frozen by a pause); UI/chrome through m_uiSfx (never frozen).
+
+  // ========================================================================
+  // GAMEPLAY SFX
+  // ========================================================================
 
   /** Weapon fire — the weapon's `soundFire` string, panned to the muzzle. */
   fire(soundFire: string, worldX: number): void {
@@ -311,6 +337,10 @@ export class CAudio {
     this.m_gameSfx.stopLoop(SFX.JET);
   }
 
+  // ========================================================================
+  // UI SFX
+  // ========================================================================
+
   uiClick(): void {
     this.m_uiSfx.play(SFX.CLICK);
   }
@@ -361,7 +391,9 @@ export class CAudio {
     this.m_uiSfx.play(SFX.TYPING);
   }
 
-  // ── Music ────────────────────────────────────────────────────────────────
+  // ========================================================================
+  // MUSIC
+  // ========================================================================
 
   // Which looped bed is the CURRENT context — recorded even while music is DISABLED so a later
   // "enable music" re-arms the RIGHT track (menu music on the menu, not a battle track).
@@ -395,7 +427,12 @@ export class CAudio {
     this.m_music.stop();
   }
 
-  // ── Settings (options menu: SFX vol / music vol / on-off toggles) ───────────
+  // ---- SETTINGS ----------------------------------------------------------
+  // Options menu: SFX vol / music vol / on-off toggles.
+
+  // ========================================================================
+  // VOLUME & TOGGLES
+  // ========================================================================
 
   /** The gameplay + UI SFX buses share one set of options (volume / enabled / stereo). */
   private eachSfx(fn: (m: CSoundManager) => void): void {
@@ -468,7 +505,9 @@ export class CAudio {
     return this.m_music.isEnabled();
   }
 
-  // ── Persistence ─────────────────────────────────────────────────────────────
+  // ========================================================================
+  // SETTINGS PERSISTENCE
+  // ========================================================================
 
   /** Apply saved volume/enable settings (call once, after construction). */
   loadSettings(): void {

@@ -1,5 +1,3 @@
-import {lerp, smoothstep} from './num';
-
 /**
  * Value noise on an integer lattice — the fuzz behind blast decals (scorch falloff, the churned
  * soil coat's mixing zone).
@@ -9,6 +7,8 @@ import {lerp, smoothstep} from './num';
  * reading as stacked stamps. That also makes them free of state — no generator to thread through,
  * and identical on every client without syncing anything.
  */
+
+import {lerp, smoothstep} from './num';
 
 /** Deterministic 0..1 hash of a lattice point. Doubles as per-pixel white noise when called with
  *  pixel coordinates — a dither that flips each pixel independently, which is what makes two

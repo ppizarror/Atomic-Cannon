@@ -39,6 +39,10 @@ import {
   wrapAngle,
 } from './store';
 
+// ==========================================================================
+// SHEET STATE
+// ==========================================================================
+
 // Which bottom sheet (if any) is open. Module-level so the bar and the sheet share
 // it without prop threading; reset whenever the bar re-decides it's blocked.
 const sheet = signal<'weapon' | 'power' | 'angle' | null>(null);
@@ -51,7 +55,7 @@ function currentWeapon() {
   return weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
 }
 
-// ---- the bottom strip --------------------------------------------------------
+// ---- THE BOTTOM STRIP ----------------------------------------------------
 // A beveled metal button carrying one line of the game's `arial-14-out` bitmap
 // font — the same chrome as the original phone HUD (thin strip of grey buttons on
 // a dark bar), not stacked label/value pills.
@@ -185,7 +189,8 @@ function MobileBar() {
   );
 }
 
-// ---- sheets (touch-sized editors, slide up over the bar) ---------------------
+// ---- SHEETS --------------------------------------------------------------
+// Touch-sized editors; they slide up over the bar.
 
 // A full-width horizontal slider. Press/drag anywhere on the track maps the
 // pointer's X to a value; pointer capture keeps it tracking off the edges. Fine

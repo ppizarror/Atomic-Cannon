@@ -23,6 +23,10 @@ import {ShockwaveFilter} from 'pixi-filters';
 
 const WAVE_LIFETIME = 1.5; // seconds a shockwave stays active
 
+// ==========================================================================
+// CPixiCompositor CLASS
+// ==========================================================================
+
 export class CPixiCompositor {
   private readonly m_app: Application;
   private m_scene!: Sprite;
@@ -31,7 +35,7 @@ export class CPixiCompositor {
   private m_shockwave!: ShockwaveFilter;
   private m_waveAge: number = Infinity;
 
-  // ---- GPU smoke layer
+  // ---- GPU SMOKE LAYER ---------------------------------------------------
   private m_world!: Container; // scene + smoke, warped as one by the shockwave
   // ONE CONTAINER PER TEXTURE SOURCE. Pixi requires every particle in a ParticleContainer to share
   // a single texture source; mixing the exhaust atlas with the fume sprite makes the batch bind one
@@ -195,6 +199,10 @@ export class CPixiCompositor {
     return t;
   }
 
+  // ========================================================================
+  // COMPOSITOR CORE
+  // ========================================================================
+
   // The element the presentation fills (so resize() can read its live size).
   private m_resizeTo: HTMLElement | Window = window;
 
@@ -272,6 +280,10 @@ export class CPixiCompositor {
     this.m_shockwave.enabled = false;
   }
 
+  // ========================================================================
+  // PRESENTATION & RESIZE
+  // ========================================================================
+
   /**
    * The scene render target was resized externally (a window resize re-renders the world at
    * native pixels). Rebuild the GPU texture from the (already-resized) scene canvas and re-fit.
@@ -315,6 +327,10 @@ export class CPixiCompositor {
     this.m_scene.height = this.m_app.screen.height;
   }
 
+  // ========================================================================
+  // POST-FX & FRAME UPDATE
+  // ========================================================================
+
   /**
    * Trigger a shockwave at world position (wx, wy). `strength` scales the ripple
    * (e.g. ~1 for a shell, ~2.5 for a nuke).
@@ -351,6 +367,10 @@ export class CPixiCompositor {
       }
     }
   }
+
+  // ========================================================================
+  // ACCESSORS & QUERIES
+  // ========================================================================
 
   get app(): Application {
     return this.m_app;

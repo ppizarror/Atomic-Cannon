@@ -82,6 +82,85 @@ but isn't; and `core/rendering/CPixiCompositor` is really layer 2 above, filed u
   soft-private — reachable at runtime in dev, which the browser verify harness relies on.
 - UI components/files are plain PascalCase (`Hud.tsx`, `BmpText.tsx`).
 
+## Comment style & file layout
+
+The codebase is heavily commented **on purpose** — comments explain WHY a thing is the way it
+is (the legacy behaviour being matched, the tradeoff taken), not what the line does. Keep that,
+and keep the shape below so a long file stays navigable by scrolling its section headers.
+
+### Every file opens with a header
+
+A `/** … */` block **above the imports** — never after them — saying what the file is and the
+one non-obvious thing about it. `core/rendering/CanvasQuadSink.ts` is the reference.
+
+### Two levels of section banner, both fixed-width (77 cols) and UPPERCASE
+
+**Tier 1** — a major division. At column 0, or indented 2 inside a class body:
+
+```ts
+// ==========================================================================
+// SECTION NAME
+// ==========================================================================
+```
+
+The title is **one short line, on its own**. Explanation goes UNDER it, still inside the
+banner, after a bare `//` line — never wrapped onto the title line:
+
+```ts
+  // ========================================================================
+  // STATIC HELPERS
+  //
+  // Pure lookups over the weapon database, plus one that memoises: the arsenal
+  // is immutable once loaded, so the DEATH-class scan is resolved once and kept.
+  // ========================================================================
+```
+
+**Tier 2** — a subdivision within one tier-1 section. One line, dashes padded to col 77:
+
+```ts
+  // ---- TERRAIN PIXEL BUFFER ----------------------------------------------
+```
+
+Any prose goes on a plain `//` line directly beneath it. Do **not** invent a third style —
+box-drawing rules (`──`, `═══`), lowercase titles and ad-hoc widths have all been normalised
+away.
+
+### Canonical section names, in this order
+
+Top level: `INTERFACES & TYPES` · `TUNING` · `<ClassName> CLASS`.
+
+Inside a class: `STATIC HELPERS` · `CONSTRUCTION & INITIALIZATION` (or `SETUP & LIFECYCLE`
+when the section is wiring/config setters rather than construction) · the domain sections
+(`EMISSION`, `SIMULATION`, `TERRAIN DEFORMATION`, `BATTLE FLOW`, `FIRING SEQUENCE`, …) ·
+`RENDERING` · `ACCESSORS & QUERIES` · `MEMBER VARIABLES` **last**.
+
+Reuse an existing name before coining one. (Known drift: a few smaller classes still declare
+their fields at the TOP rather than under a trailing `MEMBER VARIABLES` — new classes should
+put them last.)
+
+### JSDoc
+
+Two forms, and the continuation indent differs between them — match the one you open with:
+
+```ts
+/** Compact: text starts on the opening line, wrapped lines get a HANGING two-space indent.
+ *  Like this. */
+
+/**
+ * Block: `/**` alone on its line, wrapped lines get a single space.
+ */
+```
+
+`@param` is used only where a constructor-parameter property needs naming (`RenderGate`,
+`AudioAssetCache`); prose is preferred over tag soup everywhere else.
+
+### Never leave an unterminated `/**`
+
+An unterminated block silently swallows code and the *next* comment until it finds a `*/`.
+Four of these accumulated in `CGameController.ts` from an extraction that moved code out and
+left its docs behind — they had eaten a section banner and two member docs. `pnpm typecheck`
+does **not** catch it.
+
 ## UI text & chrome — use the game's own assets
 
 - **All in-game text is rendered with the game's bitmap fonts via `<BmpText>`** — never CSS

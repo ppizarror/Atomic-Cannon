@@ -425,7 +425,7 @@ const WIND_ACCEL = {
 
 export class CLand {
   // ========================================================================
-  // PURE HELPERS
+  // STATIC HELPERS
   // ========================================================================
 
   /**
@@ -516,7 +516,8 @@ export class CLand {
     this.computeDirtyRegion();
   }
 
-  // --- RNG: a linear congruential generator, so a level is reproducible from its seed ---
+  // ---- RNG ---------------------------------------------------------------
+  // A linear congruential generator, so a level is reproducible from its seed.
   private m_rngState: number = 1;
 
   private srand(seed: number): void {
@@ -2469,7 +2470,7 @@ export class CLand {
   }
 
   // ========================================================================
-  // COLLISION & QUERIES
+  // ACCESSORS & QUERIES
   // ========================================================================
 
   getHeightAt(x: number): number {
@@ -3191,7 +3192,7 @@ export class CLand {
   private m_viewSpanW = 0;
   private m_tileCamX = -1; // camX of the tile's last upload (−1 → force the next upload)
 
-  // ---- Unified terrain PIXEL BUFFER -------------------------------------------
+  // ---- TERRAIN PIXEL BUFFER ----------------------------------------------
   // The terrain is ONE persistent per-pixel colour bitmap (matching the original engine):
   // grass, rock, deposited dirt and scorch are ALL just pixels here, positionally FIXED.
   // `m_arrHeights` is the per-column top-solid index (collision/queries). Every terrain edit

@@ -13,6 +13,10 @@ import type {ServerMessage, MatchConfig} from './protocol';
 import {applyCommand} from './commands';
 import {strings, fmt} from '../i18n';
 
+// ==========================================================================
+// INTERFACES & TYPES
+// ==========================================================================
+
 /** What NetGame needs from its embedder (kept free of Preact/store details). */
 export interface NetGameHost {
   controller: CGameController;
@@ -23,6 +27,10 @@ export interface NetGameHost {
    *  reported snapshot; the embedder surfaces this (banner + report to the server for flagging). */
   onDivergence?(info: {localHash: number; keyframeHash: number}): void;
 }
+
+// ==========================================================================
+// TUNING
+// ==========================================================================
 
 /** Distinct team colours assigned by turn order (same on every client). */
 const TEAM_HEX = [
@@ -41,6 +49,10 @@ const TEAM_HEX = [
  *  each client holds it this long, so no clock sync is needed. */
 const NET_BATTLE_INTERMISSION_MS = 4500;
 
+// ==========================================================================
+// EVENT QUEUE TYPES
+// ==========================================================================
+
 type RelayedCommand = Parameters<typeof applyCommand>[1];
 
 /** One turn-flow event, queued in wire order when it can't be applied yet (see NetGame.m_queue). */
@@ -54,6 +66,10 @@ type QueuedEvent =
       readonly turnGen: number; // the server's generation for this turn — echoed back in our shotResult
     }
   | {readonly t: 'state'; readonly result: NetSnapshot; readonly hash: number};
+
+// ==========================================================================
+// NetGame CLASS
+// ==========================================================================
 
 export class NetGame {
   private m_seq = 0;
@@ -72,10 +88,18 @@ export class NetGame {
   // only used to DETECT divergence. This is the anti-cheat: a lying actor can't impose fake state.
   private m_hasSimulated = false;
 
+  // ========================================================================
+  // CONSTRUCTION & INITIALIZATION
+  // ========================================================================
+
   constructor(
     private readonly client: RoomClient,
     private readonly host: NetGameHost,
   ) {}
+
+  // ========================================================================
+  // MESSAGE HANDLING
+  // ========================================================================
 
   /** Route one server message. Non-game messages are ignored here. */
   handle(msg: ServerMessage): void {
@@ -151,6 +175,10 @@ export class NetGame {
     }
   }
 
+  // ========================================================================
+  // TURN APPLICATION
+  // ========================================================================
+
   private applyTurn(
     playerIdx: number,
     handoff: boolean,
@@ -192,6 +220,10 @@ export class NetGame {
     const localHash = gc.stateHash();
     if (localHash !== hash) this.host.onDivergence?.({localHash, keyframeHash: hash});
   }
+
+  // ========================================================================
+  // MATCH FLOW
+  // ========================================================================
 
   private onStart(
     seed: number,
@@ -298,6 +330,10 @@ export class NetGame {
       this.drainQueue(); // apply the new battle's first turnBegin (queued behind BattleEnd)
     }, NET_BATTLE_INTERMISSION_MS);
   }
+
+  // ========================================================================
+  // LIFECYCLE
+  // ========================================================================
 
   /** Tear down — cancel the pending intermission timer so it can't advance a battle on an orphaned
    *  NetGame after the user has left the match (the controller's m_netMode stays true, so its own
