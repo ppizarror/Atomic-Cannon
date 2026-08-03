@@ -13,6 +13,7 @@
  * target/weapon choice from "random" (easy) toward "best" (hard).
  */
 import {SHOT_GRAVITY, SHOT_WIND_ACCEL, SHOT_DRAG_K, launchSpeed} from './CShot';
+import {HOMING_PROFILE} from './weapons/WeaponBehavior';
 import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind, gustFactor} from './wind';
 import {weaponEnabled} from './CGameContent';
@@ -164,6 +165,7 @@ export function simulateShot(
   field: AimField,
   target: Pt,
   gustT0?: number,
+  homing = false,
 ): ShotResult {
   const r = deg2rad(angleDeg);
   // Match the REAL launch physics exactly (incl. the √worldScale zoom) so the solver's
@@ -176,6 +178,15 @@ export function simulateShot(
     y = origin.y;
   const dt = 1 / 30;
   const drag = isRealisticWind(); // match the real shot's Realistic-mode air drag
+  // HOMING rounds do not fly a plain arc: the motor cuts part-way up and the horizontal speed
+  // bleeds to COAST_TO by the apex, then the sustainer relights and burns all the way down. Model
+  // it or the solver aims a guided round like a dumb one and lands it ~20% short — far enough that
+  // the ±band cannot recover, so the bot misses with its most expensive rocket. The brake ramps
+  // over the SECOND HALF of the climb, i.e. from vy = vy0/2 to vy = 0, which is where progress
+  // along the unguided range passes COAST_FROM.
+  const vx0 = vx;
+  const brakeFrom = vy / 2; // vy is negative while climbing, so this is the halfway mark
+  const capSpeed = speed * HOMING_PROFILE.BURN_MAX_SCALE;
   let minD = Math.hypot(x - target.x, y - target.y);
   let nearX = x,
     nearY = y;
@@ -195,6 +206,16 @@ export function simulateShot(
       const loss = SHOT_DRAG_K * Math.hypot(vx, vy) * dt;
       vx -= vx * loss;
       vy -= vy * loss;
+    }
+    if (homing) {
+      if (vy < 0) {
+        const k = clamp(1 - vy / brakeFrom, 0, 1); // 0 at half-climb, 1 at the apex
+        vx = vx0 * (1 + (HOMING_PROFILE.COAST_TO - 1) * k);
+      } else if (Math.hypot(vx, vy) < capSpeed) {
+        const burn = 1 + HOMING_PROFILE.BURN_PER_SEC * dt;
+        vx *= burn;
+        vy *= burn;
+      }
     }
     x += vx * dt;
     y += vy * dt;
@@ -225,8 +246,9 @@ export function simulateMiss(
   field: AimField,
   target: Pt,
   gustT0?: number,
+  homing = false,
 ): number {
-  return simulateShot(origin, angleDeg, power, wind, field, target, gustT0).minDist;
+  return simulateShot(origin, angleDeg, power, wind, field, target, gustT0, homing).minDist;
 }
 
 /**
@@ -240,6 +262,7 @@ export function bestAim(
   wind: Pt,
   field: AimField,
   gustT0?: number,
+  homing = false,
 ): AimResult {
   const up = muzzleFor(90);
   const aimRight = target.x >= up.x;
@@ -252,7 +275,7 @@ export function bestAim(
       const o = muzzleFor(a);
       for (let p = p0; p <= p1; p += pStep) {
         if (p < AIM.POWER[0] || p > AIM.POWER[1]) continue;
-        const d = simulateMiss(o, a, p, wind, field, target, gustT0);
+        const d = simulateMiss(o, a, p, wind, field, target, gustT0, homing);
         if (d < best.dist) best = {angleDeg: a, power: p, dist: d};
       }
     }

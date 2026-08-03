@@ -40,6 +40,10 @@ export interface UltraEnemy {
 
 /** One owned weapon, pre-resolved to the fields the blast scorer needs (the caller folds in
  *  Explosion Size + resolution so `radius` is the true falloff radius). */
+/** Raw `extType` of the guided family. Ultra reads weapons as plain numbers (see `UltraWeapon.ext`)
+ *  rather than importing the nominal token, so the code lives here as a named constant. */
+const EXT_HOMING_CODE = 19;
+
 export interface UltraWeapon {
   index: number;
   ext: number;
@@ -585,27 +589,49 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
       }
 
     // BALLISTIC: solve one arc to this enemy, then score every arced weapon at its impact.
-    const arc = bestAim(muzzleFor, {x: e.x, y: e.y}, wind, field, gustT0);
-    const origin = muzzleFor(arc.angleDeg);
-    const shot = simulateShot(
-      origin,
-      arc.angleDeg,
-      arc.power,
-      wind,
-      field,
-      {x: e.x, y: e.y},
-      gustT0,
-    );
+    //
+    // …except HOMING rounds, which do not fly a plain arc (motor cut, then a sustained burn — see
+    // HOMING_PROFILE). One shared arc would aim them like dumb rockets, so they get their own
+    // solve, computed lazily: it is a second full aim scan and most turns have no guided round in
+    // stock. The homing arc is the UNGUIDED one for that profile — the missile's own steering then
+    // improves on it, so scoring against it is conservative rather than optimistic.
+    const solve = (homing: boolean) => {
+      const a = bestAim(muzzleFor, {x: e.x, y: e.y}, wind, field, gustT0, homing);
+      const o = muzzleFor(a.angleDeg);
+      const sh = simulateShot(
+        o,
+        a.angleDeg,
+        a.power,
+        wind,
+        field,
+        {x: e.x, y: e.y},
+        gustT0,
+        homing,
+      );
+      const hit = sh.minDist <= e.hitRadius;
+      return {arc: a, shot: sh, hit, cx: hit ? sh.nearX : sh.hitX, cy: hit ? sh.nearY : sh.hitY};
+    };
+    const flat = solve(false);
+    let guided: ReturnType<typeof solve> | null = null;
+    const aimFor = (w: UltraWeapon) => {
+      if (w.ext !== EXT_HOMING_CODE) return flat;
+      return (guided ??= solve(true));
+    };
+    const shot = flat.shot;
     // The engine detonates a shell on PROXIMITY (within the tank's hit radius) or on terrain — NOT on
     // a near-miss graze. So a direct hit explodes on the tank; anything else explodes where it lands.
     // Scoring an overshoot at its true far landing (not the fly-by point) is what stops Ultra firing a
     // phantom "hit" forever — a real miss scores hits=0 and the planner repositions/ranges instead.
-    const directHit = shot.minDist <= e.hitRadius;
-    const cx = directHit ? shot.nearX : shot.hitX;
-    const cy = directHit ? shot.nearY : shot.hitY;
+    const directHit = flat.hit;
     if (!shot.hitGround && !directHit) continue; // sailed off the field → no blast
 
     for (const w of firers.filter(f => !f.isBeam)) {
+      // Each weapon is scored where IT would land — the shared arc for ordinary rounds, the
+      // homing-profile arc for guided ones.
+      const aim = aimFor(w);
+      if (!aim.shot.hitGround && !aim.hit) continue;
+      const cx = aim.cx;
+      const cy = aim.cy;
       const s = scoreBlast(cx, cy, w, enemies, wt, allies, focusX);
       if (s.hits + s.allyHits === 0) continue;
       let value = adjustForPremium(w, s.value, s.kills, s.hits, wt, desperate, s.damage);
@@ -617,13 +643,13 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
       if (e.buried && s.kills === 0 && w.earth <= 0) value -= VALUE.UNBURY_PENALTY;
       consider({
         weaponIndex: w.index,
-        angleDeg: arc.angleDeg,
-        power: arc.power,
+        angleDeg: aim.arc.angleDeg,
+        power: aim.arc.power,
         targetX: e.x,
         value,
         kills: s.kills,
         hits: s.hits,
-        note: `${directHit ? 'hit' : 'splash'} ${describe(s)}`,
+        note: `${aim.hit ? 'hit' : 'splash'} ${describe(s)}`,
       });
     }
   }

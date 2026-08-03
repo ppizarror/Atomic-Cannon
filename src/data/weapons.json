@@ -5050,7 +5050,7 @@
     "flareParam": 3,
     "bitmap": "missile.bmp",
     "size": 16,
-    "damage": 250,
+    "damage": 180,
     "radius": 32,
     "cost": 1800,
     "type": "Missile",

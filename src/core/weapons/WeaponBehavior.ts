@@ -97,8 +97,8 @@ const HOMING = {
   TURN_RATE_DEG: 22,
   /** Sustainer burn once relit: fraction of current speed added per second, capped so a long
    *  descent cannot accelerate the round into a railgun. */
-  BURN_PER_SEC: 0.55,
-  BURN_MAX_SCALE: 2.2,
+  BURN_PER_SEC: 1.55,
+  BURN_MAX_SCALE: 3.6,
   /** Guidance re-solves this often (seconds). Every frame is wasted work; too slow and a target
    *  that dies or moves is chased for a visible beat. */
   RESOLVE_SEC: 0.1,
@@ -112,6 +112,18 @@ const HOMING = {
   PREDICT_DT: 1 / 60,
   /** Runaway cap ≈10 s of flight — past {@link SHOT.MAX_LIFE}, so it never binds in practice. */
   PREDICT_STEPS: 600,
+} as const;
+
+/**
+ * The homing SPEED PROFILE as plain numbers, for anyone who must fly the same arc without running
+ * the weapon — in practice the bot's aim solver (`CBotAI.simulateShot`). Exported rather than
+ * duplicated because a solver modelling a stale profile is worse than one modelling none: it aims
+ * a guided round with confident precision at the wrong place.
+ */
+export const HOMING_PROFILE = {
+  COAST_TO: HOMING.COAST_TO,
+  BURN_PER_SEC: HOMING.BURN_PER_SEC,
+  BURN_MAX_SCALE: HOMING.BURN_MAX_SCALE,
 } as const;
 
 // ==========================================================================
