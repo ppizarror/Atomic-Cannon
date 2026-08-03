@@ -18,34 +18,8 @@ import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind, gustFactor} from './wind';
 import {weaponEnabled} from './CGameContent';
 import {WEAPON_DATABASE, getDefaultWeaponIndex} from './CWeapon';
+import {EXT_CODE, UTILITY_EXT, isSelfBuffExt} from './weapons/ExtType';
 import {clamp, deg2rad, rad2deg, wrapIndex} from '../math/num';
-
-// ==========================================================================
-// TUNING
-// ==========================================================================
-
-// extType codes the bot decision reads directly (the original stores extType as the weapon's
-// "type" float, so these ARE the type constants). Utility/non-offensive types the random
-// offensive pick never draws — Move, Tracer, Shield, Heal, Armor, Death, Hazmat, Mine, Jet
-// (mirrors the original's buy-candidate filter). The self-buff types are a subset of these.
-const BOT_EXT = {
-  ROLLER: 2,
-  BEAM: 5,
-  BEAM_ALT: 6,
-  SHIELD: 7,
-  ESCAPE: 8,
-  REBOUND: 9,
-  HEAL: 10,
-  ARMOR: 11,
-  DEATH: 12,
-  HAZMAT: 14,
-} as const;
-export const BOT_UTILITY_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
-
-/** Is this extType one the bot applies to ITSELF (shield/heal/armor/hazmat) rather than firing? */
-export function isBotSelfBuff(ext: number): boolean {
-  return ext === 7 || ext === 10 || ext === 11 || ext === 14;
-}
 
 // ==========================================================================
 // INTERFACES & TYPES
@@ -407,8 +381,8 @@ export function chooseBotWeapon(
   const firstOwned = (e: number): number | undefined => owned.find(i => ext(i) === e);
 
   // Random OFFENSIVE pick: any owned non-Shell, non-utility, damaging weapon, skipping Death.
-  const offensive = owned.filter(i => i !== shell && !BOT_UTILITY_EXT.has(ext(i)) && val(i) > 0);
-  const nonDeath = offensive.filter(i => ext(i) !== BOT_EXT.DEATH);
+  const offensive = owned.filter(i => i !== shell && !UTILITY_EXT.has(ext(i)) && val(i) > 0);
+  const nonDeath = offensive.filter(i => ext(i) !== EXT_CODE.DEATH);
   let sel = nonDeath.length ? nonDeath[Math.floor(rnd() * nonDeath.length)] : shell;
 
   // "Strongest weapon" upgrade: level>8, 70% → the highest-power (damage) non-Death round.
@@ -420,20 +394,20 @@ export function chooseBotWeapon(
   // doesn't need one, in the original's order. Leave the pick as-is if none are owned.
   if (level > 4 && !solutionFound) {
     const ladder = [
-      firstOwned(BOT_EXT.ESCAPE),
+      firstOwned(EXT_CODE.ESCAPE),
       owned.find(i => db[i].id === 'cleaner'),
-      firstOwned(BOT_EXT.REBOUND),
-      firstOwned(BOT_EXT.BEAM),
+      firstOwned(EXT_CODE.REBOUND),
+      firstOwned(EXT_CODE.BEAM),
     ];
     const pick = ladder.find(i => i !== undefined);
     if (pick !== undefined) sel = pick;
   }
 
   // Defensive self-buff (each overwrites `sel`; last match wins → Heal > Hazmat > Armor > Shield).
-  const s7 = firstOwned(BOT_EXT.SHIELD);
-  const s11 = firstOwned(BOT_EXT.ARMOR);
-  const s14 = firstOwned(BOT_EXT.HAZMAT);
-  const s10 = firstOwned(BOT_EXT.HEAL);
+  const s7 = firstOwned(EXT_CODE.SHIELD);
+  const s11 = firstOwned(EXT_CODE.ARMOR);
+  const s14 = firstOwned(EXT_CODE.HAZMAT);
+  const s10 = firstOwned(EXT_CODE.HEAL);
   if (s7 !== undefined && stats.shield < 1000 - val(s7)) sel = s7; // won't overflow the 1000 cap
   if (s11 !== undefined && stats.armor < val(s11)) sel = s11; // upgrade to a better armor level
   if (s14 !== undefined && stats.hazmat < val(s14)) sel = s14;
@@ -591,7 +565,7 @@ export class CClassicBotAI extends CBotAI<BotTurnCtx> {
     // 4. Aim for the chosen round.
     let angleDeg: number;
     let power: number;
-    if (isBotSelfBuff(ctx.extTypeOf(weaponIndex))) {
+    if (isSelfBuffExt(ctx.extTypeOf(weaponIndex))) {
       // Shield/heal/armor/hazmat apply to the bot itself — no target aim; keep its current aim.
       angleDeg = ctx.self.aimAngle;
       power = ctx.self.power;

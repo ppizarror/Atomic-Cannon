@@ -10,7 +10,7 @@
 
 import {strings, fmt} from '../i18n';
 import {CLand} from '../core/CLand';
-import {makeCanvas2d} from '../util/canvas';
+import {makeCanvas2d, tryCanvas2d} from '../util/canvas';
 import {CTank, TEAM_COLORS, DEFAULT_TEAM_COLOR, PLAYER_TANKS} from '../core/CTank';
 import {Roster, ROSTER_HUMAN_SLOTS} from '../core/CRoster';
 import {MATCH_COUNTERS, type MatchCounter, type StatsDelta} from '../net/stats';
@@ -67,8 +67,8 @@ import {
   AI_LEVEL_ULTRA,
   bearingDeg,
   CClassicBotAI,
+  type AimField,
   type BotTurnCtx,
-  BOT_UTILITY_EXT,
   moveWeaponIndices,
   pickMoveWeapon,
   simulateShot,
@@ -100,6 +100,7 @@ import {
   weaponDetonate,
   weaponFlyStep,
 } from '../core/weapons/WeaponBehavior';
+import {EXT_CODE, UTILITY_EXT} from '../core/weapons/ExtType';
 import {EXP, type ExpType, isNukeExp} from '../core/weapons/ExpType';
 import {CAudio} from '../audio/CAudio';
 import landData from '../data/land.json';
@@ -264,13 +265,6 @@ export interface NetSnapshot {
  *  the ray fades — "beam holds → earth falls". */
 const BEAM_COLLAPSE_DELAY = 1;
 
-/** A bot restocks a shield only when its current shield is below this (the original's autobuy
- *  shield-need threshold wasn't recovered; ~half the 1000 cap is the best reading). */
-
-/** TEMPORARY (explosion-FX testing): lock the weapon selection to one control weapon so it can be
- *  spammed to review effects. Set to null to restore the full arsenal. */
-const CONTROL_WEAPON: string | null = null;
-
 /**
  * Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the radius
  * that maps to ×1. The original scales the kick by the per-explosion size (not damage alone), so a
@@ -407,10 +401,6 @@ export class CGameController implements ShotWorld {
   /** Memoised result of {@link deathWeaponIndices}; the weapon database is immutable after load. */
   private static deathWeapons: number[] | null = null;
 
-  private static controlWeaponIndex(): number {
-    return CONTROL_WEAPON ? WEAPON_DATABASE.findIndex(w => w.id === CONTROL_WEAPON) : -1;
-  }
-
   /** DEATH-class weapon indices (Six Under, Burial Mound, Cremation, Ashes, Toxic Grave), in
    *  database order. When a tank is destroyed while it still OWNS one of these, the FIRST is
    *  detonated on the corpse (posthumous "cook-off"). Memoised — the database is immutable after
@@ -478,10 +468,8 @@ export class CGameController implements ShotWorld {
     this.m_economy = new CEconomy();
     this.m_assets = new CAssetManager();
 
-    // Initialize weapon list (index into WEAPON_DATABASE). The control-weapon
-    // override (if set) forces the FX-test weapon.
-    this.m_currentWeaponIndex =
-      CGameController.controlWeaponIndex() >= 0 ? CGameController.controlWeaponIndex() : getDefaultWeaponIndex();
+    // Initialize weapon list (index into WEAPON_DATABASE).
+    this.m_currentWeaponIndex = getDefaultWeaponIndex();
 
     // Wind: positive = right, negative = left
     this.m_wind = new Vec2(0, 0);
@@ -545,12 +533,7 @@ export class CGameController implements ShotWorld {
     this.m_tanks = [];
     this.m_shots = [];
     this.m_ghostShots = [];
-    this.m_mines = [];
-    this.m_aimMarkers = [];
-    this.m_markers.clear();
-    this.m_crateField.clear();
-    this.m_chatter.clear();
-    this.m_fireworksFx.clear();
+    this.clearFieldState();
     // Drop any deferred actions queued by the PREVIOUS match — e.g. a still-running Explode-Losers
     // cascade or a queued bot turn. m_time is monotonic (never reset), so a leftover closure whose
     // `at` is already in the past would otherwise all fire at once on this match's first update().
@@ -856,6 +839,18 @@ export class CGameController implements ShotWorld {
 
   /** Pick which landscape to load. Honours a `?land=N` override (for reviewing a
    *  specific map / its weather), otherwise random. */
+  /** Everything deployed ON the field that must not survive a battle boundary: mines, ranging pins,
+   *  hit markers, crates, speech bubbles and the victory display. Cleared by both a fresh match
+   *  (setupBattle) and the next battle of a war (nextBattle). */
+  private clearFieldState(): void {
+    this.m_mines = [];
+    this.m_aimMarkers = [];
+    this.m_markers.clear();
+    this.m_crateField.clear();
+    this.m_chatter.clear();
+    this.m_fireworksFx.clear();
+  }
+
   private pickLandscapeIndex(): number {
     if (typeof location !== 'undefined') {
       const p = new URLSearchParams(location.search).get('land');
@@ -2283,7 +2278,7 @@ export class CGameController implements ShotWorld {
       // live zone's irDmg/sec. Keyed on the settled specks (what the player sees), not a fixed blast
       // circle — the carpet spreads wider than the crater, especially airbursts raining down a slope.
       if (radDps > 0 && this.m_land.radiationAt(tank.getPosition().x)) {
-        tank.applyRadiationDamage(radDps * dt, dt);
+        tank.applyRadiationDamage(radDps * dt);
         if (!tank.isAlive()) {
           this.handleTankDestroyed(tank);
           continue;
@@ -2555,12 +2550,9 @@ export class CGameController implements ShotWorld {
     if (!sprite) return null;
     const w = Math.max(1, Math.round(sprite.width * scale)),
       h = Math.max(1, Math.round(sprite.height * scale));
-    const cv = document.createElement('canvas');
-    cv.width = w;
-    cv.height = h;
-    const g = cv.getContext('2d');
-    if (!g) return null;
-    g.clearRect(0, 0, w, h);
+    const made = tryCanvas2d(w, h);
+    if (!made) return null;
+    const g = made.ctx;
     g.imageSmoothingEnabled = false; // keep the magenta key crisp (alpha stays 0 or 255)
     g.drawImage(sprite.bitmap, 0, 0, w, h);
     const id = g.getImageData(0, 0, w, h);
@@ -3338,12 +3330,7 @@ export class CGameController implements ShotWorld {
     // closures captured, so a survivor would otherwise be blown up by a stale corpse's timer. finishBattle
     // already clears these today, so this is defensive — and mirrors setupBattle's own m_timers reset.
     this.m_timers = [];
-    this.m_mines = [];
-    this.m_aimMarkers = [];
-    this.m_markers.clear();
-    this.m_crateField.clear();
-    this.m_chatter.clear();
-    this.m_fireworksFx.clear();
+    this.clearFieldState();
     this.generateTerrain();
     // A new battle is a new PLACE, not just a new heightmap: roll a fresh landscape (sky, strata
     // textures, weather, ambient tint) exactly as the original's level builder does per battle.
@@ -4086,6 +4073,15 @@ export class CGameController implements ShotWorld {
   // ========================================================================
 
   /** The nearest living enemy (different team) to a tank, or null if none remain. */
+  /** The terrain as the aim solvers see it — the read-only slice both brains' contexts carry. */
+  private aimField(): AimField {
+    return {
+      heightAt: (x: number) => this.m_land.getHeightAt(x),
+      width: this.m_land.width,
+      height: this.m_land.height,
+    };
+  }
+
   private nearestEnemy(from: CTank): CTank | null {
     const p = from.getPosition();
     let best: CTank | null = null;
@@ -4433,11 +4429,7 @@ export class CGameController implements ShotWorld {
       },
       muzzleFor: deg => botTank.muzzleForAngle(deg),
       turretPivot: botTank.getTurretPivot(),
-      field: {
-        heightAt: (x: number) => this.m_land.getHeightAt(x),
-        width: this.m_land.width,
-        height: this.m_land.height,
-      },
+      field: this.aimField(),
       wind: this.m_wind,
       // Predict the gust phase AT LAUNCH: the shot fires after the fixed "thinking" delay, during
       // which the gust clock keeps ticking. Passing the launch-time clock lets the bot lead the
@@ -4707,7 +4699,7 @@ export class CGameController implements ShotWorld {
         if (w.getEarth() > 0) threat.hasEarth = true;
         if (w.isCleaner()) threat.hasCleaner = true;
         const dmg = w.getDamage();
-        if (dmg > threat.bigBlastDamage && !BOT_UTILITY_EXT.has(def.extType ?? 0)) threat.bigBlastDamage = dmg;
+        if (dmg > threat.bigBlastDamage && !UTILITY_EXT.has(def.extType ?? 0)) threat.bigBlastDamage = dmg;
       }
       // What they can bring NEXT turn, not just what's on the panel now: the credit readout is on the
       // same LCD as the arsenal, so a war chest deep enough for the cheapest nuke is public knowledge
@@ -4797,7 +4789,7 @@ export class CGameController implements ShotWorld {
       // wide, so give those a bigger effective footprint (why Ultra favours them vs a spread group).
       const cluster = w.getClusterCount();
       let spread = cluster > 1 ? Math.min(160, Math.max(40, cluster * 15)) : 0;
-      if (extNum === 13 /* AIRBURST */) spread = Math.max(spread, 120);
+      if (extNum === EXT_CODE.AIRBURST) spread = Math.max(spread, 120);
       weapons.push({
         index: i,
         ext: extNum,
@@ -4812,14 +4804,14 @@ export class CGameController implements ShotWorld {
         piercing: w.isRadioactive(),
         isBeam: isBeamExt(w.getExtType()),
         isCleaner: w.isCleaner(), // earth-remover (no damage) — digs the tank out when buried
-        isMine: extNum === 16, // deploys a persistent mine on impact (area denial)
+        isMine: extNum === EXT_CODE.MINE, // deploys a persistent mine on impact (area denial)
         // Reserve nukes and other pricey ordnance for high-value shots.
         isPremium: w.isNukeClass() || (WEAPON_DATABASE[i].cost ?? 0) >= CGameController.ULTRA_PREMIUM_COST_VALUE,
         // Offensive = a damaging round the bot may fire AT a target (Shell + beams included; the
         // utility/self-buff/death/mine/move/tracer/jet types are not).
-        // Airburst (ext 13) detonates at the ARC APEX, not on the ground — the planner aims ballistic,
+        // Airburst detonates at the ARC APEX, not on the ground — the planner aims ballistic,
         // so it can't place one correctly; keep it out of the firing pool rather than wasting it.
-        offensive: w.getDamage() > 0 && !BOT_UTILITY_EXT.has(extNum) && extNum !== 13,
+        offensive: w.getDamage() > 0 && !UTILITY_EXT.has(extNum) && extNum !== EXT_CODE.AIRBURST,
       });
     }
 
@@ -4859,11 +4851,7 @@ export class CGameController implements ShotWorld {
       }),
       weapons,
       crates: this.m_crateField.list().map(c => ({x: c.x, kind: c.kind, amount: c.amount, landed: c.landed})),
-      field: {
-        heightAt: (x: number) => this.m_land.getHeightAt(x),
-        width: this.m_land.width,
-        height: this.m_land.height,
-      },
+      field: this.aimField(),
       wind: this.m_wind,
       gustT0: this.m_gustT + CGameController.BOT_FIRE_DELAY,
       muzzleFor: (deg: number) => botTank.muzzleForAngle(deg),
@@ -5640,11 +5628,6 @@ export class CGameController implements ShotWorld {
 
   // ---- HUD ACCESSORS -----------------------------------------------------
   getWeaponDefs() {
-    // The control-weapon lock only restricts the HUMAN's own list. During a bot's
-    // turn (or normal play) the full arsenal is shown, so the HUD reflects the
-    // weapon the active player is actually using rather than the locked one.
-    const ci = CGameController.controlWeaponIndex();
-    if (ci >= 0 && this.isPlayerTurn()) return [WEAPON_DATABASE[ci]];
     // Hide weapons disabled in Game Content; the staple (Shell) is always available.
     const staple = getDefaultWeaponIndex();
     const enabled = (i: number) => i === staple || weaponEnabled(i);

@@ -61,16 +61,13 @@ export const landsOff = landsStore.signal;
 export const isWeaponOff = (i: number): boolean => weaponsOff.value.has(i);
 export const isLandOff = (i: number): boolean => landsOff.value.has(i);
 
-export function toggleWeapon(i: number): void {
-  const s = new Set(weaponsOff.value);
+/** Flip index `i` in a disabled-set store (add if absent, remove if present), persisting the result. */
+function toggleIn(store: typeof weaponsStore, i: number): void {
+  const s = new Set(store.signal.value);
   if (s.has(i)) s.delete(i);
   else s.add(i);
-  weaponsStore.set(s);
+  store.set(s);
 }
 
-export function toggleLand(i: number): void {
-  const s = new Set(landsOff.value);
-  if (s.has(i)) s.delete(i);
-  else s.add(i);
-  landsStore.set(s);
-}
+export const toggleWeapon = (i: number): void => toggleIn(weaponsStore, i);
+export const toggleLand = (i: number): void => toggleIn(landsStore, i);

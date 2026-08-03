@@ -7,12 +7,11 @@
  */
 
 import type {Sprite, ISpriteSource} from './sprites';
-import {knockoutWhere, makeCanvas2d} from '../../util/canvas';
+import {knockoutWhere, makeCanvas2d, nearColor} from '../../util/canvas';
 
 type RGB = [number, number, number];
 
 const MAGENTA: RGB = [255, 0, 255];
-const KEY_TOLERANCE = 24;
 
 export class CAssetManager implements ISpriteSource {
   private m_sprites: Map<string, Sprite> = new Map();
@@ -101,19 +100,8 @@ export class CAssetManager implements ISpriteSource {
     g.drawImage(img, 0, 0);
 
     const image = g.getImageData(0, 0, canvas.width, canvas.height);
-    this.keyOut(image.data, key);
+    knockoutWhere(image.data, nearColor(key[0], key[1], key[2])); // key colour -> transparent
     g.putImageData(image, 0, 0);
     return canvas;
-  }
-
-  /** Zero the alpha of every pixel within tolerance of the key colour. */
-  private keyOut(px: Uint8ClampedArray, [kr, kg, kb]: RGB): void {
-    knockoutWhere(
-      px,
-      (p, i) =>
-        Math.abs(p[i] - kr) <= KEY_TOLERANCE &&
-        Math.abs(p[i + 1] - kg) <= KEY_TOLERANCE &&
-        Math.abs(p[i + 2] - kb) <= KEY_TOLERANCE,
-    );
   }
 }

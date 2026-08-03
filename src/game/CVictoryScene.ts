@@ -6,7 +6,8 @@
  * from `sinceBattleEnd`, and the stars twinkle off the wall clock, so there is nothing to own.
  * Its sibling {@link CFireworks} DOES hold state (rockets and sparks in flight) and is a class.
  */
-import {clamp, TWO_PI} from '../math/num';
+import {TWO_PI} from '../math/num';
+import {rgbToHex} from '../math/color';
 
 /** A tank, as the flag needs to see one — where to plant, and how big to draw. */
 export interface FlagWinner {
@@ -108,15 +109,14 @@ export function drawWinnerFlag(ctx: CanvasRenderingContext2D, env: VictoryEnv): 
   // cloth as it ripples — crests catch the light, troughs fall into shadow.
   const N = 14;
   const waveAt = (t: number) => Math.sin(t * TWO_PI - phase) * amp * t;
-  const clamp255 = (v: number) => clamp(Math.round(v), 0, 255);
   for (let i = 0; i < N; i++) {
     const t0 = i / N,
       t1 = (i + 1) / N;
     const mid = (t0 + t1) / 2;
     // Sheen from the wave's slope (∝ cos of the sine's argument): +1 face-to-light → lit.
     const shade = Math.cos(mid * TWO_PI - phase) * mid; // stronger toward free edge
-    const l = 0.82 + 0.42 * shade; // brightness multiplier
-    ctx.fillStyle = `rgb(${clamp255(224 * l)},${clamp255(34 * l)},${clamp255(34 * l)})`;
+    const l = 0.82 + 0.42 * shade; // brightness multiplier (rgbToHex clamps the overshoot)
+    ctx.fillStyle = rgbToHex(224 * l, 34 * l, 34 * l);
     ctx.beginPath();
     ctx.moveTo(fx + dir * fw * t0, flagTop + waveAt(t0));
     ctx.lineTo(fx + dir * (fw * t1 + 0.5), flagTop + waveAt(t1)); // +0.5 overlap hides seams

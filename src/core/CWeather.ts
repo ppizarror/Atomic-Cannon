@@ -134,12 +134,6 @@ interface Layer {
 // ==========================================================================
 
 export class CWeather {
-  private m_layers: Layer[] = [];
-  private m_w = 0;
-  private m_h = 0;
-  private m_t = 0; // seconds accumulator for the oscillators
-  private m_margin = 24;
-
   // ========================================================================
   // CONSTRUCTION & INITIALIZATION
   // ========================================================================
@@ -285,49 +279,23 @@ export class CWeather {
     // its opaque tan grains are pigment, not light, so 'lighter' would make them vanish over sand.
     const additive = layer.type !== 'dust';
     if (additive) ctx.globalCompositeOperation = 'lighter';
-    switch (layer.type) {
-      case 'snow':
-        this.drawSnow(ctx, layer);
-        break;
-      case 'rain':
-        this.drawRain(ctx, layer);
-        break;
-      case 'hail':
-        this.drawHail(ctx, layer);
-        break;
-      case 'dust':
-        this.drawDust(ctx, layer);
-        break;
-    }
+    // Rain is the only band drawn as streaks; the other three are crisp dots that differ only in
+    // colour — snow white, hail a pale ice cyan, and dust a per-speck tan from the sand palette
+    // (which is why the tint is a function of the particle rather than a constant).
+    if (layer.type === 'rain') this.drawRain(ctx, layer);
+    else if (layer.type === 'dust') this.drawDots(ctx, layer, p => DUST_TANS[p.ci]);
+    else this.drawDots(ctx, layer, layer.type === 'hail' ? '#d6ffff' : '#ffffff');
     if (additive) ctx.globalCompositeOperation = 'source-over'; // restore for the next layer / caller
   }
 
-  // All precipitation renders as small crisp dots — flecks, not soft blobs.
-  private drawDots(ctx: CanvasRenderingContext2D, layer: Layer, color: string): void {
-    ctx.fillStyle = color;
+  /** Small crisp dots — flecks, not soft blobs. `tint` is per-particle so blowing sand can keep the
+   *  grain colour it was seeded with while snow/hail take one flat colour. */
+  private drawDots(ctx: CanvasRenderingContext2D, layer: Layer, tint: string | ((p: WParticle) => string)): void {
+    const flat = typeof tint === 'string';
+    if (flat) ctx.fillStyle = tint;
     for (const p of layer.particles) {
       ctx.globalAlpha = p.alpha;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, Math.max(0.6, p.size), 0, TWO_PI);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  private drawSnow(ctx: CanvasRenderingContext2D, layer: Layer): void {
-    this.drawDots(ctx, layer, '#ffffff');
-  }
-
-  private drawHail(ctx: CanvasRenderingContext2D, layer: Layer): void {
-    this.drawDots(ctx, layer, '#d6ffff'); // pale ice cyan
-  }
-
-  // Dust tints (alpha-blended tan) rather than glowing — each speck keeps the sand
-  // colour it was seeded with, so the field reads as mixed grains of blowing sand.
-  private drawDust(ctx: CanvasRenderingContext2D, layer: Layer): void {
-    for (const p of layer.particles) {
-      ctx.globalAlpha = p.alpha;
-      ctx.fillStyle = DUST_TANS[p.ci];
+      if (!flat) ctx.fillStyle = tint(p);
       ctx.beginPath();
       ctx.arc(p.x, p.y, Math.max(0.6, p.size), 0, TWO_PI);
       ctx.fill();
@@ -337,7 +305,7 @@ export class CWeather {
 
   private drawRain(ctx: CanvasRenderingContext2D, layer: Layer): void {
     // Draw each drop as a short streak along its motion so it slants with the wind.
-    const windX = this.m_lastWindX(layer);
+    const windX = this.m_windX * layer.t.wind;
     const vy = layer.t.fall;
     ctx.strokeStyle = 'rgba(178,202,228,1)';
     ctx.lineCap = 'round';
@@ -353,10 +321,14 @@ export class CWeather {
     ctx.globalAlpha = 1;
   }
 
-  // The last frame's wind X (remembered by update()); rain streaks slant to match.
-  private m_windX = 0;
+  // ========================================================================
+  // MEMBER VARIABLES
+  // ========================================================================
 
-  private m_lastWindX(layer: Layer): number {
-    return this.m_windX * layer.t.wind;
-  }
+  private m_layers: Layer[] = [];
+  private m_w = 0;
+  private m_h = 0;
+  private m_t = 0; // seconds accumulator for the oscillators
+  private m_margin = 24;
+  private m_windX = 0; // last frame's wind X (set by update); rain streaks slant to match
 }

@@ -9,6 +9,7 @@
  */
 import {WEAPON_DATABASE, getDefaultWeaponIndex, weaponIndices} from './CWeapon';
 import {weaponEnabled} from './CGameContent';
+import {UTILITY_EXT} from './weapons/ExtType';
 import {clamp01} from '../math/num';
 
 // Economy defaults. Credits are awarded between turns/rounds by these rates
@@ -28,11 +29,6 @@ export const CREDIT_PER_ROUND = 1000;
 export const CREDIT_PER_TURN = 0;
 /** Sentinel quantity meaning "never runs out". */
 export const UNLIMITED = Number.POSITIVE_INFINITY;
-
-/** extTypes Auto Buy never stocks — utility/support/relocate weapons that aren't offensive
- *  ammo: MOVE(3), TRACER(4), SHIELD(7), HEAL(10), ARMOR(11), DEATH(12), HAZMAT(14), MINE(16),
- *  JET(17). Mirrors the original AI's buy-candidate type filter. */
-const AUTO_BUY_SKIP_EXT = new Set([3, 4, 7, 10, 11, 12, 14, 16, 17]);
 
 /** Weapons that start unlimited (always fireable, not sold/bought). By default the
  *  basic Shell, so the player can always take a shot. */
@@ -201,9 +197,9 @@ export class CEconomy {
   /**
    * Auto Buy: a "drain loop" — repeatedly pick an affordable weapon and buy it until
    * nothing is left affordable, spending nearly all credits on a varied assortment. Only
-   * OFFENSIVE stock is bought: utility/support/relocate types (Move, Tracer, Shield, Heal,
-   * Armor, Death, Hazmat, Mine, Jet) are skipped, mirroring the original's buy-candidate
-   * filter (which also excludes the unlimited Shell staple). `conserve` mirrors the original's
+   * OFFENSIVE stock is bought — the shared {@link UTILITY_EXT} filter skips the support types,
+   * mirroring the original's buy-candidate filter (which also excludes the unlimited Shell
+   * staple). `conserve` mirrors the original's
    * tough-AI branch — half the time it grabs the weakest affordable filler to hoard credits
    * for pricier rounds; the difficulty-gated support front-load pass isn't modelled here.
    */
@@ -217,7 +213,7 @@ export class CEconomy {
           weaponEnabled(i) &&
           w.cost > 0 &&
           w.cost <= this.creditsGet() &&
-          !AUTO_BUY_SKIP_EXT.has(w.extType ?? 0)
+          !UTILITY_EXT.has(w.extType ?? 0)
         );
       });
       if (affordable.length === 0) break;

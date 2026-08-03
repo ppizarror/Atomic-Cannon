@@ -65,5 +65,39 @@ export type ExtType = {readonly [EXT_BRAND]: never};
  */
 export const {tokens: EXT, toType: toExtType} = makeNominalEnum<ExtType, typeof EXT_CODES>(EXT_CODES, 'BALLISTIC');
 
+/**
+ * The SAME table as {@link EXT}, typed as plain numbers.
+ *
+ * The nominal token is the right thing wherever a weapon has been resolved through `CWeapon`, but
+ * the bot brains and the economy work off the weapon data's raw `extType` field (and `UltraWeapon.ext`
+ * carries it as a number), where a token would only have to be cast back. They read the codes from
+ * here so the numbers live in exactly one place — three separate hand-written copies of this table
+ * had accumulated across CBotAI / CEconomy / botEconomy.
+ */
+export const EXT_CODE: {readonly [K in keyof typeof EXT_CODES]: number} = EXT_CODES;
+
+/**
+ * UTILITY/support extTypes — everything that is not offensive ammo: relocation, ranging, the
+ * self-buffs, mines and jets. Auto Buy never stocks them, the classic brain never draws one as its
+ * random offensive pick, and Ultra excludes them from its firing pool. One set, because all three
+ * rules mean the same thing by it.
+ */
+export const UTILITY_EXT: ReadonlySet<number> = new Set<number>([
+  EXT_CODE.MOVE,
+  EXT_CODE.TRACER,
+  EXT_CODE.SHIELD,
+  EXT_CODE.HEAL,
+  EXT_CODE.ARMOR,
+  EXT_CODE.DEATH,
+  EXT_CODE.HAZMAT,
+  EXT_CODE.MINE,
+  EXT_CODE.JET,
+]);
+
 /** Beam-family behaviour (an instant carving ray) — BEAM or the reserved BEAM_ALT. */
 export const isBeamExt = (ext: ExtType): boolean => ext === EXT.BEAM || ext === EXT.BEAM_ALT;
+
+/** A utility a tank applies to ITSELF (shield / heal / armor / hazmat) rather than firing at
+ *  someone — the subset of {@link UTILITY_EXT} that needs no aim. */
+export const isSelfBuffExt = (ext: number): boolean =>
+  ext === EXT_CODE.SHIELD || ext === EXT_CODE.HEAL || ext === EXT_CODE.ARMOR || ext === EXT_CODE.HAZMAT;

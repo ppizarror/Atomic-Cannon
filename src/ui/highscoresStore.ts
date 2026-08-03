@@ -59,8 +59,6 @@ const store = createPersistedSignal<HeroData>(KEY, {
 /** The whole hall of fame, reactive. Components read `heroData.value`. */
 export const heroData = store.signal;
 
-const persist = (d: HeroData): void => store.set(d);
-
 // Insert into a board, keeping it sorted descending and capped at CAP. An equal new
 // value lands ABOVE existing equals (legacy scan stops at the first entry <= it).
 function insert(list: HeroEntry[], e: HeroEntry): HeroEntry[] {
@@ -83,11 +81,11 @@ export function submitBattleHeroes(teams: BattleHeroTeam[]): void {
     if (t.score > 0) score = insert(score, {name, value: t.score});
     if (t.kills > 0) kills = insert(kills, {name, value: t.kills});
   }
-  persist({...d, score, kills});
+  store.set({...d, score, kills});
 }
 
 /** Advance the local player's battles won / lost tally (one battle end). */
 export function recordBattleOutcome(won: boolean): void {
   const d = heroData.value;
-  persist(won ? {...d, won: d.won + 1} : {...d, lost: d.lost + 1});
+  store.set(won ? {...d, won: d.won + 1} : {...d, lost: d.lost + 1});
 }

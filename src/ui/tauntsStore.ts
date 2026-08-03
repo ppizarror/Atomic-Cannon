@@ -66,9 +66,14 @@ function pushToEngine(cat: TauntCategory): void {
     .filter(l => l.length > 0);
 }
 
-/** Seed the engine with every list at module load, so bubbles work from the first
- *  turn even before the settings menu (or applyGameSettings) is touched. */
-(['death', 'postFire', 'taunt'] as TauntCategory[]).forEach(pushToEngine);
+/** Push EVERY category's effective lines into the engine. Run at module load so bubbles work from
+ *  the first turn even before the settings menu is touched, and again from applyGameSettings as the
+ *  boot / new-game safety net — so the trim-and-drop-blanks rule lives only in `pushToEngine`. */
+export function syncTaunts(): void {
+  (['death', 'postFire', 'taunt'] as TauntCategory[]).forEach(pushToEngine);
+}
+
+syncTaunts();
 
 /** The effective (edited-or-default) lines for a category — the raw editor draft
  *  (may include a blank line being typed). */

@@ -23,6 +23,16 @@ export class PixelBlitter {
    * the gaps in the cloud.
    */
   begin(dw: number, dh: number): Uint32Array | null {
+    const bytes = this.beginBytes(dw, dh);
+    return bytes ? new Uint32Array(bytes.buffer) : null;
+  }
+
+  /**
+   * {@link begin} as the raw RGBA BYTE view. Plotting a packed word per pixel is the common case,
+   * but a cloud whose grains ADD into each other (the fallout specks, which saturate per channel)
+   * has to read and write the channels individually.
+   */
+  beginBytes(dw: number, dh: number): Uint8ClampedArray | null {
     if (typeof document === 'undefined') return null;
     let cv = this.m_cv;
     if (!cv) cv = this.m_cv = document.createElement('canvas');
@@ -38,9 +48,8 @@ export class PixelBlitter {
     if (!this.m_img || this.m_img.width !== dw || this.m_img.height !== dh) {
       this.m_img = g.createImageData(dw, dh);
     }
-    const buf = new Uint32Array(this.m_img.data.buffer);
-    buf.fill(0);
-    return buf;
+    this.m_img.data.fill(0);
+    return this.m_img.data;
   }
 
   /** Blit the buffer prepared by {@link begin} onto `ctx` with its top-left at (dx, dy). */

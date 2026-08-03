@@ -6,7 +6,7 @@ import {Vec2} from '../math/Vec2';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind} from './wind';
-import {TWO_PI, lerp} from '../math/num';
+import {TWO_PI, deg2rad, lerp} from '../math/num';
 
 // ==========================================================================
 // TUNING
@@ -98,19 +98,18 @@ export class CShot {
     this.m_maxTrailPoints = 20;
   }
 
-  init(pos: Vec2, angleDegrees: number, power: number, damage: number, radius: number, owner?: CTank | null): void {
+  /**
+   * The one spawn path all three `init*` entry points funnel through: place the round, give it its
+   * velocity and payload, and arm the per-shot state (swept-collision seed, alive flag, fresh trail).
+   * They differ ONLY in how the velocity is derived, so the arming happens once here rather than
+   * three times in near-identical copies.
+   */
+  private launch(pos: Vec2, vx: number, vy: number, damage: number, radius: number, owner: CTank | null): void {
     this.m_pos = pos.clone();
-    this.m_owner = owner || null;
+    this.m_vel = new Vec2(vx, vy);
+    this.m_owner = owner;
     this.m_damage = damage;
     this.m_radius = radius;
-    this.m_power = power;
-
-    const fRadAngle = -((angleDegrees / 180) * Math.PI);
-    const speed = launchSpeed(power);
-
-    this.m_vel.x = Math.cos(fRadAngle) * speed;
-    this.m_vel.y = Math.sin(fRadAngle) * speed;
-
     this.m_prevX = this.m_pos.x; // seed the swept-collision segment (no bogus frame-1 sweep)
     this.m_prevY = this.m_pos.y;
     this.m_bIsDead = false;
@@ -118,6 +117,15 @@ export class CShot {
     this.addTrailPoint();
   }
 
+  /** Spawn from a UI aim angle in DEGREES (0 = right, 90 = up). */
+  init(pos: Vec2, angleDegrees: number, power: number, damage: number, radius: number, owner?: CTank | null): void {
+    this.m_power = power;
+    const v = Vec2.fromAngle(deg2rad(angleDegrees)).mul(launchSpeed(power));
+    this.launch(pos, v.x, v.y, damage, radius, owner || null);
+  }
+
+  /** Spawn from the barrel: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
+   *  Works for every direction, including below-horizon (negative) angles. */
   initFromTank(
     muzzlePos: Vec2,
     turretAngleRad: number,
@@ -126,37 +134,14 @@ export class CShot {
     radius: number,
     owner: CTank,
   ): void {
-    this.m_pos = muzzlePos.clone();
-    this.m_owner = owner;
-    this.m_damage = damage;
-    this.m_radius = radius;
     this.m_power = power;
-    const speed = launchSpeed(power);
-
-    // Unified aim: θ measured CCW from horizontal-right, screen-Y down → up = -sin.
-    // Works for every direction, including below-horizon (negative) angles.
-    this.m_vel.x = Math.cos(turretAngleRad) * speed;
-    this.m_vel.y = -Math.sin(turretAngleRad) * speed;
-
-    this.m_prevX = this.m_pos.x; // seed the swept-collision segment (no bogus frame-1 sweep)
-    this.m_prevY = this.m_pos.y;
-    this.m_bIsDead = false;
-    this.m_trailPoints = [];
-    this.addTrailPoint();
+    const v = Vec2.fromAngle(turretAngleRad).mul(launchSpeed(power));
+    this.launch(muzzlePos, v.x, v.y, damage, radius, owner);
   }
 
   /** Spawn with an explicit velocity — used for cluster submunitions. */
   initFromVelocity(pos: Vec2, vx: number, vy: number, damage: number, radius: number, owner: CTank | null): void {
-    this.m_pos = pos.clone();
-    this.m_vel = new Vec2(vx, vy);
-    this.m_owner = owner || null;
-    this.m_damage = damage;
-    this.m_radius = radius;
-    this.m_prevX = this.m_pos.x; // seed the swept-collision segment (no bogus frame-1 sweep)
-    this.m_prevY = this.m_pos.y;
-    this.m_bIsDead = false;
-    this.m_trailPoints = [];
-    this.addTrailPoint();
+    this.launch(pos, vx, vy, damage, radius, owner);
   }
 
   // ========================================================================

@@ -9,7 +9,6 @@ import {BmpText} from './BmpText';
 import {
   power,
   angle,
-  wind,
   weaponIndex,
   playerName,
   life,
@@ -44,6 +43,8 @@ import {
   canMoveNow,
   loadUiBmp,
   isMobile,
+  currentWeapon,
+  windReadout,
 } from './store';
 import {MobileHud} from './MobileHud';
 import {weaponPower, weaponDamagePerArea, weaponName, weaponTypeName} from '../core/CWeapon';
@@ -291,11 +292,9 @@ function DialGrab() {
 }
 
 function WindReadout() {
-  const w = wind.value;
-  const txt = Math.abs(w) < 0.05 ? strings.value.hud.windOff : `${w >= 0 ? '>' : '<'}${Math.abs(w).toFixed(1)}`;
   return (
     <ReadoutBox r={R.wind}>
-      <BmpText font="silkscreen-8-white" text={txt} />
+      <BmpText font="silkscreen-8-white" text={windReadout()} />
     </ReadoutBox>
   );
 }
@@ -473,11 +472,6 @@ function BattleStatus() {
 // A single bitmap-font line inside a black side box.
 function LcdLine({text}: {text: string}) {
   return <BmpText class="lcd-line" font="silkscreen-8-white" text={text} spacing={2} />;
-}
-
-/** The currently-selected weapon def (falls back to the first). */
-function currentWeapon() {
-  return weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
 }
 
 // The side-LCD boxes flank the central control panel: two weapon boxes to the

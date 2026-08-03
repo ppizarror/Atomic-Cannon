@@ -33,7 +33,6 @@ export interface WebSocketTransportOptions {
   readonly WebSocketImpl?: typeof WebSocket;
 }
 
-/** A WebSocket-backed transport with buffered send and exponential-backoff reconnect. */
 /** How long a socket must stay open before its connection counts as "stable" and the reconnect
  *  backoff resets — long enough that an accept-then-drop server can't reset the backoff each cycle. */
 const STABLE_CONN_MS = 5000;
@@ -44,6 +43,7 @@ const MAX_FRAME_BYTES = 512 * 1024; // biggest legit frame is a stateUpdate heig
 const MAX_OUTBOX = 512; // queued outgoing messages while offline
 const MAX_MSG_PER_SEC = 200; // well above real traffic; a flood past this is dropped
 
+/** A WebSocket-backed transport with buffered send and exponential-backoff reconnect. */
 export class WebSocketTransport implements NetTransport {
   private m_ws: WebSocket | null = null;
   private m_status: ConnStatus = 'idle';
@@ -55,6 +55,8 @@ export class WebSocketTransport implements NetTransport {
   private readonly m_msgSubs = new Set<(m: ServerMessage) => void>();
   private readonly m_statusSubs = new Set<(s: ConnStatus) => void>();
   private readonly m_WS: typeof WebSocket;
+  private m_rateWindowStart = 0;
+  private m_rateCount = 0;
 
   constructor(private readonly opts: WebSocketTransportOptions) {
     this.m_WS = opts.WebSocketImpl ?? WebSocket;
@@ -81,7 +83,7 @@ export class WebSocketTransport implements NetTransport {
       // Reset the backoff ONLY after the connection proves STABLE (stays open a few seconds). A server
       // (or edge) that accepts then immediately drops would otherwise reset m_attempts every cycle,
       // defeating the exponential backoff → a tight ~0.4 s reconnect storm. Cleared on close below.
-      if (this.m_stableTimer) clearTimeout(this.m_stableTimer);
+      this.clearStableTimer();
       this.m_stableTimer = setTimeout(() => {
         this.m_attempts = 0;
         this.m_stableTimer = null;
@@ -103,10 +105,7 @@ export class WebSocketTransport implements NetTransport {
     ws.onclose = () => {
       this.m_ws = null;
       // The connection didn't survive to "stable" — keep the backoff growing (don't reset attempts).
-      if (this.m_stableTimer) {
-        clearTimeout(this.m_stableTimer);
-        this.m_stableTimer = null;
-      }
+      this.clearStableTimer();
       if (this.m_closedByUs) {
         this.setStatus('closed');
         return;
@@ -149,8 +148,6 @@ export class WebSocketTransport implements NetTransport {
     }
   }
 
-  private m_rateWindowStart = 0;
-  private m_rateCount = 0;
   /** True while under the per-second incoming-message cap; a flood past it is dropped. Time-based
    *  (Date.now) — this is transport hygiene, not gameplay, so it never touches the seeded sim RNG. */
   private underRateLimit(): boolean {
@@ -178,13 +175,16 @@ export class WebSocketTransport implements NetTransport {
       clearTimeout(this.m_reconnectTimer);
       this.m_reconnectTimer = null;
     }
-    if (this.m_stableTimer) {
-      clearTimeout(this.m_stableTimer);
-      this.m_stableTimer = null;
-    }
+    this.clearStableTimer();
     this.m_ws?.close();
     this.m_ws = null;
     this.setStatus('closed');
+  }
+
+  private clearStableTimer(): void {
+    if (!this.m_stableTimer) return;
+    clearTimeout(this.m_stableTimer);
+    this.m_stableTimer = null;
   }
 
   private setStatus(s: ConnStatus): void {

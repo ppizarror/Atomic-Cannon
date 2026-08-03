@@ -4,16 +4,14 @@
  * and recolour a tank sprite to a chosen colour for the live preview (the same
  * luminance-modulated recolour the engine applies to hulls).
  */
-import {makeCanvas2d} from '../util/canvas';
+import {knockoutWhere, makeCanvas2d, nearColor} from '../util/canvas';
+import {hexToRgb, luma, maxOpaqueLuma, rgbToHex} from '../math/color';
 import {clamp} from '../math/num';
 
 const PALETTE_URL = '/assets/gui/color pallette.bmp';
 
 let paletteData: ImageData | null = null;
 let paletteLoading: Promise<ImageData | null> | null = null;
-
-const toHex = (r: number, g: number, b: number): string =>
-  '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -45,7 +43,7 @@ export function samplePalette(data: ImageData, fx: number, fy: number): string {
   const x = clamp(Math.round(fx * (data.width - 1)), 0, data.width - 1);
   const y = clamp(Math.round(fy * (data.height - 1)), 0, data.height - 1);
   const i = (y * data.width + x) * 4;
-  return toHex(data.data[i], data.data[i + 1], data.data[i + 2]);
+  return rgbToHex(data.data[i], data.data[i + 1], data.data[i + 2]);
 }
 
 /**
@@ -54,10 +52,7 @@ export function samplePalette(data: ImageData, fx: number, fy: number): string {
  * on the bar.
  */
 export function findNearestInPalette(data: ImageData, hex: string): {fx: number; fy: number} {
-  const n = parseInt(hex.slice(1), 16);
-  const tr = (n >> 16) & 0xff,
-    tg = (n >> 8) & 0xff,
-    tb = n & 0xff;
+  const {r: tr, g: tg, b: tb} = hexToRgb(hex);
   const {width: w, height: h, data: px} = data;
   let best = Infinity,
     bx = 0,
@@ -79,12 +74,6 @@ export function findNearestInPalette(data: ImageData, hex: string): {fx: number;
   return {fx: w > 1 ? bx / (w - 1) : 0, fy: h > 1 ? by / (h - 1) : 0};
 }
 
-const lumaOf = (r: number, g: number, b: number): number => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-// The sprite bitmaps carry an opaque colour-key background (no alpha); the top-left
-// corner pixel is the key. Matches CAssetManager's tolerance.
-const KEY_TOLERANCE = 24;
-
 // Recolour a loaded sprite to `hex` onto its own canvas (brightest pixel → the exact
 // colour, darker pixels → proportional shades), first knocking out the colour-key
 // background to transparency so the preview has no box. Shared by hull + turret.
@@ -95,30 +84,14 @@ async function recolorToCanvas(url: string, hex: string): Promise<HTMLCanvasElem
   g.drawImage(img, 0, 0);
   const im = g.getImageData(0, 0, cv.width, cv.height);
   const px = im.data;
-  const n = parseInt(hex.slice(1), 16);
-  const tr = (n >> 16) & 0xff,
-    tg = (n >> 8) & 0xff,
-    tb = n & 0xff;
-  // Key colour = the corner pixel; zero the alpha of every pixel within tolerance.
-  const [kr, kg, kb] = [px[0], px[1], px[2]];
-  for (let i = 0; i < px.length; i += 4) {
-    if (
-      Math.abs(px[i] - kr) <= KEY_TOLERANCE &&
-      Math.abs(px[i + 1] - kg) <= KEY_TOLERANCE &&
-      Math.abs(px[i + 2] - kb) <= KEY_TOLERANCE
-    ) {
-      px[i + 3] = 0;
-    }
-  }
-  let maxL = 0.001;
+  const {r: tr, g: tg, b: tb} = hexToRgb(hex);
+  // These bitmaps carry an opaque colour-key background (no alpha) and the top-left corner pixel
+  // IS the key — unlike the sprite loader's fixed magenta, but the same tolerance rule.
+  knockoutWhere(px, nearColor(px[0], px[1], px[2]));
+  const maxL = maxOpaqueLuma(px);
   for (let i = 0; i < px.length; i += 4) {
     if (px[i + 3] === 0) continue;
-    const l = lumaOf(px[i], px[i + 1], px[i + 2]);
-    if (l > maxL) maxL = l;
-  }
-  for (let i = 0; i < px.length; i += 4) {
-    if (px[i + 3] === 0) continue;
-    const f = Math.min(1, lumaOf(px[i], px[i + 1], px[i + 2]) / maxL);
+    const f = Math.min(1, luma(px[i], px[i + 1], px[i + 2]) / maxL);
     px[i] = Math.round(tr * f);
     px[i + 1] = Math.round(tg * f);
     px[i + 2] = Math.round(tb * f);

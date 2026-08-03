@@ -468,8 +468,13 @@ async function main(): Promise<void> {
     },
     true,
   );
-  // Release only commits the aim (angle/power) — it does NOT fire. Fire is the
-  // FIRE button / Space.
+  /** Stop an aim drag, committing the aim — release only sets angle/power, it does NOT fire (that's
+   *  the FIRE button / Space). Every drag-ending path runs this. */
+  const endAimDrag = (): void => {
+    if (!aiming) return;
+    aiming = false;
+    gameController.endAim(false);
+  };
   window.addEventListener(
     'pointerup',
     e => {
@@ -479,37 +484,20 @@ async function main(): Promise<void> {
         const [sx, sy] = toScene(e);
         container.style.cursor = gameController.hitMinimapBox(sx, sy) ? 'grab' : '';
       }
-      if (aiming) {
-        aiming = false;
-        gameController.endAim(false);
-      }
-    },
-    true,
-  );
-  window.addEventListener(
-    'pointercancel',
-    () => {
-      minimapDrag = false;
-      container.style.cursor = '';
-      if (aiming) {
-        aiming = false;
-        gameController.endAim(false);
-      }
+      endAimDrag();
     },
     true,
   );
   // Losing the window mid-drag (Alt-Tab, an OS gesture, a native drag) may never deliver
   // pointerup/pointercancel, which would leave `aiming`/`minimapDrag` stuck — subsequent BUTTONLESS
   // moves would then keep re-aiming / panning until the next click. Cancel any drag on blur/hide, the
-  // same defence the thrust reset above applies to held keys.
+  // same defence the thrust reset above applies to held keys. `pointercancel` wants exactly this too.
   const cancelPointerDrag = (): void => {
     minimapDrag = false;
     container.style.cursor = '';
-    if (aiming) {
-      aiming = false;
-      gameController.endAim(false);
-    }
+    endAimDrag();
   };
+  window.addEventListener('pointercancel', cancelPointerDrag, true);
   window.addEventListener('blur', cancelPointerDrag);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) cancelPointerDrag();

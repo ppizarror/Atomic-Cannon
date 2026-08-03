@@ -26,6 +26,33 @@ export function rgbToHex(r: number, g: number, b: number): string {
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 
+/**
+ * Perceptual luminance of a pixel, 0..1 (Rec. 601 weights).
+ *
+ * The luminance-modulated recolour is done in two places — the engine's hull tint (CTank) and the
+ * Customize Players preview (ui/palette), which must produce the same shading or the preview stops
+ * matching the tank it previews — so the weights live here rather than in either of them.
+ */
+export function luma(r: number, g: number, b: number): number {
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/**
+ * Brightest {@link luma} among the OPAQUE pixels of an RGBA buffer — the normaliser both
+ * luminance-modulated recolours divide by, so the sprite's own brightest pixel maps to exactly the
+ * chosen colour and everything darker to a proportional shade. Floored just above zero so an
+ * all-black sprite can't divide by 0.
+ */
+export function maxOpaqueLuma(px: Uint8ClampedArray): number {
+  let max = 0.001;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] === 0) continue;
+    const l = luma(px[i], px[i + 1], px[i + 2]);
+    if (l > max) max = l;
+  }
+  return max;
+}
+
 /** Mix each channel of `c` toward `target` by `t` (0..1). */
 export function mixToward(c: RGB, target: RGB, t: number): RGB {
   return {

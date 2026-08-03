@@ -1,6 +1,6 @@
 /**
- * Button — the metal action button for NON-metallic contexts (the Placeholder "Back
- * to battle" over the game, the enable-list Prev/Next/Exit). The look lives in `.btn`:
+ * Button — the metal action button for NON-metallic contexts (the editor screens' Done /
+ * Prev / Next / Exit, over the steel plate or the game). The look lives in `.btn`:
  * the game's `atomic/button` art with its 2px magenta checkerboard border cropped off
  * (→ `atomic/button.png`, fully opaque), 9-sliced so the bevel border is identical at
  * every width; here it just carries the bitmap-font label.

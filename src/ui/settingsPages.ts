@@ -227,63 +227,66 @@ function graphicsRows(): Widget[] {
   ];
 }
 
+/**
+ * Audio rows bind LIVE to CAudio rather than to a stored SettingId — CAudio persists its own
+ * settings — so they can't use `bind`/`toggle`/`stepper` above. These two builders are the
+ * equivalent pair for a CAudio-backed row; a null audio bus (headless) reads as off / full volume.
+ */
+const audioToggle = (c: RowCopy, get: () => boolean | undefined, set: (on: boolean) => void): Widget => ({
+  label: c.label,
+  tip: c.tip,
+  kind: 'toggle',
+  get: () => (get() ? 1 : 0),
+  set: v => set(!!v),
+});
+/** CAudio volumes are already 0..100 (percent) — pass through, don't rescale. */
+const audioVolume = (c: RowCopy, get: () => number | undefined, set: (v: number) => void): Widget => ({
+  label: c.label,
+  tip: c.tip,
+  kind: 'stepper',
+  min: 0,
+  max: 100,
+  step: 10,
+  fmt: pct,
+  get: () => Math.round(get() ?? 100),
+  set,
+});
+
 function audioRows(): Widget[] {
   const s = strings.value.settings.audio;
   const a = game().getAudio();
   return [
-    {
-      label: s.sound.label,
-      tip: s.sound.tip,
-      kind: 'toggle',
-      get: () => (a?.isSfxEnabled() ? 1 : 0),
-      set: (v: number) => a?.setSfxEnabled(!!v),
-    },
-    {
-      label: s.music.label,
-      tip: s.music.tip,
-      kind: 'toggle',
-      get: () => (a?.isMusicEnabled() ? 1 : 0),
-      set: (v: number) => a?.setMusicEnabled(!!v),
-    },
-    {
-      // CAudio volumes are already 0..100 (percent) — pass through, don't rescale.
-      label: s.soundVol.label,
-      tip: s.soundVol.tip,
-      kind: 'stepper',
-      min: 0,
-      max: 100,
-      step: 10,
-      fmt: pct,
-      get: () => Math.round(a?.getSfxVolume() ?? 100),
-      set: (v: number) => a?.setSfxVolume(v),
-    },
-    {
-      label: s.musicVol.label,
-      tip: s.musicVol.tip,
-      kind: 'stepper',
-      min: 0,
-      max: 100,
-      step: 10,
-      fmt: pct,
-      get: () => Math.round(a?.getMusicVolume() ?? 100),
-      set: (v: number) => a?.setMusicVolume(v),
-    },
-    {
-      // Stereo binds live to CAudio (like the volumes), not a stored preference.
-      label: s.stereo.label,
-      tip: s.stereo.tip,
-      kind: 'toggle',
-      get: () => (a?.isStereo() ? 1 : 0),
-      set: (v: number) => a?.setStereo(!!v),
-    },
-    {
-      // Non-legacy menu navigation blips (hover / forward / back) — opt-in, OFF by default.
-      label: s.menuSounds.label,
-      tip: s.menuSounds.tip,
-      kind: 'toggle',
-      get: () => (a?.isMenuSfxEnabled() ? 1 : 0),
-      set: (v: number) => a?.setMenuSfxEnabled(!!v),
-    },
+    audioToggle(
+      s.sound,
+      () => a?.isSfxEnabled(),
+      on => a?.setSfxEnabled(on),
+    ),
+    audioToggle(
+      s.music,
+      () => a?.isMusicEnabled(),
+      on => a?.setMusicEnabled(on),
+    ),
+    audioVolume(
+      s.soundVol,
+      () => a?.getSfxVolume(),
+      v => a?.setSfxVolume(v),
+    ),
+    audioVolume(
+      s.musicVol,
+      () => a?.getMusicVolume(),
+      v => a?.setMusicVolume(v),
+    ),
+    audioToggle(
+      s.stereo,
+      () => a?.isStereo(),
+      on => a?.setStereo(on),
+    ),
+    // Non-legacy menu navigation blips (hover / forward / back) — opt-in, OFF by default.
+    audioToggle(
+      s.menuSounds,
+      () => a?.isMenuSfxEnabled(),
+      on => a?.setMenuSfxEnabled(on),
+    ),
   ];
 }
 

@@ -21,7 +21,6 @@ import {strings} from '../i18n';
 import {
   power,
   angle,
-  wind,
   weaponIndex,
   weapons,
   blocked,
@@ -37,6 +36,8 @@ import {
   POWER_MIN,
   POWER_MAX,
   wrapAngle,
+  currentWeapon,
+  windReadout,
 } from './store';
 
 // ==========================================================================
@@ -49,11 +50,6 @@ const sheet = signal<'weapon' | 'power' | 'angle' | null>(null);
 const closeSheet = () => {
   sheet.value = null;
 };
-
-/** The currently-selected weapon def (falls back to the first). */
-function currentWeapon() {
-  return weapons.value.find(x => x.index === weaponIndex.value) ?? weapons.value[0];
-}
 
 // ---- THE BOTTOM STRIP ----------------------------------------------------
 // A beveled metal button carrying one line of the game's `arial-14-out` bitmap
@@ -296,12 +292,9 @@ function Sheet() {
 // same style/corner as the FPS / frame counters: "Wind >N.N" (direction as ›/‹, magnitude).
 function MobileWind() {
   const h = strings.value.hud;
-  const w = wind.value;
-  const mag = Math.abs(w);
-  const txt = mag < 0.05 ? h.windOff : `${w >= 0 ? '>' : '<'}${mag.toFixed(1)}`;
   return (
     <div class="mwind">
-      <BmpText font="beijing-16-out" spacing={-1} text={`${h.wind} ${txt}`} />
+      <BmpText font="beijing-16-out" spacing={-1} text={`${h.wind} ${windReadout()}`} />
     </div>
   );
 }

@@ -218,11 +218,17 @@ function DepotBody() {
         </div>
 
         <div class="dep-cols">
-          <Header k="qty" label={d.col.qty} cls="c-qty" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
-          <Header k="name" label={d.col.name} cls="c-name" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
-          <Header k="type" label={d.col.type} cls="c-type" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
-          <Header k="power" label={d.col.power} cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
-          <Header k="cost" label={d.col.cost} cls="c-num" activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          {(
+            [
+              ['qty', d.col.qty, 'c-qty'],
+              ['name', d.col.name, 'c-name'],
+              ['type', d.col.type, 'c-type'],
+              ['power', d.col.power, 'c-num'],
+              ['cost', d.col.cost, 'c-num'],
+            ] as const
+          ).map(([k, label, cls]) => (
+            <Header key={k} k={k} label={label} cls={cls} activeKey={sort.key} dir={sort.dir} onSort={clickHeader} />
+          ))}
         </div>
 
         <ClassicScrollbar class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>

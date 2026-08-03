@@ -22,9 +22,9 @@
 import {WEAPON_DATABASE, getWeapon, someWeapon, weaponIndices} from './CWeapon';
 import {weaponEnabled} from './CGameContent';
 import {CEconomy} from './CEconomy';
-import {AI_LEVEL_ULTRA, BOT_UTILITY_EXT} from './CBotAI';
+import {AI_LEVEL_ULTRA} from './CBotAI';
 import {SELF_BURY_MIN_EARTH, type UltraThreat} from './CBotUltraAI';
-import {isBeamExt} from './weapons/ExtType';
+import {EXT_CODE, UTILITY_EXT, isBeamExt} from './weapons/ExtType';
 
 // ==========================================================================
 // TUNING
@@ -34,22 +34,13 @@ import {isBeamExt} from './weapons/ExtType';
 const BOT_SHIELD_NEED = 500;
 
 /** Damage at/above which a round counts as a NUKE (a.bomb and up). */
-export const ULTRA_NUKE_DAMAGE = 350;
+const ULTRA_NUKE_DAMAGE = 350;
 /** Small credit floor Ultra keeps back; everything above it gets spent on firepower. */
 const ULTRA_CREDIT_RESERVE = 150;
 /** Offensive rounds Ultra tries to keep on hand once it holds a nuke. */
 const ULTRA_OFFENSE_STOCK = 6;
 /** "Surrounded" = at least 2 enemies within this radius — the kamikaze trigger. */
 export const ULTRA_SURROUND_RADIUS = 260;
-
-/** extTypes the buy rules name directly. */
-const EXT_MOVE = 3,
-  EXT_SHIELD = 7,
-  EXT_HEAL = 10,
-  EXT_ARMOR = 11,
-  EXT_DEATH = 12,
-  EXT_HAZMAT = 14,
-  EXT_MINE = 16;
 
 // ==========================================================================
 // INTERFACES & TYPES
@@ -102,7 +93,7 @@ export interface UltraBuyCtx extends BotBuyCtx {
 export function isNukeWeapon(i: number): boolean {
   const w = getWeapon(i);
   const ext = WEAPON_DATABASE[i].extType ?? 0;
-  if (BOT_UTILITY_EXT.has(ext) || isBeamExt(w.getExtType())) return false;
+  if (UTILITY_EXT.has(ext) || isBeamExt(w.getExtType())) return false;
   return w.isNukeClass() || w.getDamage() >= ULTRA_NUKE_DAMAGE;
 }
 
@@ -112,7 +103,7 @@ export function isBeamWeapon(i: number): boolean {
 }
 
 /** A sub-premium RADIATION/gas round (lays a fallout zone) — area denial that forces the foe to move. */
-export function isRadWeapon(i: number): boolean {
+function isRadWeapon(i: number): boolean {
   return getWeapon(i).getRadiation().dmg > 0 && !isNukeWeapon(i);
 }
 
@@ -121,12 +112,12 @@ export function isRadWeapon(i: number): boolean {
 // ==========================================================================
 
 /** Does `econ` own any weapon of this extType? */
-export function botOwnsExt(econ: CEconomy, ext: number): boolean {
+function botOwnsExt(econ: CEconomy, ext: number): boolean {
   return WEAPON_DATABASE.some(w => (w.extType ?? 0) === ext && econ.getOwned(w.index) > 0);
 }
 
 /** Does `econ` hold a FINITE (bought, non-staple) round matching `pred`? */
-export function botOwnsMatching(econ: CEconomy, pred: (i: number) => boolean): boolean {
+function botOwnsMatching(econ: CEconomy, pred: (i: number) => boolean): boolean {
   return someWeapon(i => !econ.isUnlimited(i) && econ.getOwned(i) > 0 && pred(i));
 }
 
@@ -152,13 +143,13 @@ export function ultraFiniteOffense(econ: CEconomy): number {
   for (let i = 0; i < WEAPON_DATABASE.length; i++) {
     if (econ.isUnlimited(i) || econ.getOwned(i) <= 0) continue;
     const w = WEAPON_DATABASE[i];
-    if ((w.damage ?? 0) > 0 && !BOT_UTILITY_EXT.has(w.extType ?? 0)) n += econ.getOwned(i);
+    if ((w.damage ?? 0) > 0 && !UTILITY_EXT.has(w.extType ?? 0)) n += econ.getOwned(i);
   }
   return n;
 }
 
 /** Does the bot already hold a premium (nuke-class) round? */
-export function ultraOwnsPremium(econ: CEconomy): boolean {
+function ultraOwnsPremium(econ: CEconomy): boolean {
   return botOwnsMatching(econ, isNukeWeapon);
 }
 
@@ -174,7 +165,7 @@ export function ultraOwnsPremium(econ: CEconomy): boolean {
  * because bots never run in a network match (every net team is human), so no lockstep peer is
  * reproducing this decision.
  */
-export function botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boolean {
+function botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boolean {
   const cands = WEAPON_DATABASE.filter(
     w => (w.extType ?? 0) === ext && w.cost > 0 && weaponEnabled(w.index) && econ.getCredits() >= w.cost * afford,
   );
@@ -187,7 +178,7 @@ export function botBuyOneOfExt(econ: CEconomy, ext: number, afford: number): boo
  * else the cheapest. Used to guarantee a specific class (nuke / beam / gas) actually gets bought,
  * unlike the weighted-random fill. Returns whether it bought.
  */
-export function ultraBuyMatching(econ: CEconomy, pred: (i: number) => boolean, strongest: boolean): boolean {
+function ultraBuyMatching(econ: CEconomy, pred: (i: number) => boolean, strongest: boolean): boolean {
   const cands = weaponIndices(i => {
     const cost = WEAPON_DATABASE[i].cost ?? 0;
     return cost > 0 && cost <= econ.getCredits() && weaponEnabled(i) && pred(i);
@@ -206,12 +197,12 @@ export function ultraBuyMatching(econ: CEconomy, pred: (i: number) => boolean, s
  * higher damage — so Ultra stocks a VARIED arsenal (not four of the single strongest round) and its
  * firing actually differs turn to turn. Skips utilities/self-buffs. Returns whether it bought.
  */
-export function ultraBuyBestOffense(econ: CEconomy, maxCost: number, rng: {float(): number}): boolean {
+function ultraBuyBestOffense(econ: CEconomy, maxCost: number, rng: {float(): number}): boolean {
   const cands = weaponIndices(i => {
     const w = WEAPON_DATABASE[i];
     const cost = w.cost ?? 0;
     if (cost <= 0 || cost > maxCost || cost > econ.getCredits()) return false;
-    return weaponEnabled(i) && (w.damage ?? 0) > 0 && !BOT_UTILITY_EXT.has(w.extType ?? 0);
+    return weaponEnabled(i) && (w.damage ?? 0) > 0 && !UTILITY_EXT.has(w.extType ?? 0);
   });
   if (!cands.length) return false;
   // Weight ∝ damage² so heavy rounds are favoured, but lighter ones still get bought — a real mix.
@@ -241,12 +232,13 @@ export function ultraBuyBestOffense(econ: CEconomy, maxCost: number, rng: {float
  */
 export function aiRestock(ctx: BotBuyCtx): void {
   const {econ, stats: s, difficulty: L} = ctx;
-  if (L > 5 && !botOwnsExt(econ, EXT_SHIELD) && s.shield < BOT_SHIELD_NEED) botBuyOneOfExt(econ, EXT_SHIELD, 2);
-  if (L > 5 && !botOwnsExt(econ, EXT_HEAL) && s.life < s.maxLife * 0.7) botBuyOneOfExt(econ, EXT_HEAL, 2);
-  if (L > 6 && !botOwnsExt(econ, EXT_ARMOR) && s.armor === 0) botBuyOneOfExt(econ, EXT_ARMOR, 2.5);
-  if (L > 7 && !botOwnsExt(econ, EXT_DEATH)) botBuyOneOfExt(econ, EXT_DEATH, 2.5);
-  if (L > 4 && !botOwnsExt(econ, EXT_MINE)) botBuyOneOfExt(econ, EXT_MINE, 2.5);
-  if (L > 3 && !botOwnsExt(econ, EXT_MOVE)) botBuyOneOfExt(econ, EXT_MOVE, 2.5);
+  if (L > 5 && !botOwnsExt(econ, EXT_CODE.SHIELD) && s.shield < BOT_SHIELD_NEED)
+    botBuyOneOfExt(econ, EXT_CODE.SHIELD, 2);
+  if (L > 5 && !botOwnsExt(econ, EXT_CODE.HEAL) && s.life < s.maxLife * 0.7) botBuyOneOfExt(econ, EXT_CODE.HEAL, 2);
+  if (L > 6 && !botOwnsExt(econ, EXT_CODE.ARMOR) && s.armor === 0) botBuyOneOfExt(econ, EXT_CODE.ARMOR, 2.5);
+  if (L > 7 && !botOwnsExt(econ, EXT_CODE.DEATH)) botBuyOneOfExt(econ, EXT_CODE.DEATH, 2.5);
+  if (L > 4 && !botOwnsExt(econ, EXT_CODE.MINE)) botBuyOneOfExt(econ, EXT_CODE.MINE, 2.5);
+  if (L > 3 && !botOwnsExt(econ, EXT_CODE.MOVE)) botBuyOneOfExt(econ, EXT_CODE.MOVE, 2.5);
   // Offensive drain: high-level bots conserve (buy cheap filler), but ULTRA does NOT — it stocks a
   // strong, varied arsenal so its expected-value planner actually has heavy/area/gas rounds to fire.
   econ.autoBuy({conserve: L > 6 && L < AI_LEVEL_ULTRA});
@@ -274,9 +266,9 @@ export function ultraManageEconomy(ctx: UltraBuyCtx): void {
   if (s.buried && !botOwnsMatching(econ, isCleaner)) ultraBuyMatching(econ, isCleaner, false);
   // Buy a HEAL as soon as it's hurt (< 60%) and holds none — so a heal is in stock BEFORE it gets
   // critical, and a bot with money always has the self-heal option the desperation curve will use.
-  if (s.life < s.maxLife * 0.6 && !botOwnsExt(econ, EXT_HEAL)) botBuyOneOfExt(econ, EXT_HEAL, 1);
-  if (s.armor <= 0 && !botOwnsExt(econ, EXT_ARMOR)) botBuyOneOfExt(econ, EXT_ARMOR, 1);
-  if (ctx.onRadiation && s.hazmat <= 0 && !botOwnsExt(econ, EXT_HAZMAT)) botBuyOneOfExt(econ, EXT_HAZMAT, 1);
+  if (s.life < s.maxLife * 0.6 && !botOwnsExt(econ, EXT_CODE.HEAL)) botBuyOneOfExt(econ, EXT_CODE.HEAL, 1);
+  if (s.armor <= 0 && !botOwnsExt(econ, EXT_CODE.ARMOR)) botBuyOneOfExt(econ, EXT_CODE.ARMOR, 1);
+  if (ctx.onRadiation && s.hazmat <= 0 && !botOwnsExt(econ, EXT_CODE.HAZMAT)) botBuyOneOfExt(econ, EXT_CODE.HAZMAT, 1);
 
   // COUNTER-NUKE DOCTRINE. Weapons are visible, so read the other side's arsenal before spending:
   // once they hold nuke-class ordnance, the answer is not to race them to a bigger one — it's to
@@ -294,8 +286,8 @@ export function ultraManageEconomy(ctx: UltraBuyCtx): void {
 
   // A DEATH (kamikaze) round FIRST when SURROUNDED — 2+ enemies close, so dying takes them with it.
   // Priority (bought before the pricey nuke can drain the purse); pointless/skipped when spread out.
-  if (econ.getCredits() > R && ctx.enemiesNear >= 2 && !botOwnsMatching(econ, isExt(EXT_DEATH)))
-    ultraBuyMatching(econ, isExt(EXT_DEATH), false);
+  if (econ.getCredits() > R && ctx.enemiesNear >= 2 && !botOwnsMatching(econ, isExt(EXT_CODE.DEATH)))
+    ultraBuyMatching(econ, isExt(EXT_CODE.DEATH), false);
 
   // Leverage weapons — a NUKE (cheapest true nuke, so it affords one AND keeps credits for variety
   // — not blowing the whole purse on the single priciest), then a BEAM, then a GAS round.
@@ -303,7 +295,8 @@ export function ultraManageEconomy(ctx: UltraBuyCtx): void {
   if (econ.getCredits() > R && !botOwnsMatching(econ, isBeamWeapon)) ultraBuyMatching(econ, isBeamWeapon, false);
   if (econ.getCredits() > R && !botOwnsMatching(econ, isRadWeapon)) ultraBuyMatching(econ, isRadWeapon, false);
   // A MINE for area denial (cheapest); one is enough.
-  if (econ.getCredits() > R && !botOwnsMatching(econ, isExt(EXT_MINE))) ultraBuyMatching(econ, isExt(EXT_MINE), false);
+  if (econ.getCredits() > R && !botOwnsMatching(econ, isExt(EXT_CODE.MINE)))
+    ultraBuyMatching(econ, isExt(EXT_CODE.MINE), false);
 
   // SAVE toward a nuke: if the bot doesn't hold a real nuke yet, STOP here — don't fritter credits
   // on cheap fill; let the balance build up so it can buy a nuke ($4000+) in a turn or two. Only

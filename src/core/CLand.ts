@@ -9,6 +9,7 @@ import {between, plusMinus} from '../math/random';
 import {GameConfig} from './CGameConfig';
 import {isRealisticWind, windProfile} from './wind';
 import {PixelBlitter} from '../util/PixelBlitter';
+import {makeCanvas2d, tryCanvas2d} from '../util/canvas';
 
 // ==========================================================================
 // INTERFACES & TYPES
@@ -483,6 +484,21 @@ export class CLand {
     this.m_radParticles = [];
   }
 
+  /**
+   * Drop everything IN FLIGHT or deposited ON this land — falling overburden, airborne spoil,
+   * fallout specks, live radiation zones and the haze over them — because the world underneath is
+   * being rebuilt or thrown away. The heightmap and the pixel buffers are NOT touched here; each
+   * caller owns what it does with those.
+   */
+  private clearTransient(): void {
+    this.m_falls.length = 0;
+    this.m_spoil.length = 0;
+    this.m_radSpecks.length = 0;
+    this.m_radParticles.length = 0;
+    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
+    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
+  }
+
   /** The per-column surface heightmap (live reference — copy before mutating). */
   getHeights(): Int16Array {
     return this.m_arrHeights ?? new Int16Array(0);
@@ -563,12 +579,7 @@ export class CLand {
    */
   generateFlat(): void {
     if (!this.m_arrHeights) return;
-    this.m_falls.length = 0;
-    this.m_spoil.length = 0;
-    this.m_radSpecks.length = 0;
-    this.m_radParticles.length = 0;
-    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
-    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
+    this.clearTransient();
     const y = Math.floor(this.m_nHeight * 0.62);
     for (let x = 0; x < this.m_nWidth; x++) this.m_arrHeights[x] = y;
     if (this.m_baseHeights) this.m_baseHeights.fill(y);
@@ -585,14 +596,9 @@ export class CLand {
    * views lets the old ImageData buffers be reclaimed before the replacement allocates.
    */
   dispose(): void {
-    this.m_falls.length = 0;
-    this.m_spoil.length = 0;
+    this.clearTransient();
     this.m_spoilPool.length = 0;
-    this.m_radSpecks.length = 0;
     this.m_speckPool.length = 0;
-    this.m_radParticles.length = 0;
-    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
-    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
     for (const c of [this.m_terrainCanvas, this.m_backdropCanvas, this.m_debugCanvas]) {
       if (c) c.width = c.height = 0; // free the backing store now, not at the next GC
     }
@@ -610,15 +616,10 @@ export class CLand {
     if (!this.m_arrHeights) return;
     this.m_needsBake = true; // fresh heights → repaint the pixel buffer
     const W = this.m_nWidth;
-    this.m_falls.length = 0; // drop any falling overburden blocks
+    this.clearTransient();
     this.m_shocks.length = 0;
     this.m_sinkX1 = -1;
     this.m_sinkX0 = 0;
-    this.m_spoil.length = 0; // + any dirt debris still in flight
-    this.m_radSpecks.length = 0;
-    this.m_radParticles.length = 0;
-    this.m_fxSink?.clearAllHeat(); // the land is being rebuilt — its haze goes with it
-    this.m_radEventSlot.clear(); // …and no contamination event survives a new world
     const A = 15; // walk amplitude
     const Ymin = Math.floor(this.m_nHeight * 0.3); // top clamp
     const Ymax = Math.floor(this.m_nHeight * 0.82); // bottom clamp
@@ -1220,14 +1221,27 @@ export class CLand {
       this.m_spoil.push(p);
     }
     // Arm the rounding pass over this deposit's span (accumulates across near-simultaneous spawns).
+    this.armDirtSmoothing(x, discR);
+  }
+
+  /**
+   * Arm (or extend) the box-blur that rounds freshly-landed dirt into a smooth mound, over the
+   * span `[x−reach, x+reach]` plus a small margin.
+   *
+   * Both things that RAISE columns — the deposit dome and crater ejecta — need it, and both land
+   * one 1px column at a time, so without it the fill reads as a comb of spikes. The span
+   * ACCUMULATES across near-simultaneous spawns (a cluster's bomblets), and only resets once the
+   * previous pass has run out, so one weapon's spread is smoothed as a single region.
+   */
+  private armDirtSmoothing(x: number, reach: number): void {
     if (this.m_dirtSmoothPasses <= 0 && this.m_dirtSmoothDelay <= 0) {
       this.m_dirtSmoothX0 = this.m_nWidth;
       this.m_dirtSmoothX1 = 0;
     }
     this.m_dirtSmoothDelay = DIRT.SMOOTH_DELAY;
     this.m_dirtSmoothPasses = DIRT.SMOOTH_PASSES;
-    this.m_dirtSmoothX0 = Math.min(this.m_dirtSmoothX0, Math.round(x - discR - 10));
-    this.m_dirtSmoothX1 = Math.max(this.m_dirtSmoothX1, Math.round(x + discR + 10));
+    this.m_dirtSmoothX0 = Math.min(this.m_dirtSmoothX0, Math.round(x - reach - 10));
+    this.m_dirtSmoothX1 = Math.max(this.m_dirtSmoothX1, Math.round(x + reach + 10));
   }
 
   /** Round a Dirt pile: box-3 average the surface over [x0,x1] (via `setColumnTop`, so pixels track),
@@ -1579,11 +1593,9 @@ export class CLand {
       for (let idx = 0; idx < bufs.length; idx++) {
         const buf = bufs[idx];
         if (!buf) continue;
-        const cv = document.createElement('canvas');
-        cv.width = w;
-        cv.height = h;
-        const g = cv.getContext('2d');
-        if (!g) continue;
+        const made = tryCanvas2d(w, h);
+        if (!made) continue;
+        const {cv, ctx: g} = made;
         const img = g.createImageData(w, h);
         img.data.set(buf);
         g.putImageData(img, 0, 0);
@@ -2089,20 +2101,9 @@ export class CLand {
       p.age = 0;
       this.m_spoil.push(p);
     }
-    // Arm the rounding pass over the landing zone, exactly as `depositDirt` does. Ejecta lands one
-    // 1px column at a time, so a big throw leaves the fill as a comb of spikes; the crater's own
+    // Arm the rounding pass over the landing zone, exactly as `depositDirt` does — the crater's own
     // slump is armed at CARVE time and has largely run out by the time the last chunks come down.
-    // Without this the refilled bowl reads as bristles rather than as settled earth.
-    if (count > 0) {
-      if (this.m_dirtSmoothPasses <= 0 && this.m_dirtSmoothDelay <= 0) {
-        this.m_dirtSmoothX0 = this.m_nWidth;
-        this.m_dirtSmoothX1 = 0;
-      }
-      this.m_dirtSmoothDelay = DIRT.SMOOTH_DELAY;
-      this.m_dirtSmoothPasses = DIRT.SMOOTH_PASSES;
-      this.m_dirtSmoothX0 = Math.min(this.m_dirtSmoothX0, Math.round(x - radius - 10));
-      this.m_dirtSmoothX1 = Math.max(this.m_dirtSmoothX1, Math.round(x + radius + 10));
-    }
+    if (count > 0) this.armDirtSmoothing(x, radius);
   }
 
   /**
@@ -2618,11 +2619,9 @@ export class CLand {
     const w = (img as {width: number}).width | 0,
       h = (img as {height: number}).height | 0;
     if (!w || !h) return;
-    const cv = document.createElement('canvas');
-    cv.width = w;
-    cv.height = h;
-    const g = cv.getContext('2d');
-    if (!g) return;
+    const made = tryCanvas2d(w, h);
+    if (!made) return;
+    const g = made.ctx;
     g.drawImage(img, 0, 0);
     const data = g.getImageData(0, 0, w, h).data;
     this.m_dirtTile = {w, h, px: new Uint32Array(data.buffer.slice(0))};
@@ -2650,18 +2649,21 @@ export class CLand {
     // persistent display canvas is only VIEW-sized (`m_terrainCanvas`, the on-screen tile), so the
     // full-world RGBA never lives on past the bake — the largest steady-state buffer at big Land
     // Sizes. Patterns bind to this scratch ctx, so they're rebuilt here each bake (bake is rare).
-    const scratch = document.createElement('canvas');
-    scratch.width = W;
-    scratch.height = H;
-    const g = scratch.getContext('2d', {willReadFrequently: true})!;
+    const {cv: scratch, ctx: g} = makeCanvas2d(W, H, {willReadFrequently: true});
     const patterns = this.m_layers.map(l => g.createPattern(l.image, 'repeat'));
     const EXT = 2;
-    const deepest = patterns[this.m_layers.length - 1];
-    if (deepest) {
+    // The surface polyline, left→right, overhanging the map edges by EXT so a pattern fill reaches
+    // the very first/last column. Every layer's region starts with it — the deepest closes down to
+    // the world floor, the others `depth` px below the surface — so it is traced once, here.
+    const traceSurface = () => {
       g.beginPath();
       g.moveTo(-EXT, heights[0]);
       for (let x = 0; x < W; x++) g.lineTo(x, heights[x]);
       g.lineTo(W + EXT, heights[W - 1]);
+    };
+    const deepest = patterns[this.m_layers.length - 1];
+    if (deepest) {
+      traceSurface();
       g.lineTo(W + EXT, H);
       g.lineTo(-EXT, H);
       g.closePath();
@@ -2672,10 +2674,7 @@ export class CLand {
       const pat = patterns[i];
       if (!pat) continue;
       const d = this.m_layers[i].depth;
-      g.beginPath();
-      g.moveTo(-EXT, heights[0]);
-      for (let x = 0; x < W; x++) g.lineTo(x, heights[x]);
-      g.lineTo(W + EXT, heights[W - 1]);
+      traceSurface();
       g.lineTo(W + EXT, heights[W - 1] + d);
       for (let x = W - 1; x >= 0; x--) g.lineTo(x, heights[x] + d);
       g.lineTo(-EXT, heights[0] + d);
@@ -2979,55 +2978,40 @@ export class CLand {
         if (y < by0) by0 = y;
         if (y > by1) by1 = y;
       }
-      if (bx1 >= bx0 && typeof document !== 'undefined') {
+      if (bx1 >= bx0) {
         const dw = bx1 - bx0 + 2,
           dh = by1 - by0 + 2;
-        if (dw * dh <= DIRT.BLIT_MAX_AREA) {
-          let cv = this.m_speckCanvas;
-          if (!cv) cv = this.m_speckCanvas = document.createElement('canvas');
-          if (cv.width < dw || cv.height < dh) {
-            cv.width = Math.max(cv.width, dw);
-            cv.height = Math.max(cv.height, dh);
-            this.m_speckImage = null;
-          }
-          const g = cv.getContext('2d');
-          if (g) {
-            if (!this.m_speckImage || this.m_speckImage.width !== dw || this.m_speckImage.height !== dh)
-              this.m_speckImage = g.createImageData(dw, dh);
-            const img = this.m_speckImage;
-            const out = img.data;
-            out.fill(0);
-            for (const s of this.m_radSpecks) {
-              const fade = 1 - s.age / s.life;
-              if (fade <= 0) continue;
-              const x = Math.round(s.x),
-                y = Math.round(s.y);
-              if (x < 1 || x >= this.m_nWidth - 1 || y < 1 || y >= this.m_nHeight - 1) continue;
-              const a = dbg ? 1 : fade * (0.72 + 0.28 * Math.sin(gt * s.pw + s.phase));
-              const cr = dbg ? 255 : s.r * a,
-                cg = dbg ? 0 : s.g * a,
-                cb = dbg ? 0 : s.b * a;
-              // Buffer coords, NOT world-minus-one: the blit already places buffer (0,0) at
-              // (bx0-1, by0-1), so subtracting another 1 here would put the leftmost column's
-              // grains at index -1 — which in a row-major buffer is not off the edge but the LAST
-              // pixel of the row above, drawing a stray speck to the right of the cloud for every
-              // grain on its left. The 2×2 mark runs 0..dw-1, exactly the width the bounds reserve.
-              const px0 = x - bx0,
-                py0 = y - by0;
-              for (let k = 0; k < 4; k++) {
-                const o = ((py0 + (k >> 1)) * dw + (px0 + (k & 1))) * 4;
-                out[o] = Math.min(255, out[o] + cr);
-                out[o + 1] = Math.min(255, out[o + 1] + cg);
-                out[o + 2] = Math.min(255, out[o + 2] + cb);
-                out[o + 3] = 255;
-              }
+        const out = dw * dh <= DIRT.BLIT_MAX_AREA ? this.m_speckBlit.beginBytes(dw, dh) : null;
+        if (out) {
+          for (const s of this.m_radSpecks) {
+            const fade = 1 - s.age / s.life;
+            if (fade <= 0) continue;
+            const x = Math.round(s.x),
+              y = Math.round(s.y);
+            if (x < 1 || x >= this.m_nWidth - 1 || y < 1 || y >= this.m_nHeight - 1) continue;
+            const a = dbg ? 1 : fade * (0.72 + 0.28 * Math.sin(gt * s.pw + s.phase));
+            const cr = dbg ? 255 : s.r * a,
+              cg = dbg ? 0 : s.g * a,
+              cb = dbg ? 0 : s.b * a;
+            // Buffer coords, NOT world-minus-one: the blit already places buffer (0,0) at
+            // (bx0-1, by0-1), so subtracting another 1 here would put the leftmost column's
+            // grains at index -1 — which in a row-major buffer is not off the edge but the LAST
+            // pixel of the row above, drawing a stray speck to the right of the cloud for every
+            // grain on its left. The 2×2 mark runs 0..dw-1, exactly the width the bounds reserve.
+            const px0 = x - bx0,
+              py0 = y - by0;
+            for (let k = 0; k < 4; k++) {
+              const o = ((py0 + (k >> 1)) * dw + (px0 + (k & 1))) * 4;
+              out[o] = Math.min(255, out[o] + cr);
+              out[o + 1] = Math.min(255, out[o + 1] + cg);
+              out[o + 2] = Math.min(255, out[o + 2] + cb);
+              out[o + 3] = 255;
             }
-            g.putImageData(img, 0, 0);
-            const prevOp = ctx.globalCompositeOperation;
-            ctx.globalCompositeOperation = dbg ? 'source-over' : 'lighter';
-            ctx.drawImage(cv, 0, 0, dw, dh, bx0 - 1, by0 - 1, dw, dh);
-            ctx.globalCompositeOperation = prevOp;
           }
+          const prevOp = ctx.globalCompositeOperation;
+          ctx.globalCompositeOperation = dbg ? 'source-over' : 'lighter';
+          this.m_speckBlit.end(ctx, dw, dh, bx0 - 1, by0 - 1);
+          ctx.globalCompositeOperation = prevOp;
         }
       }
     }
@@ -3184,9 +3168,8 @@ export class CLand {
   private m_debugCanvas: HTMLCanvasElement | null = null;
   // Scratch buffer the in-flight dirt cloud is plotted into, then blitted in one call (see `draw`).
   // One-call blit of the in-flight dirt cloud (see util/PixelBlitter).
-  private readonly m_blit = new PixelBlitter();
-  private m_speckCanvas: HTMLCanvasElement | null = null;
-  private m_speckImage: ImageData | null = null;
+  private readonly m_blit = new PixelBlitter(); // flying dirt chunks (opaque, one word per pixel)
+  private readonly m_speckBlit = new PixelBlitter(); // fallout specks (additive, per-channel)
 
   /** Dev (?skiptexture=1): render the terrain as MATERIALS not textures — land grayscale,
    *  dirt green, radiation red, sky cyan — so deposits/craters/fallout are unambiguous. */

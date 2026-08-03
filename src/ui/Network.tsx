@@ -1,8 +1,8 @@
 /**
  * Network screen — Create / Join a room by code, then a lobby. Renders from the
  * `netState` signal: entry (create or join), a connecting state, the lobby
- * (roster + ready + host Start), an error card, and a placeholder while a match
- * starts (networked gameplay arrives in a later phase).
+ * (roster + ready + host Start), an error card, and a leave-only panel once the
+ * match is playing (from then on the battle HUD is what's on screen).
  */
 import {useState} from 'preact/hooks';
 import {strings, fmt} from '../i18n';

@@ -226,10 +226,7 @@ export class NetGame {
     this.m_queue = []; // drop anything queued for a prior match/boot
     // Clear a pending between-battle timer — a reconnect can re-boot via startGame DURING the
     // intermission, and a stale timer would then advance a battle with the WRONG (old) seed.
-    if (this.m_intermissionTimer !== null) {
-      clearTimeout(this.m_intermissionTimer);
-      this.m_intermissionTimer = null;
-    }
+    this.cancelIntermission();
     // Fresh boot (or reconnect re-boot): until the first turnBegin we have no sim to trust, so the
     // next keyframe is a bootstrap to adopt. resumeMatch sends startGame→stateUpdate→turnBegin, so
     // the reconnect snapshot lands here while this is still false and is correctly adopted.
@@ -307,7 +304,7 @@ export class NetGame {
     // regenerated battle would flag a bogus divergence. The new battle's turnBegin arrives AFTER this
     // message (server order) and re-queues behind the BattleEnd "busy" gate, then drains below.
     this.m_queue = [];
-    if (this.m_intermissionTimer !== null) clearTimeout(this.m_intermissionTimer);
+    this.cancelIntermission();
     this.m_intermissionTimer = setTimeout(() => {
       this.m_intermissionTimer = null;
       const gc = this.host.controller;
@@ -325,9 +322,12 @@ export class NetGame {
    *  NetGame after the user has left the match (the controller's m_netMode stays true, so its own
    *  guard wouldn't stop it). Call before dropping the reference. */
   dispose(): void {
-    if (this.m_intermissionTimer !== null) {
-      clearTimeout(this.m_intermissionTimer);
-      this.m_intermissionTimer = null;
-    }
+    this.cancelIntermission();
+  }
+
+  private cancelIntermission(): void {
+    if (this.m_intermissionTimer === null) return;
+    clearTimeout(this.m_intermissionTimer);
+    this.m_intermissionTimer = null;
   }
 }

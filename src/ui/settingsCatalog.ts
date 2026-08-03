@@ -140,6 +140,6 @@ const CATALOG = {
  *  id not in the catalog is a compile error, so a stray key can't slip in. */
 export type SettingId = keyof typeof CATALOG;
 
-/** The catalog, widened so `SETTINGS[id]` reads as {@link SettingMeta} (uniform optional
- *  `options`/`scale`) for a dynamic id — the `satisfies` above still type-checks each entry. */
+/** The catalog, widened so `SETTINGS[id]` reads as a uniform {@link SettingMeta} for a DYNAMIC id
+ *  — the `satisfies` above still type-checks each entry against it. */
 export const SETTINGS: Record<SettingId, SettingMeta> = CATALOG;

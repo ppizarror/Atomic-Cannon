@@ -6,8 +6,9 @@
  * the whole frame — most importantly the expanding shockwave ("diffraction")
  * that ripples the scene when a heavy weapon lands.
  *
- * Hot particle layers can migrate to native Pixi sprites later; presentation and
- * the screen-warp live here regardless.
+ * The SMOKE layer bypasses that 2D canvas entirely and batches through native Pixi particles
+ * (see the GPU SMOKE LAYER section); scene and smoke share one container so the shockwave warps
+ * them together.
  */
 
 import {Application, Container, Particle, ParticleContainer, Rectangle, Sprite, Texture} from 'pixi.js';
@@ -87,7 +88,7 @@ export class CPixiCompositor {
   ): void {
     const id = this.sourceId(src);
     if (id < 0) return;
-    const tex = this.frameTexture(src, id, sx, sy, sw, sh);
+    const tex = this.frameTexture(id, sx, sy, sw, sh);
     if (!tex) return;
     // Sparks are 1-2px dots: sampled linearly they smear into a haze, so their source is set to
     // nearest-neighbour the first time one is drawn.
@@ -161,14 +162,7 @@ export class CPixiCompositor {
   }
 
   /** A Texture for a sub-rect of an already-uploaded source, cached per frame rect. */
-  private frameTexture(
-    _src: CanvasImageSource,
-    id: number,
-    sx: number,
-    sy: number,
-    sw: number,
-    sh: number,
-  ): Texture | null {
+  private frameTexture(id: number, sx: number, sy: number, sw: number, sh: number): Texture | null {
     const base = this.m_texSources.get(id);
     if (!base) return null;
     // Whole-canvas sprite → use the base texture directly.

@@ -21,6 +21,7 @@
  */
 import {CBotAI, bestAim, simulateShot, type BotPlan, type Pt, type AimField} from './CBotAI';
 import {clamp} from '../math/num';
+import {EXT_CODE} from './weapons/ExtType';
 import {AI_LEVEL_ULTRA} from './CBotAI';
 
 // ==========================================================================
@@ -39,11 +40,8 @@ export interface UltraEnemy {
 }
 
 /** One owned weapon, pre-resolved to the fields the blast scorer needs (the caller folds in
- *  Explosion Size + resolution so `radius` is the true falloff radius). */
-/** Raw `extType` of the guided family. Ultra reads weapons as plain numbers (see `UltraWeapon.ext`)
- *  rather than importing the nominal token, so the code lives here as a named constant. */
-const EXT_HOMING_CODE = 19;
-
+ *  Explosion Size + resolution so `radius` is the true falloff radius). `ext` is the raw
+ *  `extType` code — compare it against {@link EXT_CODE}, never a bare number. */
 export interface UltraWeapon {
   index: number;
   ext: number;
@@ -532,7 +530,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
   if (!firers.length || !enemies.length) return null;
 
   // Desperate = near death AND can't heal → drop premium reservation and throw everything.
-  const canHeal = weapons.some(w => w.ext === 10 && w.count > 0);
+  const canHeal = weapons.some(w => w.ext === EXT_CODE.HEAL && w.count > 0);
   const desperate = ctx.self.life < ctx.self.maxLife * VALUE.DESPERATE_LIFE_FRAC && !canHeal;
 
   const cands: ShotPlan[] = [];
@@ -599,7 +597,7 @@ export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
     const flat = solve(false);
     let guided: ReturnType<typeof solve> | null = null;
     const aimFor = (w: UltraWeapon) => {
-      if (w.ext !== EXT_HOMING_CODE) return flat;
+      if (w.ext !== EXT_CODE.HOMING) return flat;
       return (guided ??= solve(true));
     };
     const shot = flat.shot;
@@ -971,13 +969,13 @@ function bestBuff(ctx: UltraCtx): {weaponIndex: number; value: number; note: str
   const lifeFrac = self.maxLife > 0 ? self.life / self.maxLife : 1;
   if (lifeFrac < healBelow) {
     const urgency = 0.4 + Math.max(0, (healBelow - lifeFrac) / healBelow) * 1.2; // 0.4 → ~1.6 near 0
-    offer(own(10), (self.maxLife - self.life) * urgency, 'heal');
+    offer(own(EXT_CODE.HEAL), (self.maxLife - self.life) * urgency, 'heal');
   }
   // Shield (ext 7): defensive stock when low and enemies are around.
-  if (self.shield < 300) offer(own(7), (1000 - self.shield) * 0.25, 'shield');
+  if (self.shield < 300) offer(own(EXT_CODE.SHIELD), (1000 - self.shield) * 0.25, 'shield');
   // Armor (ext 11) / Hazmat (ext 14): smaller top-ups.
-  if (self.armor <= 0) offer(own(11), 120, 'armor');
-  if (self.hazmat <= 0 && self.onRadiation) offer(own(14), 150, 'hazmat');
+  if (self.armor <= 0) offer(own(EXT_CODE.ARMOR), 120, 'armor');
+  if (self.hazmat <= 0 && self.onRadiation) offer(own(EXT_CODE.HAZMAT), 150, 'hazmat');
   return best;
 }
 

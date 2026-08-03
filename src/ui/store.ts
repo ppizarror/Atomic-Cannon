@@ -822,6 +822,19 @@ export const paused = signal(false);
 
 export const weapons = signal<WeaponDef[]>([]);
 
+/** The currently-selected weapon def (falls back to the first). Keyed on the weapon's real
+ *  database `index`, never its position in the possibly-filtered displayed list. Both HUDs and
+ *  their readouts resolve it through here. */
+export const currentWeapon = (): WeaponDef | undefined =>
+  weapons.value.find(w => w.index === weaponIndex.value) ?? weapons.value[0];
+
+/** Wind as both HUDs print it: `>N.N` / `<N.N` for direction + magnitude, or the localised "off"
+ *  label under the dead-calm threshold. ASCII only — the bitmap fonts have no arrow glyphs. */
+export const windReadout = (): string => {
+  const mag = Math.abs(wind.value);
+  return mag < 0.05 ? strings.value.hud.windOff : `${wind.value >= 0 ? '>' : '<'}${mag.toFixed(1)}`;
+};
+
 // Shot-time bar below FIRE: fraction of turn time remaining (1 = full) + its
 // green→yellow→red colour, or null when there's no active countdown. Republished
 // only when the quantised width or colour changes, so the bar animates without

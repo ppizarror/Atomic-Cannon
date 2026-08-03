@@ -3,7 +3,7 @@
  * atom logo, the title reticle tile), rather than the same guard hand-rolled in each of them.
  */
 
-import {useState, useEffect} from 'preact/hooks';
+import {useAsyncValue} from './useAsyncValue';
 
 /**
  * Subscribe to an async image loader (resolves to a data URL, or null on failure).
@@ -11,19 +11,5 @@ import {useState, useEffect} from 'preact/hooks';
  * ignores a result that arrives after unmount / a dep change.
  */
 export function useAsyncImage(load: () => Promise<string | null>, deps: unknown[]): string {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    let ok = true;
-    // Some loaders (e.g. the tank-preview recolor) REJECT on a missing/corrupt image rather than
-    // resolving null — swallow it so a bad asset is a blank preview, not an uncaught rejection.
-    load()
-      .then(u => {
-        if (ok && u) setSrc(u);
-      })
-      .catch(() => {});
-    return () => {
-      ok = false;
-    };
-  }, deps);
-  return src;
+  return useAsyncValue(() => load().then(u => u ?? ''), deps, '');
 }

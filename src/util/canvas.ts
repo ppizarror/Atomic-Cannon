@@ -10,6 +10,22 @@ export function knockoutWhere(px: Uint8ClampedArray, matches: (px: Uint8ClampedA
   }
 }
 
+/** How far a channel may stray from the key colour and still count as background. The sprite BMPs
+ *  are palettised, so the key is never bit-exact after a decode; 24 is what the art needs. */
+export const KEY_TOLERANCE = 24;
+
+/**
+ * A {@link knockoutWhere} predicate matching every pixel within {@link KEY_TOLERANCE} of `key` —
+ * the colour-key rule the sprite loader (a fixed magenta) and the Customize Players preview (the
+ * bitmap's own corner pixel) both apply, so the two can never disagree about what "background" is.
+ */
+export function nearColor(kr: number, kg: number, kb: number) {
+  return (p: Uint8ClampedArray, i: number): boolean =>
+    Math.abs(p[i] - kr) <= KEY_TOLERANCE &&
+    Math.abs(p[i + 1] - kg) <= KEY_TOLERANCE &&
+    Math.abs(p[i + 2] - kb) <= KEY_TOLERANCE;
+}
+
 /**
  * Create a sized 2D canvas and its context in one call — the `createElement('canvas')` +
  * set width/height + `getContext('2d')` boilerplate that recurs across the renderers.

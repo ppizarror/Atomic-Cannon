@@ -1,8 +1,8 @@
 /**
  * Network UI store — a signal mirror of the {@link RoomClient} lobby state plus
  * the actions the Network screen calls. Holds a single RoomClient; every state
- * change flows into `netState` so Preact re-renders. The game bridge for in-match
- * messages is wired in a later phase (`onGameMessage` below).
+ * change flows into `netState` so Preact re-renders. In-match messages are handed to a
+ * {@link NetGame}, which owns the turn bridge (see `onGameMessage` below).
  */
 import {signal} from '@preact/signals';
 import {RoomClient, DEFAULT_SETTINGS, type RoomClientState} from '../net/roomClient';
@@ -170,22 +170,24 @@ export const updateMatchConfig = (patch: Partial<MatchConfig>): void => {
   client?.publishConfig({...base, ...patch});
 };
 
-/** Leave the room and reset the screen back to the entry state. */
-export function leaveRoom(): void {
-  client?.leave();
+/** Drop the client + net game and reset the screen to the entry state. `bye` decides how the socket
+ *  goes: a graceful leave (tells the room) or a bare close (we're navigating away). */
+function teardown(bye: (c: RoomClient) => void): void {
+  if (client) bye(client);
   client = null;
   netGame?.dispose(); // cancel the pending between-battle intermission timer
   netGame = null;
   netState.value = initialState;
 }
 
+/** Leave the room and reset the screen back to the entry state. */
+export function leaveRoom(): void {
+  teardown(c => c.leave());
+}
+
 /** Tear down without a graceful leave (e.g. navigating away). */
 export function resetNet(): void {
-  client?.close();
-  client = null;
-  netGame?.dispose(); // cancel the pending between-battle intermission timer
-  netGame = null;
-  netState.value = initialState;
+  teardown(c => c.close());
 }
 
 /** End the current networked match: leave the room and return to the main menu. */

@@ -494,9 +494,22 @@ const SMOKE = {
 } as const;
 
 /**
- * A crater "vent": how long a fresh crater keeps smoking. Each vent is independent, so multi-bomb
- * weapons (Black Rain) leave the whole strip smoking.
+ * A {@link TintedSpriteCache} builder that paints a WHITE radial falloff from `stops`
+ * (`[position, alpha]`, centre → rim) across the master square.
+ *
+ * The two masters this system bakes — the additive glow and the smoke puff — are the same
+ * gradient-and-fill; only their stop tables differ, and those tables ARE the difference between a
+ * hot core that reads as light and a soft one that blurs into cloud. Passing just the stops keeps
+ * that the only thing either declaration says.
  */
+function radialMaster(stops: readonly (readonly [number, number])[]) {
+  return (g: CanvasRenderingContext2D, R: number): void => {
+    const grad = g.createRadialGradient(R, R, 0, R, R, R);
+    for (const [at, a] of stops) grad.addColorStop(at, `rgba(255,255,255,${a})`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, R * 2, R * 2);
+  };
+}
 
 // ==========================================================================
 // CParticleSystem CLASS
@@ -2114,14 +2127,11 @@ export class CParticleSystem {
   // Tinting quantises to 4 bits/channel (see TintedSpriteCache): a preset's jittered tints
   // (e.g. an eOrange cluster) fold to a handful of buckets while distinct weapon colours stay
   // apart — invisible on a soft additive glow, and it keeps the count under the cache cap.
-  private readonly m_glowCache = new TintedSpriteCache(CParticleSystem.GLOW_SRC, (g, R) => {
-    const grad = g.createRadialGradient(R, R, 0, R, R, R);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, R * 2, R * 2);
-  });
+  private readonly m_glowCache = new TintedSpriteCache(CParticleSystem.GLOW_SRC, radialMaster([
+    [0, 1],
+    [0.5, 0.4],
+    [1, 0],
+  ])); // prettier-ignore
 
   // Real sprites (looked up lazily each frame; falls back to procedural draws
   // until they finish loading). 'fx:smoke' = gui/smoke.bmp, 'fx:flare' = flares/04.bmp.
@@ -2176,13 +2186,10 @@ export class CParticleSystem {
   // White master puff: a SOLID-ish core with a soft edge (a cotton ball), vs the glow's diffuse
   // falloff — a SOFT falloff (no hard core/edge) so overlapping puffs blur together into a smooth
   // fluffy cloud rather than crisp distinct circles. Same 4-bit tint cache as the glow.
-  private readonly m_puffCache = new TintedSpriteCache(CParticleSystem.PUFF_SRC, (g, R) => {
-    const grad = g.createRadialGradient(R, R, 0, R, R, R);
-    grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-    grad.addColorStop(0.4, 'rgba(255,255,255,0.6)');
-    grad.addColorStop(0.75, 'rgba(255,255,255,0.22)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, R * 2, R * 2);
-  });
+  private readonly m_puffCache = new TintedSpriteCache(CParticleSystem.PUFF_SRC, radialMaster([
+    [0, 0.9],
+    [0.4, 0.6],
+    [0.75, 0.22],
+    [1, 0],
+  ])); // prettier-ignore
 }

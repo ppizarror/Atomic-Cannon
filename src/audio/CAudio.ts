@@ -175,12 +175,51 @@ export class CAudio {
     return this.m_unlocked;
   }
 
-  // ---- PAUSE -------------------------------------------------------------
-  // Freeze/restore gameplay audio for a modal game freeze.
-
   // ========================================================================
   // CONTEXT SUSPEND & RESUME
   // ========================================================================
+
+  /**
+   * Drive `ctx` to the latest INTENDED suspend state, which `want()` re-reads on each pass.
+   *
+   * `ctx.suspend()`/`resume()` resolve a render-quantum later, and a rapid pause↔unpause (open then
+   * close the depot) can flip the intent mid-await — a naive one-shot check would then miss and
+   * leave the context stuck. So apply twice, re-reading the intent each pass, guarded against
+   * re-entrancy per context.
+   */
+  private readonly m_converging = new Set<AudioContext>();
+
+  private async converge(ctx: AudioContext, want: () => boolean): Promise<void> {
+    if (this.m_converging.has(ctx)) return; // an apply is running; it re-reads the intent after each await
+    this.m_converging.add(ctx);
+    try {
+      // Two passes, deliberately SEQUENTIAL: the second re-reads `want()` after the first has
+      // settled, which is the whole point — they cannot be run together.
+      await this.step(ctx, want);
+      await this.step(ctx, want);
+    } finally {
+      this.m_converging.delete(ctx);
+    }
+  }
+
+  /** One convergence step: drive `ctx` toward the intent `want()` reports right now. */
+  private async step(ctx: AudioContext, want: () => boolean): Promise<void> {
+    if (!this.m_unlocked) return; // can't touch the context until the autoplay lock clears
+    const suspended = want();
+    if (suspended && ctx.state === 'running') await ctx.suspend().catch(() => {});
+    else if (!suspended && ctx.state === 'suspended') await ctx.resume().catch(() => {});
+  }
+
+  /** The gameplay context follows a game pause OR the debug freeze — it stays suspended until BOTH
+   *  intents clear. */
+  private applyGameCtx(): void {
+    void this.converge(this.m_ctxGame, () => this.m_paused || this.m_debugSilenced);
+  }
+
+  /** The main context (music + UI) only ever follows the debug freeze. */
+  private applyMainCtx(): void {
+    void this.converge(this.m_ctxMain, () => this.m_debugSilenced);
+  }
 
   /**
    * Freeze gameplay audio for a game pause (depot / pause menu / help): suspend the gameplay-SFX
@@ -191,44 +230,14 @@ export class CAudio {
    */
   suspend(): void {
     this.m_paused = true;
-    void this.applyGameCtx();
+    this.applyGameCtx();
   }
 
   /** Resume gameplay audio after a game pause: un-suspend the gameplay-SFX context (frozen effects
    *  and loops pick up where they left off). */
   resume(): void {
     this.m_paused = false;
-    void this.applyGameCtx();
-  }
-
-  /**
-   * Drive the gameplay context to the latest INTENDED state (`m_paused`). `ctx.suspend()`/`resume()`
-   * resolve a render-quantum later, and a rapid pause↔unpause (open then close the depot) can flip
-   * the intent mid-await — a naive one-shot check would then miss and leave the context stuck. So
-   * apply twice, re-reading the intent each pass, guarded against re-entrancy.
-   */
-  private m_applyingGameCtx = false;
-  private async applyGameCtx(): Promise<void> {
-    if (this.m_applyingGameCtx) return; // an apply is running; it re-reads m_paused after each await
-    this.m_applyingGameCtx = true;
-    try {
-      await this.stepGameCtx();
-      await this.stepGameCtx();
-    } finally {
-      this.m_applyingGameCtx = false;
-    }
-  }
-
-  /** One convergence step: drive the gameplay context toward the current intended `m_paused` state. */
-  private async stepGameCtx(): Promise<void> {
-    if (!this.m_unlocked) return; // can't touch the context until the autoplay lock clears
-    // The debug freeze also silences gameplay — keep it suspended until BOTH intents clear.
-    const suspended = this.m_paused || this.m_debugSilenced;
-    if (suspended && this.m_ctxGame.state === 'running') {
-      await this.m_ctxGame.suspend().catch(() => {});
-    } else if (!suspended && this.m_ctxGame.state === 'suspended') {
-      await this.m_ctxGame.resume().catch(() => {});
-    }
+    this.applyGameCtx();
   }
 
   /**
@@ -238,30 +247,8 @@ export class CAudio {
    */
   setDebugSilenced(on: boolean): void {
     this.m_debugSilenced = on;
-    void this.applyMainCtx();
-    void this.applyGameCtx(); // re-evaluate the game context (its suspend now also honours this flag)
-  }
-
-  /** Converge the main context (music + UI) toward the `m_debugSilenced` intent (see applyGameCtx). */
-  private m_applyingMainCtx = false;
-  private async applyMainCtx(): Promise<void> {
-    if (this.m_applyingMainCtx) return;
-    this.m_applyingMainCtx = true;
-    try {
-      await this.stepMainCtx();
-      await this.stepMainCtx();
-    } finally {
-      this.m_applyingMainCtx = false;
-    }
-  }
-
-  private async stepMainCtx(): Promise<void> {
-    if (!this.m_unlocked) return;
-    if (this.m_debugSilenced && this.m_ctxMain.state === 'running') {
-      await this.m_ctxMain.suspend().catch(() => {});
-    } else if (!this.m_debugSilenced && this.m_ctxMain.state === 'suspended') {
-      await this.m_ctxMain.resume().catch(() => {});
-    }
+    this.applyMainCtx();
+    this.applyGameCtx(); // re-evaluate the game context (its suspend now also honours this flag)
   }
 
   // ========================================================================
@@ -287,10 +274,6 @@ export class CAudio {
   preloadMenu(): void {
     void this.m_uiSfx.preload([SFX.MENU_HOVER, SFX.MENU_FORWARD, SFX.MENU_BACK, SFX.CLICK]);
   }
-
-  // ---- SEMANTIC GAME EVENTS ----------------------------------------------
-  // The play funnel.
-  // Gameplay effects go through m_gameSfx (frozen by a pause); UI/chrome through m_uiSfx (never frozen).
 
   // ========================================================================
   // GAMEPLAY SFX
@@ -435,9 +418,6 @@ export class CAudio {
   stopMusic(): void {
     this.m_music.stop();
   }
-
-  // ---- SETTINGS ----------------------------------------------------------
-  // Options menu: SFX vol / music vol / on-off toggles.
 
   // ========================================================================
   // VOLUME & TOGGLES

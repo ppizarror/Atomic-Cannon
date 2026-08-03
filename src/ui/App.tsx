@@ -1,9 +1,7 @@
 /**
- * UI root. Switches between screens via the `screen` signal. The game canvas
- * (Pixi) renders underneath, independent of this tree; screens overlay it.
- *
- * Battle HUD is built; menu / settings / depot are scaffolded here so they slot
- * in as components without touching the game or the canvas.
+ * UI root. Switches between screens via the `screen` signal, then layers the always-mounted
+ * overlays (net banners, bubbles, pause/quit/help, depot, HUD readouts, flash, gates) over
+ * whichever is showing. The game canvas (Pixi) renders underneath, independent of this tree.
  */
 import {useRef, useState, useEffect} from 'preact/hooks';
 import {useSignalEffect} from '@preact/signals';

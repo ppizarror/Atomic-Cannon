@@ -6,10 +6,10 @@
 
 import {strings, fmt} from '../i18n';
 import {Vec2} from '../math/Vec2';
-import {clamp, clamp01, TWO_PI} from '../math/num';
-import {hexToRgb} from '../math/color';
+import {clamp, clamp01, deg2rad, TWO_PI} from '../math/num';
+import {hexToRgb, luma, maxOpaqueLuma} from '../math/color';
 import {capSet} from '../util/cache';
-import {recolorOpaque} from '../util/canvas';
+import {makeCanvas2d, recolorOpaque} from '../util/canvas';
 import {CLand} from './CLand';
 import {GameConfig, isWargame} from './CGameConfig';
 
@@ -20,8 +20,7 @@ import type {Sprite, ISpriteSource} from './rendering/sprites';
 // INTERFACES & TYPES
 // ==========================================================================
 
-/** A drawable image plus its dimensions. */
-// Tank variants
+/** The selectable hull models (Customize Players). */
 export const PLAYER_TANKS = ['Standard', 'MA1', 'MSPO', 'Green', 'Atomic Cannon'];
 
 // The 16-team palette (0xRRGGBB). Team 0 = blue.
@@ -173,11 +172,6 @@ export class CTank {
     return CTank.tankWidth() * Math.min(1, sprite.width / SIZE.REF_HULL_W);
   }
 
-  /** Perceptual luminance of a pixel (0..1). */
-  private static lumaOf(r: number, g: number, b: number): number {
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  }
-
   /** Solid-colour silhouette of a sprite (all opaque pixels → `color`), cached. Used to stamp a
    *  white outline behind the hull for High Contrast. */
   private static silhouette(sprite: Sprite, color: string, key: string): HTMLCanvasElement {
@@ -215,27 +209,19 @@ export class CTank {
     const cached = CTank.tintCache.get(key);
     if (cached) return cached;
     const {r: tr, g: tg, b: tb} = hexToRgb(hex);
-    const cv = document.createElement('canvas');
-    cv.width = sprite.width;
-    cv.height = sprite.height;
-    const g = cv.getContext('2d', {willReadFrequently: true})!;
+    const {cv, ctx: g} = makeCanvas2d(sprite.width, sprite.height, {willReadFrequently: true});
     g.imageSmoothingEnabled = false;
     g.drawImage(sprite.bitmap, 0, 0);
     const im = g.getImageData(0, 0, cv.width, cv.height);
     const px = im.data;
     // Pass 1: brightest opaque pixel — it maps to the exact chosen colour.
-    let maxL = 0.001;
-    for (let i = 0; i < px.length; i += 4) {
-      if (px[i + 3] === 0) continue;
-      const l = CTank.lumaOf(px[i], px[i + 1], px[i + 2]);
-      if (l > maxL) maxL = l;
-    }
+    const maxL = maxOpaqueLuma(px);
     // Pass 2: tint = target colour scaled by each pixel's relative luminance (shading preserved),
     // then blended over the ORIGINAL pixel by TINT.STRENGTH so the sprite's texture stays visible.
     const s = TINT.STRENGTH;
     for (let i = 0; i < px.length; i += 4) {
       if (px[i + 3] === 0) continue; // keep transparency
-      const f = Math.min(1, CTank.lumaOf(px[i], px[i + 1], px[i + 2]) / maxL);
+      const f = Math.min(1, luma(px[i], px[i + 1], px[i + 2]) / maxL);
       px[i] = Math.round(px[i] * (1 - s) + tr * f * s);
       px[i + 1] = Math.round(px[i + 1] * (1 - s) + tg * f * s);
       px[i + 2] = Math.round(px[i + 2] * (1 - s) + tb * f * s);
@@ -288,22 +274,24 @@ export class CTank {
     this.m_bExploded = false;
   }
 
+  /** Full health at this match's Hitpoints, every defensive pool empty, no attacker on record —
+   *  the state both a fresh spawn and a between-battles respawn start from. */
+  private resetHealth(): void {
+    this.m_maxLife = GameConfig.hitpoints; // Tank → Hitpoints sets the starting/max life
+    this.m_health.nLife = this.m_maxLife;
+    this.m_health.nShield = 0;
+    this.m_health.nArmor = 0;
+    this.m_health.nHazmat = 0;
+    this.m_health.fRadiation = 0;
+    this.m_lastDamager = null;
+  }
+
   /** Initialize tank at position with given player data. */
   init(x: number, pLand: CLand): void {
     this.m_vPos = new Vec2(x, 0);
     // Snap tank onto the terrain surface at its spawn column
     this.computePosition(pLand);
-
-    // Spawn at full health — Tank → Hitpoints sets the starting/max life.
-    this.m_maxLife = GameConfig.hitpoints;
-    this.m_health.nLife = this.m_maxLife;
-    // Zero the defensive pools too (defensive — init runs on a fresh CTank where these are already 0,
-    // but mirror respawn so a future reuse of init() on a live tank can't leak a stale shield/armor).
-    this.m_health.nShield = 0;
-    this.m_health.nArmor = 0;
-    this.m_health.nHazmat = 0;
-    this.m_health.fRadiation = 0;
-    this.m_lastDamager = null; // no attacker yet this match
+    this.resetHealth();
     // A fresh tank starts a new war with a clean scorecard.
     this.resetStats();
   }
@@ -315,13 +303,7 @@ export class CTank {
     this.m_vPos = new Vec2(x, 0);
     this.computePosition(pLand);
     this.m_vVel = new Vec2(0, 0);
-    this.m_maxLife = GameConfig.hitpoints;
-    this.m_health.nLife = this.m_maxLife;
-    this.m_health.nShield = 0;
-    this.m_health.nArmor = 0;
-    this.m_health.nHazmat = 0;
-    this.m_health.fRadiation = 0;
-    this.m_lastDamager = null;
+    this.resetHealth();
     this.m_bIsAlive = true;
     this.m_bIsMoving = false;
     this.m_bFalling = false;
@@ -481,14 +463,7 @@ export class CTank {
         this.m_vPos.x = clamp(this.m_vPos.x, CTank.tankRadius(), pLand.width - CTank.tankRadius());
 
         // Land when descending onto the surface (keeps fuel for re-lift).
-        const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
-        if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
-          this.m_vPos.y = fLandY;
-          this.m_vVel = new Vec2(0, 0);
-          this.m_bFalling = false;
-          this.m_bIsMoving = false;
-          this.m_fAngle = this.computeBodyTilt(pLand);
-        }
+        if (this.tryLand(pLand)) this.m_fAngle = this.computeBodyTilt(pLand);
       } else {
         // Grounded, engine idle: rest on the surface but keep the fuel.
         this.m_vPos.y = fRestY;
@@ -513,13 +488,7 @@ export class CTank {
       // Keep within the battlefield.
       this.m_vPos.x = clamp(this.m_vPos.x, CTank.tankRadius(), pLand.width - CTank.tankRadius());
 
-      const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
-      if (this.m_vVel.y >= 0 && this.m_vPos.y >= fLandY) {
-        this.m_vPos.y = fLandY;
-        this.m_vVel = new Vec2(0, 0);
-        this.m_bFalling = false;
-        this.m_bIsMoving = false; // settled — clears the motion loop / flight exit
-      }
+      this.tryLand(pLand); // settling clears the motion loop / flight exit
     } else if (this.m_driveTargetX !== null) {
       // Driving along the surface toward a queued destination (bot reposition).
       this.stepDrive(pLand, dt);
@@ -537,6 +506,22 @@ export class CTank {
     }
 
     this.m_fLastTurretAngle = this.m_fTurretAngle;
+  }
+
+  /**
+   * Settle a DESCENDING tank onto the surface under it: snap to the rest height, kill the velocity
+   * and clear the falling/moving flags. Returns whether it actually landed. Shared by the two
+   * airborne paths in {@link update} — a jet descending on its thrust and a plain fall or blast
+   * kick — which only differ in what they do afterwards.
+   */
+  private tryLand(pLand: CLand): boolean {
+    const fLandY = pLand.getHeightAt(Math.floor(this.m_vPos.x)) - CTank.tankHeight();
+    if (this.m_vVel.y < 0 || this.m_vPos.y < fLandY) return false;
+    this.m_vPos.y = fLandY;
+    this.m_vVel = new Vec2(0, 0);
+    this.m_bFalling = false;
+    this.m_bIsMoving = false;
+    return true;
   }
 
   /** Check if tank can move to new position. */
@@ -702,18 +687,24 @@ export class CTank {
       this.m_health.nLife -= dmg;
     }
 
-    if (this.m_health.nLife <= 0) {
-      this.m_health.nLife = 0;
-      // Rounds/Point mode is non-lethal: the tank bottoms out at 0 life but is NEVER destroyed —
-      // it keeps taking turns and the round is scored by damage points (faithful to the original,
-      // which gates the dead-flag/explosion to Deathmatch). Only Deathmatch kills.
-      if (GameConfig.lethalDamage) {
-        this.m_bExploded = true;
-        this.m_bIsAlive = false;
-      }
-    }
-
+    this.checkLethal();
     return lifeBefore - this.m_health.nLife;
+  }
+
+  /**
+   * Floor life at 0 and, in Deathmatch only, destroy the tank.
+   *
+   * Rounds/Point mode is non-lethal: the tank bottoms out at 0 life but is NEVER destroyed — it
+   * keeps taking turns and the round is scored by damage points (faithful to the original, which
+   * gates the dead-flag/explosion to Deathmatch).
+   */
+  private checkLethal(): void {
+    if (this.m_health.nLife > 0) return;
+    this.m_health.nLife = 0;
+    if (GameConfig.lethalDamage) {
+      this.m_bExploded = true;
+      this.m_bIsAlive = false;
+    }
   }
 
   /** Force this tank into its destroyed (wreck) state, bypassing the damage pipeline. Used for the
@@ -732,7 +723,7 @@ export class CTank {
    * no fallout DOT consumer at all — radiation is cosmetic there — so this is our interpretation,
    * following how it treats a piercing weapon: shield → hazmat → armor → life.)
    */
-  applyRadiationDamage(fAmount: number, _dt: number): void {
+  applyRadiationDamage(fAmount: number): void {
     if (!this.m_bIsAlive) return;
     this.m_health.fRadiation += fAmount;
 
@@ -751,16 +742,7 @@ export class CTank {
       this.m_health.nLife -= dmg;
     }
 
-    if (this.m_health.nLife <= 0) {
-      this.m_health.nLife = 0;
-      // Rounds/Point mode is non-lethal: the tank bottoms out at 0 life but is NEVER destroyed —
-      // it keeps taking turns and the round is scored by damage points (faithful to the original,
-      // which gates the dead-flag/explosion to Deathmatch). Only Deathmatch kills.
-      if (GameConfig.lethalDamage) {
-        this.m_bExploded = true;
-        this.m_bIsAlive = false;
-      }
-    }
+    this.checkLethal();
   }
 
   // ========================================================================
@@ -1105,7 +1087,7 @@ export class CTank {
    */
   setTurretAngle(fDegrees: number): void {
     this.m_fLastTurretAngle = this.m_fTurretAngle;
-    this.m_fTurretAngle = (fDegrees * Math.PI) / 180;
+    this.m_fTurretAngle = deg2rad(fDegrees);
   }
 
   /** The barrel's actual WORLD angle (radians). Relative Turrets (Tank option) makes the
@@ -1121,8 +1103,7 @@ export class CTank {
    * direction. Screen-Y is down, so up = negative-Y: (cos θ, -sin θ) for all θ.
    */
   aimUnit(): Vec2 {
-    const r = this.firingAngle();
-    return new Vec2(Math.cos(r), -Math.sin(r));
+    return Vec2.fromAngle(this.firingAngle());
   }
 
   /**
@@ -1140,10 +1121,7 @@ export class CTank {
 
   /** World position of the barrel tip, where a shot should spawn. */
   getMuzzlePosition(): Vec2 {
-    const pivot = this.getTurretPivot();
-    const aim = this.aimUnit();
-    const len = CTank.turretDrawLen(this.m_sTankType);
-    return new Vec2(pivot.x + aim.x * len, pivot.y + aim.y * len);
+    return this.muzzleAlong(this.aimUnit());
   }
 
   /**
@@ -1151,8 +1129,12 @@ export class CTank {
    * moving the turret. Lets the AI evaluate a candidate shot's true spawn point.
    */
   muzzleForAngle(deg: number): Vec2 {
-    const r = (deg * Math.PI) / 180;
-    const aim = new Vec2(Math.cos(r), -Math.sin(r));
+    return this.muzzleAlong(Vec2.fromAngle(deg2rad(deg)));
+  }
+
+  /** The barrel tip for a given aim direction: the pivot, pushed out by the drawn barrel length —
+   *  so the shot spawns exactly where the turret sprite ends. */
+  private muzzleAlong(aim: Vec2): Vec2 {
     const pivot = this.getTurretPivot();
     const len = CTank.turretDrawLen(this.m_sTankType);
     return new Vec2(pivot.x + aim.x * len, pivot.y + aim.y * len);

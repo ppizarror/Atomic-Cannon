@@ -12,7 +12,6 @@ import {
   pickTarget,
   pickWeapon,
   chooseBotWeapon,
-  isBotSelfBuff,
   ballisticWeaponIndices,
   moveWeaponIndices,
   pickMoveWeapon,
@@ -21,6 +20,7 @@ import {
   AI_LEVEL_MAX,
   type AimField,
 } from '../src/core/CBotAI';
+import {isSelfBuffExt} from '../src/core/weapons/ExtType';
 import {WEAPON_DATABASE} from '../src/core/CWeapon';
 
 const GY = 500; // flat ground line (screen-Y)
@@ -189,7 +189,7 @@ describe('Bot weapon/utility choice (chooseBotWeapon)', () => {
 
   it('only Shell owned → fires the Shell', () => {
     expect(chooseBotWeapon([SHELL], 5, true, FULL, seq([0]))).toBe(SHELL);
-    expect(isBotSelfBuff(7)).toBe(true); // shield is a self-buff
-    expect(isBotSelfBuff(0)).toBe(false); // ballistic is not
+    expect(isSelfBuffExt(7)).toBe(true); // shield is a self-buff
+    expect(isSelfBuffExt(0)).toBe(false); // ballistic is not
   });
 });
