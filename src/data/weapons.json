@@ -2319,6 +2319,7 @@
     "homMaxDeg": 15,
     "homStepDeg": 1,
     "homFineDeg": 0.1,
+    "homSound": "RocketLong.wav",
     "expType": 2,
     "expBitmap": "21.bmp"
   }

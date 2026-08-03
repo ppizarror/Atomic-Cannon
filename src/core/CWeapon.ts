@@ -89,6 +89,7 @@ export interface RawWeapon {
   homMaxDeg?: number;
   homStepDeg?: number;
   homFineDeg?: number;
+  homSound?: string;
   disabled?: boolean;
 
   [k: string]: unknown;
@@ -383,6 +384,11 @@ export class CWeapon {
   /** Refinement resolution around the coarse winner. */
   getHomingFineStep(): number {
     return Math.max(0.01, this.m_def.homFineDeg ?? 0.1);
+  }
+
+  /** Sound the sustainer makes when it relights at the apex, falling back to the launch report. */
+  getHomingSound(): string {
+    return this.m_def.homSound || this.getFireSound();
   }
 
   getMuzzleFlash(): number {

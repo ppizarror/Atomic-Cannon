@@ -760,6 +760,10 @@ export class CGameController implements ShotWorld {
 
     // Warm the combat SFX set and start a random battle track.
     this.m_audio?.preloadCombat();
+    // Mid-flight sounds get no lazy-load grace (see preloadSounds), so warm every distinct one.
+    this.m_audio?.preloadSounds([
+      ...new Set(WEAPON_DATABASE.map(w => w.homSound).filter((n): n is string => !!n)),
+    ]);
     this.m_audio?.battleMusic();
   }
 
@@ -2341,7 +2345,7 @@ export class CGameController implements ShotWorld {
       // …and announce the relight, once, so the apex is audible as well as visible.
       if (isHoming && !shot.homingRelit && !Number.isNaN(shot.homingBase)) {
         shot.homingRelit = true;
-        this.m_audio?.fire(weapon.getFireSound(), sp.x);
+        this.m_audio?.fire(weapon.getHomingSound(), sp.x);
       }
       if (isTracer) {
         // Tracer: NO exhaust, NO smoke, NO nose flare — just a thin white streak.
