@@ -129,8 +129,40 @@ export enum EGameType {
   FastTest = 2,
 }
 
-/** One team's Battle Heroes submission: the callsign plus both board values (kills for
- *  Deathmatch, average damage-per-tank "score" for Points games). */
+/** A point on `path` at fraction `u` of its length, interpolated between neighbours. Paths from
+ *  two different solves have different lengths (they are trajectory samples, and the flight gets
+ *  shorter), so they can only be blended by fraction — index-wise would compare the middle of one
+ *  arc against the end of another. */
+function samplePath(path: {x: number; y: number}[], u: number): {x: number; y: number} {
+  if (path.length === 1) return path[0];
+  const f = u * (path.length - 1);
+  const i = Math.min(path.length - 2, Math.floor(f));
+  const k = f - i;
+  const a = path[i],
+    b = path[i + 1];
+  return {x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k};
+}
+
+/** Blend two paths into `n` points, `t` of the way from `from` to `to`. An empty `from` (the very
+ *  first solve) simply yields `to`. */
+function blendPaths(
+  from: {x: number; y: number}[],
+  to: {x: number; y: number}[],
+  t: number,
+  n: number,
+): {x: number; y: number}[] {
+  if (!to.length) return [];
+  if (!from.length || t >= 1) return to;
+  const out: {x: number; y: number}[] = [];
+  for (let i = 0; i < n; i++) {
+    const u = n === 1 ? 0 : i / (n - 1);
+    const a = samplePath(from, u),
+      b = samplePath(to, u);
+    out.push({x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t});
+  }
+  return out;
+}
+
 // ==========================================================================
 // INTERFACES & TYPES
 // ==========================================================================
@@ -313,6 +345,9 @@ const HOMING = {
    *  TOP edge (`terrainHeight - tankHeight`), not its middle, so centring on the raw anchor rides
    *  half a tank high. tankHeight is 1.5x the hit radius, so half of it is 0.75x. */
   LOCK_DROP: 0.75,
+  /** Points the bounding trajectories are resampled to when blending between solves. Enough to
+   *  keep a long curve smooth; the paths themselves are already sparse samples. */
+  PATH_POINTS: 28,
   /** Reticle span as a multiple of the target's hit radius. 2.9 lands on the hull's own width
    *  (SIZE.W 46 vs SIZE.R 16), so the brackets sit snugly around the vehicle. Both terms scale
    *  with Player Size, so the fit holds at any tank size. */
@@ -2596,7 +2631,9 @@ export class CGameController implements ShotWorld {
    */
   private drawHomingGuidance(ctx: CanvasRenderingContext2D, alpha: number): void {
     for (const shot of this.m_shots) {
-      if (shot.isDead() || Number.isNaN(shot.homingBase)) continue;
+      // Telemetry belongs to STEERING, not to the motor: past the apex the sustainer is always
+      // lit, but with nobody being chased there is no band to draw and no lock to paint.
+      if (shot.isDead() || !shot.homingTarget) continue;
       const weapon = getWeapon(shot.getWeaponIndex());
       if (weapon.getExtType() !== EXT.HOMING) continue;
       // Straight from the weapon's `blast`/`trail` effect, so the telemetry is the round's own
@@ -2606,7 +2643,14 @@ export class CGameController implements ShotWorld {
       // The RENDER position, not the sim one: the sprite is drawn interpolated, so anchoring the
       // shaft to the raw sim position leaves it lagging the missile by up to a full step.
       const p = shot.renderPosition(alpha);
-      const fan = shot.homingFan;
+      // Guidance re-solves ten times a second, so the raw arrays hold still for 100 ms and then
+      // jump — the band alone reading as a 10 fps game. Sweep from the previous solve to the
+      // current one across that window instead; the geometry is smooth without paying for more
+      // solves, at the cost of the band trailing the truth by up to one interval.
+      const blend = shot.homingFanT;
+      const fan = blendPaths(shot.homingFanPrev, shot.homingFan, blend, shot.homingFan.length);
+      const L = blendPaths(shot.homingFanLPrev, shot.homingFanL, blend, HOMING.PATH_POINTS);
+      const R = blendPaths(shot.homingFanRPrev, shot.homingFanR, blend, HOMING.PATH_POINTS);
 
       if (fan.length > 1) {
         // The region is bounded by the two EXTREME trajectories and the landing arc between
@@ -2619,9 +2663,9 @@ export class CGameController implements ShotWorld {
           const d = Math.hypot(dx, dy) || 1;
           return {x: q.x + (dx / d) * HOMING.FAN_SKIRT, y: q.y + (dy / d) * HOMING.FAN_SKIRT};
         };
-        const L = shot.homingFanL;
-        const R = shot.homingFanR;
         const far = fan.reduce((a, b) => a + b.y, 0) / fan.length;
+        const fanX0 = Math.min(...fan.map(f => f.x));
+        const fanX1 = Math.max(...fan.map(f => f.x));
         const grad = ctx.createLinearGradient(p.x, p.y, p.x, far);
         // Lit from the nozzle down. Starting at zero and fading in made the beam appear to begin
         // in mid-air, detached from the missile it belongs to.
@@ -2630,15 +2674,32 @@ export class CGameController implements ShotWorld {
         grad.addColorStop(0.9, `${color}2e`);
         grad.addColorStop(1, `${color}12`); // still lit AT the ground it lands on
         ctx.save();
-        // Clip to the SKY. The gradient is still ~20% opaque where it crosses the ground, so
-        // without this the beam soaks down through the terrain — light through a hillside.
+        // Clip to what the missile can actually SEE.
         const allX = [p.x, ...fan.map(f => f.x), ...L.map(q => q.x), ...R.map(q => q.x)];
         const cx0 = Math.max(0, Math.floor(Math.min(...allX)) - 4);
         const cx1 = Math.min(this.m_land.width - 1, Math.ceil(Math.max(...allX)) + 4);
+        const STEP = 2;
+        const horizon: {x: number; y: number; lit: boolean}[] = [];
+        const sweep = (from: number, to: number, dir: number) => {
+          let runMin = Infinity;
+          const out: {x: number; y: number; lit: boolean}[] = [];
+          for (let x = from; dir > 0 ? x <= to : x >= to; x += dir * STEP) {
+            const cx = Math.min(this.m_land.width - 1, Math.max(0, Math.round(x)));
+            const d = Math.abs(x - p.x);
+            const h = this.m_land.getHeightAt(cx);
+            const slope = d < 1 ? Infinity : (h - p.y) / d;
+            const lit = slope <= runMin;
+            if (lit) runMin = slope;
+            out.push({x, y: d < 1 ? h : p.y + runMin * d, lit});
+          }
+          return out;
+        };
+        // Left half is swept back toward the missile so the assembled path runs cx0 -> cx1.
+        horizon.push(...sweep(Math.min(p.x, cx1), cx0, -1).reverse());
+        horizon.push(...sweep(Math.max(p.x, cx0), cx1, 1));
         ctx.beginPath();
         ctx.moveTo(cx0, -4000);
-        for (let x = cx0; x <= cx1; x += 3) ctx.lineTo(x, this.m_land.getHeightAt(x));
-        ctx.lineTo(cx1, this.m_land.getHeightAt(cx1));
+        for (const q of horizon) ctx.lineTo(q.x, q.y);
         ctx.lineTo(cx1, -4000);
         ctx.closePath();
         ctx.clip();
@@ -2658,24 +2719,34 @@ export class CGameController implements ShotWorld {
         ctx.fill();
         ctx.restore();
 
-        // The lit ground: a thin additive wash hugging the surface across the fan's span, so the
-        // terrain under the shaft brightens instead of merely being tinted through.
-        const x0 = Math.max(0, Math.floor(Math.min(...fan.map(f => f.x))));
-        const x1 = Math.min(this.m_land.width - 1, Math.ceil(Math.max(...fan.map(f => f.x))));
-        if (x1 > x0) {
-          ctx.save();
-          ctx.globalCompositeOperation = 'lighter';
-          ctx.globalAlpha = HOMING.GLOW_ALPHA;
-          ctx.beginPath();
-          ctx.moveTo(x0, this.m_land.getHeightAt(x0));
-          for (let x = x0; x <= x1; x += 3) ctx.lineTo(x, this.m_land.getHeightAt(x));
-          for (let x = x1; x >= x0; x -= 3)
-            ctx.lineTo(x, this.m_land.getHeightAt(x) + HOMING.GLOW_H);
-          ctx.closePath();
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.restore();
+        // The lit ground: a thin additive wash hugging the surface, so terrain under the shaft
+        // brightens instead of merely being tinted through. Driven by the SAME horizon sweep as
+        // the clip — a column the beam cannot see must not glow, or the shadow is contradicted by
+        // a lit strip running straight through it.
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = HOMING.GLOW_ALPHA;
+        ctx.fillStyle = color;
+        const inSpan = (x: number) => x >= fanX0 && x <= fanX1;
+        let run: {x: number; y: number}[] = [];
+        const flush = () => {
+          if (run.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(run[0].x, run[0].y);
+            for (const q of run) ctx.lineTo(q.x, q.y);
+            for (let i = run.length - 1; i >= 0; i--)
+              ctx.lineTo(run[i].x, run[i].y + HOMING.GLOW_H);
+            ctx.closePath();
+            ctx.fill();
+          }
+          run = [];
+        };
+        for (const q of horizon) {
+          if (q.lit && inSpan(q.x)) run.push({x: q.x, y: q.y});
+          else flush();
         }
+        flush();
+        ctx.restore();
       }
 
       // The lock, sized to BOX the hull rather than sit on the turret, pulsing gently so it reads

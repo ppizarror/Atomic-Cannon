@@ -229,6 +229,42 @@ describe('Homing Missile', () => {
     expect(action).toBe('detonate'); // it lands and blows up — no drone that flies forever
   });
 
+  it('still arms for a target near the edge, even if the unguided arc would sail off', () => {
+    // The regression this guards: declining on "the unguided arc lands off the field" refuses
+    // exactly the shots guidance exists to save — an enemy parked near the boundary that the
+    // round would overshoot by a little. What decides it is whether a TARGET is reachable, not
+    // where the round would have gone had nobody been there.
+    const world = new World();
+    const overshoot = unguidedImpactX() + 120;
+    world.tanks = [tankAt(overshoot, 450, 1)];
+    const shot = launch();
+    armAt(world, shot);
+    expect(shot.homingLost).toBe(false);
+    expect(Number.isNaN(shot.homingBase)).toBe(false); // armed
+    expect(shot.homingTarget).not.toBeNull();
+  });
+
+  it('acquires a target standing UPHILL of where the round lands', () => {
+    // The shape from a real miss report: the round comes down near the enemy, but the enemy is a
+    // long way ABOVE it on a rise. Measuring the acquisition range diagonally counts that height
+    // against the tank and refuses the shot; the band corrects along the ground, so only the
+    // horizontal gap is its business. 120 across and 500 up is ~514 diagonally — comfortably
+    // outside the 300 radius on the old metric, comfortably inside it on the right one.
+    const world = new World();
+    world.tanks = [tankAt(unguidedImpactX() + 120, 450 - 500, 1)];
+    const shot = launch();
+    armAt(world, shot);
+    expect(shot.homingTarget).not.toBeNull(); // uphill is still in range
+    expect(Number.isNaN(shot.homingBase)).toBe(false); // …and it armed
+
+    // …while genuinely distant ground is still refused, so this widened nothing but the axis.
+    const far = new World();
+    far.tanks = [tankAt(unguidedImpactX() + 700, 450, 1)];
+    const lone = launch();
+    armAt(far, lone);
+    expect(lone.homingTarget).toBeNull();
+  });
+
   it('is opt-in and reachable in a real match', () => {
     expect(HOMING.disabled).toBe(true); // a port addition, so it starts switched off
     const gc = new CGameController(makeCanvas());

@@ -544,6 +544,10 @@ export class CShot {
   homingBurn: boolean = false;
   /** Set once the relight has been announced, so the motor barks at the apex and not every frame. */
   homingRelit: boolean = false;
+  /** Guidance has DECLINED this shot and will never arm: it is headed off the field in X, so there
+   *  is nothing to steer at and nowhere to land. Terminal — a lost shot coasts away dark and
+   *  silent rather than relighting and accelerating into the void. */
+  homingLost: boolean = false;
   /** The reachable region, refreshed every few frames and drawn under the missile: the landing
    *  points across the authority band, plus the two EXTREME trajectories that bound them. The
    *  bounding paths are kept because the region has to be drawn along the real curves — chords
@@ -551,5 +555,13 @@ export class CShot {
   homingFan: {x: number; y: number}[] = [];
   homingFanL: {x: number; y: number}[] = [];
   homingFanR: {x: number; y: number}[] = [];
+  /** The PREVIOUS solve's shape, and how far the drawn band has blended from it to the current
+   *  one (0..1). Re-solving is expensive enough to run at a tenth the frame rate, so the geometry
+   *  would otherwise sit still for 100 ms and jump — the band alone looking like a 10 fps game.
+   *  Interpolating between the two is what buys a smooth sweep without paying for more solves. */
+  homingFanPrev: {x: number; y: number}[] = [];
+  homingFanLPrev: {x: number; y: number}[] = [];
+  homingFanRPrev: {x: number; y: number}[] = [];
+  homingFanT: number = 1;
   homingFanAge: number = 0;
 }

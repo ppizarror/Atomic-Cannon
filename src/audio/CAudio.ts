@@ -273,6 +273,15 @@ export class CAudio {
     void this.m_gameSfx.preload(COMBAT_PRELOAD);
   }
 
+  /** Warm arbitrary game samples (fire-and-forget). Weapon fire/hit samples load lazily on first
+   *  use, which is fine for a launch report — the shot is already on screen by the time it lands.
+   *  A sound that fires MID-FLIGHT gets no such grace: a cache miss is simply silent, and the
+   *  moment has passed by the time the buffer arrives. Anything on that clock warms here. */
+  preloadSounds(names: readonly string[]): void {
+    const wanted = names.filter(Boolean);
+    if (wanted.length) void this.m_gameSfx.preload(wanted);
+  }
+
   /** Preload the front-end menu effect set (fire-and-forget) so the first hover /
    *  navigation isn't a silent cache miss. Idempotent — buffers are cached. */
   preloadMenu(): void {

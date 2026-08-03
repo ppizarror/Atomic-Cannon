@@ -85,7 +85,8 @@ const SHOT = {
  * gravity, wind), so the correction it commits to is one the missile can actually hold.
  */
 const HOMING = {
-  /** How far from the UNGUIDED impact point a tank can sit and still be acquired (px). */
+  /** How far HORIZONTALLY from the unguided impact point a tank can sit and still be acquired
+   *  (px). Also the loosest miss the search will still arm for. */
   ACQUIRE_PX: 300,
   /** Fraction of the predicted range where the motor cuts and the round starts coasting down… */
   COAST_FROM: 0.25,
@@ -95,10 +96,16 @@ const HOMING = {
   /** Degrees per second the airframe can swing. The command can jump; the missile cannot, so
    *  every correction is a lean rather than a kink — and a late re-target visibly costs time. */
   TURN_RATE_DEG: 22,
-  /** Sustainer burn once relit: fraction of current speed added per second, capped so a long
-   *  descent cannot accelerate the round into a railgun. */
-  BURN_PER_SEC: 1.55,
-  BURN_MAX_SCALE: 3.6,
+  /** Sustainer burn once relit: fraction of current speed added per second, and the ceiling on
+   *  what it may reach as a multiple of launch speed.
+   *
+   *  Tuned DOWN from the value that made powered range match a plain rocket exactly. That one
+   *  drove the round to 3.6x launch speed, which made arming a large change to where it lands —
+   *  and near maximum range every correction in the band then flew clean off the map, so guidance
+   *  declined shots that were landing fine unpowered. A missile whose guidance is a liability at
+   *  long range is worse than one that simply flies a little shorter. */
+  BURN_PER_SEC: 0.45,
+  BURN_MAX_SCALE: 1.6,
   /** Guidance re-solves this often (seconds). Every frame is wasted work; too slow and a target
    *  that dies or moves is chased for a visible beat. */
   RESOLVE_SEC: 0.1,
@@ -505,7 +512,10 @@ function turnVel(vx: number, vy: number, deg: number): {x: number; y: number} {
  * correction the missile cannot actually fly.
  *
  * Returns where the round would DETONATE, applying the same two stopping rules the live sweep
- * does: contact with `aim` inside `aimR`, or the ground. Both matter. Ranking corrections purely
+ * does: contact with `aim` inside `aimR`, or the ground — plus `landed`, which says WHICH. A round
+ * that leaves the world instead reports its exit point, and that point sits just past the map edge
+ * where it is easily mistaken for an impact near whatever stands there. Callers that care whether
+ * the shot comes down at all (acquisition does) have to be able to tell the two apart. Both matter. Ranking corrections purely
  * on the ground crossing biases every one of them short, because the live round stops early on a
  * hull it would have flown past; ranking on closest approach over-corrects the other way, sending
  * the missile over the target's head to land well beyond it.
@@ -520,7 +530,7 @@ function predictArc(
   aim?: Vec2,
   aimR = 0,
   path?: {x: number; y: number}[],
-): {x: number; y: number} {
+): {x: number; y: number; landed: boolean} {
   const land = world.land;
   const p = shot.getPosition();
   const v = shot.getVelocity();
@@ -551,7 +561,7 @@ function predictArc(
     y += vy * dt;
     if (path && i % 5 === 0) path.push({x, y}); // sparse — it is drawn, not integrated
     // Hull contact stops the live round right here, so it has to stop the prediction too.
-    if (aim && Math.hypot(x - aim.x, y - aim.y) <= aimR) return {x, y};
+    if (aim && Math.hypot(x - aim.x, y - aim.y) <= aimR) return {x, y, landed: true};
     // Same swing-at-a-bounded-rate + sustained burn the live step flies. Predicting an INSTANT
     // turn instead would promise arcs the airframe can't hold, and the search would keep choosing
     // them.
@@ -564,20 +574,20 @@ function predictArc(
       swung += step;
     }
     if (Math.hypot(vx, vy) < cap) {
-      const burn = 1 + HOMING.BURN_PER_SEC * dt;
-      vx *= burn;
-      vy *= burn;
+      const k = 1 + HOMING.BURN_PER_SEC * dt;
+      vx *= k;
+      vy *= k;
     }
-    if (x < -60 || x > land.width + 60 || y > land.height + 80) break;
+    if (x < -60 || x > land.width + 60 || y > land.height + 80) return {x, y, landed: false};
     const below = clearance(x, y);
     if (below >= 0) {
       // INTERPOLATE the crossing inside this step rather than returning the step's endpoint, so
       // the impact point isn't reported up to a whole step past the ground.
       const f = below !== above ? above / (above - below) : 1;
-      return {x: px + (x - px) * f, y: py + (y - py) * f};
+      return {x: px + (x - px) * f, y: py + (y - py) * f, landed: true};
     }
   }
-  return {x, y};
+  return {x, y, landed: false}; // ran out of prediction budget without meeting anything
 }
 
 /** Progress along the predicted unguided range, 0 at the muzzle and 1 at the impact point. Drives
@@ -598,7 +608,12 @@ function homingTargetNear(shot: CShot, world: ShotWorld, to: {x: number; y: numb
     if (!t.isAlive() || t === owner) continue;
     if (owner && t.getTeamId() === owner.getTeamId()) continue;
     const tp = t.getPosition();
-    const d = Math.hypot(tp.x - to.x, tp.y - to.y);
+    // HORIZONTAL separation, not the straight-line distance. Guidance corrects along the ground:
+    // the band moves where the round comes DOWN, and it has no say in how high the ground is when
+    // it gets there. Measuring diagonally makes a tank on a ridge fail the range check purely for
+    // standing uphill of the impact — the round lands in the valley a stride away, the search is
+    // never even run, and the shot the player could plainly see was close is refused.
+    const d = Math.abs(tp.x - to.x);
     if (d < nearest) {
       nearest = d;
       best = t;
@@ -619,6 +634,13 @@ function homingTargetNear(shot: CShot, world: ShotWorld, to: {x: number; y: numb
 function homingSolve(shot: CShot, weapon: CWeapon, world: ShotWorld): void {
   const maxTurn = weapon.getHomingMaxTurn();
   const rel = shot.homingApplied; // where the airframe is now, relative to the band centre
+  // Where the round goes if guidance STEERS nothing. The sustainer is not part of that choice —
+  // it lights at the apex either way — so this is predicted powered, exactly like the candidates
+  // it is weighed against.
+  //
+  // It only picks the CANDIDATE, including when the arc sails off the field, because a tank near
+  // that edge is who the band exists to reach. Whether the round can actually get there is decided
+  // by the search below.
   const free = predictArc(shot, world, 0);
   const target = homingTargetNear(shot, world, free);
   shot.homingTarget = target;
@@ -631,14 +653,20 @@ function homingSolve(shot: CShot, weapon: CWeapon, world: ShotWorld): void {
   const tr = target.getHitRadius();
   let best = rel;
   let bestMiss = Infinity;
+  let bestDx = Infinity; // horizontal gap of the winning correction — what the arm gate reads
   const consider = (off: number): void => {
     if (off < -maxTurn || off > maxTurn) return;
     // `predictArc` turns relative to the CURRENT heading, while offsets are relative to the band
     // centre — so what it must fly from here is the difference.
     const end = predictArc(shot, world, off - rel, tp, tr);
+    // A correction that LEAVES the world has not hit anything. Its exit point sits a stride past
+    // the map edge, which next to a tank parked there scores as a fine near miss — so scoring it
+    // would arm the round for a target it is merely flying over on its way out.
+    if (!end.landed) return;
     const miss = Math.hypot(end.x - tp.x, end.y - tp.y);
     if (miss < bestMiss) {
       bestMiss = miss;
+      bestDx = Math.abs(end.x - tp.x);
       best = off;
     }
   };
@@ -648,6 +676,17 @@ function homingSolve(shot: CShot, weapon: CWeapon, world: ShotWorld): void {
   const coarse = best;
   const fine = weapon.getHomingFineStep();
   for (let k = -9; k <= 9; k++) if (k !== 0) consider(coarse + k * fine);
+  // Arm only if the band can genuinely deliver — judged HORIZONTALLY, like the acquisition range.
+  // Corrections are ranked by true blast proximity above, but whether it is worth relighting at all
+  // is about coming down in the right PLACE. Earth stacked over the target is not a reason to give
+  // up: the round lands on the hill above them, and that crater is how they get dug out. Only
+  // `bestDx` staying Infinity (nothing lands at all, whatever it does) or the round coming down a
+  // long way along the ground counts as a lost shot.
+  if (bestDx > HOMING.ACQUIRE_PX) {
+    shot.homingTarget = null;
+    shot.homingAim = rel;
+    return;
+  }
   shot.homingAim = best;
 }
 
@@ -696,7 +735,7 @@ function homingFan(
  */
 function homingStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number): void {
   shot.homingBurn = false;
-  if (shot.getGeneration() !== 0) return;
+  if (shot.getGeneration() !== 0 || shot.homingLost) return;
 
   // Capture the launch geometry once, so the phase clock has a range to measure against.
   if (shot.homingSpanX <= 0) {
@@ -708,7 +747,20 @@ function homingStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number):
 
   // --- act 3: powered guidance -------------------------------------------
   if (!Number.isNaN(shot.homingBase) || shot.isMovingDown()) {
+    // A round physically leaving the field SIDEWAYS is gone — nothing to steer at, nowhere to
+    // land. Checked on X only: flying off the TOP is ordinary artillery and the round comes back.
+    const width = world.land.width;
+    if (shot.getPosition().x < 0 || shot.getPosition().x > width) {
+      shot.homingLost = true;
+      return;
+    }
     if (Number.isNaN(shot.homingBase)) {
+      // APEX. The motor relights here unconditionally — that is what makes the round's range a
+      // fixed property of angle and power rather than something that depends on whether a target
+      // happened to be in range. A conditional burn made the same shot fly two different
+      // distances, which no one could aim and the bot's solver could not model.
+      //
+      // Only STEERING is conditional: with nobody to chase the round simply flies its powered arc.
       const v = shot.getVelocity();
       shot.homingBase = (Math.atan2(v.y, v.x) * 180) / Math.PI;
       shot.homingApplied = 0;
@@ -716,12 +768,26 @@ function homingStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number):
       homingSolve(shot, weapon, world);
     } else if ((shot.homingFanAge += dt) >= HOMING.RESOLVE_SEC) {
       shot.homingFanAge = 0;
+      // Keep re-solving even while unguided: the powered arc keeps moving, so a target can come
+      // into range part-way down.
       homingSolve(shot, weapon, world);
-      const f = homingFan(shot, weapon, world);
-      shot.homingFan = f.land;
-      shot.homingFanL = f.left;
-      shot.homingFanR = f.right;
+      if (shot.homingTarget) {
+        // Keep the outgoing shape so the renderer can sweep from it to the new one rather than
+        // cutting between them.
+        shot.homingFanPrev = shot.homingFan;
+        shot.homingFanLPrev = shot.homingFanL;
+        shot.homingFanRPrev = shot.homingFanR;
+        const f = homingFan(shot, weapon, world);
+        shot.homingFan = f.land;
+        shot.homingFanL = f.left;
+        shot.homingFanR = f.right;
+      } else {
+        shot.homingFan = [];
+      }
     }
+    // Published for the renderer so the blend clock lives with the solve cadence, not duplicated
+    // as a constant on the drawing side.
+    shot.homingFanT = Math.min(1, shot.homingFanAge / HOMING.RESOLVE_SEC);
 
     // Swing toward the command at a bounded rate — the airframe leans, it never kinks.
     const want = shot.homingAim - shot.homingApplied;
@@ -730,8 +796,7 @@ function homingStep(shot: CShot, weapon: CWeapon, world: ShotWorld, dt: number):
     const r = step !== 0 ? turnVel(v.x, v.y, step) : {x: v.x, y: v.y};
     shot.homingApplied += step;
 
-    // Sustainer: burns for the whole descent (that is what a homing round IS), capped so a long
-    // fall cannot wind it up indefinitely.
+    // Sustainer: burns for the whole descent, target or no target — see the apex note above.
     const speed = Math.hypot(r.x, r.y);
     const cap = launchSpeed(shot.getPower()) * HOMING.BURN_MAX_SCALE;
     const burn = speed < cap ? 1 + HOMING.BURN_PER_SEC * dt : 1;
