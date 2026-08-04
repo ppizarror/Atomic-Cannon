@@ -113,9 +113,9 @@ const MATCH_CONFIG_SPEC: {
   powerScale: {lo: 0.25, hi: 4, dflt: 1},
   kickbackScale: {lo: 0, hi: 8, dflt: 1},
   buryTanks: {dflt: false},
-  variance: {dflt: true}, // default ON (matches the game default)
+  variance: {dflt: true},
   relativeTurrets: {dflt: false},
-  utilityTurn: {dflt: false},
+  utilityTurn: {dflt: true},
   randomizePosition: {dflt: false},
   roundTime: {lo: 0, hi: 600, dflt: 0}, // per-turn shot clock (s); 0 = off
   crateChance: {lo: 0, hi: 100, dflt: 20},

@@ -1925,7 +1925,8 @@ export class CGameController implements ShotWorld {
   }
 
   /** Commit a placed Move: drive the current tank to the clicked world-X (clamped to the move
-   *  budget), consuming the round and ending the turn — the click-to-place counterpart of firing. */
+   *  budget), consuming the round — the click-to-place counterpart of firing. Whether the drive also
+   *  ends the turn is Utility Turn's call, applied once it settles (see `finishTankMove`). */
   placeMove(worldX: number): void {
     if (!this.m_movePlacing) return;
     this.m_movePlacing = false;
@@ -3775,7 +3776,8 @@ export class CGameController implements ShotWorld {
     // Move utilities (extType 3 — Move Near/Mid/Far): the original shows a green move-AREA
     // (`[tankX ± budget]`, budget = worldWidth·dmg·0.01) and the tank drives to the point the
     // player picks WITHIN it. We use the aim cursor as that pick, clamped to the budget — so you
-    // aim at a spot in the green band and it walks there. Consumes the turn; no shot.
+    // aim at a spot in the green band and it walks there. No shot; the turn ends with the drive
+    // unless Utility Turn is off (finishTankMove).
     if (ext === EXT.MOVE) {
       const budget = this.moveRange(weapon);
       const tx = tank.getPosition().x;
@@ -3788,14 +3790,18 @@ export class CGameController implements ShotWorld {
     // Utility items apply an effect to the firing tank instead of launching a shot.
     if (this.applyUtility(tank, weapon, ext)) {
       this.m_gameState = EGameState.Battle;
-      // Utility Turn (Gameplay, default OFF): when OFF a utility is "free" — the human keeps
-      // control and can still aim/fire this turn. When ON, using it ends the turn like a shot.
-      // Bots (and the AI-driven Demo tank) always end their turn (one action), so the flag is
-      // human-only in normal play.
+      // Utility Turn (Gameplay, default ON): using a utility ends the turn like a shot. Turned OFF
+      // a utility is "free" — the human keeps control and can still aim/fire this turn. Bots (and
+      // the AI-driven Demo tank) always end their turn (one action), so the flag is human-only in
+      // normal play.
       if (GameConfig.utilityTurn || tank.isBot() || GameConfig.demo) {
         this.schedule(0.4, () => this.endTurn());
       } else {
         this.m_firedThisTurn = false; // a free utility isn't a shot → no post-fire gloat gating
+        // Nothing is in flight after a FREE utility, so the turn is not "resolving" — clear the flag
+        // fire() set above, or the net bridge holds the server's next hand-off for the rest of a turn
+        // that never calls endTurn (see isNetSimBusy).
+        this.m_netShotResolving = false;
         // Control stays with the human → RESUME the shot clock (paused at fire, not reset), so a free
         // utility spends turn time rather than refilling it and can't be used to dodge the deadline.
         this.armShotClock(false);
@@ -4356,7 +4362,7 @@ export class CGameController implements ShotWorld {
     return this.m_land.width * (weapon.getDamage() / 100);
   }
 
-  /** Drive a tank to `destX` (a Move utility action), then end the turn once settled. */
+  /** Drive a tank to `destX` (a Move utility action); `finishTankMove` closes it once settled. */
   private startTankMove(tank: CTank, destX: number): void {
     const clamped = this.clampMoveDest(destX);
     // Network: a Move is a turn-resolving action just like a shot — flag it busy so the next
@@ -4372,22 +4378,50 @@ export class CGameController implements ShotWorld {
     this.waitForRest(tank, tank.getPosition().x, 0);
   }
 
-  /** Poll until the moving tank has actually STOPPED, then end the turn. A long drive must NOT be cut
-   *  short: the old fixed 5s cap ended the turn mid-move, handing the NEXT tank its turn (and a shot)
-   *  while this one was still driving. So we wait as long as it's making progress; only a genuine hang
-   *  — still flagged `moving` yet frozen in place for a sustained spell — bails out. */
+  /** Poll until the moving tank has actually STOPPED, then close the move. A long drive must NOT be
+   *  cut short: the old fixed 5s cap ended the turn mid-move, handing the NEXT tank its turn (and a
+   *  shot) while this one was still driving. So we wait as long as it's making progress; only a
+   *  genuine hang — still flagged `moving` yet frozen in place for a sustained spell — bails out. */
   private waitForRest(tank: CTank, lastX: number, stuckPolls: number): void {
     if (!tank.isMoving()) {
-      this.endTurn();
+      this.finishTankMove(tank);
       return;
     }
     const x = tank.getPosition().x;
     const stuck = Math.abs(x - lastX) > 0.25 ? 0 : stuckPolls + 1;
     if (stuck >= 20) {
-      this.endTurn(); // ~3s (20 × 0.15s of sim time) with no progress while still "moving" → stuck
+      // ~3s (20 × 0.15s of sim time) with no progress while still "moving" → stuck. Close it the same
+      // way a settled drive closes: a hang must not cost a turn the drive itself wouldn't have cost.
+      this.finishTankMove(tank);
       return;
     }
     this.schedule(0.15, () => this.waitForRest(tank, x, stuck));
+  }
+
+  /**
+   * A Move drive has settled (or hung): end the turn — UNLESS Utility Turn is off and a human drove,
+   * in which case the Move was FREE like every other utility and control stays with them. Move is a
+   * utility, so it answers to the same flag as heal/shield/armor/hazmat (see the `applyUtility` branch
+   * in `fire()`); it used to consume the turn unconditionally, which read as an arbitrary exception
+   * once the flag was turned off. Bots and the AI-driven Demo tank always spend the turn (one action).
+   *
+   * Deterministic across a net match: every peer decides on the same (flag, mover) pair, so a
+   * spectator replaying a remote human's free Move keeps simulating that player's turn instead of
+   * handing off early. Only the shot clock is local — `armShotClock` arms it for the local player.
+   */
+  private finishTankMove(tank: CTank): void {
+    if (GameConfig.utilityTurn || !tank.isHuman() || GameConfig.demo) {
+      this.endTurn();
+      return;
+    }
+    this.m_moveResolving = false; // control is back → the green move band may show again
+    this.m_netShotResolving = false; // nothing is in flight → don't hold the net hand-off
+    this.m_firedThisTurn = false; // a move isn't a shot → no post-fire gloat gating
+    this.m_gameState = EGameState.Battle;
+    // RESUME the clock (paused when the move was placed, not refunded), so free moves spend turn
+    // time rather than refilling it — the same rule the free self-buff utilities follow.
+    this.armShotClock(false);
+    this.markDirty();
   }
 
   /** One brain per difficulty, rebuilt when the level changes. */
@@ -5713,9 +5747,9 @@ export class CGameController implements ShotWorld {
   }
 
   /**
-   * Drive the acting tank to `destX` and end the turn once it settles — the public
-   * seam for a Move action (the network layer's `move` command and, later, replayed
-   * remote input; locally the human still moves via aim + a Move weapon through
+   * Drive the acting tank to `destX`, closing the move once it settles (turn end or not, per Utility
+   * Turn) — the public seam for a Move action (the network layer's `move` command and, later,
+   * replayed remote input; locally the human still moves via aim + a Move weapon through
    * `fire()`). Guarded like `fire()`: only the living, non-moving current tank acts.
    */
   commandMoveTo(destX: number): void {

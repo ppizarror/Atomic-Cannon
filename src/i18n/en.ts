@@ -246,7 +246,7 @@ export const en: Strings = {
         body: [
           'Your objective is to inflict more damage on your opponent than they inflict on you. There are two game types. ROUND games are score based: you play a set number of rounds and gain points, and the more accurate your shot the more points you get - no tank is ever destroyed. DEATH MATCH is power based: each tank has a life meter and you try to destroy the other tanks before they get you.',
           'A Death Match is played over a set number of battles called a war. Each battle ends when only one team is left alive. You gain points for each kill, and at the end of the war the winner is the team with the most kills. Killing your own tank counts as a negative kill. If teams are tied, the team with the most hitpoints on the final battle wins.',
-          'A random player goes first. On your turn you can buy or sell weapons and utilities, adjust your aim and power, use utilities such as moving your tank or raising your armor and shields, then fire a weapon to end your turn.',
+          'A random player goes first. On your turn you can buy or sell weapons and utilities and adjust your aim and power as much as you like - those are free. What ends your turn is acting: firing a weapon, or using a utility such as moving your tank, patching yourself up with a medkit, or raising your armor and shields. If you would rather utilities cost you nothing, turn off Settings > Gameplay Options > Utility Turn and you can use one and still fire in the same turn.',
         ],
       },
       {

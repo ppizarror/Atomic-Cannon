@@ -246,7 +246,7 @@ export const es: Strings = {
         body: [
           'Tu objetivo es infligir más daño a tu oponente del que él te inflige a ti. Hay dos tipos de juego. Las partidas por RONDAS se basan en la puntuación: juegas un número determinado de rondas y ganas puntos, y cuanto más preciso sea tu disparo más puntos obtienes; ningún tanque es destruido. El COMBATE A MUERTE se basa en la potencia: cada tanque tiene un medidor de vida e intentas destruir a los otros tanques antes de que te destruyan a ti.',
           'Un Combate a Muerte se juega a lo largo de un número determinado de batallas llamado guerra. Cada batalla termina cuando solo queda un equipo con vida. Ganas puntos por cada baja, y al final de la guerra vence el equipo con más bajas. Matar a tu propio tanque cuenta como una baja negativa. Si los equipos empatan, gana el equipo con más puntos de vida en la batalla final.',
-          'Un jugador al azar comienza. En tu turno puedes comprar o vender armas y utilidades, ajustar tu puntería y potencia, usar utilidades como mover tu tanque o levantar tu blindaje y escudos, y luego disparar un arma para terminar tu turno.',
+          'Un jugador al azar comienza. En tu turno puedes comprar o vender armas y utilidades y ajustar tu puntería y potencia cuanto quieras: eso es gratis. Lo que termina tu turno es actuar: disparar un arma, o usar una utilidad como mover tu tanque, curarte con un botiquín o levantar tu blindaje y escudos. Si prefieres que las utilidades no te cuesten nada, desactiva Ajustes > Opciones de Jugabilidad > Utilidad Cuenta Turno y podrás usar una y disparar igual en el mismo turno.',
         ],
       },
       {

@@ -74,34 +74,28 @@ const CATALOG = {
   'gp.difficulty': {default: 4, map: v => v + 1}, // enum index 0..10 → AI level 1..11 (11 = Ultra)
   'gp.wind': {default: 0, scale: [0, 0.5, 1, 1.6]},
   'gp.changeWind': {default: 0, cfg: 'changeWind'},
-  // 0 Linear (uniform) · 1 Realistic (boundary-layer profile)
-  'gp.windModel': {default: 0, cfg: 'windModel'},
+  'gp.windModel': {default: 0, cfg: 'windModel'}, // 0 Linear (uniform) · 1 Realistic (boundary-layer profile)
   'gp.explosionSize': {default: 1, scale: [0.7, 1, 1.35, 1.8], cfg: 'explosionScale'},
   'gp.variance': {default: true},
-  // Round Timer seconds; index 0 = Off (infinite turns) — so an out-of-range index means OFF, not 1
+  // round Timer seconds; Off (infinite turns)
   'gp.roundTime': {default: 2, scale: [0, 15, 30, 45], scaleDflt: 0, cfg: 'roundTime'},
-  'gp.utilTurn': {default: false, cfg: 'utilityTurn'},
+  'gp.utilTurn': {default: true, cfg: 'utilityTurn'},
   'gp.randTurns': {default: false, cfg: 'randomizeTurns'},
-  // Scatter the spawn slots so squads aren't grouped on the map
-  'gp.randPos': {default: true, cfg: 'randomizePosition'},
+  'gp.randPos': {default: true, cfg: 'randomizePosition'}, // scatter the spawn slots
   'gp.altTurns': {default: true, cfg: 'alternateTurns'},
-  // squad-wide weapon pick (off = each tank keeps its own)
-  'gp.weaponPersist': {default: false, cfg: 'weaponPersist'},
+  'gp.weaponPersist': {default: false, cfg: 'weaponPersist'}, // squad-wide weapon pick
   'gp.crates': {default: 20, cfg: 'crateChance'},
   'gp.updateScale': {default: 10, map: v => v / 10}, // stored tenths, engine multiplier
   'gp.rcFires': {default: true, cfg: 'rightClickFires'},
-  // fallout hurts tanks on it (on) vs cosmetic-only (off, legacy)
-  'gp.radiationDamage': {default: true, cfg: 'radiationDamage'},
-  // Off by default: it reshapes ground beyond the crater, so it changes where tanks end up
-  // standing — a tactical change, not a visual one, and not something legacy did.
+  'gp.radiationDamage': {default: true, cfg: 'radiationDamage'}, // fallout hurts tanks on it
   'gp.soilCompaction': {default: false, cfg: 'soilCompaction'},
 
   // ---- GRAPHICS ----------------------------------------------------------
   'gfx.tracking': {default: true, cfg: 'tracking'},
   'gfx.smoke': {default: true, cfg: 'drawSmoke'},
-  // render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame
+  // Render preset: 0 Old School · 1 Simple · 2 High · 3 Wargame
   'gfx.detail': {default: 2, cfg: 'detail'},
-  // fill craters with soil (off = transparent, the faithful default)
+  // Fill craters with soil (off = transparent, the faithful default)
   'gfx.craterFill': {default: false, cfg: 'craterFill'},
   'gfx.highContrast': {default: false, cfg: 'highContrast'},
   // Forced landscape shape 0..4; any other index (the default 5 = "Random") means random
@@ -119,12 +113,12 @@ const CATALOG = {
   'gfx.showPower': {default: true, cfg: 'showPowerBars'},
   'gfx.tankStats': {default: true, cfg: 'showTankStats'},
   'gfx.autoScroll': {default: true, cfg: 'autoScroll'}, // camera follows the shot / active tank
-  // turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic
+  // Turn hand-off camera: 0 Smooth · 1 Instant · 2 Cinematic
   'gfx.camera': {default: 0, cfg: 'cameraMode'},
   'gfx.lastAim': {default: true, cfg: 'showLastAim'},
   'gfx.expWaves': {default: true, cfg: 'explosionWaves'},
   'gfx.camShake': {default: true, cfg: 'cameraShake'},
-  // blow up the non-winning teams when a battle ends (cosmetic)
+  // Blow up the non-winning teams when a battle ends (cosmetic)
   'gfx.explodeLosers': {default: true, cfg: 'explodeLosers'},
   'gfx.framerate': {default: 0},
   'gfx.fpsCap': {default: 0, scale: [0, 30, 60, 120, 144], scaleDflt: 0},
