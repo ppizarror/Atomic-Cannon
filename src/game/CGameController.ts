@@ -1540,10 +1540,6 @@ export class CGameController implements ShotWorld {
 
     // Edge notches pointing at any projectile that has left the view (Tracking).
     if (GameConfig.tracking) this.drawShotNotches(ctx, camX, alpha);
-
-    // Overview minimap (large maps only) — drawn last so it sits on top.
-    this.drawMinimap(ctx);
-
     ctx.restore();
   }
 
@@ -1588,7 +1584,8 @@ export class CGameController implements ShotWorld {
     // Floating damage numbers (Show Points), world space.
     this.m_markers.drawNumbers((s, x, y, a) => this.drawBmpCentered(octx, 'beijing-16-out', s, x, y, a));
 
-    octx.restore();
+    octx.restore(); // end world-space camera transform → back to screen space (shake still applied)
+    this.drawMinimap(octx);
     octx.restore();
   }
 
@@ -1634,7 +1631,7 @@ export class CGameController implements ShotWorld {
     // Frames: extents box outline then the panel frame, both crisp 1px.
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-    ctx.strokeRect(m + boxX + 0.5, m + 0.5, boxW, height - 1);
+    ctx.strokeRect(m + boxX + 0.5, m + 0.5, boxW, height);
     ctx.strokeStyle = '#000';
     ctx.strokeRect(m + 0.5, m + 0.5, width, height);
 
