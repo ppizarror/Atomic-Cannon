@@ -1207,6 +1207,10 @@ export const es: Strings = {
     'rail.slice': {name: 'Corte de Riel'},
     cannon: {name: 'Cañón'},
     'gatlun.gun': {name: 'Gatlun'},
+    minigun: {
+      name: 'Minigun',
+      desc: 'La Ametralladora sin frenos: tres cañones descargan un muro de balas sobre el objetivo antes de que caiga la primera.',
+    },
     penetrator: {name: 'Penetrador'},
     'cannon.ball': {name: 'Bala de Cañón'},
     barrage: {name: 'Descarga'},

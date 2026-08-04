@@ -24,6 +24,16 @@ const STINGERS = idOf('stingers'); // spawn 6, sucNum 0 — a pure fan
 const HELLFIRE = idOf('hellfire'); // spawn 1, sucNum 9, sucSec 2 — a pure succession stream
 const KATYUSHA = idOf('katyusha'); // spawn 2 AND sucNum > 0 — a fresh fan per succession salvo
 
+// The machine-gun family, whose identity IS its cadence.
+const MACHINE_GUN = idOf('machine.gun');
+const MINIGUN = idOf('minigun'); // the same stream, fanned wider and tightened up
+
+// Both thresholds the burst has to clear are module-private where they live:
+// CGameController's `SUCCESSION_LOUD_MAX_SEC` (reference units) and CSoundManager's
+// `RETRIGGER_MS` same-name retrigger guard.
+const LOUD_MAX_SUC_SEC = 0.5;
+const RETRIGGER_SEC = 0.045;
+
 /** A fresh match with a human at index 0 and free-fire on (every weapon selectable). */
 function fireGame(): CGameController {
   const gc = new CGameController(makeCanvas());
@@ -106,6 +116,23 @@ describe('Multi-fire cadence', () => {
     for (let k = 0; k < def.sucNum; k++) gc.update(gap + 0.001);
     expect(priv(gc).m_pendingSalvos).toBe(0);
     expect(priv(gc).m_shots.length).toBe(def.spawn * (1 + def.sucNum)); // the whole rack
+  });
+
+  it('the Minigun outruns the Machine Gun without dropping out of the audible-burst band', () => {
+    const mini = multiFire(MINIGUN);
+    const mg = multiFire(MACHINE_GUN);
+
+    // Its whole premise: the Machine Gun's stream, fanned wider and cycling faster.
+    expect(mini.spawn).toBeGreaterThan(mg.spawn);
+    expect(mini.sucSec).toBeLessThan(mg.sucSec);
+
+    // But NOT so fast that the burst goes quiet. At or below `SUCCESSION_LOUD_MAX_SEC` the
+    // fire path stops re-barking the report and muzzle flash after the opener, so the
+    // remaining salvos — most of the rounds — would fly silent and flashless; and a gap
+    // under the sound manager's retrigger guard would swallow the barks it does ask for.
+    // Rebalancing `sucSec` downward is exactly the change that trips this silently.
+    expect(mini.sucSec).toBeGreaterThan(LOUD_MAX_SUC_SEC);
+    expect(mini.sucSec * REF_TIME_SCALE).toBeGreaterThan(RETRIGGER_SEC);
   });
 
   it('advancing sim time releases the queued salvos one at a time', () => {

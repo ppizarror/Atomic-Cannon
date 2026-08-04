@@ -104,9 +104,12 @@ function armAt(world: World, shot: CShot): void {
 }
 
 describe('Homing Missile', () => {
-  it('is a HOMING-behaviour Missile in the data', () => {
+  it('is a HOMING-behaviour Rocket in the data', () => {
     expect(getWeapon(HOMING.index).getExtType()).toBe(EXT.HOMING);
-    expect(HOMING.type).toBe('Missile');
+    // `type` is a LABEL — behaviour comes from `extType` alone. In this port the Missile label
+    // has settled on the multi-rocket salvos (Katyusha, Strikers, Tomcat), so a single guided
+    // round files under Rocket.
+    expect(HOMING.type).toBe('Rocket');
     // One guided round, not a fan. Read through the getter: the row omits `spawn` because 1
     // is the engine default, so the raw record has no such key.
     expect(getWeapon(HOMING.index).getSpawnCount()).toBe(1);

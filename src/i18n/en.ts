@@ -1144,6 +1144,10 @@ export const en: Strings = {
     'rail.slice': {name: 'Rail Slice'},
     cannon: {name: 'Cannon'},
     'gatlun.gun': {name: 'Gatlun Gun'},
+    minigun: {
+      name: 'Minigun',
+      desc: 'The Machine Gun with the brakes off: three barrels walking a wall of rounds onto the target before the first one lands.',
+    },
     penetrator: {name: 'Penetrator'},
     'cannon.ball': {name: 'Cannon Ball'},
     barrage: {name: 'Barrage'},
