@@ -11,10 +11,10 @@
  * enum's i18n `options` the same length as its `scale` here — the index the widget stores is
  * shared between them.
  *
- * Only STORED settings live here. Audio (Sound / Music / volumes), Full Screen (reads the
- * document) and Language (lives on the i18n signal) aren't remembered options and aren't
- * listed. `settingsStore.getVal(id)` returns `SETTINGS[id].default`; a widget/getter for
- * an unregistered id is a COMPILE error (`id: SettingId`).
+ * Only STORED settings live here. Full Screen (reads the document) and Language (lives on the
+ * i18n signal) aren't remembered options and aren't listed. `settingsStore.getVal(id)` returns
+ * `SETTINGS[id].default`; a widget/getter for an unregistered id is a COMPILE error
+ * (`id: SettingId`).
  */
 import type {SettingsMirrorKey} from '../core/CGameConfig';
 
@@ -127,7 +127,17 @@ const CATALOG = {
   'gfx.hideSplash': {default: false}, // hide the tilted "fan recreation" splash on the title screen
 
   // ---- AUDIO -------------------------------------------------------------
-  // Sound/Music/volumes/Stereo all bind live to CAudio, not stored here.
+  // Volumes are the 0..100 slider position, passed to the bus as-is. `applyAudioSettings`
+  // pushes all six into CAudio (it owns live Web Audio nodes, so it can't read the store).
+  'audio.sound': {default: true},
+  'audio.soundVol': {default: 100},
+  'audio.music': {default: true},
+  // The bed sits UNDER the game: the music bus carries a x4 makeup gain (see CMusicPlayer), which
+  // at a full 100 puts the loudest module level with the weapons. Opening a step down leaves the
+  // shots and explosions on top.
+  'audio.musicVol': {default: 80},
+  'audio.stereo': {default: true}, // SFX pan across the field (off = everything centre)
+  'audio.menuSounds': {default: false}, // non-legacy menu navigation blips — opt-in
 } satisfies Record<string, SettingMeta>;
 
 /** The id of any stored setting — the keys of the catalog. A widget or engine getter for an

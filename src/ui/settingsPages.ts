@@ -6,9 +6,9 @@
  * All presentation copy (labels / tips / enum value labels / page headers) comes from i18n
  * (`strings.settings.*`); the builders read it at call time, so the whole tree re-renders
  * in the new language when the locale changes. Stored rows get their id's DEFAULT and enum
- * SCALE from `settingsCatalog` (SETTINGS). Audio rows read/write CAudio directly and the
- * Language row drives the i18n locale signal — one live source of truth each. A row's game
- * effect is wired via `applyGameSettings`.
+ * SCALE from `settingsCatalog` (SETTINGS); the Language row is the one exception, driving the
+ * i18n locale signal instead. A row's game effect — including the audio bus — is wired via
+ * `applyGameSettings`.
  */
 import {signal} from '@preact/signals';
 import {strings, fmt, locale, setLocale, availableLocales, localeName} from '../i18n';
@@ -227,66 +227,19 @@ function graphicsRows(): Widget[] {
   ];
 }
 
-/**
- * Audio rows bind LIVE to CAudio rather than to a stored SettingId — CAudio persists its own
- * settings — so they can't use `bind`/`toggle`/`stepper` above. These two builders are the
- * equivalent pair for a CAudio-backed row; a null audio bus (headless) reads as off / full volume.
- */
-const audioToggle = (c: RowCopy, get: () => boolean | undefined, set: (on: boolean) => void): Widget => ({
-  label: c.label,
-  tip: c.tip,
-  kind: 'toggle',
-  get: () => (get() ? 1 : 0),
-  set: v => set(!!v),
-});
-/** CAudio volumes are already 0..100 (percent) — pass through, don't rescale. */
-const audioVolume = (c: RowCopy, get: () => number | undefined, set: (v: number) => void): Widget => ({
-  label: c.label,
-  tip: c.tip,
-  kind: 'stepper',
-  min: 0,
-  max: 100,
-  step: 10,
-  fmt: pct,
-  get: () => Math.round(get() ?? 100),
-  set,
-});
+/** Audio volumes are stored as the slider's own 0..100 percent — the bus takes them unscaled. */
+const volume = (c: RowCopy, id: SettingId): Widget => stepper(c, id, 0, 100, 10, pct);
 
 function audioRows(): Widget[] {
   const s = strings.value.settings.audio;
-  const a = game().getAudio();
   return [
-    audioToggle(
-      s.sound,
-      () => a?.isSfxEnabled(),
-      on => a?.setSfxEnabled(on),
-    ),
-    audioToggle(
-      s.music,
-      () => a?.isMusicEnabled(),
-      on => a?.setMusicEnabled(on),
-    ),
-    audioVolume(
-      s.soundVol,
-      () => a?.getSfxVolume(),
-      v => a?.setSfxVolume(v),
-    ),
-    audioVolume(
-      s.musicVol,
-      () => a?.getMusicVolume(),
-      v => a?.setMusicVolume(v),
-    ),
-    audioToggle(
-      s.stereo,
-      () => a?.isStereo(),
-      on => a?.setStereo(on),
-    ),
+    toggle(s.sound, 'audio.sound'),
+    toggle(s.music, 'audio.music'),
+    volume(s.soundVol, 'audio.soundVol'),
+    volume(s.musicVol, 'audio.musicVol'),
+    toggle(s.stereo, 'audio.stereo'),
     // Non-legacy menu navigation blips (hover / forward / back) — opt-in, OFF by default.
-    audioToggle(
-      s.menuSounds,
-      () => a?.isMenuSfxEnabled(),
-      on => a?.setMenuSfxEnabled(on),
-    ),
+    toggle(s.menuSounds, 'audio.menuSounds'),
   ];
 }
 

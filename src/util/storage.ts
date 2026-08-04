@@ -1,5 +1,5 @@
 /**
- * Tiny localStorage JSON helpers. Both the settings store and the audio settings
+ * Tiny localStorage JSON helpers. Both the settings store and the other persisted stores
  * hand-rolled the same get→JSON.parse→try/catch and stringify→setItem→try/catch;
  * this is the one place that swallows the private-mode / quota / corrupt-value cases.
  *

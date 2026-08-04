@@ -14,10 +14,9 @@
 
 import {CSoundManager} from './CSoundManager';
 import {CMusicPlayer} from './CMusicPlayer';
-import {loadJSON, saveJSON} from '../util/storage';
 
 // ==========================================================================
-// ASSETS & SETTINGS
+// ASSETS
 // ==========================================================================
 
 // Hardcoded (non-weapon) event sounds — the files present in assets/sound/ that
@@ -38,20 +37,6 @@ export const SFX = {
   MENU_BACK: 'Mechanismus2.wav', // …and Back to the main menu
   FIREWORK: ['Slapthunder1.wav', 'Slapthunder2.wav'] as const,
 } as const;
-
-// Persisted audio preferences (options-menu equivalents).
-const SETTINGS_KEY = 'atomic.audio';
-
-interface AudioSettings {
-  sfxVol: number;
-  musicVol: number;
-  sfxOn: boolean;
-  musicOn: boolean;
-  stereoOn: boolean;
-  /** Menu navigation blips (hover / forward / back). NOT part of the original game,
-   *  so this is opt-in and defaults OFF. */
-  menuSfxOn: boolean;
-}
 
 // Music policy.
 const MENU_MUSIC = 'Four Ages.it';
@@ -431,17 +416,14 @@ export class CAudio {
 
   setSfxVolume(v: number): void {
     this.eachSfx(m => m.setVolume(v));
-    this.saveSettings();
   }
 
   setMusicVolume(v: number): void {
     this.m_music.setVolume(v);
-    this.saveSettings();
   }
 
   setSfxEnabled(on: boolean): void {
     this.eachSfx(m => m.setEnabled(on));
-    this.saveSettings();
   }
 
   setMusicEnabled(on: boolean): void {
@@ -456,13 +438,11 @@ export class CAudio {
         else this.battleMusic();
       } else if (this.m_musicContext === 'menu') this.menuMusic();
     }
-    this.saveSettings();
   }
 
   /** Audio → Stereo: SFX pan across the field when on, all-centre (mono) when off. */
   setStereo(on: boolean): void {
     this.eachSfx(m => m.setStereo(on));
-    this.saveSettings();
   }
   isStereo(): boolean {
     return this.m_gameSfx.isStereo();
@@ -472,7 +452,6 @@ export class CAudio {
   setMenuSfxEnabled(on: boolean): void {
     this.m_menuSfxOn = on;
     if (on) this.preloadMenu(); // warm the buffers so the first blip isn't a silent miss
-    this.saveSettings();
   }
   isMenuSfxEnabled(): boolean {
     return this.m_menuSfxOn;
@@ -492,40 +471,5 @@ export class CAudio {
 
   isMusicEnabled(): boolean {
     return this.m_music.isEnabled();
-  }
-
-  // ========================================================================
-  // SETTINGS PERSISTENCE
-  // ========================================================================
-
-  /** Apply saved volume/enable settings (call once, after construction). */
-  loadSettings(): void {
-    const s = loadJSON<Partial<AudioSettings>>(SETTINGS_KEY, {});
-    if (typeof s.sfxVol === 'number') {
-      const v = s.sfxVol;
-      this.eachSfx(m => m.setVolume(v));
-    }
-    if (typeof s.musicVol === 'number') this.m_music.setVolume(s.musicVol);
-    if (typeof s.sfxOn === 'boolean') {
-      const on = s.sfxOn;
-      this.eachSfx(m => m.setEnabled(on));
-    }
-    if (typeof s.musicOn === 'boolean') this.m_music.setEnabled(s.musicOn);
-    if (typeof s.stereoOn === 'boolean') {
-      const on = s.stereoOn;
-      this.eachSfx(m => m.setStereo(on));
-    }
-    if (typeof s.menuSfxOn === 'boolean') this.m_menuSfxOn = s.menuSfxOn;
-  }
-
-  private saveSettings(): void {
-    saveJSON(SETTINGS_KEY, {
-      sfxVol: this.m_gameSfx.getVolume(),
-      musicVol: this.m_music.getVolume(),
-      sfxOn: this.m_gameSfx.isEnabled(),
-      musicOn: this.m_music.isEnabled(),
-      stereoOn: this.m_gameSfx.isStereo(),
-      menuSfxOn: this.m_menuSfxOn,
-    } satisfies AudioSettings);
   }
 }

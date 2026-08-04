@@ -69,3 +69,19 @@ export const gameSettings = {
   /** Max framerate cap (ticker.maxFPS): 0 = uncapped (display refresh rate). */
   maxFps: (): number => num('gfx.fpsCap'),
 };
+
+/**
+ * The Audio page. CAudio owns live Web Audio nodes and is built before the UI, so it can't read
+ * the store itself — `applyAudioSettings` pushes these into the bus at boot and on every change.
+ * Volumes are the slider's own 0..100 units; the bus takes them unscaled.
+ */
+export const audioSettings = {
+  soundOn: (): boolean => bool('audio.sound'),
+  soundVol: (): number => num('audio.soundVol'),
+  musicOn: (): boolean => bool('audio.music'),
+  musicVol: (): number => num('audio.musicVol'),
+  /** SFX pan across the battlefield; off plays everything centre (mono). */
+  stereo: (): boolean => bool('audio.stereo'),
+  /** The non-legacy menu navigation blips (hover / forward / back). */
+  menuSounds: (): boolean => bool('audio.menuSounds'),
+};

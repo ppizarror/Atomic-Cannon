@@ -4,8 +4,6 @@
  * Every option lives in a single flat map keyed by a stable {@link SettingId} and
  * persisted to localStorage. Each id and its default come from {@link SETTINGS}
  * (settingsCatalog) — the one source both the widgets and the engine-facing getters read.
- * Audio (Sound / Music / volumes) is the only exception: those widgets bind straight to
- * CAudio so the menu reflects the live state, so they aren't stored here.
  */
 import {SETTINGS, type SettingId} from './settingsCatalog';
 import {createPersistedSignal} from './persistedSignal';

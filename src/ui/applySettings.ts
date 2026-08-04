@@ -11,7 +11,7 @@ import type {CGameController} from '../game/CGameController';
 import {GameConfig} from '../core/CGameConfig';
 import {GameContent} from '../core/CGameContent';
 import {Roster} from '../core/CRoster';
-import {gameSettings as S, engineValue} from './settingsValues';
+import {gameSettings as S, audioSettings as A, engineValue} from './settingsValues';
 import {SETTINGS, type SettingId} from './settingsCatalog';
 import {weaponsOff, landsOff} from './contentStore';
 import {syncTaunts} from './tauntsStore';
@@ -35,7 +35,33 @@ export function applyGameConfig(): void {
   }
 }
 
+/**
+ * Push the Audio page into the live bus. Each setter is guarded by a read-back because they are
+ * NOT inert writes: `setMusicEnabled(true)` re-arms the current context's bed and
+ * `setMenuSfxEnabled(true)` warms the blip buffers — re-running those on every unrelated settings
+ * change would restart the music after a jingle ended. A headless run has no bus; nothing to do.
+ */
+function applyAudioSettings(c: CGameController): void {
+  const a = c.getAudio();
+  if (!a) return;
+  const on = A.soundOn();
+  if (a.isSfxEnabled() !== on) a.setSfxEnabled(on);
+  const vol = A.soundVol();
+  if (a.getSfxVolume() !== vol) a.setSfxVolume(vol);
+  const music = A.musicOn();
+  if (a.isMusicEnabled() !== music) a.setMusicEnabled(music);
+  const musicVol = A.musicVol();
+  if (a.getMusicVolume() !== musicVol) a.setMusicVolume(musicVol);
+  const stereo = A.stereo();
+  if (a.isStereo() !== stereo) a.setStereo(stereo);
+  const menu = A.menuSounds();
+  if (a.isMenuSfxEnabled() !== menu) a.setMenuSfxEnabled(menu);
+}
+
 export function applyGameSettings(c: CGameController): void {
+  // Audio first, and OUTSIDE the net guard below: volumes aren't simulation state, so a player
+  // must still be able to turn the music down mid-match.
+  applyAudioSettings(c);
   // A LIVE network match runs the host's shared MatchConfig (applied once in startNetworkGame).
   // A local Settings change mid-match must NOT re-derive the simulation config from THIS client's
   // own options — different physics scalars / game speed / wind would silently break lockstep.
