@@ -2,7 +2,8 @@
  * Sentry turrets: a deployed Sentry weapon becomes a stationary "Sentry" tank on the
  * owner's team that renders with the Sentry sprites, takes damage, auto-aims at the
  * nearest enemy and fires in a direct line (Turret → Shell, Minigun → Machine Gun, and
- * the Minigun variant is tougher). Sentries don't count toward the battle win.
+ * the Minigun variant is tougher). A turret must land where it can be SEEN, and it keeps
+ * its team in the battle after its owner dies (solo only — net defers to the server).
  */
 import {describe, it, expect} from 'vitest';
 import {makeCanvas} from './_dom';
@@ -103,7 +104,7 @@ describe('Sentry turrets', () => {
     expect(sentry.getWeaponIndex()).toBe(MACHINE_GUN);
   });
 
-  it('a living sentry does not keep a decided battle alive (excluded from the win count)', () => {
+  it('a lone survivor plus their OWN sentry is still one team → the battle ends', () => {
     const {gc, a, b} = twoPlayerGame();
     gc.deploySentry(a.getPosition().x + 30, 0, a, SENTRY_TURRET);
     // Only the owner (a) + their sentry survive — b, the sole enemy player, dies.
@@ -112,8 +113,107 @@ describe('Sentry turrets', () => {
 
     priv(gc).m_gameState = EGameState.Battle; // endBattleIfDecided only acts in Battle
     priv(gc).endBattleIfDecided();
-    // Down to one living PLAYER → the battle ends despite the sentry still standing.
+    // A sentry carries its owner's team id, so it can never make the winner's own side "two teams".
     expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd);
+  });
+
+  it("a dead player's sentry keeps their team in the fight until it too is destroyed", () => {
+    const {gc, b} = twoPlayerGame();
+    // The turret belongs to b — who then dies, leaving it as the only thing standing for that team.
+    const bx = b.getPosition().x;
+    gc.deploySentry(bx + (bx > priv(gc).m_land.width / 2 ? -30 : 30), 0, b, SENTRY_TURRET); // inboard of b
+    const sentry = priv(gc).m_tanks.at(-1)!;
+    expect(sentry.isSentry()).toBe(true);
+    expect(sentry.getTeamId()).toBe(b.getTeamId());
+    b.hit(999999);
+    expect(b.isAlive()).toBe(false);
+
+    priv(gc).m_gameState = EGameState.Battle;
+    priv(gc).endBattleIfDecided();
+    // NOT over: the turret takes its own turns and can still kill a — ending here would call a
+    // fight the loser's turret never got to finish.
+    expect(priv(gc).m_gameState).toBe(EGameState.Battle);
+
+    // Destroy the turret and the battle is genuinely decided.
+    sentry.hit(999999);
+    priv(gc).endBattleIfDecided();
+    expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd);
+  });
+
+  it('a battle carried by a lone turret still RESOLVES — it takes real turns and can be killed', () => {
+    // The point of the rule above is that the fight goes ON. Drive the whole thing for real, because
+    // "the battle never ends" is the way it could go wrong: an ownerless turret that never got a turn
+    // (or an enemy that never targeted it) would hang the match instead of finishing it.
+    const realPerf = globalThis.performance;
+    const landSize = GameConfig.landSize;
+    try {
+      // ScreenShake decays on the WALL clock and gates the Explosion → endTurn hand-off, so a sim
+      // running 100× real time would leave every blast permanently "shaking" and wedge the turn.
+      let fakeNow = 0;
+      (globalThis as {performance?: unknown}).performance = {now: () => fakeNow};
+      GameConfig.landSize = 1; // one screen: the duel is in range without cross-map driving
+      GameConfig.hitpoints = 1000;
+      const gc = new CGameController(makeCanvas(900, 600));
+      gc.setHumanCount(0); // both sides played by the AI, so the match runs unattended
+      gc.startGame(2);
+      const [a, b] = priv(gc).m_tanks;
+
+      // Drop it 40px INBOARD of b (a tank can spawn 60px from the edge, and a turret landing
+      // inside the edge margin is refused — see the off-map test — which would leave no turret).
+      const bx = b.getPosition().x;
+      gc.deploySentry(bx + (bx > priv(gc).m_land.width / 2 ? -40 : 40), 0, b, SENTRY_TURRET);
+      const sentry = priv(gc).m_tanks.at(-1)!;
+      expect(sentry.isSentry()).toBe(true);
+      b.hit(999999); // b's team is now nothing but that one turret
+
+      const acted = new Set<number>();
+      let ticks = 0;
+      for (; ticks < 600 * 60; ticks++) {
+        fakeNow += 1000 / 60;
+        gc.update(1 / 60);
+        acted.add(priv(gc).m_currentPlayerIndex);
+        if (priv(gc).m_gameState === EGameState.BattleEnd) break;
+      }
+
+      expect(acted.has(priv(gc).m_tanks.indexOf(sentry))).toBe(true); // the turret really played on
+      expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd); // …and the battle finished
+      expect(sentry.isAlive()).toBe(false); // it ended because the turret died, not by timeout
+      expect(a.isAlive()).toBe(true);
+    } finally {
+      (globalThis as {performance?: unknown}).performance = realPerf;
+      GameConfig.landSize = landSize;
+    }
+  });
+
+  it('NET: a sentry never keeps the battle alive (the server decides from a snapshot without them)', () => {
+    const {gc, a, b} = twoPlayerGame();
+    priv(gc).m_netMode = true;
+    const bx = b.getPosition().x;
+    gc.deploySentry(bx + (bx > priv(gc).m_land.width / 2 ? -30 : 30), 0, b, SENTRY_TURRET); // inboard of b
+    expect(priv(gc).m_tanks.at(-1)!.isSentry()).toBe(true);
+    b.hit(999999);
+    expect(a.isAlive()).toBe(true);
+    // Room.battleDecided counts only the squad tanks the snapshot carries, and the SERVER drives the
+    // turn order — a client that held the battle open for a sentry would just disagree with it.
+    expect(gc.isNetBattleOver()).toBe(true);
+  });
+
+  it('a round that lands off the map deploys NOTHING (an unseeable turret is not allowed)', () => {
+    const {gc, a} = twoPlayerGame();
+    const before = priv(gc).m_tanks.length;
+    const w = priv(gc).m_land.width;
+
+    // A sentry shot still meets the ground up to 60px beyond either edge — where no camera reaches.
+    gc.deploySentry(-40, 0, a, SENTRY_TURRET);
+    gc.deploySentry(w + 40, 0, a, SENTRY_TURRET);
+    // …and one landing ON the border would only be half-drawn, so it's refused too.
+    gc.deploySentry(4, 0, a, SENTRY_TURRET);
+    gc.deploySentry(w - 4, 0, a, SENTRY_TURRET);
+    expect(priv(gc).m_tanks.length).toBe(before); // every one of them a dud
+
+    // An ordinary landing, well inside the world, still deploys.
+    gc.deploySentry(w / 2, 0, a, SENTRY_TURRET);
+    expect(priv(gc).m_tanks.length).toBe(before + 1);
   });
 
   it('the deploy cap is PER PLAYER — one player cannot use up another’s allowance', () => {

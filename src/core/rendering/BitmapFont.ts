@@ -331,6 +331,15 @@ export const FONTS = {
     size: 16,
     tint: '#000000',
   },
+  'silkscreen-8': {file: 'UPF Silkscreen ReMix 8', family: 'monospace', size: 8},
+  'silkscreen-8-black': {
+    file: 'UPF Silkscreen ReMix 8 black',
+    family: 'monospace',
+    size: 8,
+    tint: '#000000',
+  },
+  'silkscreen-8-out': {file: 'UPF Silkscreen ReMix 8 outlined', family: 'monospace', size: 8},
+  'silkscreen-8-white': {file: 'UPF Silkscreen ReMix 8 white', family: 'monospace', size: 8},
   'trebuchet-9': {
     file: 'Trebuchet MS 9 bold',
     family: '"Trebuchet MS", sans-serif',
@@ -344,15 +353,6 @@ export const FONTS = {
     size: 18,
     tint: '#000000',
   },
-  'silkscreen-8': {file: 'UPF Silkscreen ReMix 8', family: 'monospace', size: 8},
-  'silkscreen-8-black': {
-    file: 'UPF Silkscreen ReMix 8 black',
-    family: 'monospace',
-    size: 8,
-    tint: '#000000',
-  },
-  'silkscreen-8-out': {file: 'UPF Silkscreen ReMix 8 outlined', family: 'monospace', size: 8},
-  'silkscreen-8-white': {file: 'UPF Silkscreen ReMix 8 white', family: 'monospace', size: 8},
   'verdana-10-out': {
     file: 'Verdana 10 bold outlined',
     family: 'Verdana, sans-serif',

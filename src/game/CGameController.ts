@@ -267,6 +267,39 @@ export interface NetSnapshot {
 const BEAM_COLLAPSE_DELAY = 1;
 
 /**
+ * Homing-round telemetry (extType 19) — the reachable-landing beam, the ground it lights, and the
+ * lock reticle. Purely how the guided family is DRAWN; the guidance itself lives in
+ * core/weapons/WeaponBehavior, and its per-weapon limits are stats on the weapon row.
+ *
+ * The COLOUR is not here: it comes from the weapon's own `blast`/`trail` particle via
+ * `CWeapon.getColor()`, so a new guided round tints its beam, its lit ground and its reticle just
+ * by naming a different effect in the data — and they can never drift from its actual trail.
+ */
+const HOMING = {
+  /** How far past the landing points the beam is carried, ALONG its own direction of travel, so
+   *  its closing rim stays out of sight. It MUST follow the beam: dropping the edge straight down
+   *  instead runs the polygon's sides through a point below the landing arc, so they cross the
+   *  real surface short of where the round lands — beam and lit ground part company in X. */
+  FAN_SKIRT: 60,
+  /** The lit-ground wash: additive, so it brightens terrain rather than tinting it. Deliberately
+   *  near-subliminal — stronger and it stops reading as light and starts reading as paint. */
+  GLOW_ALPHA: 0.13,
+  /** …and how deep into the surface that wash reaches (px). */
+  GLOW_H: 7,
+  /** How far BELOW the target's anchor the reticle centres. `CTank.getPosition()` is the hull's
+   *  TOP edge (`terrainHeight - tankHeight`), not its middle, so centring on the raw anchor rides
+   *  half a tank high. tankHeight is 1.5x the hit radius, so half of it is 0.75x. */
+  LOCK_DROP: 0.75,
+  /** Reticle span as a multiple of the target's hit radius. 2.9 lands on the hull's own width
+   *  (SIZE.W 46 vs SIZE.R 16), so the brackets sit snugly around the vehicle. Both terms scale
+   *  with Player Size, so the fit holds at any tank size. */
+  LOCK_SPAN: 2.9,
+  /** Points the bounding trajectories are resampled to when blending between solves. Enough to
+   *  keep a long curve smooth; the paths themselves are already sparse samples. */
+  PATH_POINTS: 28,
+} as const;
+
+/**
  * Blast knockback: base impulse (px/s) for a reference-size blast at full damage, and the radius
  * that maps to ×1. The original scales the kick by the per-explosion size (not damage alone), so a
  * bigger crater shoves harder for equal life removed — a nuke launches a tank a shell only nudges.
@@ -311,42 +344,18 @@ const NET = {
 const ROCKET_MIN_BURN = 0.7;
 
 /**
- * Homing-round telemetry (extType 19) — the reachable-landing beam, the ground it lights, and the
- * lock reticle. Purely how the guided family is DRAWN; the guidance itself lives in
- * core/weapons/WeaponBehavior, and its per-weapon limits are stats on the weapon row.
- *
- * The COLOUR is not here: it comes from the weapon's own `blast`/`trail` particle via
- * `CWeapon.getColor()`, so a new guided round tints its beam, its lit ground and its reticle just
- * by naming a different effect in the data — and they can never drift from its actual trail.
- */
-const HOMING = {
-  /** How far past the landing points the beam is carried, ALONG its own direction of travel, so
-   *  its closing rim stays out of sight. It MUST follow the beam: dropping the edge straight down
-   *  instead runs the polygon's sides through a point below the landing arc, so they cross the
-   *  real surface short of where the round lands — beam and lit ground part company in X. */
-  FAN_SKIRT: 60,
-  /** The lit-ground wash: additive, so it brightens terrain rather than tinting it. Deliberately
-   *  near-subliminal — stronger and it stops reading as light and starts reading as paint. */
-  GLOW_ALPHA: 0.13,
-  /** …and how deep into the surface that wash reaches (px). */
-  GLOW_H: 7,
-  /** How far BELOW the target's anchor the reticle centres. `CTank.getPosition()` is the hull's
-   *  TOP edge (`terrainHeight - tankHeight`), not its middle, so centring on the raw anchor rides
-   *  half a tank high. tankHeight is 1.5x the hit radius, so half of it is 0.75x. */
-  LOCK_DROP: 0.75,
-  /** Reticle span as a multiple of the target's hit radius. 2.9 lands on the hull's own width
-   *  (SIZE.W 46 vs SIZE.R 16), so the brackets sit snugly around the vehicle. Both terms scale
-   *  with Player Size, so the fit holds at any tank size. */
-  LOCK_SPAN: 2.9,
-  /** Points the bounding trajectories are resampled to when blending between solves. Enough to
-   *  keep a long curve smooth; the paths themselves are already sparse samples. */
-  PATH_POINTS: 28,
-} as const;
-
-/**
  * Sentry turrets (auto-firing deployables).
  */
 const SENTRY = {
+  /** How far from a world edge a turret must land to deploy at all. The camera never scrolls past
+   *  the world, so a turret dropped outside it fights from a spot NOBODY can see, target or shoot
+   *  back at — and a shot still meets the ground up to 60px beyond either edge (weaponFlyStep's
+   *  world-exit test), so that band is reachable. A round landing inside the margin is simply a
+   *  DUD: no turret, no blast. Ordinary weapons are unaffected — an off-map bomb still detonates,
+   *  because a blast is felt where it lands rather than aimed at afterwards. The margin covers the
+   *  drawn Sentry hull's half-width at the largest Player Size (~18px), so a deployed turret is
+   *  always whole on screen rather than half-clipped by the world edge. */
+  EDGE_MARGIN: 24,
   /** A sentry fires at full power (POWER_MAX) in a direct line — no ballistic solve. */
   FIRE_POWER: 1000,
   /** How many ONE player (team) may hold on the field at a time, past which deploySentry no-ops.
@@ -2297,13 +2306,25 @@ export class CGameController implements ShotWorld {
     }
   }
 
-  /** Distinct teams that still have a living player tank. Sentries are excluded — they
-   *  fight for their owner's team but don't keep it "alive" — so a lone survivor plus
-   *  their own sentry is still one team. The battle is decided when this reaches ≤ 1. */
+  /** Distinct teams that still have a living UNIT — a player tank or one of its deployed
+   *  sentries. The battle is decided when this reaches ≤ 1.
+   *
+   *  A turret outlives its owner: it takes its own turns and can still kill the last enemy, so
+   *  ending the battle the moment the deployer dies would call a fight that isn't over — the
+   *  loser's turrets are left standing on the standings screen with a shot they never got to
+   *  take. They keep the team in it until the last of them is destroyed. (A lone survivor plus
+   *  their OWN sentry is still one team either way — a sentry carries its owner's team id.)
+   *
+   *  NETWORK: sentries are excluded. The server decides the battle from the snapshot, which
+   *  carries only the squad tanks (see Room.battleDecided), and it — not the client — drives the
+   *  turn order, so a sentry could never take the extra turns anyway. A client counting them
+   *  would just disagree with the server about whether the battle is over. */
   private livingTeamCount(): number {
     const teams = new Set<number>();
     for (const t of this.m_tanks) {
-      if (t.isAlive() && !t.isSentry()) teams.add(t.getTeamId());
+      if (!t.isAlive()) continue;
+      if (t.isSentry() && this.m_netMode) continue;
+      teams.add(t.getTeamId());
     }
     return teams.size;
   }
@@ -2770,9 +2791,14 @@ export class CGameController implements ShotWorld {
    *  impact point. It's a real tank in the array: it renders with the Sentry hull/turret
    *  sprites (team-tinted), takes blast damage → wreck, and on its own turn aims its turret
    *  at the nearest enemy and fires in a direct line (Turret → Shell, Minigun → Machine Gun).
-   *  Sentries are excluded from the turn's win count, standings and taunts, and are cleared
-   *  at the next battle. */
+   *  Sentries are excluded from the standings and taunts, and are cleared at the next battle.
+   *  A round that lands off the map deploys NOTHING (see SENTRY.EDGE_MARGIN). */
   deploySentry(x: number, _y: number, owner: CTank | null, weaponIndex: number): void {
+    // A turret that can't be SEEN can't be played against: the world edge is where the camera
+    // stops, so anything dropped beyond it would shoot from cover no opponent can find. Refuse
+    // the deploy outright — the round is spent for nothing, which is the honest outcome of
+    // firing a turret off the map.
+    if (x < SENTRY.EDGE_MARGIN || x > this.m_land.width - SENTRY.EDGE_MARGIN) return;
     const team = owner ? owner.getTeamId() : 0;
     // Never grow the field without bound — but count only THIS player's own turrets, so the
     // allowance is identical for everyone whether the match has 2 players or 16.

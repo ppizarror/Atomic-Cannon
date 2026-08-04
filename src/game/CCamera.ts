@@ -21,15 +21,15 @@ export const CAMERA = {
   CENTER: 0.5,
   /** Cinematic: how long the camera lingers on the impact before it pans away. */
   DWELL_SEC: 0.8,
-  /** Pan speed (world px/sec) — the constant-speed ease toward the follow target (the original
-   *  scrolls at dt·gameSpeed·scrollSpeed; this is that budget in px/sec). Fast enough to keep a
-   *  shot roughly framed without whipping. */
-  SCROLL_SPEED: 1100,
   /** Graphics → Camera: how the view moves to the next player when the turn hands off. Matches the
    *  gfx.camera enum order (0 Smooth — the implicit default, just ease across / 1 Instant /
    *  2 Cinematic). */
   MODE_CINEMATIC: 2,
   MODE_INSTANT: 1,
+  /** Pan speed (world px/sec) — the constant-speed ease toward the follow target (the original
+   *  scrolls at dt·gameSpeed·scrollSpeed; this is that budget in px/sec). Fast enough to keep a
+   *  shot roughly framed without whipping. */
+  SCROLL_SPEED: 1100,
 } as const;
 
 /** The world/view dimensions the camera measures itself against. */
