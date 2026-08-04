@@ -11,8 +11,8 @@ export function knockoutWhere(px: Uint8ClampedArray, matches: (px: Uint8ClampedA
 }
 
 /** How far a channel may stray from the key colour and still count as background. The sprite BMPs
- *  are palettised, so the key is never bit-exact after a decode; 24 is what the art needs. */
-export const KEY_TOLERANCE = 24;
+ *  are palettised, so the key is never bit-exact after a decode. */
+export const KEY_TOLERANCE = 40;
 
 /**
  * A {@link knockoutWhere} predicate matching every pixel within {@link KEY_TOLERANCE} of `key` —
