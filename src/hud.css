@@ -1383,10 +1383,12 @@ canvas {
 }
 
 /* ── Changelog (About chrome, remote body — see Changelog.tsx) ──────────────── */
-/* Version heading + its "(this build)" flag on one baseline. */
+/* Version heading + its "(this build)" flag on one row. Centred, NOT baseline-aligned: a
+   <canvas> takes its bottom margin edge as its baseline, so baseline alignment would line the
+   two glyph strips up by their bottoms and hang the smaller flag below the version's midline. */
 .changelog-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
