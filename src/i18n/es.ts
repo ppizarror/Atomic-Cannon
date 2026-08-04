@@ -1174,6 +1174,10 @@ export const es: Strings = {
       name: 'Isótopo 244',
       desc: 'El arma más poderosa del juego. Puede matar un tanque a plena potencia de un solo disparo y tiene 25 veces la potencia radiactiva de la Nuke de Uranio.',
     },
+    'tsar.nuke': {
+      name: 'Nuke Tsar',
+      desc: 'El Isótopo 244 sin ningún seguro. Nada sobrevive dentro de la bola de fuego, el cráter se traga casi todo el mapa y la lluvia radiactiva arde mucho después de que se despeje el cielo.',
+    },
     'pig.blaster': {name: 'Revienta Cerdos', desc: 'Oink'},
     cowinator: {name: 'Vaquinator', desc: 'Muu'},
     'toxic.cow': {name: 'Vaca Tóxica', desc: 'Una vaca nacida cerca de Chernóbil.'},

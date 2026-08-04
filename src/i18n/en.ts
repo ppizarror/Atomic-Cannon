@@ -1111,6 +1111,10 @@ export const en: Strings = {
       name: 'Isotope 244',
       desc: 'The most powerful weapon in the game.  It can kill a tank with full power in one shot and has 25 times the radioactive power of the Uranium Nuke.',
     },
+    'tsar.nuke': {
+      name: 'Tsar Nuke',
+      desc: 'The Isotope 244 with every safety removed.  Nothing inside the fireball survives, the crater swallows most of the map, and the fallout burns long after the sky clears.',
+    },
     'pig.blaster': {name: 'Pig Blaster', desc: 'Oink'},
     cowinator: {name: 'Cowinator', desc: 'Moo'},
     'toxic.cow': {name: 'Toxic Cow', desc: 'A cow born near Chernoble.'},

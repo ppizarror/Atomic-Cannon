@@ -386,6 +386,7 @@ const FUME = {
    *  legible. */
   SIZE_BASE: 1.5,
   SIZE_R: 0.013,
+  SIZE_R_MAX: 250,
   SIZE_VAR: [0.65, 1.55],
   /** Seconds for a puff to reach ~63% of its swell. A fume puff's swell and fade run on ABSOLUTE
    *  age against these time constants, NOT on the normalised age/life. Life scales with the crater
@@ -1349,7 +1350,7 @@ export class CParticleSystem {
     const shade = FUME.SHADE_DARK + (FUME.SHADE_LIGHT - FUME.SHADE_DARK) * k;
     const v = clamp(Math.round(shade + between(-FUME.SHADE_VAR, FUME.SHADE_VAR)), 12, 255);
     const life = FUME.LIFE_BASE + r * between(...FUME.LIFE_R); // ∝ radius
-    const size = (FUME.SIZE_BASE + r * FUME.SIZE_R) * between(...FUME.SIZE_VAR); // ∝ radius
+    const size = (FUME.SIZE_BASE + Math.min(r, FUME.SIZE_R_MAX) * FUME.SIZE_R) * between(...FUME.SIZE_VAR); // ∝ radius, capped
     // Small, near-white, FAINT puffs (FUME.OP) — many of these, packed tightly by the high emission
     // rate, overlap into a dense fine-grained cloud (the legacy tight-puff look); the density comes
     // from the stacking, not from any one puff. Gentle rise + mild buoyancy (FUME.GRAV) so each

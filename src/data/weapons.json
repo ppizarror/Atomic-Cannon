@@ -2347,5 +2347,31 @@
     "muzzleSmoke": 2,
     "expType": 1,
     "expBitmap": "13.bmp"
+  },
+  {
+    "id": "tsar.nuke",
+    "icon": "Tsar Nuke",
+    "flareParam": 7,
+    "bitmap": "nuke.bmp",
+    "size": 20,
+    "damage": 2500,
+    "radius": 720,
+    "cost": 100000,
+    "type": "NUKE",
+    "crackle": 0.7,
+    "fodder": 0.5,
+    "disabled": true,
+    "blast": "eOrange",
+    "soundFire": "fire.wav",
+    "soundHit": "bomb.wav",
+    "muzzleFlash": 1,
+    "muzzleSmoke": 2,
+    "iradiate": 0.1,
+    "irDmg": 1,
+    "irTime": 30,
+    "irRed": 255,
+    "irGreen": 128,
+    "expType": 4,
+    "expBitmap": "10.bmp"
   }
 ]
