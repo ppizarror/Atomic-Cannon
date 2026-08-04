@@ -1193,8 +1193,8 @@ export class CGameController implements ShotWorld {
   /**
    * The point the aim angle is measured from — the turret PIVOT (where the barrel
    * hinges), not the hull top. The barrel rotates around this pivot, so measuring the
-   * cursor angle from anywhere else (the old hull-top origin sat ~9px above it) leaves
-   * the barrel pointing slightly off the cursor — worst at short drags / steep angles.
+   * cursor angle from anywhere else (the hull top sits ~9px above it) leaves the
+   * barrel pointing slightly off the cursor — worst at short drags / steep angles.
    * Using the pivot makes barrel, muzzle, aim arrow and cursor collinear.
    */
   private aimOrigin(): Vec2 {
@@ -1728,8 +1728,8 @@ export class CGameController implements ShotWorld {
       ctx.arc(mk.x, mk.y - 14, 2.4, 0, TWO_PI);
       ctx.fill();
       if (mk.label) {
-        // Ranging number in the game's outlined bitmap font (its baked outline keeps
-        // it legible over any terrain), replacing the old canvas monospace text.
+        // Ranging number in the game's outlined bitmap font — its baked outline keeps
+        // it legible over any terrain.
         this.drawBmpCentered(ctx, 'beijing-16-out', mk.label, mk.x, mk.y - 22);
       }
       ctx.restore();
@@ -4227,9 +4227,9 @@ export class CGameController implements ShotWorld {
     };
   }
 
-  /** …plus the three world reads only the Ultra doctrine consults. `enemiesNear` was evaluated
-   *  lazily inside the old inline version; it is a loop over at most 16 tanks once per bot turn,
-   *  so it is computed up front here rather than threaded through as a thunk. */
+  /** …plus the three world reads only the Ultra doctrine consults. `enemiesNear` is a loop over at
+   *  most 16 tanks once per bot turn, so it is computed up front here rather than threaded through
+   *  as a thunk. */
   private ultraBuyCtx(tank: CTank, econ: CEconomy): UltraBuyCtx {
     return {
       ...this.botBuyCtx(tank, econ),
@@ -4384,8 +4384,8 @@ export class CGameController implements ShotWorld {
   }
 
   /** Poll until the moving tank has actually STOPPED, then close the move. A long drive must NOT be
-   *  cut short: the old fixed 5s cap ended the turn mid-move, handing the NEXT tank its turn (and a
-   *  shot) while this one was still driving. So we wait as long as it's making progress; only a
+   *  cut short by a fixed timeout: ending the turn mid-move hands the NEXT tank its turn (and a
+   *  shot) while this one is still driving. So we wait as long as it's making progress; only a
    *  genuine hang — still flagged `moving` yet frozen in place for a sustained spell — bails out. */
   private waitForRest(tank: CTank, lastX: number, stuckPolls: number): void {
     if (!tank.isMoving()) {
@@ -4407,8 +4407,8 @@ export class CGameController implements ShotWorld {
    * A Move drive has settled (or hung): end the turn — UNLESS Utility Turn is off and a human drove,
    * in which case the Move was FREE like every other utility and control stays with them. Move is a
    * utility, so it answers to the same flag as heal/shield/armor/hazmat (see the `applyUtility` branch
-   * in `fire()`); it used to consume the turn unconditionally, which read as an arbitrary exception
-   * once the flag was turned off. Bots and the AI-driven Demo tank always spend the turn (one action).
+   * in `fire()`); consuming the turn unconditionally here would read as an arbitrary exception once
+   * the flag is turned off. Bots and the AI-driven Demo tank always spend the turn (one action).
    *
    * Deterministic across a net match: every peer decides on the same (flag, mover) pair, so a
    * spectator replaying a remote human's free Move keeps simulating that player's turn instead of

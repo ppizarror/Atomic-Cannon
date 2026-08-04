@@ -5,11 +5,11 @@
  * slots for the whole map — and claiming one EVICTS whatever earth still holds it. So "how many
  * slots does a shot consume?" is not bookkeeping trivia: consume two and the table burns twice as
  * fast; consume one per detonation and a cluster weapon wipes every other player's contamination off
- * the map the moment it lands. Anthrax (a 7-detonation cluster) used to claim fourteen — its own
- * submunitions, each claiming one slot to tag the earth it threw and a second inside `blastIradiate`
- * for its zone — and a single Anthrax erased every Plasma crater in play.
+ * the map the moment it lands. Anthrax (a 7-detonation cluster) is the worst case: claiming per
+ * detonation would take fourteen — each submunition one slot to tag the earth it threw and a second
+ * inside `blastIradiate` for its zone — and a single Anthrax would erase every Plasma crater in play.
  *
- * The fix is not "make the cluster path pass its slot down". It is that the slot belongs to the
+ * The answer is not "make the cluster path pass its slot down". It is that the slot belongs to the
  * EVENT, so `radiationSlot` is idempotent within a turn and there is nothing for any call site — a
  * weapon, a beam, a mine, a trajectory behaviour written next month — to thread through or forget.
  * These tests are therefore written against the real weapons and the real detonation path, not

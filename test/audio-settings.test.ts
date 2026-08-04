@@ -1,7 +1,7 @@
 /**
  * The Audio page is a normal catalog page: its six options are stored in `atomic.settings` like
  * every other setting (so they ride backups + profile sync), and `applyGameSettings` pushes them
- * into the live CAudio bus — CAudio itself no longer reads or writes storage.
+ * into the live CAudio bus — CAudio itself neither reads nor writes storage.
  *
  * Three things have to hold:
  *  • the catalog owns the defaults (music opens a step below the SFX, see settingsCatalog);

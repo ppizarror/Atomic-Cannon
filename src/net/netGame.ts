@@ -68,8 +68,8 @@ export class NetGame {
   // own sim was still resolving a shot — or behind an already-queued event. Draining them IN ORDER
   // once the sim settles preserves lockstep: applying a LATER turn's command to the current tank, or
   // dropping an intervening turnBegin's once-per-turn effects (seeded crate/income draws), would
-  // diverge. Replaces the old single-slot pending-turn/keyframe stash, which lost intervening turns
-  // under a stall (e.g. a backgrounded tab whose rAF sim freezes while messages keep arriving).
+  // diverge. A queue rather than a single slot because a stall (e.g. a backgrounded tab whose rAF
+  // sim freezes while messages keep arriving) can leave several turns waiting at once.
   private m_queue: QueuedEvent[] = [];
   private m_turnGen = 0; // the current turn's server generation (from turnBegin) — echoed in shotResult
   private m_intermissionTimer: ReturnType<typeof setTimeout> | null = null; // between-battle advance
@@ -198,7 +198,7 @@ export class NetGame {
       return;
     }
     // True lockstep: our deterministic sim is the truth for us. Never overwrite it with the acting
-    // client's snapshot (the old cheat vector) — EXCEPT supply crates. Crate physics free-runs on
+    // client's snapshot (the cheat vector) — EXCEPT supply crates. Crate physics free-runs on
     // wall-clock fixed-steps outside the lockstep shot window, so an airborne crate drifts a few px
     // between clients; it's excluded from stateHash and pinned from the authoritative keyframe here
     // (otherwise an honest client false-flags divergence whenever a crate is mid-descent).

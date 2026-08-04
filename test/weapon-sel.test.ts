@@ -48,8 +48,8 @@ describe('weaponsel (arsenal row selection)', () => {
   });
 
   it('disabled weapons do not consume row numbers', () => {
-    // The reported regression, with the shipped defaults: the four secret Organic weapons sit
-    // before Booster Jet, so its database id (101) runs four ahead of its row number (97).
+    // With the shipped defaults the four secret Organic weapons sit before Booster Jet, so its
+    // database id (101) runs four ahead of its row number (97).
     disable('Pig Blaster', 'Cowinator', 'Toxic Cow', 'Defiled Pig');
     const gc = weaponTestGame();
     const booster = indexOfName('Booster Jet');

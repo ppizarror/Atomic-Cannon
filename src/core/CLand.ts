@@ -1320,10 +1320,9 @@ export class CLand {
     // Spoil, fallout and zone are ONE patch of poisoned ground and must share a slot, or they fade
     // on separate clocks. Asked for rather than passed in: `radiationSlot` answers per EVENT, so the
     // caller that already claimed one to tag the earth this blast THREW gets that same slot back
-    // here. It used to be a parameter defaulting to a fresh claim, and since no caller ever passed
-    // it every irradiating blast claimed two slots — the zone's and an orphan holding the spoil,
-    // which then had no zone to light it or to cool it: contaminated ejecta that never glowed and
-    // never decayed, on top of burning the eight-slot table twice as fast as it should.
+    // here. Taking it as a parameter instead invites a call site to omit it and claim a second slot
+    // — an orphan holding the spoil with no zone to light it or to cool it: contaminated ejecta that
+    // never glows and never decays, on top of burning the eight-slot table twice as fast as it should.
     const slot = this.radiationSlot(rgb);
 
     // The fallout lingers longer than the raw irTime and dims GRADUALLY.
@@ -1757,16 +1756,15 @@ export class CLand {
    * The soft halo under the sharp specks: the same light, spread wide and dim — and then CUT TO THE
    * GROUND, which is the whole reason this is baked rather than blitted.
    *
-   * It used to be two live blits, the layer drawn once shrunk hard and blown back up so the scaler's
-   * own filtering did the blur. That is cheap and it looks right, but a scaler has no idea where the
-   * earth is: it spread the coat's light straight off a crater wall into the open air of the bowl and
-   * out over the rim, up to ~40px of glow hanging on nothing. The sharp layer never did that — its
-   * `bleed` refuses any pixel without earth under it — so the invariant existed and the bloom simply
-   * was not subject to it. Doing the spread here, over the same buffer and behind the same test,
+   * Letting a scaler do the blur — draw the layer once shrunk hard, blow it back up, let its own
+   * filtering smear it — is cheap and looks right, but a scaler has no idea where the earth is: it
+   * spreads the coat's light straight off a crater wall into the open air of the bowl and out over
+   * the rim, up to ~40px of glow hanging on nothing. The sharp layer's `bleed` refuses any pixel
+   * without earth under it, so doing the spread here, over the same buffer and behind the same test,
    * puts BOTH passes under one rule: the glow layer never contains light in the air. It also costs
-   * one blit a frame instead of two, since the blur is now paid once per terrain edit.
+   * one blit a frame instead of two, since the blur is paid once per terrain edit.
    *
-   * The spread reproduces what the scaler did — average `BLOOM_SHRINK`-square blocks, then bilinear
+   * The spread reproduces what a scaler does — average `BLOOM_SHRINK`-square blocks, then bilinear
    * back up — so the halo keeps the shape and weight it was tuned at; only the part in the sky goes.
    */
   private bloomLayer(
@@ -2544,14 +2542,14 @@ export class CLand {
     }
     this.m_radParticles.length = rw;
     // A contamination EVENT decays when its LAST zone does, and what decays is that event's earth —
-    // identified by its slot, wherever it lies. Not "every hot pixel within the dead zone's radius",
-    // which this used to be and which was wrong in both directions at once. It MISSED its own coat,
-    // because the disc is centred on the surface while the coat hugs a bowl carved below it: at the
-    // same radius the bowl face sits just outside the disc, so a crater's own fallout was never
-    // cleaned and the ground stayed hot — and damaging — for the rest of the match. And it HIT
-    // everyone else's, because it never looked at the slot: any neighbouring crater whose earth fell
-    // inside the disc was decontaminated too, at whatever brightness it happened to be glowing.
-    // Once the map had a few overlapping craters that read as a live coat vanishing outright.
+    // identified by its slot, wherever it lies. NOT "every hot pixel within the dead zone's radius",
+    // which is wrong in both directions at once. It would MISS its own coat, because the disc is
+    // centred on the surface while the coat hugs a bowl carved below it: at the same radius the bowl
+    // face sits just outside the disc, so a crater's own fallout is never cleaned and the ground
+    // stays hot — and damaging — for the rest of the match. And it would HIT everyone else's, since
+    // it never looks at the slot: any neighbouring crater whose earth falls inside the disc is
+    // decontaminated too, at whatever brightness it happens to be glowing. On a map with a few
+    // overlapping craters that reads as a live coat vanishing outright.
     if (spent) {
       for (let i = 0; i < spent.length; i++) {
         const slot = spent[i];

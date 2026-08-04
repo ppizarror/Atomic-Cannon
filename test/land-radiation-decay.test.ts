@@ -3,16 +3,16 @@
  *
  * A contamination event owns a slot (see `land-radiation-slots.test.ts`); that slot's zones carry its
  * clock, and when the last of them runs out the earth it poisoned becomes ordinary soil again. Both
- * halves of that sentence used to be wrong, because decay was expressed as "clear every hot pixel
- * within the dead zone's radius" rather than "clear this event's earth":
+ * halves of that sentence break if decay is expressed as "clear every hot pixel within the dead
+ * zone's radius" rather than "clear this event's earth":
  *
- *  - It MISSED its own coat. The disc is centred on the surface while the fallout hugs the face of a
+ *  - It MISSES its own coat. The disc is centred on the surface while the fallout hugs the face of a
  *    bowl carved below it, so at equal radius the coat lies just outside the disc — measured at zero
- *    of 6836 pixels reached. Contaminated ground therefore never cooled: long after its glow had
- *    faded out it was still hot to `radiationAt`, still damaging anything standing on it, for the
+ *    of 6836 pixels reached. Contaminated ground therefore never cools: long after its glow has
+ *    faded out it is still hot to `radiationAt`, still damaging anything standing on it, for the
  *    rest of the match.
- *  - It HIT everybody else's. Nothing checked the slot, so any neighbouring crater whose earth fell
- *    inside the dead zone's disc was decontaminated along with it, at whatever brightness it was
+ *  - It HITS everybody else's. Nothing checks the slot, so any neighbouring crater whose earth falls
+ *    inside the dead zone's disc is decontaminated along with it, at whatever brightness it was
  *    glowing — measured wiping coats still at 59% and 100% brightness. On a map with a few
  *    overlapping craters that reads as live radiation vanishing outright.
  */

@@ -3,10 +3,10 @@
  * ends (and once more when the war does) and POSTs it to `/api/stats`.
  *
  * Two rules make the counters actually reflect play:
- *   • Nothing is click-gated. The old upload happened only when the player clicked past the final
- *     war standings, so quitting to the menu — or just closing the tab on the victory screen —
- *     discarded the whole match. Now the engine banks each battle the moment it ends, and the UI
- *     flushes again when the player quits to the menu and when the page goes away.
+ *   • Nothing is click-gated. Gating the upload on the player clicking past the final war standings
+ *     would discard the whole match whenever they quit to the menu — or just closed the tab on the
+ *     victory screen. The engine banks each battle the moment it ends, and the UI flushes again
+ *     when the player quits to the menu and when the page goes away.
  *   • A failed POST is never lost play: the delta is merged back into `pending` and rides along with
  *     the next flush (an offline stretch costs one request, not the stats).
  *

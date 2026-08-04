@@ -224,14 +224,14 @@ function TurnTimerBar() {
 // magenta mount pixels, both keyed out. It points UP in the bitmap (tip at top, base at
 // the bottom), so we pivot at its base — the dial centre (50,50) — and rotate it to the
 // aim. Local length/width in the 100×100 viewBox; width tracks the 5:28 source ratio so
-// it never distorts. The old stroked line stays as the fallback until the sprite loads.
-const NDL_LEN = 32; // pointer length, ~matches the old needle reach
+// it never distorts. A stroked line stands in as the fallback until the sprite loads.
+const NDL_LEN = 32; // pointer length
 const NDL_W = (5 / 28) * NDL_LEN; // preserve the sprite's 5×28 aspect
 
 function Needle() {
   const a = angle.value;
   // Sprite drawn pointing UP represents aim = 90 (screen-up); rotate by (90 − a) so
-  // a=0→right, a=90→up, a=270→down — matching the ◀/▶ aim and the old line.
+  // a=0→right, a=90→up, a=270→down — matching the ◀/▶ aim.
   const rot = `rotate(${90 - a} 50 50)`;
   const src = useAsyncImage(() => loadUiBmp('gui/guiAnglePointerBig.bmp', 'blackmagenta'), []);
   return (

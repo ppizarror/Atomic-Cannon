@@ -4,9 +4,9 @@
  * applies, the human keeps control, and the shot clock RESUMES so the turn still can't be stalled.
  *
  * The self-buffs run through fire() → applyUtility and Move through the drive's finishTankMove, so
- * the flag has to be honoured in BOTH seams — Move used to consume the turn unconditionally. A
- * change to either (an early return, a missed hand-off, a stale net flag) silently turns "use a
- * medkit" into a turn that never ends, or a free Move into one that costs the turn anyway.
+ * the flag has to be honoured in BOTH seams. A change to either (an early return, a missed hand-off,
+ * a stale net flag) silently turns "use a medkit" into a turn that never ends, or a free Move into
+ * one that costs the turn anyway.
  */
 import {describe, it, expect, afterEach} from 'vitest';
 import {makeCanvas} from './_dom';

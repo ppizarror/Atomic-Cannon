@@ -228,8 +228,8 @@ describe('Homing Missile', () => {
   });
 
   it('still arms for a target near the edge, even if the unguided arc would sail off', () => {
-    // The regression this guards: declining on "the unguided arc lands off the field" refuses
-    // exactly the shots guidance exists to save — an enemy parked near the boundary that the
+    // Declining on "the unguided arc lands off the field" would refuse exactly the shots
+    // guidance exists to save — an enemy parked near the boundary that the
     // round would overshoot by a little. What decides it is whether a TARGET is reachable, not
     // where the round would have gone had nobody been there.
     const world = new World();
@@ -247,7 +247,7 @@ describe('Homing Missile', () => {
     // long way ABOVE it on a rise. Measuring the acquisition range diagonally counts that height
     // against the tank and refuses the shot; the band corrects along the ground, so only the
     // horizontal gap is its business. 120 across and 500 up is ~514 diagonally — comfortably
-    // outside the 300 radius on the old metric, comfortably inside it on the right one.
+    // outside the 300 radius measured that way, comfortably inside it measured along the ground.
     const world = new World();
     world.tanks = [tankAt(unguidedImpactX() + 120, 450 - 500, 1)];
     const shot = launch();

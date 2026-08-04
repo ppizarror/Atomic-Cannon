@@ -5,9 +5,9 @@
  *  1. The crate still resolves to a REAL weapon index, not -1. Weapons carry a stable `id` (+ an
  *     i18n display name) and never a `.name` field, so a lookup like `w.name === 'Bomb'` returns
  *     -1 and `getWeapon(-1)` falls back to weapon 0 — the trap would cook off a Magma Beam.
- *  2. Opening one HURTS and grants nothing. This port used to hand the Bomb over as a free weapon
- *     (sharing the 'weapon' branch), which made a trap into a reward — while CBotUltraAI already
- *     refused to grab one, so bots declined a prize and humans collected a free weapon.
+ *  2. Opening one HURTS and grants nothing. Handing the Bomb over as a free weapon (by sharing the
+ *     'weapon' branch) turns a trap into a reward — and CBotUltraAI refuses to grab one, so bots
+ *     would decline a prize while humans collected a free weapon.
  *
  * The damage is deliberately picker-only: the original hits just the opener, with no falloff and no
  * kickback, so a bystander sitting on the crate is untouched.

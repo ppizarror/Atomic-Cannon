@@ -50,11 +50,11 @@ function settleFallout(land: CLand): void {
 /**
  * Every lit texel of the baked glow, in WORLD coordinates — BOTH passes.
  *
- * The halo counts. It is the same light spread wide and dim, and for a long time it was applied as
- * two live blits (shrink the layer, blow it back up, let the scaler's filtering be the blur) which
- * put it outside this invariant entirely: the sharp layer refused to light air, and then the bloom
- * smeared that same light ~40px off a crater wall into the open bowl. Baking it is what brings it
- * under the rule, and sweeping it here is what keeps it there.
+ * The halo counts. It is the same light spread wide and dim, and letting a scaler do the blur
+ * (shrink the layer, blow it back up, let its filtering smear it) puts it outside this invariant
+ * entirely: the sharp layer refuses to light air, and then the bloom smears that same light ~40px
+ * off a crater wall into the open bowl. Baking it is what brings it under the rule, and sweeping it
+ * here is what keeps it there.
  */
 function litTexels(land: CLand): {x: number; y: number}[] {
   const p = landPriv(land);

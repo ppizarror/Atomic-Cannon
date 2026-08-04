@@ -1286,7 +1286,7 @@ export class CTank {
     this.m_health.nArmor = num(s.armor, this.m_health.nArmor);
     this.m_health.nHazmat = num(s.hazmat, this.m_health.nHazmat);
     // Alive is a FLAG, not derived from life (a Rounds tank is alive at 0 life). Use the snapshot's
-    // explicit flag; fall back to life>0 only for an older snapshot that predates the field.
+    // explicit flag; fall back to life>0 only when the snapshot omits it.
     this.m_bIsAlive = s.alive ?? s.life > 0;
     // If the authoritative snapshot says this tank is alive, clear a locally-predicted explosion — a
     // client that mispredicted the death (m_bExploded=true) would otherwise render a LIVE tank as a
