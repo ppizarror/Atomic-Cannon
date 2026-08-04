@@ -237,7 +237,11 @@ function DepotBody() {
           ))}
         </div>
 
-        <ClassicScrollbar class="dep-list" onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}>
+        <ClassicScrollbar
+          class="dep-list"
+          onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}
+          onScroll={() => setHover(null)}
+        >
           {rows.map(w => {
             const q = owned[w.index] ?? 0;
             const isSel = w.index === sel;

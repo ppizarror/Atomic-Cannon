@@ -13,18 +13,25 @@
  * any extra props (onMouseMove…) are forwarded to the inner scrolling element.
  */
 import {useCallback, useLayoutEffect, useRef, useState} from 'preact/hooks';
-import type {ComponentChildren, JSX, RefObject} from 'preact';
+import type {
+  ComponentChildren,
+  CSSProperties,
+  HTMLAttributes,
+  RefObject,
+  TargetedEvent,
+  TargetedPointerEvent,
+} from 'preact';
 
 type Props = {
   class?: string;
-  style?: JSX.CSSProperties;
+  style?: CSSProperties;
   rootRef?: RefObject<HTMLDivElement>;
   children?: ComponentChildren;
-} & Omit<JSX.HTMLAttributes<HTMLDivElement>, 'class' | 'style' | 'children' | 'ref'>;
+} & Omit<HTMLAttributes<HTMLDivElement>, 'class' | 'style' | 'children' | 'ref'>;
 
 const MIN_GRIP = 22; // px — the grip never shrinks below this, however long the list
 
-export function ClassicScrollbar({class: cls = '', style, rootRef, children, ...rest}: Props) {
+export function ClassicScrollbar({class: cls = '', style, rootRef, children, onScroll, ...rest}: Props) {
   const viewRef = useRef<HTMLDivElement>(null);
   const [grip, setGrip] = useState({top: 0, height: 0, show: false});
   // Removes the active grip-drag's window listeners; set while dragging, cleared on pointer-up. An
@@ -61,7 +68,7 @@ export function ClassicScrollbar({class: cls = '', style, rootRef, children, ...
 
   // Drag the grip → scroll the view proportionally (window listeners so the drag
   // keeps tracking even when the pointer leaves the narrow bar).
-  const onGripDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
+  const onGripDown = (e: TargetedPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     const el = viewRef.current;
@@ -84,9 +91,16 @@ export function ClassicScrollbar({class: cls = '', style, rootRef, children, ...
     dragCleanup.current = up; // so an unmount mid-drag removes these
   };
 
+  // The grip MUST re-sync on every scroll, so a caller's own onScroll is composed with `sync`
+  // rather than spread over it ({...rest} lands after the handler and would silently replace it).
+  const scrolled = (e: TargetedEvent<HTMLDivElement, Event>) => {
+    sync();
+    onScroll?.(e);
+  };
+
   return (
     <div class={`cscroll-host ${cls}`} style={style} ref={rootRef}>
-      <div class="cscroll-view" ref={viewRef} onScroll={sync} {...rest}>
+      <div class="cscroll-view" ref={viewRef} onScroll={scrolled} {...rest}>
         {children}
       </div>
       {grip.show && (

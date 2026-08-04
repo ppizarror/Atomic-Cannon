@@ -11,7 +11,7 @@
  * the ref and the pointer handlers from {@link usePointerDrag}.
  */
 import {useRef} from 'preact/hooks';
-import type {JSX, RefObject} from 'preact';
+import type {RefObject, TargetedPointerEvent} from 'preact';
 import {clamp01} from '../math/num';
 import {usePointerDrag} from './usePointerDrag';
 import {game} from './store';
@@ -23,15 +23,15 @@ export function useTrackDrag<T extends HTMLElement>(
   apply: (frac: number) => void,
 ): {
   ref: RefObject<T>;
-  onPointerDown: (e: JSX.TargetedPointerEvent<T>) => void;
-  onPointerMove: (e: JSX.TargetedPointerEvent<T>) => void;
-  onPointerUp: (e: JSX.TargetedPointerEvent<T>) => void;
-  onPointerCancel: (e: JSX.TargetedPointerEvent<T>) => void;
+  onPointerDown: (e: TargetedPointerEvent<T>) => void;
+  onPointerMove: (e: TargetedPointerEvent<T>) => void;
+  onPointerUp: (e: TargetedPointerEvent<T>) => void;
+  onPointerCancel: (e: TargetedPointerEvent<T>) => void;
 } {
   const ref = useRef<T>(null);
   const grabSeq = useRef(0);
 
-  const fromEvent = (e: JSX.TargetedPointerEvent<T>): void => {
+  const fromEvent = (e: TargetedPointerEvent<T>): void => {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
     const frac =

@@ -4,7 +4,7 @@
  * positioned over it as a percentage of the 640x120 panel.
  */
 import {useEffect, useRef} from 'preact/hooks';
-import type {JSX, ComponentChildren, TargetedWheelEvent} from 'preact';
+import type {CSSProperties, ComponentChildren, TargetedWheelEvent} from 'preact';
 import {BmpText} from './BmpText';
 import {
   power,
@@ -98,7 +98,7 @@ const DIAL_BOX = [75.35, 8.6, 11.5, 61.3] as const;
 const DIAL_GRAB = [75.35, 8.6, 11.5, 52] as const;
 const ANGLE_PER_PX = 0.5; // degrees of aim per pixel of horizontal drag
 
-const pos = (r: readonly number[]): JSX.CSSProperties => ({
+const pos = (r: readonly number[]): CSSProperties => ({
   position: 'absolute',
   left: `${r[0]}%`,
   top: `${r[1]}%`,

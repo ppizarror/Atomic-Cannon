@@ -8,7 +8,7 @@
  * Every dialog wears the same dialog.bmp frame — route pop-up cards through here rather than
  * rolling a bespoke overlay + card per screen, which is how they drift visually apart.
  */
-import type {ComponentChildren, JSX} from 'preact';
+import type {ComponentChildren, CSSProperties} from 'preact';
 
 export function Modal({
   backdrop = 'scrim',
@@ -28,7 +28,7 @@ export function Modal({
   class?: string;
   children: ComponentChildren;
 }) {
-  const style: JSX.CSSProperties = {};
+  const style: CSSProperties = {};
   if (width) style.width = width;
   if (maxHeight) style.maxHeight = maxHeight;
   return (

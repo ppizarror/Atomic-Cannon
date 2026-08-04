@@ -6,9 +6,9 @@
  * control-specific work (read the event, set the value / stash the drag origin).
  */
 import {useRef} from 'preact/hooks';
-import type {JSX} from 'preact';
+import type {TargetedPointerEvent} from 'preact';
 
-type PointerHandler<T extends HTMLElement> = (e: JSX.TargetedPointerEvent<T>) => void;
+type PointerHandler<T extends HTMLElement> = (e: TargetedPointerEvent<T>) => void;
 
 export function usePointerDrag<T extends HTMLElement>(handlers: {
   onStart?: PointerHandler<T>;
