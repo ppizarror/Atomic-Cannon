@@ -212,28 +212,41 @@ function paint(g: CanvasRenderingContext2D, art: TankArt, model: string, aim: nu
   g.drawImage(art.body, FRAME.w / 2 - bw / 2, groundY - bh, bw, bh);
 }
 
+/** A running preview: swap what it shows, or shut it down. */
+export interface TankPreviewHandle {
+  /** Show a different hull and/or colour. The barrel KEEPS its current aim. */
+  show(model: string, hex: string): void;
+  dispose(): void;
+}
+
 /**
- * Run the live hull preview on `canvas`: size it, recolour `model` to `hex`, and track the pointer
- * with the barrel — a gimmick, the aim it ends on means nothing to the match. Returns a disposer.
+ * Start the live hull preview on `canvas`: size it, and track the pointer with the barrel — a
+ * gimmick, the aim it ends on means nothing to the match.
  *
  * Only pointer movement inside `region` aims the turret (the player card, so the tank watches you
  * work its own panel and ignores the rest of the screen). Leaving the region doesn't recentre it:
  * it simply holds the last aim until you come back.
  *
+ * The aim lives in this closure, NOT in the arguments, so paging to another tank or dragging a new
+ * colour goes through `show()` and leaves the barrel where you put it. Rebuilding the preview per
+ * hull instead made it snap back to rest on every change and then jump to the pointer.
+ *
  * The whole thing lives here rather than in the component so the editor stays declarative: a
  * pointer move only re-composites two cached bitmaps on an animation frame, never a Preact render
  * and never a recolour.
  */
-export function runTankPreview(canvas: HTMLCanvasElement, model: string, hex: string, region: HTMLElement): () => void {
+export function runTankPreview(canvas: HTMLCanvasElement, region: HTMLElement): TankPreviewHandle {
   canvas.width = FRAME.w;
   canvas.height = FRAME.h;
   const g = canvas.getContext('2d');
-  if (!g) return () => {};
+  if (!g) return {show: () => {}, dispose: () => {}};
 
   let art: TankArt | null = null;
+  let model = ''; // the hull currently DRAWN — set with its art, so the two never disagree
   let aim = REST_AIM;
   let frame = 0;
-  let live = true;
+  let generation = 0; // bumped per show()/dispose(), so a slow recolour can't land after a newer one
+
   const redraw = () => {
     frame = 0;
     if (art) paint(g, art, model, aim);
@@ -242,19 +255,24 @@ export function runTankPreview(canvas: HTMLCanvasElement, model: string, hex: st
     aim = aimToward(canvas, model, e.clientX, e.clientY);
     frame ||= requestAnimationFrame(redraw);
   };
-
-  void loadTankArt(model, hex).then(loaded => {
-    if (!live) return; // the hull/colour moved on while we were recolouring
-    art = loaded;
-    redraw();
-  });
   // On the region, not the window: the events from its children bubble up here anyway (including
   // during a colour drag, which captures the pointer to the palette bar but still bubbles).
   region.addEventListener('pointermove', onMove);
 
-  return () => {
-    live = false;
-    region.removeEventListener('pointermove', onMove);
-    if (frame) cancelAnimationFrame(frame);
+  return {
+    show(nextModel: string, hex: string): void {
+      const mine = ++generation;
+      void loadTankArt(nextModel, hex).then(loaded => {
+        if (mine !== generation) return; // a newer hull/colour won while we were recolouring
+        art = loaded;
+        model = nextModel;
+        redraw(); // the previous hull stays up until this lands, so there's no blank frame
+      });
+    },
+    dispose(): void {
+      generation++; // orphan any in-flight recolour
+      region.removeEventListener('pointermove', onMove);
+      if (frame) cancelAnimationFrame(frame);
+    },
   };
 }

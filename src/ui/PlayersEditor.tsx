@@ -19,7 +19,7 @@ import {EditorDone} from './EditorDone';
 import {uiClick, uiTyping} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
 import {MAX_HUMANS} from './setupStore';
-import {loadPalette, samplePalette, findNearestInPalette, runTankPreview} from './palette';
+import {loadPalette, samplePalette, findNearestInPalette, runTankPreview, type TankPreviewHandle} from './palette';
 import {usePointerDrag} from './usePointerDrag';
 import {EditorScreen} from './EditorScreen';
 import {useAsyncValue} from './useAsyncValue';
@@ -32,11 +32,26 @@ import {clamp01} from '../math/num';
  */
 function TankPreview({model, color, aimWithin}: {model: string; color: string; aimWithin: RefObject<HTMLDivElement>}) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const preview = useRef<TankPreviewHandle | null>(null);
+
+  // Started once and kept across hull/colour changes: the aim lives inside the preview, so paging
+  // to another tank re-draws it at the angle you left the barrel at instead of snapping to rest.
   useEffect(() => {
     const cv = ref.current,
       card = aimWithin.current;
-    return cv && card ? runTankPreview(cv, model, color, card) : undefined;
-  }, [model, color, aimWithin]);
+    if (!cv || !card) return;
+    const p = runTankPreview(cv, card);
+    preview.current = p;
+    return () => {
+      p.dispose();
+      preview.current = null;
+    };
+  }, [aimWithin]);
+
+  useEffect(() => {
+    preview.current?.show(model, color);
+  }, [model, color]);
+
   return (
     <span class="player-preview">
       <canvas ref={ref} />
