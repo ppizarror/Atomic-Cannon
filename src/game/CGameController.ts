@@ -166,6 +166,7 @@ export interface BattleHeroTeam {
   name: string;
   score: number;
   kills: number;
+  slot?: number;
 }
 
 /** One team's row in the between-battles standings table. */
@@ -573,6 +574,7 @@ export class CGameController implements ShotWorld {
     const teamOfColor = new Map<string, number>();
     const perTeam = Math.max(1, this.m_tanksPerTeam);
     this.m_teamNames.clear(); // fresh match — the previous roster's team labels are gone
+    this.m_teamSlots.clear();
 
     const playerNames = strings.value.playerNames;
     // Roster layout (Customize Players): the first ROSTER_HUMAN_SLOTS entries are the HUMAN pool, the
@@ -622,7 +624,10 @@ export class CGameController implements ShotWorld {
       else baseName = cfg.name;
       // The team's own label for the status overlay: the bare player name, no squad suffix. First
       // slot of a colour wins, mirroring how that slot's colour defined the team above.
-      if (!this.m_teamNames.has(team)) this.m_teamNames.set(team, baseName);
+      if (!this.m_teamNames.has(team)) {
+        this.m_teamNames.set(team, baseName);
+        if (!netCfg && baseName === cfg.name) this.m_teamSlots.set(team, rosterIdx);
+      }
       for (let k = 0; k < perTeam; k++) {
         const name = perTeam > 1 ? fmt(strings.value.game.teamMember, {name: baseName, n: k + 1}) : baseName;
         spawns.push({name, color: cfg.color, model: cfg.model, team, human});
@@ -5969,18 +5974,24 @@ export class CGameController implements ShotWorld {
 
   /** Per-team Battle Heroes values, submitted to the hall of fame at war end: each
    *  team's total kills (the Kills board) and its average damage-dealt per tank (the
-   *  Score board). One entry per team; the callsign is the team's name. */
+   *  Score board). One entry per team; the callsign is the team's PLAYER name (no "… 2"
+   *  squad suffix), plus the roster slot it came from where there is one. */
   getBattleHeroes(): BattleHeroTeam[] {
     const teams = this.groupTanksByTeam(t => !t.isSentry());
     const out: BattleHeroTeam[] = [];
-    for (const members of teams.values()) {
+    for (const [team, members] of teams) {
       let kills = 0,
         dmg = 0;
       for (const m of members) {
         kills += m.getKills();
         dmg += m.getDamageDealt();
       }
-      out.push({name: members[0].getName(), score: Math.round(dmg / members.length), kills});
+      out.push({
+        name: this.m_teamNames.get(team) ?? members[0].getName(),
+        score: Math.round(dmg / members.length),
+        kills,
+        slot: this.m_teamSlots.get(team),
+      });
     }
     return out;
   }
@@ -6294,6 +6305,10 @@ export class CGameController implements ShotWorld {
   // Each team's PLAYER name — the roster/lobby name without the "… 2" squad suffix its individual
   // tanks carry. The status overlay lists one row per team, so it labels rows from here.
   private m_teamNames = new Map<number, string>();
+  // Each team's Customize Players slot, when its name came from there. The hall of fame stores this
+  // with a score so the board can follow a later rename instead of freezing the old callsign; a
+  // network lobby name or the Wargame "Whopper" override has no slot, since it isn't the roster's.
+  private m_teamSlots = new Map<number, number>();
   private m_landMode = -1; // -1 = random landscape; 0..4 = a forced shape
   private m_flatLand = false; // DEV `?flatland=1`: force a flat test surface next startGame
   private m_windScale = 1; // 0 disables wind

@@ -9,7 +9,7 @@
  * (gui/battle won 100 / 10 / (1)).
  */
 import {backToMenu} from './store';
-import {heroData, type HeroEntry} from './highscoresStore';
+import {heroData, heroName, type HeroEntry} from './highscoresStore';
 import {strings} from '../i18n';
 import {gameSettings as S} from './settingsValues';
 import {BmpText} from './BmpText';
@@ -33,7 +33,7 @@ function Board({entries, valueHeader}: {entries: HeroEntry[]; valueHeader: strin
       </div>
       {entries.map((e, i) => (
         <div key={i} class="hs-row">
-          <BmpText font="beijing-16-out" text={`${i + 1}. ${e.name}`} />
+          <BmpText font="beijing-16-out" text={`${i + 1}. ${heroName(e)}`} />
           <BmpText font="beijing-16-out" text={String(e.value)} />
         </div>
       ))}

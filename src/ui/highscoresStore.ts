@@ -8,6 +8,7 @@
  * would otherwise vanish on every refresh actually accumulates.
  */
 import {createPersistedSignal} from './persistedSignal';
+import {roster, MAX_PLAYERS} from './playersStore';
 import type {BattleHeroTeam} from '../game/CGameController';
 
 const KEY = 'atomic.heroes';
@@ -16,8 +17,14 @@ const NAME_MAX = 31; // legacy callsign length (strncpy 0x1f)
 
 /** One hall-of-fame row: a callsign and its board value (score or kills). */
 export interface HeroEntry {
+  /** The callsign as it read when the score was set. Kept as the fallback for rows with no slot
+   *  (network opponents, the Wargame "Whopper") and for a slot whose name has been blanked. */
   name: string;
   value: number;
+  /** Customize Players slot that earned it, when the callsign came from the roster. `heroName`
+   *  reads the CURRENT name from that slot, so renaming Player → Pablo renames their scores too
+   *  instead of leaving a board full of stale callsigns. */
+  slot?: number;
 }
 
 interface HeroData {
@@ -27,11 +34,18 @@ interface HeroData {
   lost: number; // local player's battles lost
 }
 
+/** A stored `slot`, or undefined unless it is a real roster index (rows saved before slots
+ *  existed, and anything foreign, simply have none). */
+const cleanSlot = (v: unknown): number | undefined => {
+  const n = Math.round(Number(v));
+  return Number.isInteger(n) && n >= 0 && n < MAX_PLAYERS ? n : undefined;
+};
+
 const cleanList = (v: unknown): HeroEntry[] =>
   Array.isArray(v)
     ? v
         .filter((e): e is HeroEntry => !!e && typeof e.name === 'string' && Number.isFinite(e.value))
-        .map(e => ({name: String(e.name).slice(0, NAME_MAX), value: Math.round(e.value)}))
+        .map(e => ({name: String(e.name).slice(0, NAME_MAX), value: Math.round(e.value), slot: cleanSlot(e.slot)}))
         .sort((a, b) => b.value - a.value)
         .slice(0, CAP)
     : [];
@@ -78,10 +92,24 @@ export function submitBattleHeroes(teams: BattleHeroTeam[]): void {
   let {score, kills} = d;
   for (const t of teams) {
     const name = t.name.slice(0, NAME_MAX);
-    if (t.score > 0) score = insert(score, {name, value: t.score});
-    if (t.kills > 0) kills = insert(kills, {name, value: t.kills});
+    if (t.score > 0) score = insert(score, {name, value: t.score, slot: t.slot});
+    if (t.kills > 0) kills = insert(kills, {name, value: t.kills, slot: t.slot});
   }
   store.set({...d, score, kills});
+}
+
+/**
+ * The callsign to SHOW for a board row: the current Customize Players name of the slot that earned
+ * it, falling back to the name stored with the score (rows with no slot — network opponents, the
+ * Wargame "Whopper" — and slots whose name has been blanked).
+ *
+ * Reading `roster.value` here subscribes the caller, so the board re-renders the moment a player is
+ * renamed. Resolving on READ rather than rewriting stored rows on rename keeps the snapshot intact
+ * as a fallback, and means a rename can't corrupt the board.
+ */
+export function heroName(e: HeroEntry): string {
+  const live = e.slot === undefined ? '' : (roster.value[e.slot]?.name ?? '').trim();
+  return (live || e.name).slice(0, NAME_MAX);
 }
 
 /** Advance the local player's battles won / lost tally (one battle end). */
