@@ -140,13 +140,36 @@ describe('Sentry turrets', () => {
     expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd);
   });
 
-  it('a battle carried by a lone turret still RESOLVES — it takes real turns and can be killed', () => {
-    // The point of the rule above is that the fight goes ON. Drive the whole thing for real, because
-    // "the battle never ends" is the way it could go wrong: an ownerless turret that never got a turn
-    // (or an enemy that never targeted it) would hang the match instead of finishing it.
+  it("a dead owner's turret takes his place in the turn rotation", () => {
+    const {gc, a, b} = twoPlayerGame();
+    const bx = b.getPosition().x;
+    gc.deploySentry(bx + (bx > priv(gc).m_land.width / 2 ? -30 : 30), 0, b, SENTRY_TURRET); // inboard of b
+    const sentry = priv(gc).m_tanks.at(-1)!;
+    expect(sentry.isSentry()).toBe(true);
+    b.hit(999999);
+
+    // Hand the turn on from a: b is dead and skipped, so the only unit left to act is b's turret.
+    // Driven through endTurn rather than a simulated match on purpose — whether a turret lives long
+    // enough to reach its turn depends on the enemy's aim, so a match can't assert this.
+    priv(gc).m_gameState = EGameState.Battle;
+    priv(gc).m_currentPlayerIndex = priv(gc).m_tanks.indexOf(a);
+    priv(gc).endTurn();
+
+    expect(priv(gc).m_currentPlayerIndex).toBe(priv(gc).m_tanks.indexOf(sentry));
+    expect(priv(gc).m_gameState).toBe(EGameState.Battle); // the hand-off did not finish the battle
+  });
+
+  it('a battle carried by a lone turret still RESOLVES — it never hangs', () => {
+    // "The battle never ends" is how the rule above could go wrong, so drive a whole match for real.
+    // Only TERMINATION is asserted, never who won: a turret that outlives its owner may well kill the
+    // last enemy — that is the point of the feature — so pinning an outcome would be pinning a
+    // coin-flip. (A 40-seed sweep resolved in 281–7621 ticks; the seed is fixed here so CI runs the
+    // same match this did rather than rolling a fresh one every push.)
+    const realNow = Date.now;
     const realPerf = globalThis.performance;
     const landSize = GameConfig.landSize;
     try {
+      Date.now = () => 7919; // solo re-seeds terrain AND m_rng off the clock — pin both
       // ScreenShake decays on the WALL clock and gates the Explosion → endTurn hand-off, so a sim
       // running 100× real time would leave every blast permanently "shaking" and wedge the turn.
       let fakeNow = 0;
@@ -156,30 +179,32 @@ describe('Sentry turrets', () => {
       const gc = new CGameController(makeCanvas(900, 600));
       gc.setHumanCount(0); // both sides played by the AI, so the match runs unattended
       gc.startGame(2);
-      const [a, b] = priv(gc).m_tanks;
+      const b = priv(gc).m_tanks[1];
 
-      // Drop it 40px INBOARD of b (a tank can spawn 60px from the edge, and a turret landing
+      // Drop it 30px INBOARD of b (a tank can spawn 60px from the edge, and a turret landing
       // inside the edge margin is refused — see the off-map test — which would leave no turret).
       const bx = b.getPosition().x;
-      gc.deploySentry(bx + (bx > priv(gc).m_land.width / 2 ? -40 : 40), 0, b, SENTRY_TURRET);
-      const sentry = priv(gc).m_tanks.at(-1)!;
-      expect(sentry.isSentry()).toBe(true);
+      gc.deploySentry(bx + (bx > priv(gc).m_land.width / 2 ? -30 : 30), 0, b, SENTRY_TURRET);
+      expect(priv(gc).m_tanks.at(-1)!.isSentry()).toBe(true);
       b.hit(999999); // b's team is now nothing but that one turret
 
-      const acted = new Set<number>();
       let ticks = 0;
       for (; ticks < 600 * 60; ticks++) {
         fakeNow += 1000 / 60;
         gc.update(1 / 60);
-        acted.add(priv(gc).m_currentPlayerIndex);
         if (priv(gc).m_gameState === EGameState.BattleEnd) break;
       }
 
-      expect(acted.has(priv(gc).m_tanks.indexOf(sentry))).toBe(true); // the turret really played on
-      expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd); // …and the battle finished
-      expect(sentry.isAlive()).toBe(false); // it ended because the turret died, not by timeout
-      expect(a.isAlive()).toBe(true);
+      expect(priv(gc).m_gameState).toBe(EGameState.BattleEnd); // it finished
+      // …and finished because it was genuinely DECIDED — one side left, counting turrets as units.
+      const teams = new Set(
+        priv(gc)
+          .m_tanks.filter(t => t.isAlive())
+          .map(t => t.getTeamId()),
+      );
+      expect(teams.size).toBeLessThanOrEqual(1);
     } finally {
+      Date.now = realNow;
       (globalThis as {performance?: unknown}).performance = realPerf;
       GameConfig.landSize = landSize;
     }
