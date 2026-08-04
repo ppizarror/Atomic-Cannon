@@ -12,23 +12,36 @@
  * keyboard — the keyboard is pure input plumbing with no gameplay effect.
  */
 import {useEffect, useRef, useState} from 'preact/hooks';
+import type {RefObject} from 'preact';
 import {BmpText} from './BmpText';
 import {Button} from './Button';
 import {EditorDone} from './EditorDone';
 import {uiClick, uiTyping} from './store';
 import {roster, setName, setColor, cycleModel, MAX_PLAYERS} from './playersStore';
 import {MAX_HUMANS} from './setupStore';
-import {loadPalette, samplePalette, findNearestInPalette, recolorTankPreview} from './palette';
+import {loadPalette, samplePalette, findNearestInPalette, runTankPreview} from './palette';
 import {usePointerDrag} from './usePointerDrag';
 import {EditorScreen} from './EditorScreen';
-import {useAsyncImage} from './useAsyncImage';
 import {useAsyncValue} from './useAsyncValue';
 import {strings, fmt} from '../i18n';
 import {clamp01} from '../math/num';
 
-function TankPreview({model, color}: {model: string; color: string}) {
-  const src = useAsyncImage(() => recolorTankPreview(model, color), [model, color]);
-  return <span class="player-preview">{src ? <img src={src} alt="" /> : null}</span>;
+/**
+ * The live hull preview — a canvas whose barrel tracks the pointer while it is over the card
+ * (`aimWithin`), and holds its last aim once you leave. See `runTankPreview`.
+ */
+function TankPreview({model, color, aimWithin}: {model: string; color: string; aimWithin: RefObject<HTMLDivElement>}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current,
+      card = aimWithin.current;
+    return cv && card ? runTankPreview(cv, model, color, card) : undefined;
+  }, [model, color, aimWithin]);
+  return (
+    <span class="player-preview">
+      <canvas ref={ref} />
+    </span>
+  );
 }
 
 function ColorPicker({value, onPick}: {value: string; onPick: (hex: string) => void}) {
@@ -99,13 +112,17 @@ export function PlayersEditor() {
     setP((idx + d + count) % count); // wrap like the original's < / >
   };
 
+  // The preview's turret aims at the pointer only while it's over this card, so the tank tracks
+  // you around its own panel and ignores movement elsewhere on the screen.
+  const cardRef = useRef<HTMLDivElement>(null);
+
   return (
     <EditorScreen
       title={e.title}
       footer={<BmpText font="beijing-16-out" text={e.footer} />}
       actions={<EditorDone label={e.done} class="" />}
     >
-      <div class="player-card">
+      <div class="player-card" ref={cardRef}>
         <div class="player-head">
           <Button label="<" onClick={() => page(-1)} class="player-page" />
           <Button label=">" onClick={() => page(1)} class="player-page" />
@@ -129,7 +146,7 @@ export function PlayersEditor() {
         <ColorPicker value={cfg.color} onPick={hex => setColor(idx, hex)} />
 
         <div class="player-tank">
-          <TankPreview model={cfg.model} color={cfg.color} />
+          <TankPreview model={cfg.model} color={cfg.color} aimWithin={cardRef} />
           <div class="player-model">
             <Button label="<" onClick={() => (uiClick(), cycleModel(idx, -1))} class="player-page" />
             <span class="player-model-name">

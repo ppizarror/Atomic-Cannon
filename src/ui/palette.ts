@@ -3,10 +3,16 @@
  * `color pallette.bmp` into an offscreen canvas so a click can be sampled to an RGB,
  * and recolour a tank sprite to a chosen colour for the live preview (the same
  * luminance-modulated recolour the engine applies to hulls).
+ *
+ * The preview is a live canvas rather than a still image: its barrel tracks the pointer, so the
+ * recolour is split from the composite — parts are recoloured once per (hull, colour) and re-drawn
+ * at whatever the current aim is.
  */
 import {knockoutWhere, makeCanvas2d, nearColor} from '../util/canvas';
 import {hexToRgb, luma, maxOpaqueLuma, rgbToHex} from '../math/color';
 import {clamp} from '../math/num';
+import {capSet} from '../util/cache';
+import {PLAYER_TANKS, drawTurretSprite, tankDrawGeometry} from '../core/CTank';
 
 const PALETTE_URL = '/assets/gui/color pallette.bmp';
 
@@ -100,37 +106,155 @@ async function recolorToCanvas(url: string, hex: string): Promise<HTMLCanvasElem
   return cv;
 }
 
-// Draw proportions mirror the engine (hull width 46, turret length 20, pivot 15px above
-// the ground line, default aim 45° up-right); ×S for a crisp preview bitmap.
-const PV = {S: 3, hullW: 46, turLen: 20, pivotUp: 15};
+// The composite is laid out in the engine's own base px (`tankDrawGeometry`, Player Size 1) and
+// zoomed ×S for a crisp bitmap. `PAD` is slack for the barrel's own half-thickness, `FLOOR` the
+// strip of blank below the ground line. Hard-coding these proportions instead is what floated the
+// Atomic Cannon's barrel: it has the longest barrel (61px of art) on the shortest hull, so both a
+// fixed length and a fixed pivot height were wrong for it.
+const PV = {S: 3, PAD: 4, FLOOR: 2};
+
+/** Where the barrel rests until the pointer has moved: 45° up-right, the angle a tank spawns at. */
+const REST_AIM = Math.PI / 4;
 
 /**
- * Composite a tank's recoloured hull + turret (barrel angled up-right, as in play) to
- * a data URL for the Customize Players preview.
+ * One frame shared by EVERY hull, so the models stay the same size as you page through the picker
+ * (a per-model canvas would be fitted to the CSS box at a different zoom each time) and none of
+ * them clips. Sized for the worst case of the roster's longest barrel at the extremes of its sweep:
+ * full `barrelLen` sideways at 0°/180°, `pivotUp + barrelLen` tall at 90°.
  */
-export async function recolorTankPreview(model: string, hex: string): Promise<string> {
-  const [body, turret] = await Promise.all([
+const FRAME = ((): {w: number; h: number} => {
+  let halfW = 0,
+    top = 0;
+  for (const model of PLAYER_TANKS) {
+    const {hullW, barrelLen, pivotUp} = tankDrawGeometry(model);
+    halfW = Math.max(halfW, hullW / 2, barrelLen);
+    top = Math.max(top, pivotUp + barrelLen);
+  }
+  return {
+    w: Math.ceil((halfW + PV.PAD) * 2 * PV.S),
+    h: Math.ceil((top + PV.PAD + PV.FLOOR) * PV.S),
+  };
+})();
+
+/** A hull's recoloured parts, ready to composite at any aim. */
+interface TankArt {
+  body: HTMLCanvasElement;
+  turret: HTMLCanvasElement;
+}
+
+// Recolouring is two image loads plus a per-pixel pass, so it must NOT happen per pointer move —
+// only per (hull, colour). Capped like the engine's own sprite caches, since dragging across the
+// palette bar mints an arbitrary number of colours. In-flight promises are cached too, so a fast
+// drag doesn't start the same work twice.
+const artCache = new Map<string, Promise<TankArt>>();
+const ART_CACHE_MAX = 64;
+
+/** The recoloured hull + turret for `model` in `hex`, loaded once and reused. */
+function loadTankArt(model: string, hex: string): Promise<TankArt> {
+  const key = `${model}|${hex}`;
+  const hit = artCache.get(key);
+  if (hit) return hit;
+  const pending = Promise.all([
     recolorToCanvas(`/assets/tanks/${model} body.bmp`, hex),
     recolorToCanvas(`/assets/tanks/${model} turret.bmp`, hex),
-  ]);
-  const {S, hullW, turLen, pivotUp} = PV;
+  ]).then(([body, turret]) => ({body, turret}));
+  // A failed load must not be remembered as the answer forever — drop it and let a retry happen.
+  pending.catch(() => artCache.delete(key));
+  capSet(artCache, key, pending, ART_CACHE_MAX);
+  return pending;
+}
+
+/** The turret pivot in frame coordinates — the point the barrel swings around. */
+function pivotOf(model: string): {x: number; y: number} {
+  const {pivotUp} = tankDrawGeometry(model);
+  return {x: FRAME.w / 2, y: FRAME.h - (PV.FLOOR + pivotUp) * PV.S};
+}
+
+/**
+ * The aim (radians CCW from right, as `CTank` stores it) that points `model`'s barrel at the
+ * viewport point (`clientX`, `clientY`), given where its `canvas` currently sits on screen.
+ *
+ * Clamped to the upward half-circle — the same 0..180° the battlefield opens on, "since a tank
+ * would open the battle pointing into dirt". Below the horizon the barrel parks flat on whichever
+ * side the pointer is, rather than folding to the wrong one.
+ */
+function aimToward(canvas: HTMLCanvasElement, model: string, clientX: number, clientY: number): number {
+  const r = canvas.getBoundingClientRect();
+  if (!r.width || !r.height) return REST_AIM;
+  const pivot = pivotOf(model);
+  // The canvas is drawn at frame resolution but displayed scaled to fit its box.
+  const dx = ((clientX - r.left) / r.width) * FRAME.w - pivot.x;
+  const dy = ((clientY - r.top) / r.height) * FRAME.h - pivot.y;
+  const aim = Math.atan2(-dy, dx); // screen-Y is down, engine angles are Y-up
+  if (aim >= 0) return aim;
+  return dx < 0 ? Math.PI : 0; // below the horizon → flat on the pointer's own side
+}
+
+/**
+ * Paint `model`'s recoloured hull + turret at `aim`, laid out as the field render does it: hull
+ * bottom on the ground line, barrel from the hull-top pivot via the engine's own `drawTurretSprite`.
+ */
+function paint(g: CanvasRenderingContext2D, art: TankArt, model: string, aim: number): void {
+  const {S} = PV;
+  const {hullW, barrelLen} = tankDrawGeometry(model);
   const bw = hullW * S;
-  const bh = (body.height / body.width) * bw;
-  const tl = turLen * S;
-  const tt = (turret.height / turret.width) * tl;
+  const bh = (art.body.height / art.body.width) * bw;
+  // Barrel length comes from the turret art itself (as on the field), so its thickness follows
+  // from the bitmap's own aspect.
+  const tl = barrelLen * S;
+  const tt = (art.turret.height / art.turret.width) * tl;
 
-  const {cv, ctx: g} = makeCanvas2d(150, 110);
+  g.clearRect(0, 0, FRAME.w, FRAME.h);
   g.imageSmoothingEnabled = false;
-  const cx = cv.width / 2;
-  const groundY = cv.height - 6;
+  const groundY = FRAME.h - PV.FLOOR * S;
+  // Turret first so the hull overlaps its root; then the hull on top.
+  drawTurretSprite(g, art.turret, pivotOf(model), aim, tl, tt);
+  g.drawImage(art.body, FRAME.w / 2 - bw / 2, groundY - bh, bw, bh);
+}
 
-  // Turret first (base at the hull-top pivot, pointing up-right) so the hull overlaps
-  // its root; then the hull on top.
-  g.save();
-  g.translate(cx, groundY - pivotUp * S);
-  g.rotate(-Math.PI / 4); // 45° up-right (screen y is down)
-  g.drawImage(turret, 0, -tt / 2, tl, tt);
-  g.restore();
-  g.drawImage(body, cx - bw / 2, groundY - bh, bw, bh);
-  return cv.toDataURL();
+/**
+ * Run the live hull preview on `canvas`: size it, recolour `model` to `hex`, and track the pointer
+ * with the barrel — a gimmick, the aim it ends on means nothing to the match. Returns a disposer.
+ *
+ * Only pointer movement inside `region` aims the turret (the player card, so the tank watches you
+ * work its own panel and ignores the rest of the screen). Leaving the region doesn't recentre it:
+ * it simply holds the last aim until you come back.
+ *
+ * The whole thing lives here rather than in the component so the editor stays declarative: a
+ * pointer move only re-composites two cached bitmaps on an animation frame, never a Preact render
+ * and never a recolour.
+ */
+export function runTankPreview(canvas: HTMLCanvasElement, model: string, hex: string, region: HTMLElement): () => void {
+  canvas.width = FRAME.w;
+  canvas.height = FRAME.h;
+  const g = canvas.getContext('2d');
+  if (!g) return () => {};
+
+  let art: TankArt | null = null;
+  let aim = REST_AIM;
+  let frame = 0;
+  let live = true;
+  const redraw = () => {
+    frame = 0;
+    if (art) paint(g, art, model, aim);
+  };
+  const onMove = (e: PointerEvent) => {
+    aim = aimToward(canvas, model, e.clientX, e.clientY);
+    frame ||= requestAnimationFrame(redraw);
+  };
+
+  void loadTankArt(model, hex).then(loaded => {
+    if (!live) return; // the hull/colour moved on while we were recolouring
+    art = loaded;
+    redraw();
+  });
+  // On the region, not the window: the events from its children bubble up here anyway (including
+  // during a colour drag, which captures the pointer to the palette bar but still bubbles).
+  region.addEventListener('pointermove', onMove);
+
+  return () => {
+    live = false;
+    region.removeEventListener('pointermove', onMove);
+    if (frame) cancelAnimationFrame(frame);
+  };
 }

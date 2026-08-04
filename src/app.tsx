@@ -133,7 +133,6 @@ export async function startApp(): Promise<void> {
   // first user gesture per the browser autoplay policy. Wired before startGame so
   // the combat preload + battle track kick off with the round.
   const audio = new CAudio();
-  audio.loadSettings();
   audio.attachUnlock(window);
   gameController.setAudio(audio);
 

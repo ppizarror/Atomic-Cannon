@@ -152,6 +152,68 @@ const TINT = {
   WARGAME: '#8ed1ec',
 } as const;
 
+function artOf(type: string): {body: number; turret: number} {
+  return ART.NATIVE[type] ?? ART.NATIVE.Standard;
+}
+
+/** Hull draw width at Player Size 1 for a hull whose native bitmap is `nativeW` px wide. */
+function baseHullWidth(nativeW: number): number {
+  return SIZE.W * Math.min(1, nativeW / SIZE.REF_HULL_W);
+}
+
+/** Scale the hull AND turret bitmaps of `type` are blitted at, Player Size 1. */
+function baseBlitScale(type: string): number {
+  const bodyW = artOf(type).body;
+  return baseHullWidth(bodyW) / bodyW;
+}
+
+/** Turret pivot height above the ground line at Player Size 1. */
+function basePivotUp(type: string): number {
+  return ART.TURRET_HGT[type] ?? SIZE.THGT;
+}
+
+/**
+ * The three numbers that place a hull's art, in base px at Player Size 1: the drawn hull width,
+ * the drawn barrel length (= muzzle offset) and the turret pivot's height above the ground line.
+ * The field render derives all three from the same tables (× `GameConfig.tankSizeScale`), so
+ * out-of-game previews — the Customize Players picker — import this rather than keeping constants
+ * of their own, which drift from the art the moment a hull is retuned. Notably `pivotUp` is what
+ * keeps the short Atomic Cannon's barrel seated instead of floating above its hull.
+ */
+/**
+ * Blit a turret bitmap outward from its pivot along `aim` (radians, counter-clockwise from
+ * horizontal-right, as `setTurretAngle` stores it): rotate to the aim, mirror vertically when it
+ * points left so the art stays upright, and lay the sprite's length down the barrel from the pivot.
+ *
+ * The field render and the Customize Players preview both draw the barrel this way, so the
+ * convention lives in one place — re-deriving it is exactly how the preview's barrel drifted.
+ */
+export function drawTurretSprite(
+  ctx: CanvasRenderingContext2D,
+  img: CanvasImageSource,
+  pivot: {x: number; y: number},
+  aim: number,
+  len: number,
+  thick: number,
+): void {
+  ctx.save();
+  ctx.translate(pivot.x, pivot.y);
+  ctx.rotate(-aim); // engine angles run counter-clockwise; canvas rotation is clockwise
+  if (Math.cos(aim) < 0) ctx.scale(1, -1); // mirror when facing left
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 0, -thick / 2, len, thick); // base at the pivot
+  ctx.restore();
+}
+
+export function tankDrawGeometry(type: string): {hullW: number; barrelLen: number; pivotUp: number} {
+  const art = artOf(type);
+  return {
+    hullW: baseHullWidth(art.body),
+    barrelLen: art.turret * baseBlitScale(type),
+    pivotUp: basePivotUp(type),
+  };
+}
+
 // ==========================================================================
 // CTank CLASS
 // ==========================================================================
@@ -169,7 +231,7 @@ export class CTank {
 
   /** Hull draw width — clamped so sprites narrower than the reference keep their proportion. */
   private static hullDrawWidth(sprite: {width: number}): number {
-    return CTank.tankWidth() * Math.min(1, sprite.width / SIZE.REF_HULL_W);
+    return baseHullWidth(sprite.width) * GameConfig.tankSizeScale;
   }
 
   /** Solid-colour silhouette of a sprite (all opaque pixels → `color`), cached. Used to stamp a
@@ -182,15 +244,10 @@ export class CTank {
     return cv;
   }
 
-  private static tankArt(type: string): {body: number; turret: number} {
-    return ART.NATIVE[type] ?? ART.NATIVE.Standard;
-  }
-
   /** Scale at which BOTH hull and turret bitmaps are blitted (native px × this). Matches
    *  `hullDrawWidth` exactly for the body, so the barrel base tracks the drawn hull. */
   private static tankBlitScale(type: string): number {
-    const bodyW = CTank.tankArt(type).body;
-    return (CTank.tankWidth() * Math.min(1, bodyW / SIZE.REF_HULL_W)) / bodyW;
+    return baseBlitScale(type) * GameConfig.tankSizeScale;
   }
 
   private static tankHeight(): number {
@@ -233,11 +290,11 @@ export class CTank {
 
   /** On-screen barrel length = muzzle offset = native turret width × the shared blit scale. */
   private static turretDrawLen(type: string): number {
-    return CTank.tankArt(type).turret * CTank.tankBlitScale(type);
+    return artOf(type).turret * CTank.tankBlitScale(type);
   }
 
   private static turretHgt(type: string): number {
-    return (ART.TURRET_HGT[type] ?? SIZE.THGT) * GameConfig.tankSizeScale;
+    return basePivotUp(type) * GameConfig.tankSizeScale;
   }
 
   // ========================================================================
@@ -887,32 +944,22 @@ export class CTank {
   /** Draw the gun barrel from the turret pivot along the aim direction. */
   private drawBarrel(ctx: CanvasRenderingContext2D, assets?: ISpriteSource): void {
     const pivot = this.getTurretPivot();
-    const aim = this.aimUnit();
 
-    // Use the tank's own turret sprite (coloured to match the hull). It points
-    // right; we rotate it along the aim and mirror it vertically when aiming
-    // left so the art stays upright. Scaled so its length = the muzzle offset.
+    // Use the tank's own turret sprite (coloured to match the hull), blitted along the aim by
+    // `drawTurretSprite`.
     const turret = assets?.getSprite(`tanks/${this.m_sTankType} turret`) ?? null;
     if (turret) {
       // Blit at the SAME scale as the hull so the barrel's length + thickness come from the
       // art (native turret bitmap), not a fixed size. The tip lands at CTank.turretDrawLen(), which
       // getMuzzlePosition() also uses, so the drawn barrel and the shot-spawn point coincide.
       const scale = CTank.tankBlitScale(this.m_sTankType);
-      const tw = turret.width * scale,
-        th = turret.height * scale;
       const turretKey = `tanks/${this.m_sTankType} turret`;
       const img = isWargame()
         ? CTank.silhouette(turret, TINT.WARGAME, `${turretKey}|wargame`) // tactical-map silhouette
         : GameConfig.colorizeTeam
           ? CTank.tintToColor(turret, this.m_sColor, `${turretKey}|${this.m_sColor}`)
           : turret.bitmap;
-      ctx.save();
-      ctx.translate(pivot.x, pivot.y);
-      ctx.rotate(Math.atan2(aim.y, aim.x));
-      if (aim.x < 0) ctx.scale(1, -1); // mirror when facing left
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, -th / 2, tw, th); // base at the pivot
-      ctx.restore();
+      drawTurretSprite(ctx, img, pivot, this.firingAngle(), turret.width * scale, turret.height * scale);
       return;
     }
 

@@ -2698,16 +2698,16 @@ canvas {
   justify-content: center;
 }
 .player-preview {
-  width: 110px;
-  height: 66px;
+  width: 128px;
+  height: 82px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
 }
-.player-preview img {
-  max-width: 110px;
-  max-height: 66px;
+.player-preview canvas {
+  max-width: 128px;
+  max-height: 82px;
   image-rendering: pixelated;
 }
 
