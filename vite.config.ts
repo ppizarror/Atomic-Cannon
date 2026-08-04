@@ -2,12 +2,17 @@ import {defineConfig} from 'vite';
 import preact from '@preact/preset-vite';
 import pkg from './package.json' with {type: 'json'};
 import {renderShell} from './src/shell.ts';
-import {pruneDist} from './vite.plugins.ts';
+import {freePort, pruneDist} from './vite.plugins.ts';
 
 export default defineConfig({
   root: '.',
   publicDir: 'public',
-  plugins: [preact({prefreshEnabled: false}), {name: 'shell-copy', transformIndexHtml: renderShell}, pruneDist()],
+  plugins: [
+    preact({prefreshEnabled: false}),
+    {name: 'shell-copy', transformIndexHtml: renderShell},
+    freePort(),
+    pruneDist(),
+  ],
   // Expose the package version + repository URL to the app (shown on the main menu).
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -22,10 +27,6 @@ export default defineConfig({
     strictPort: true,
     hmr: false,
     host: true,
-    // Multiplayer backend lives in the Worker/Durable Object (`pnpm dev:net`, :8787).
-    // Proxy the room API + WebSocket there so the HMR dev page (:2141) can reach it —
-    // run both `pnpm dev` and `pnpm dev:net`, then use :2141. If :8787 isn't up these
-    // just fail (same as no backend); nothing else is affected.
     proxy: {
       '/api': {target: 'http://localhost:8787', changeOrigin: true},
       '/room': {target: 'http://localhost:8787', changeOrigin: true, ws: true},

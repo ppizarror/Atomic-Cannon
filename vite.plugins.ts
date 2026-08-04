@@ -1,29 +1,117 @@
 /**
- * Build-time prune for `dist/`.
- *
- * Vite's `publicDir` copy is verbatim: it mirrors whatever sits on disk into `dist/`, and wrangler
- * then uploads the whole directory. Two kinds of file ride along that shouldn't reach Cloudflare.
- *
- *  1. **`.DS_Store`** — Finder metadata. It IS gitignored, but publicDir copies from the DISK, not
- *     from git, so ignoring it buys nothing here. Each one is publicly fetchable and lists the
- *     names of everything in its directory. Always removed.
- *
- *  2. **Assets nothing references.** Reported by default and only deleted when `PRUNE_ASSETS=1`,
- *     so the list is visible before anything is destroyed.
- *
- * The unused set is derived from the SAME JSON the game reads, so it cannot drift: give a weapon
- * `expBitmap: "08.bmp"` and flare 08 is kept automatically. As a second guard, nothing is dropped
- * whose path or filename appears anywhere under `src/` — that covers assets wired up by a literal
- * path in code rather than by data (`flares/04.bmp`, `land/ldirt1.bmp`, …).
- *
- * Only directories whose reference set is FULLY derivable from data are eligible (see PRUNABLE).
- * Fonts, bursts, tanks, sounds and music are deliberately excluded: their registries hold bare
- * names (`file: 'Arial 14'`, `NAMES: ['circle', …]`) rather than filenames, so a
- * derive-and-delete pass would wrongly condemn every one of them.
+ * This project's own Vite plugins: `pruneDist` (build) and `freePort` (dev server).
  */
+import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, statSync, rmSync} from 'node:fs';
 import {basename, join, relative} from 'node:path';
 import type {Plugin} from 'vite';
+
+// ============================================================================
+// freePort — dev server
+// ============================================================================
+
+/** How long to let a SIGTERM'd holder unbind before resorting to SIGKILL. */
+const TERM_GRACE_MS = 1000;
+const POLL_MS = 50;
+
+/** Resolve as soon as `done()` holds, or once `timeoutMs` has passed — an unbind can only be
+ *  polled for, there's nothing to await on. */
+function waitFor(done: () => boolean, timeoutMs: number): Promise<void> {
+  return new Promise(resolve => {
+    if (done()) return resolve();
+    let waited = 0;
+    const timer = setInterval(() => {
+      waited += POLL_MS;
+      if (!done() && waited < timeoutMs) return;
+      clearInterval(timer);
+      resolve();
+    }, POLL_MS);
+  });
+}
+
+/** PIDs LISTENING on `port`, ourselves excluded. Empty when nothing holds it — and on any platform
+ *  without `lsof` (it exits non-zero / isn't found, and either way there's nothing we can do). */
+function listenersOn(port: number): number[] {
+  try {
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const pids = out.split('\n').map(Number);
+    return [...new Set(pids.filter(pid => pid > 0 && pid !== process.pid && pid !== process.ppid))];
+  } catch {
+    return [];
+  }
+}
+
+/** Executable name behind a pid, for the log line — the holder is not always a stale dev server. */
+function commandOf(pid: number): string {
+  try {
+    return execFileSync('ps', ['-p', String(pid), '-o', 'comm='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .trim()
+      .split('/')
+      .pop()!;
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * Kill whatever is already listening on the dev-server port, before Vite tries to bind it.
+ *
+ * `server.strictPort` is deliberate — the dev URL, the Worker proxy targets and the browser probes
+ * all assume :2141, so silently sliding to :2142 would be worse than failing. The cost is that one
+ * `vite` orphaned by a closed terminal makes every later `pnpm dev` die with EADDRINUSE. So: SIGTERM
+ * the holder, wait for it to unbind, SIGKILL anything still there. What was killed is always logged,
+ * since the holder isn't guaranteed to be a stale dev server of ours.
+ *
+ * Runs from `configureServer`, which Vite awaits while creating the server — i.e. before `listen()`.
+ */
+export function freePort(): Plugin {
+  let port: number | undefined;
+  return {
+    name: 'free-port',
+    apply: 'serve',
+    configResolved(config) {
+      port = config.server.port;
+    },
+    async configureServer(server) {
+      const log = server.config.logger;
+      const p = port;
+      if (p === undefined) return; // no fixed port — Vite will hunt for a free one itself
+      const holders = listenersOn(p);
+      if (!holders.length) return;
+
+      for (const pid of holders) {
+        try {
+          process.kill(pid, 'SIGTERM');
+          log.info(`free-port: :${p} was held by ${commandOf(pid)} (pid ${pid}) — terminated`);
+        } catch (err) {
+          // Gone between the lookup and the signal, or owned by another user: say so and let the
+          // bind fail on its own terms rather than pretending the port is clear.
+          log.warn(`free-port: could not signal pid ${pid} on :${p} — ${(err as Error).message}`);
+        }
+      }
+
+      await waitFor(() => listenersOn(p).length === 0, TERM_GRACE_MS);
+      for (const pid of listenersOn(p)) {
+        try {
+          process.kill(pid, 'SIGKILL');
+          log.warn(`free-port: pid ${pid} ignored SIGTERM on :${p} — killed`);
+        } catch {
+          // Already dead; the port is free either way.
+        }
+      }
+    },
+  };
+}
+
+// ============================================================================
+// pruneDist — build
+// ============================================================================
 
 /** Asset directories whose complete reference set can be derived from `src/data/*.json`. */
 const PRUNABLE = ['flares/', 'icons/', 'land/', 'bg/'];
