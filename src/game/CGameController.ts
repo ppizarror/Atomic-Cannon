@@ -4711,6 +4711,41 @@ export class CGameController implements ShotWorld {
     return dps * exposure;
   }
 
+  // Seconds from an Ultra bot committing to its turn until the round actually lands: the think delay,
+  // the FIRE wind-up, and a middling flight. A target has to survive this long for the shot to be
+  // worth firing — anything the fallout will finish first is a wasted round.
+  private static readonly ULTRA_NOMINAL_FLIGHT = 1.6;
+
+  private ultraImpactSeconds(): number {
+    return (
+      CGameController.BOT_FIRE_DELAY +
+      CGameController.FIRE_CHARGE_TIME +
+      CGameController.FIRE_GREEN_HOLD +
+      CGameController.ULTRA_NOMINAL_FLIGHT
+    );
+  }
+
+  /**
+   * How long `tank` has left if nobody touches it — the fallout it's parked in versus its shield,
+   * hazmat and armor, in the same order {@link CTank.applyRadiationDamage} soaks them. Infinity when
+   * it isn't on contaminated ground (or fallout is cosmetic). This is what stops an Ultra bot firing
+   * at a tank on 1% life that's about to expire on its own: the round arrives after the funeral.
+   */
+  private ultraSecondsToDie(tank: CTank): number {
+    if (!GameConfig.radiationDamage || this.m_netMode) return Infinity;
+    if (!this.m_land.radiationAt(Math.floor(tank.getPosition().x))) return Infinity;
+    let dps = 0;
+    for (const z of this.m_land.getRadiationZones()) if (z.damagePerSecond > dps) dps = z.damagePerSecond;
+    if (dps <= 0) return Infinity;
+    const h = tank.getHealth();
+    // Hazmat and armor are percentage soaks applied AFTER the shield is stripped; at 100% either one
+    // makes the tank immune to fallout, so it never dies of it.
+    const soak = (1 - h.nHazmat / 100) * (1 - h.nArmor / 100);
+    if (soak <= 0) return Infinity;
+    // The shield eats the raw ticks first, then the remainder chips life through the soak.
+    return h.nShield / dps + h.nLife / (dps * soak);
+  }
+
   /**
    * What the OTHER side is holding and what they've been throwing. Weapons are visible in this game,
    * so an Ultra bot reads the enemy arsenal straight off their economy the way a human reads the depot
@@ -4790,7 +4825,9 @@ export class CGameController implements ShotWorld {
   private ultraFocusX(enemies: CTank[]): number | undefined {
     let best: CTank | null = null,
       bestHp = Infinity;
+    const impact = this.ultraImpactSeconds();
     for (const e of enemies) {
+      if (this.ultraSecondsToDie(e) <= impact) continue; // don't rally the squad onto a dead man
       const h = e.getHealth();
       const hp = h.nLife + h.nShield;
       if (hp < bestHp || (hp === bestHp && best && e.getPosition().x < best.getPosition().x)) {
@@ -4885,6 +4922,7 @@ export class CGameController implements ShotWorld {
           shield: eh.nShield,
           hitRadius: e.getHitRadius(),
           buried: e.isBuried(),
+          secondsToDie: this.ultraSecondsToDie(e), // already dying? then it isn't a target
         };
       }),
       weapons,
@@ -4919,6 +4957,7 @@ export class CGameController implements ShotWorld {
       threat: this.ultraThreatAgainst(botTank), // what the other side is holding / has been throwing
       focusX: this.ultraFocusX(enemies), // the squad's shared kill target (weakest enemy)
       endgame: this.ultraEndgame(botTank),
+      impactSeconds: this.ultraImpactSeconds(), // how long a target must survive to be worth shooting
     };
   }
 

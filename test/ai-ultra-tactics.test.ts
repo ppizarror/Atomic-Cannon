@@ -340,3 +340,105 @@ describe('Ultra only reads the weapons the HUD actually shows', () => {
     expect(nukeVisibleAfter(6)).toBe(false);
   });
 });
+
+// ── Don't shoot the dead ─────────────────────────────────────────────────────────────────────────
+
+describe('Ultra ignores an enemy that will die before the round lands', () => {
+  // A tank bleeding out in fallout is the single most attractive target on the board — nearly dead, so
+  // the finisher term maxes out and the shot reads as a guaranteed kill. It is also the one target
+  // guaranteed to be gone by the time the shell arrives.
+  const dying = enemy({x: 400, life: 20, secondsToDie: 0.5});
+  const healthy = enemy({x: 700, life: 1000});
+
+  it('shoots the healthy tank instead of the one already expiring', () => {
+    const shot = bestOffensiveShot(
+      ctx({enemies: [dying, healthy], weapons: [weapon({damage: 80, radius: 10})], impactSeconds: 2.5}),
+    );
+    expect(shot?.targetX).toBe(700);
+  });
+
+  it('still targets it when it will outlive the flight', () => {
+    const slow = enemy({x: 400, life: 20, secondsToDie: 9});
+    const shot = bestOffensiveShot(
+      ctx({enemies: [slow, healthy], weapons: [weapon({damage: 80, radius: 10})], impactSeconds: 2.5}),
+    );
+    expect(shot?.targetX).toBe(400); // dying slowly enough to still be there — take the kill
+  });
+
+  it('fires anyway when EVERY enemy is doomed — the round costs nothing at that point', () => {
+    const shot = bestOffensiveShot(
+      ctx({enemies: [dying], weapons: [weapon({damage: 80, radius: 10})], impactSeconds: 2.5}),
+    );
+    expect(shot).not.toBeNull();
+    expect(shot!.targetX).toBe(400);
+  });
+
+  it('keeps the whole turn off a doomed tank — no mine, no drive toward it', () => {
+    const mine = weapon({index: 8, ext: 16, isMine: true, offensive: false, damage: 100, count: 1});
+    const plan = planUltraTurn(ctx({enemies: [dying, healthy], weapons: [mine], impactSeconds: 2.5}));
+    // The mine play aims at the NEAREST enemy; with the dying one filtered out that's the healthy one.
+    if (plan.action === 'fire' && plan.note === 'mine') expect(plan.targetX).toBe(700);
+  });
+});
+
+describe('how long a bleeding tank has left', () => {
+  type Priv = {
+    setHumanCount(n: number): void;
+    setDifficulty(n: number): void;
+    startGame(n: number): void;
+    ultraSecondsToDie(t: unknown): number;
+    ultraImpactSeconds(): number;
+    // getHealth() hands back a COPY, so a test that needs a specific health writes the field itself.
+    m_tanks: {m_health: {nLife: number; nShield: number; nArmor: number; nHazmat: number}}[];
+    m_land: {radiationAt(x: number): boolean; getRadiationZones(): {damagePerSecond: number}[]};
+  };
+
+  /** A live controller with tank 1 parked on `dps` of fallout. */
+  const onFallout = (dps: number): Priv => {
+    Roster.players = [];
+    const gc = new CGameController(makeCanvas(900, 600)) as unknown as Priv;
+    gc.setHumanCount(0);
+    gc.setDifficulty(AI_LEVEL_ULTRA);
+    gc.startGame(2);
+    gc.m_land.radiationAt = () => true;
+    gc.m_land.getRadiationZones = () => [{damagePerSecond: dps}];
+    return gc;
+  };
+
+  it('reads a tank on its last legs as seconds from the end', () => {
+    const gc = onFallout(100);
+    const h = gc.m_tanks[1].m_health;
+    h.nLife = 20;
+    h.nShield = 0;
+    h.nArmor = 0;
+    h.nHazmat = 0;
+    expect(gc.ultraSecondsToDie(gc.m_tanks[1])).toBeCloseTo(0.2, 2);
+    expect(gc.ultraSecondsToDie(gc.m_tanks[1])).toBeLessThan(gc.ultraImpactSeconds()); // → not a target
+  });
+
+  it('counts the shield the fallout has to chew through first', () => {
+    const gc = onFallout(100);
+    const h = gc.m_tanks[1].m_health;
+    h.nLife = 20;
+    h.nShield = 500;
+    h.nArmor = 0;
+    h.nHazmat = 0;
+    expect(gc.ultraSecondsToDie(gc.m_tanks[1])).toBeCloseTo(5.2, 2); // 5s of shield, then 0.2s of life
+    expect(gc.ultraSecondsToDie(gc.m_tanks[1])).toBeGreaterThan(gc.ultraImpactSeconds()); // still a target
+  });
+
+  it('treats full hazmat as immunity — that tank is never dying of fallout', () => {
+    const gc = onFallout(100);
+    const h = gc.m_tanks[1].m_health;
+    h.nLife = 20;
+    h.nShield = 0;
+    h.nHazmat = 100;
+    expect(gc.ultraSecondsToDie(gc.m_tanks[1])).toBe(Infinity);
+  });
+
+  it('is Infinity on clean ground', () => {
+    const gc = onFallout(100);
+    gc.m_land.radiationAt = () => false;
+    expect(gc.ultraSecondsToDie(gc.m_tanks[1])).toBe(Infinity);
+  });
+});

@@ -37,6 +37,10 @@ export interface UltraEnemy {
   shield: number;
   hitRadius: number;
   buried: boolean; // sunk under dirt — a nuke/explosive would FREE it, so keep it down with beams
+  /** Seconds until the fallout this tank is standing in finishes it off WITHOUT anyone shooting it,
+   *  or Infinity (the default) when it isn't bleeding. A round takes real time to arrive, so a tank
+   *  that will be gone before it lands is not a target — firing at one throws the turn away. */
+  secondsToDie?: number;
 }
 
 /** One owned weapon, pre-resolved to the fields the blast scorer needs (the caller folds in
@@ -163,6 +167,9 @@ export interface UltraCtx {
   /** The battle is nearly decided (few enemies left / final rounds) — the point at which an ally who
    *  is beating us stops being a teammate and starts being the last thing between us and the win. */
   endgame?: boolean;
+  /** Seconds from committing to this turn until the round actually lands: the fire wind-up plus a
+   *  typical flight. What a target has to survive for our shot to be worth firing at all. */
+  impactSeconds?: number;
 }
 
 /**
@@ -392,6 +399,26 @@ function weakness(e: {life: number; maxLife: number}): number {
   return clamp(1 - e.life / Math.max(1, e.maxLife), 0, 1);
 }
 
+// Fallback for a context that doesn't say how long a round takes to arrive: the bot's think delay plus
+// the FIRE wind-up plus a middling flight. Only matters for hand-built contexts; a real match measures it.
+const DEFAULT_IMPACT_SECONDS = 2.5;
+
+/**
+ * Drop enemies that will be DEAD before our round could reach them. A tank standing in fallout keeps
+ * bleeding through everyone's turns, so aiming at one that's seconds from the end means watching it
+ * explode mid-flight and having thrown the turn away — and the finisher term makes exactly that tank
+ * the most attractive one on the board, so without this the bot walks straight into it.
+ *
+ * If EVERY enemy is doomed the filter stands down and they all stay targets: at that point the round
+ * costs nothing anyway, and a bot with a live shot should still take it rather than pass the turn.
+ */
+function withoutDoomed(ctx: UltraCtx): UltraCtx {
+  const impact = ctx.impactSeconds ?? DEFAULT_IMPACT_SECONDS;
+  const live = ctx.enemies.filter(e => (e.secondsToDie ?? Infinity) > impact);
+  if (!live.length || live.length === ctx.enemies.length) return ctx;
+  return {...ctx, enemies: live};
+}
+
 /**
  * How much of a teammate's protection they've forfeited, 0..1. A clean ally is 1 (fully protected);
  * one that has been shelling its own side slides toward 0, at which point the squad scores a shot at
@@ -521,6 +548,7 @@ interface ShotPlan {
  *  solved per enemy (trajectory is weapon-independent); every owned weapon is then scored at that
  *  arc's impact so multi-tank blasts and cheap-vs-premium trade-offs are compared head to head. */
 export function bestOffensiveShot(ctx: UltraCtx): ShotPlan | null {
+  ctx = withoutDoomed(ctx); // a tank that dies before the round lands isn't worth aiming at
   const {enemies, weapons, field, wind, gustT0, muzzleFor} = ctx;
   const wt = ctx.weights ?? ULTRA_WEIGHTS_DEFAULT;
   let firers = weapons.filter(w => w.offensive && w.count > 0 && w.damage > 0);
@@ -1053,6 +1081,9 @@ function lastResortShot(ctx: UltraCtx): UltraPlan | null {
 export function planUltraTurn(ctx: UltraCtx): UltraPlan {
   type Cand = {plan: UltraPlan; value: number; trick: boolean};
   const cands: Cand[] = [];
+  // Applied once here so EVERY play this turn agrees on who's actually still in the fight — there's no
+  // sense mining, repositioning toward or keeping distance from a tank that won't survive the turn.
+  ctx = withoutDoomed(ctx);
 
   const shot = bestOffensiveShot(ctx);
   const firePlan = (): UltraPlan => ({
