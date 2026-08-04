@@ -38,6 +38,7 @@ import {
   wrapAngle,
   currentWeapon,
   windReadout,
+  windIsOff,
 } from './store';
 
 // ==========================================================================
@@ -294,7 +295,7 @@ function MobileWind() {
   const h = strings.value.hud;
   return (
     <div class="mwind">
-      <BmpText font="beijing-16-out" spacing={-1} text={`${h.wind} ${windReadout()}`} />
+      <BmpText font="beijing-16-out" spacing={-1} text={windIsOff() ? h.windOff : `${h.wind} ${windReadout()}`} />
     </div>
   );
 }

@@ -841,11 +841,16 @@ export const weapons = signal<WeaponDef[]>([]);
 export const currentWeapon = (): WeaponDef | undefined =>
   weapons.value.find(w => w.index === weaponIndex.value) ?? weapons.value[0];
 
+/** True under the dead-calm threshold, i.e. where the HUDs print the "off" label in place of a
+ *  magnitude. The off label is a whole phrase ("WIND OFF"), so callers that prefix their own
+ *  "Wind" label must check this and drop the prefix rather than print the word twice. */
+export const windIsOff = (): boolean => Math.abs(wind.value) < 0.05;
+
 /** Wind as both HUDs print it: `>N.N` / `<N.N` for direction + magnitude, or the localised "off"
  *  label under the dead-calm threshold. ASCII only — the bitmap fonts have no arrow glyphs. */
 export const windReadout = (): string => {
   const mag = Math.abs(wind.value);
-  return mag < 0.05 ? strings.value.hud.windOff : `${wind.value >= 0 ? '>' : '<'}${mag.toFixed(1)}`;
+  return windIsOff() ? strings.value.hud.windOff : `${wind.value >= 0 ? '>' : '<'}${mag.toFixed(1)}`;
 };
 
 /** The three style props both turn-timer bars (desktop `Hud`, `MobileHud`) drive off the same
