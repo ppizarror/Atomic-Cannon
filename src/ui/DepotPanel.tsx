@@ -26,6 +26,9 @@ import {
   loadUiBmp,
   game,
   uiClick,
+  depotSort,
+  depotSortBy,
+  type DepotSortKey,
 } from './store';
 import {WeaponIcon} from './WeaponIcon';
 import {
@@ -46,7 +49,10 @@ import {UNLIMITED} from '../core/CEconomy';
 // INTERFACES & TYPES
 // ==========================================================================
 
-type SortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
+// The sort key + the active column/direction pair itself live in the store (`depotSort`): the panel
+// unmounts every time the depot closes, so a chosen ordering must be held OUTSIDE it to survive the
+// reopen — it persists for the whole war. See depotSort in store.ts.
+type SortKey = DepotSortKey;
 
 // Every panel (header, stats popup, footer) uses the game's OUTLINED bitmap faces
 // (white glyph + baked black outline) so text stays legible on the metal — fonts are
@@ -144,7 +150,7 @@ function DepotBody() {
   useLayoutEffect(() => {
     selRowRef.current?.scrollIntoView({block: 'center'});
   }, []);
-  const [sort, setSort] = useState<{key: SortKey; dir: 1 | -1}>({key: 'cost', dir: 1});
+  const sort = depotSort.value;
   const [hover, setHover] = useState<number | null>(null);
   const [pos, setPos] = useState({x: 0, y: 0});
   const [showStats, setShowStats] = useState(false);
@@ -185,7 +191,7 @@ function DepotBody() {
 
   const clickHeader = (key: SortKey) => {
     uiClick();
-    setSort(s => (s.key === key ? {key, dir: (s.dir === 1 ? -1 : 1) as 1 | -1} : {key, dir: 1}));
+    depotSortBy(key);
   };
   const selectRow = (i: number) => {
     uiClick();

@@ -145,6 +145,27 @@ export const credits = signal(0);
 export const ownedCounts = signal<number[]>([]);
 export const mapName = signal('');
 
+/** The depot table's sortable columns (its header buttons). */
+export type DepotSortKey = 'qty' | 'name' | 'type' | 'power' | 'cost';
+export type DepotSort = {key: DepotSortKey; dir: 1 | -1};
+
+/** How the depot opens in a fresh war: cheapest weapon first. */
+const DEPOT_SORT_DEFAULT: DepotSort = {key: 'cost', dir: 1};
+
+// The depot's active column + direction. Lives HERE, not in DepotPanel's own state, because the
+// panel genuinely unmounts on close — component state would snap back to cost-ascending on every
+// reopen. As a signal it survives closing/reopening the depot, the turn handover, and the battle
+// change, so the ordering the player picked holds for the whole war. {@link goToMenu} puts it back
+// to the default when the battle is torn down, so the next war starts sorted as usual.
+export const depotSort = signal<DepotSort>({...DEPOT_SORT_DEFAULT});
+
+/** Click a depot column header: re-clicking the ACTIVE column flips direction, a new column
+ *  starts ascending. */
+export function depotSortBy(key: DepotSortKey): void {
+  const s = depotSort.value;
+  depotSort.value = s.key === key ? {key, dir: s.dir === 1 ? -1 : 1} : {key, dir: 1};
+}
+
 /** Pull the current credits + inventory into the signals (after a buy/sell/open). */
 function refreshEconomy(): void {
   const c = controller;
@@ -337,6 +358,7 @@ export function goToMenu(): void {
   game().setPaused(false); // resume the gameplay audio context so the menu music can play
   paused.value = true; // and skip the render-loop sim update (belt-and-suspenders with stopGame)
   game().getAudio()?.menuMusic();
+  depotSort.value = {...DEPOT_SORT_DEFAULT}; // the depot ordering is per-WAR — the next one starts fresh
   resetRoute(); // quitting a game is a fresh root — clear the in-app back stack
 }
 
