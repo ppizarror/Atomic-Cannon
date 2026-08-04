@@ -103,6 +103,7 @@ export interface GCPriv {
   renderAlpha(): number;
   crateEnv(): unknown;
   addCrate(x: number, forced?: string): void;
+  crateWeaponFor(kind: string): number;
   collectCrate(crate: unknown, tank: CTank): void;
   creditDamage(shooter: CTank | null, victim: CTank, lifeRemoved: number): void;
   settleMines(dt: number): void;
@@ -288,6 +289,7 @@ export const GC_KEYS: Record<keyof GCPriv, true> = {
   renderAlpha: true,
   crateEnv: true,
   addCrate: true,
+  crateWeaponFor: true,
   collectCrate: true,
   creditDamage: true,
   settleMines: true,

@@ -204,13 +204,18 @@ export class CEconomy {
    * for pricier rounds; the difficulty-gated support front-load pass isn't modelled here.
    */
   autoBuy(opts?: {conserve?: boolean; deterministic?: boolean}): void {
+    // Deterministic = a NETWORK autobuy, replayed on every client from one relayed command. Game
+    // Content (disabled weapons) is a per-client setting, so honouring it here would hand each peer
+    // a different-length candidate list: the index-order pick would land on a different weapon and
+    // spend different credits, which is exactly the divergence `deterministic` exists to avoid.
+    const contentFiltered = !opts?.deterministic;
     // Guard against pathological loops (every buy removes at least the cheapest cost).
     for (let guard = 0; guard < 5000; guard++) {
       const affordable = weaponIndices(i => {
         const w = WEAPON_DATABASE[i];
         return (
           !this.isUnlimited(i) &&
-          weaponEnabled(i) &&
+          (!contentFiltered || weaponEnabled(i)) &&
           w.cost > 0 &&
           w.cost <= this.creditsGet() &&
           !UTILITY_EXT.has(w.extType ?? 0)

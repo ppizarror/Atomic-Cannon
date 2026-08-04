@@ -31,6 +31,7 @@ const DISTINCT: MatchConfig = {
   roundTime: 45,
   crateChance: 77,
   radiationDamage: false,
+  soilCompaction: true,
   startCredits: 9100,
   gameType: 0,
   sellRate: 0.25,

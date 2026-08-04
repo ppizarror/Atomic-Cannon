@@ -2081,7 +2081,12 @@ export class CGameController implements ShotWorld {
     const bomb = WEAPON_DATABASE.findIndex(w => w.id === 'bomb');
     if (kind === 'bomb') return bomb;
     const staple = getDefaultWeaponIndex();
-    const pool = weaponIndices(i => i !== staple && weaponEnabled(i));
+    // In a network match ignore the LOCAL Game Content filter and draw from the full pool — the same
+    // rule the landscape pick follows (see pickLandIndex). Game Content is per-client, so filtering
+    // here would give each client a different-length pool and the shared seeded draw would land on a
+    // different weapon on every peer: the same crate would hand out different prizes.
+    const enabled = (i: number) => this.m_netMode || weaponEnabled(i);
+    const pool = weaponIndices(i => i !== staple && enabled(i));
     return pool.length ? pool[this.m_rng.int(pool.length)] : bomb;
   }
 
@@ -5104,6 +5109,12 @@ export class CGameController implements ShotWorld {
     radiationDamage: {
       get: () => GameConfig.radiationDamage,
       set: (_c, v) => void (GameConfig.radiationDamage = v),
+    },
+    // Compaction EDITS the heightmap around a nuke, so it is terrain, not decoration: one client
+    // sinking the ground while another leaves it flat diverges every later shot and rest position.
+    soilCompaction: {
+      get: () => GameConfig.soilCompaction,
+      set: (_c, v) => void (GameConfig.soilCompaction = v),
     },
     startCredits: {get: c => c.m_startCredits, set: (c, v) => void (c.m_startCredits = v)},
     gameType: {

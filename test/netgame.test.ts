@@ -37,6 +37,7 @@ const CFG = {
   roundTime: 0,
   crateChance: 20,
   radiationDamage: true,
+  soilCompaction: false,
   startCredits: 3000,
   gameType: 1,
   sellRate: 0.5,

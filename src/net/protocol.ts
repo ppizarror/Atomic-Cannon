@@ -71,6 +71,10 @@ export interface MatchConfig {
   readonly roundTime: number; // per-turn shot clock in seconds (0 = off) — host owns it so all clients agree
   readonly crateChance: number; // supply-crate drop chance (gates the seeded RNG)
   readonly radiationDamage: boolean; // fallout deals DOT to tanks on it (vs cosmetic-only) — sim-affecting
+  // Nuke-class blasts SINK the ground beyond their crater (and the tanks standing on it). It edits
+  // the shared heightmap, so a client running its own copy would build different terrain from the
+  // very first nuke — the loudest possible desync.
+  readonly soilCompaction: boolean;
   readonly startCredits: number; // starting purse per tank
   readonly gameType: number; // 0 = Rounds/Points, 1 = Deathmatch (damage model)
   // Economy rates — must match so every client awards/refunds the same credits (buys are relayed,
@@ -120,6 +124,7 @@ const MATCH_CONFIG_SPEC: {
   roundTime: {lo: 0, hi: 600, dflt: 0}, // per-turn shot clock (s); 0 = off
   crateChance: {lo: 0, hi: 100, dflt: 20},
   radiationDamage: {dflt: true},
+  soilCompaction: {dflt: false},
   startCredits: {lo: 0, hi: 1000000, dflt: 3000},
   // 0 = Rounds/Points, 1 = Deathmatch — anything non-zero in range reads as Deathmatch.
   gameType: {lo: 0, hi: 1, dflt: 1, snap: v => (v === 0 ? 0 : 1)},
