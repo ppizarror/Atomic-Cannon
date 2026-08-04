@@ -55,6 +55,22 @@ export function documentTitle(code: LocaleCode, section: TitleSection | null): s
   return fmt(meta.sectionTitle, {game: GAME_NAME, section: meta.sections[section]});
 }
 
+/**
+ * Re-write `<title>` even when the string hasn't changed — clearing it first, so the assignment
+ * is a real DOM mutation the browser has to notice.
+ *
+ * The browser stores the tab title in the session-history ENTRY and restores it on a
+ * same-document Back/Forward. Every overlay close pops a route (see store.popRoute), so closing
+ * the depot hands the tab back the title that entry was pushed with — "Weapons Depot" — and it
+ * sticks there for the rest of the match. `document.title` in the DOM is already correct by
+ * then, which is exactly why the effect below can't repair it: re-assigning the same string
+ * mutates nothing, so the browser never re-reads it and the tab stays stale.
+ */
+export function restampTitle(doc: Document, code: LocaleCode, section: TitleSection | null): void {
+  doc.title = '';
+  doc.title = documentTitle(code, section);
+}
+
 /** `og:locale` for a code (`en` → `en_US`) — OG wants language_TERRITORY, not a bare tag. */
 const ogLocale = (code: LocaleCode): string => LOCALES.find(l => l.code === code)?.ogLocale ?? code;
 
@@ -100,7 +116,23 @@ function setAlternate(doc: Document, value: string): void {
   doc.head.appendChild(el);
 }
 
-/** Track the active locale + current screen for the life of the page. Call once at boot. */
-export function watchDocumentMeta(): void {
-  effect(() => applyDocumentMeta(document, locale.value, titleSection.value));
+/**
+ * Track the active locale + current screen for the life of the page. Call once at boot.
+ * `doc`/`win` default to the live globals; tests pass stubs. Returns a teardown.
+ */
+export function watchDocumentMeta(doc: Document = document, win: Window = window): () => void {
+  const stop = effect(() => applyDocumentMeta(doc, locale.value, titleSection.value));
+  // A history traversal restores the entry's stored tab title over ours, and the effect above
+  // won't undo that (see restampTitle) — so force the title back after every one. Deferred a
+  // whole task, not a microtask: this listener is registered BEFORE the router's (app.tsx boots
+  // the document meta first), and only once its handler has run does `titleSection` name the
+  // screen we actually landed on.
+  const onPop = (): void => {
+    setTimeout(() => restampTitle(doc, locale.value, titleSection.value), 0);
+  };
+  win.addEventListener('popstate', onPop);
+  return () => {
+    stop();
+    win.removeEventListener('popstate', onPop);
+  };
 }

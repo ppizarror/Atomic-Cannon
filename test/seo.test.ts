@@ -11,14 +11,14 @@
  * — from the catalog as the player moves around and switches language.
  */
 import {readFileSync} from 'node:fs';
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, vi} from 'vitest';
 import {robotsTxt, sitemapXml, jsonLd, headTags, SITE_DESCRIPTION, OG_IMAGE_PATH} from '../src/seo';
 import {GAME_NAME} from '../src/brand';
 import {escapeHtml, renderShell} from '../src/shell';
 import {availableLocales, stringsFor} from '../src/i18n';
 import type {TitleSection} from '../src/i18n';
-import {applyDocumentMeta, documentTitle, titleSection} from '../src/ui/documentMeta';
-import {loading, screen, showPause} from '../src/ui/store';
+import {applyDocumentMeta, documentTitle, titleSection, watchDocumentMeta} from '../src/ui/documentMeta';
+import {loading, screen, showDepot, showPause} from '../src/ui/store';
 
 const ORIGIN = 'https://play.example.com';
 const source = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -272,6 +272,42 @@ describe('browser tab title (per screen)', () => {
       // A missing/blank label would silently render "Atomic Cannon — ".
       for (const k of keys) expect(documentTitle(code, k).trim().length).toBeGreaterThan(GAME_NAME.length + 2);
     }
+  });
+
+  it('re-stamps the title after a history Back, even when the string is unchanged', () => {
+    // The browser stores the tab title in the session-history ENTRY and restores it on a
+    // same-document Back/Forward — so closing an overlay (which pops a route) leaves the tab
+    // reading "— Weapons Depot" for the rest of the match. document.title is already correct by
+    // then, so re-assigning the same string mutates nothing and the tab never refreshes:
+    // restampTitle has to CLEAR first. Verified against real Chrome via the tab title (CDP
+    // Target.getTargetInfo) — document.title alone can't tell the two builds apart.
+    const {doc} = stubDoc();
+    const writes: string[] = [];
+    Object.defineProperty(doc, 'title', {
+      get: () => writes[writes.length - 1] ?? '',
+      set: (v: string) => void writes.push(v),
+    });
+    const handlers: Array<() => void> = [];
+    const win = {
+      addEventListener: (_t: string, fn: () => void) => void handlers.push(fn),
+      removeEventListener: () => {},
+    } as unknown as Window;
+
+    vi.useFakeTimers();
+    screen.value = 'battle';
+    showDepot.value = true;
+    const stop = watchDocumentMeta(doc, win);
+    expect(doc.title).toBe(`${GAME_NAME} — Weapons Depot`);
+
+    showDepot.value = false; // closeDepot: the effect writes the right title...
+    const n = writes.length;
+    for (const fn of handlers) fn(); // ...then popRoute()'s history.back() lands here
+    vi.runAllTimers();
+    expect(writes.slice(n)).toEqual(['', `${GAME_NAME} — Playing`]);
+
+    stop();
+    vi.useRealTimers();
+    screen.value = 'menu';
   });
 
   it('follows the navigation signals — screen, battle overlay, and loading', () => {
