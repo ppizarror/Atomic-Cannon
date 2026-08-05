@@ -863,9 +863,7 @@ export function weaponDetonate(shot: CShot, weapon: CWeapon, world: ShotWorld): 
   // persistent numbered marker where it lands (its white in-flight streak already
   // traced the arc). Handle it here and return before any terrain/damage happens.
   if (ext === EXT.TRACER) {
-    const owner = shot.getOwner();
-    const range = owner ? Math.round(Math.abs(pos.x - owner.getPosition().x)) : 0;
-    world.aimMarker(pos.x, Math.floor(surfaceY), String(range));
+    world.aimMarker(pos.x, Math.floor(surfaceY), String(Math.round(shot.getLaunchAim())));
     world.hitSound(weapon.getHitSound(), pos.x); // faint spotting-round report
     return;
   }

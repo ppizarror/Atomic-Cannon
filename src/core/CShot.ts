@@ -6,7 +6,7 @@ import {Vec2} from '../math/Vec2';
 import {CTank} from './CTank';
 import {GameConfig} from './CGameConfig';
 import {windProfile, isRealisticWind} from './wind';
-import {TWO_PI, deg2rad, lerp} from '../math/num';
+import {TWO_PI, deg2rad, lerp, rad2deg, wrapIndex} from '../math/num';
 
 // ==========================================================================
 // TUNING
@@ -107,6 +107,7 @@ export class CShot {
   private launch(pos: Vec2, vx: number, vy: number, damage: number, radius: number, owner: CTank | null): void {
     this.m_pos = pos.clone();
     this.m_vel = new Vec2(vx, vy);
+    this.m_launchAim = wrapIndex(rad2deg(Math.atan2(-vy, vx)), 360);
     this.m_owner = owner;
     this.m_damage = damage;
     this.m_radius = radius;
@@ -276,6 +277,20 @@ export class CShot {
 
   setBasePower(p: number): void {
     this.m_basePower = p;
+  }
+
+  /** The AIM this round left the barrel on, in the dial's own degrees (0 = right, 90 = up, wrapping
+   *  through 360) — what the player would set to reproduce it. Seeded from the launch velocity, so
+   *  every spawn path has one; {@link setLaunchAim} refines it to true dial space for rounds fired
+   *  from a barrel, where the fan offset, per-shot variance and (with Relative Turrets) the hull's
+   *  tilt all sit between the dialed number and the world angle actually flown. A Tracer's pin is
+   *  labelled with it: each round of the fan reports the angle that put it there. */
+  getLaunchAim(): number {
+    return this.m_launchAim;
+  }
+
+  setLaunchAim(deg: number): void {
+    this.m_launchAim = wrapIndex(deg, 360);
   }
 
   kill(): void {
@@ -462,6 +477,7 @@ export class CShot {
   private m_radius: number;
   private m_power: number;
   private m_basePower = 0; // firing-shot power, propagated through cluster generations (0 → use m_power)
+  private m_launchAim = 0; // dial-space aim it was fired on, in degrees (see getLaunchAim)
   private m_bTrailActive: boolean;
   private m_trailPoints: TrailPoint[];
   private m_maxTrailAge: number;

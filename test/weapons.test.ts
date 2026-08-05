@@ -74,6 +74,7 @@ class MockWorld implements ShotWorld {
   mines = 0;
   sentries = 0;
   markers = 0;
+  markerLabels: (string | undefined)[] = [];
   blasts: number[] = [];
   blastScale = 1; // resolution-based blast scale (derived render value on the world context)
   wind = new Vec2(0, 0); // still air unless a test says otherwise (homing predicts against it)
@@ -101,8 +102,9 @@ class MockWorld implements ShotWorld {
     this.blasts.push(dmg);
   }
 
-  aimMarker() {
+  aimMarker(_x: number, _y: number, label?: string) {
     this.markers++;
+    this.markerLabels.push(label);
   }
 
   deployMine() {
@@ -366,6 +368,68 @@ describe('Weapon behaviour', () => {
     shot.setWeaponIndex(w.getIndex());
     weaponDetonate(shot, w, world);
     expect(land.getRadiationZones()).toHaveLength(1); // NUKE creates a radiation zone
+  });
+
+  describe('Tracer pins the ANGLE THE ROUND WAS FIRED ON', () => {
+    // The pin names the aim that put a round there, in the dial's own degrees, so the player keeps
+    // the power and dials the angle whose pin sits nearest the target. It must be the DIAL value —
+    // an impact-derived angle is not something the player can set (one such pin read 324, a barrel
+    // pointed into the dirt).
+    const TRACER = getWeapon(idxOf('Tracer 5'));
+
+    /** Detonate a tracer that was launched on dial angle `aimDeg` and reached (vx, vy) by impact. */
+    const pinLabel = (aimDeg: number, vx = 100, vy = 100): string => {
+      const land = flatLand(300);
+      const world = new MockWorld(land);
+      const shot = new CShot();
+      shot.initFromVelocity(new Vec2(400, 300), vx, vy, TRACER.getDamage(), TRACER.getRadius(), null);
+      shot.setLaunchAim(aimDeg);
+      shot.setWeaponIndex(TRACER.getIndex());
+      weaponDetonate(shot, TRACER, world);
+      expect(world.markerLabels).toHaveLength(1);
+      return world.markerLabels[0]!;
+    };
+
+    it('labels each pin with the aim it was fired on, whatever it hit on the way', () => {
+      expect(pinLabel(45)).toBe('45');
+      // Same aim, wildly different impact vectors — stopped by a ridge on the way up, plunging
+      // steeply, drifting in backwards on the wind. The pin still names the angle that was fired.
+      expect(pinLabel(45, 100, -72)).toBe('45');
+      expect(pinLabel(45, 10, 400)).toBe('45');
+      expect(pinLabel(45, -100, 100)).toBe('45');
+    });
+
+    it('spans the fan: a 5-round Tracer dialed to 45 reads 35/40/45/50/55', () => {
+      // `spread` is the degrees BETWEEN fanned rounds, applied centred (see fanOffset).
+      expect(TRACER.getSpawnCount()).toBe(5);
+      const spacing = TRACER.getFanSpacingDeg();
+      const fan = Array.from({length: 5}, (_, i) => pinLabel(45 + (i - 2) * spacing));
+      expect(fan).toEqual(['35', '40', '45', '50', '55']);
+    });
+
+    it('wraps into the 0..360 the dial itself wraps through', () => {
+      expect(pinLabel(-5)).toBe('355'); // fan offset carrying the aim below 0
+      expect(pinLabel(370)).toBe('10');
+    });
+
+    it('does nothing else — no damage, no crater, one pin', () => {
+      const land = flatLand(300);
+      const world = new MockWorld(land);
+      const shot = new CShot();
+      shot.initFromVelocity(new Vec2(400, 300), 100, 100, TRACER.getDamage(), TRACER.getRadius(), null);
+      shot.setWeaponIndex(TRACER.getIndex());
+      weaponDetonate(shot, TRACER, world);
+      expect(world.markers).toBe(1);
+      expect(world.blasts).toHaveLength(0);
+      expect(land.getHeightAt(400)).toBe(300);
+    });
+  });
+
+  it('a shot with no dial behind it (a submunition) still reports the heading it flew off on', () => {
+    // Seeded in `launch()` from the velocity, so every spawn path has a usable value: 45 up-right.
+    const shot = new CShot();
+    shot.initFromVelocity(new Vec2(400, 300), 100, -100, 0, 0, null);
+    expect(Math.round(shot.getLaunchAim())).toBe(45);
   });
 
   it('Roller converts to a horizontal surface roll', () => {

@@ -87,7 +87,7 @@ import {
 } from '../core/CBotUltraAI';
 import {CAssetManager} from '../core/rendering/CAssetManager';
 import {getFont, type FontId} from '../core/rendering/BitmapFont';
-import {clamp, clamp01, deg2rad, TWO_PI, wrapIndex} from '../math/num';
+import {clamp, clamp01, deg2rad, rad2deg, TWO_PI, wrapIndex} from '../math/num';
 import {Prng} from '../math/prng';
 import type {GameCommand} from '../net/commands';
 import type {MatchConfig} from '../net/protocol';
@@ -1721,7 +1721,8 @@ export class CGameController implements ShotWorld {
       }
     }
     // Tracer ranging markers: a persistent white pin at the impact with a centred NUMBER
-    // above it (the range), matching the original's numbered ranging label.
+    // above it — the aim that round was fired on (see weaponDetonate), matching the
+    // original's numbered ranging label.
     for (const mk of this.m_aimMarkers) {
       ctx.save();
       // white pin (stem + head) on a thin black backing so it reads over any terrain
@@ -3919,6 +3920,11 @@ export class CGameController implements ShotWorld {
         const jitter = varianceRad > 0 ? this.m_rng.plusMinus(varianceRad) : 0;
         const pShot = new CShot();
         pShot.initFromTank(muzzlePos, baseAngle + fan + jitter, this.m_power, dmg, rad, tank);
+        // The DIAL angle behind this round — the panel reading plus its own fan/variance offset, NOT
+        // the world angle it flies (those differ by the hull tilt under Relative Turrets). A Tracer
+        // labels its pin with this, so each pin of the fan names the angle that would land a round
+        // there at the current power; anything else is a number the player can't dial back in.
+        pShot.setLaunchAim(this.m_angle + rad2deg(fan + jitter));
         pShot.setWeaponIndex(this.m_currentWeaponIndex);
         this.m_shots.push(pShot);
       }
