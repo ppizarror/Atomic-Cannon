@@ -28,6 +28,8 @@ import {
   uiClick,
   depotSort,
   depotSortBy,
+  depotScroll,
+  setDepotScroll,
   type DepotSortKey,
 } from './store';
 import {WeaponIcon} from './WeaponIcon';
@@ -143,12 +145,10 @@ export function DepotPanel() {
 
 function DepotBody() {
   const [sel, setSel] = useState(weaponIndex.value);
-  // On OPEN, scroll the list so the currently-selected weapon is centered rather than starting at
-  // the top — the depot opens on whatever weapon you had equipped. Runs once per mount (i.e. per
-  // open); `useLayoutEffect` centers it BEFORE first paint so there's no top-then-jump flicker.
-  const selRowRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    selRowRef.current?.scrollIntoView({block: 'center'});
+    const el = listRef.current;
+    if (el) el.scrollTop = depotScroll(); // a stale offset past the end is clamped by the browser
   }, []);
   const sort = depotSort.value;
   const [hover, setHover] = useState<number | null>(null);
@@ -239,8 +239,12 @@ function DepotBody() {
 
         <ClassicScrollbar
           class="dep-list"
+          viewRef={listRef}
           onMouseMove={e => setPos({x: e.clientX, y: e.clientY})}
-          onScroll={() => setHover(null)}
+          onScroll={e => {
+            setHover(null); // a scrolled-away row must not keep its tooltip (no mouseleave on touch)
+            setDepotScroll(e.currentTarget.scrollTop); // …and remember where we are, for the reopen
+          }}
         >
           {rows.map(w => {
             const q = owned[w.index] ?? 0;
@@ -252,7 +256,6 @@ function DepotBody() {
             return (
               <div
                 key={w.index}
-                ref={isSel ? selRowRef : undefined}
                 class={`dep-row${isSel ? ' sel' : ''}${affordable ? ' afford' : ' broke'}`}
                 onClick={() => selectRow(w.index)}
                 onMouseEnter={() => setHover(w.index)}

@@ -11,7 +11,7 @@ import {NetGame} from '../net/netGame';
 import {normalizeRoomCode, isValidRoomCode} from '../net/roomCode';
 import {createPersistedSignal} from './persistedSignal';
 import {roster} from './playersStore';
-import {game, screen, paused, goToMenu} from './store';
+import {game, screen, paused, goToMenu, setDepotScroll} from './store';
 import {strings, fmt} from '../i18n';
 
 const initialState: RoomClientState = {
@@ -113,6 +113,7 @@ function makeClient(): RoomClient {
     controller: game(),
     onMatchStart: () => {
       screen.value = 'battle';
+      setDepotScroll(0); // a net match is a new war too, and it never routes through enterBattle
       game().setPaused(false);
       paused.value = false;
       netSpectating.value = game().isNetSpectator(); // joined mid-match with no turn slot

@@ -9,8 +9,9 @@
  * keyboard and `scrollIntoView` behaviour; only the visible bar is ours.
  *
  * Drop-in for a scrolling <div>: `class` and `style` land on the outer box (put
- * border / background / flex sizing there), `rootRef` points at that box, and
- * any extra props (onMouseMove…) are forwarded to the inner scrolling element.
+ * border / background / flex sizing there), `rootRef` points at that box, `viewRef`
+ * at the scrolling element inside it, and any extra props (onMouseMove…) are
+ * forwarded to that scrolling element.
  */
 import {useCallback, useLayoutEffect, useRef, useState} from 'preact/hooks';
 import type {
@@ -26,13 +27,30 @@ type Props = {
   class?: string;
   style?: CSSProperties;
   rootRef?: RefObject<HTMLDivElement>;
+  /** The element that actually SCROLLS (inside the host `rootRef` points at) — what a caller needs
+   *  to read or restore `scrollTop`. */
+  viewRef?: RefObject<HTMLDivElement>;
   children?: ComponentChildren;
 } & Omit<HTMLAttributes<HTMLDivElement>, 'class' | 'style' | 'children' | 'ref'>;
 
 const MIN_GRIP = 22; // px — the grip never shrinks below this, however long the list
 
-export function ClassicScrollbar({class: cls = '', style, rootRef, children, onScroll, ...rest}: Props) {
+export function ClassicScrollbar({
+  class: cls = '',
+  style,
+  rootRef,
+  viewRef: outRef,
+  children,
+  onScroll,
+  ...rest
+}: Props) {
   const viewRef = useRef<HTMLDivElement>(null);
+  // Hand the scrolling element out. A layout effect rather than a second `ref=` (Preact takes one)
+  // — and it lands in time: a child's layout effects run before its parent's, so a caller restoring
+  // a saved scrollTop in its own useLayoutEffect already sees the element.
+  useLayoutEffect(() => {
+    if (outRef) outRef.current = viewRef.current;
+  }, [outRef]);
   const [grip, setGrip] = useState({top: 0, height: 0, show: false});
   // Removes the active grip-drag's window listeners; set while dragging, cleared on pointer-up. An
   // unmount MID-DRAG (e.g. the depot auto-closes on a net turn hand-off) would otherwise leak them.

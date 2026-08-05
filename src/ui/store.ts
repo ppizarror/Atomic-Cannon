@@ -159,6 +159,18 @@ const DEPOT_SORT_DEFAULT: DepotSort = {key: 'cost', dir: 1};
 // to the default when the battle is torn down, so the next war starts sorted as usual.
 export const depotSort = signal<DepotSort>({...DEPOT_SORT_DEFAULT});
 
+// Where the depot's weapon list was scrolled to (px), so reopening it lands exactly where the
+// player left off instead of jumping somewhere. Same reason as depotSort for living out here — the
+// panel unmounts on close — and the same lifetime: it holds across reopens, turn hand-offs and
+// battles, and {@link enterBattle} zeroes it so every new war opens at the top of the arsenal.
+// Deliberately NOT a signal: nothing renders from it. It's written on every scroll frame and read
+// once per open, so a signal would only broadcast notifications no one is subscribed to.
+let depotScrollTop = 0;
+export const depotScroll = (): number => depotScrollTop;
+export function setDepotScroll(px: number): void {
+  depotScrollTop = px;
+}
+
 /** Click a depot column header: re-clicking the ACTIVE column flips direction, a new column
  *  starts ascending. */
 export function depotSortBy(key: DepotSortKey): void {
@@ -590,6 +602,7 @@ export const MIN_PLAYERS = 2;
 
 /** Common launch path: honour the saved options, set the counts, enter battle. */
 function enterBattle(players: number, humans: number, tanksPerTeam: number): void {
+  setDepotScroll(0); // the depot list's position is per-WAR — a new one opens at the top
   applyGameSettings(game()); // honour the saved options for this match
   game().setHumanCount(humans);
   game().setTanksPerTeam(tanksPerTeam);
